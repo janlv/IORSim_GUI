@@ -1,0 +1,2624 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# importing libraries 
+from PyQt5.QtWidgets import QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, qApp, QFrame, QFileDialog, QMessageBox
+from PyQt5.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
+from PyQt5.QtCore import QSize, QObject, pyqtSignal, pyqtSlot, QRunnable, QRect, QPoint, QThreadPool, Qt, QRegExp
+import sys, traceback
+import os
+import psutil
+from time import sleep
+from datetime import datetime
+from pathlib import Path
+#import matplotlib
+#matplotlib.use('Qt5Agg')
+from matplotlib.colors import to_rgb as colors_to_rgb
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
+from matplotlib.figure import Figure
+from numpy import ndarray, genfromtxt, asarray, sum as npsum
+#import matplotlib.pyplot as plt
+#from matplotlib.ticker import FormatStrFormatter
+#import qpageview
+from collections import namedtuple
+import shutil
+import warnings
+
+from ior2ecl import ior2ecl
+from IORlib.utils import Progress, exit_without_atexit, assert_python_version, get_substrings, return_matching_string, silentdelete, delete_all, delete_files_matching, file_contains
+from IORlib.ECL import RSM_file, unformatted_file, formatted_file
+
+button_size = QSize(100, 25)
+box_height = 25
+margin = 30
+#font = QFont().
+default_font = 'default'
+default_size = 10
+default_weight = 50
+to_screen = False
+quiet = True
+icon_path = Path('icons')
+
+#-----------------------------------------------------------------------
+def print_dict(adict, inc=3):
+#-----------------------------------------------------------------------
+    for k,v in adict.items():
+        if isinstance(v, list) or isinstance(v, ndarray):
+            print(' '*inc + '{} : {} ({})'.format(k,v,len(v)))
+        if isinstance(v, str):
+            print(' '*inc + '{} : {}'.format(k,v))
+        if isinstance(v, dict):
+            print(' '*inc + k)
+            print_dict(v, inc+2)
+
+
+#-----------------------------------------------------------------------
+def get_dict_values(adict):
+#-----------------------------------------------------------------------
+    for k,v in adict.items():
+        if not isinstance(v, dict):
+            yield v
+        else:
+            yield from get_dict_values(v)
+
+#-----------------------------------------------------------------------
+def get_dict_keys(adict):
+#-----------------------------------------------------------------------
+    for k,v in adict.items():
+        yield k
+        if isinstance(v, dict):
+            yield from get_dict_keys(v)
+ 
+#-----------------------------------------------------------------------
+def get_dict_items(adict):
+#-----------------------------------------------------------------------
+    for k,v in adict.items():
+        yield k,v
+        if isinstance(v, dict):
+            yield from get_dict_items(v)
+ 
+
+#-----------------------------------------------------------------------
+def get_center_new_window(main_win, new_win):
+#-----------------------------------------------------------------------
+    mwc = main_win.frameGeometry().center()
+    nws = new_win.size()
+    pos = QPoint( mwc.x()-round(0.5*nws.width()), mwc.y()-round(0.5*nws.height()) )
+    return pos
+    
+#-----------------------------------------------------------------------
+def create_button(win, text='', pos=None, func=None, tooltip=None, shortcut=None):
+#-----------------------------------------------------------------------
+    button = QPushButton(text, win)
+    button.move(pos)
+    button.resize(button_size)
+    button.clicked.connect(func)
+    if shortcut:
+        button.setShortcut(shortcut)
+    if tooltip:
+        button.setToolTip(tooltip)    
+    return button
+
+#-----------------------------------------------------------------------
+def create_group(win, title='', pos=None, size=None):
+#-----------------------------------------------------------------------
+    group = QGroupBox(win)
+    if pos and size:
+        group.setGeometry(QRect(pos, size))
+    group.setTitle(title)
+    #group.setStyleSheet('QGroupBox { font-weight: bold;}')
+    group.show()
+    return group
+
+# #-----------------------------------------------------------------------
+# def create_box(win, text='', pos=None, width=None, fontsize=default_size-1):
+# #-----------------------------------------------------------------------
+#     box = QLineEdit(win)
+#     #box.setStyleSheet('QLineEdit { font-size: %d;}'%fontsize)
+#     #box.setStyleSheet('QLineEdit { font-size: 8;}')
+#     #font = QFont()
+#     #font.setPointSize(fontsize)
+#     box.setFont(QFont(default_font, fontsize, fontweight))
+#     box.move(pos)
+#     box.resize(QSize(width, box_height))
+#     box.setText(text)
+#     return box
+
+#-----------------------------------------------------------------------
+def create_label(win, pos=None, size=None, text='', fontsize=default_size):
+#-----------------------------------------------------------------------
+    label = QLabel(win)
+    label.setFont(QFont(default_font, fontsize))
+    if size:
+        label.setGeometry(QRect(pos, size))
+    else:
+        label.move(pos+QPoint(0,4))
+    label.setText(text)
+    return label
+
+#-----------------------------------------------------------------------
+def open_file_dialog(win, text, filetype):
+#-----------------------------------------------------------------------
+    options = QFileDialog.Options() | QFileDialog.DontUseNativeDialog
+    fileName, _ = QFileDialog.getOpenFileName(win, text, "", filetype, options=options)
+    return fileName
+
+#-----------------------------------------------------------------------
+def create_center_button(win, text='', func=None, shortcut=None):
+#-----------------------------------------------------------------------
+    x = int( 0.5*(win.size().width() - button_size.width()) )
+    y = win.size().height() - margin - button_size.height()
+    return create_button(win, text=text, pos=QPoint(x,y), func=func, shortcut=shortcut)
+
+#-----------------------------------------------------------------------
+def center_label_on_window(win, label, yshift=0):
+#-----------------------------------------------------------------------
+    text_size = label.fontMetrics().boundingRect(label.text())
+    x = int( 0.5*(win.size().width() - text_size.width()) )
+    y = int( 0.5*(win.size().height() - text_size.height()) )
+    label.move(x, y+yshift)
+
+
+#-----------------------------------------------------------------------
+def create_action(win, text=None, shortcut=None, tip=None, func=None, icon=None, **kwargs):
+#-----------------------------------------------------------------------
+    act = QAction(text, win, **kwargs)
+    if shortcut:
+        act.setShortcut(shortcut)
+    if tip:
+        act.setStatusTip(tip)
+    if icon:
+        act.setIcon(QIcon(str(icon_path/Path(icon))))
+    act.triggered.connect(func)
+    return act
+
+
+#-----------------------------------------------------------------------
+def get_species(root):
+#-----------------------------------------------------------------------
+    species = []
+    with open(str(root)+'.trcinp') as f:
+        for line in f:
+            if line.startswith('*SPECIES'):
+                (kw, specie) = line.split()
+                species.append(specie)
+    return species
+                
+
+#-----------------------------------------------------------------------
+def get_wells(root):
+#-----------------------------------------------------------------------
+    def get_wells(num, wells, line):
+        if num is not None:
+            if num==0:
+                # first line is number of wells
+                num = int(line.split()[0])
+            else:
+                num -= 1
+                wells.append(line.split()[0])
+                if num==0:
+                    num = None
+        return num, wells
+                    
+    out_well = []
+    in_well = []
+    if root:
+        n_out = n_in = None
+        if not Path(str(root)+'.trcinp').is_file():
+            raise SystemError('trcinp-file is missing')
+        with open(str(root)+'.trcinp') as f:
+            for line in f:
+                if line.lstrip().startswith('#') or line.isspace():
+                    continue
+                if line.lstrip().startswith('*OUTPUT'):
+                    n_out = 0
+                    continue
+                if line.lstrip().startswith('*WELLSPECIES'):
+                    n_in = 0
+                    continue
+                n_out, out_well = get_wells(n_out, out_well, line)
+                n_in, in_well = get_wells(n_in, in_well, line)
+
+    #print(out_well, in_well)
+    return out_well, in_well
+    
+                
+
+#-----------------------------------------------------------------------
+def get_timestep_iorsim(root):
+#-----------------------------------------------------------------------
+#
+#  Extract dtecl from IORSim input file .trcinp
+#  Assumed format:    
+#    
+#  *INTEGRATION
+#  # tstart  tstop
+#    0.0  1.e99
+#  # dtmin dtmax 
+#    0.0  1.e99
+#  # dtecl dteclmax 
+#    5      20 
+#  # metnum
+#    0
+#
+    read = False
+    dt = ()
+    with open(str(root)+'.trcinp') as f:
+        for line in f:
+            line = line.lstrip()
+            if line.startswith('#'):
+                continue
+            if line.startswith('*INTEGRATION'):
+                read = True
+                continue
+            if read:
+                dt += tuple(line.split())
+                if len(dt) > 5:
+                    #print(dt)
+                    return int(float(dt[4])) 
+
+                
+#-----------------------------------------------------------------------
+def get_timestep_eclipse(root):
+#-----------------------------------------------------------------------
+    #print('get_timestep_eclipse: '+root)
+    read = False
+    dt = []
+    with open(str(root)+'.DATA', encoding='latin-1') as f:
+        for line in f:
+            line = line.lstrip()
+            if line.startswith('--'):
+                continue
+            if line.startswith('TSTEP'):
+                read = True
+                continue
+            if line.startswith('END'):
+                break
+            if read:
+                if '/' in line:
+                    read = False
+                    line = line.split('/')[0]
+                words = line.split()
+                for w in words:
+                    if '*' in w:
+                        d = [float(n) for n in w.split('*')]
+                        dt.append(d[0]*d[1])
+                    else:
+                        dt.append(float(w))
+                #if len(dt)>2:
+                #        raise Warning('More than one TSTEP read in DATA-file: {}'.format(dt))
+                #    if '*' in dt[0]:
+                #        n = dt[0].split('*')
+                #        return int(n[0])*int(n[1])
+    #print(dt)
+    #print(sum(dt))
+    return int(sum(dt))
+            
+    
+    
+#-----------------------------------------------------------------------
+def show_message(window, kind, text='', extra='', detail=None):
+#-----------------------------------------------------------------------
+    kind = kind.lower()
+    if kind=='info':
+        title = 'Information'
+        icon = QMessageBox.Information
+    elif kind=='question':
+        title = 'Question'
+        icon = QMessageBox.Information
+    elif kind=='warning':
+        title = 'Warning'
+        icon = QMessageBox.Warning
+    elif kind=='error':
+        title = 'Error'
+        icon = QMessageBox.Critical
+    else:
+        raise SystemError('Unrecognized kind-option in show_message()')
+    msg = QMessageBox(window)
+    msg.setWindowTitle(title)
+    msg.setIcon(icon)
+    msg.setText(text)
+    msg.setInformativeText(extra)
+    if detail:
+        msg.setdetailedText(detail)
+    msg.setStandardButtons(QMessageBox.Ok)  # | QMessageBox.Cancel)
+    msg.exec_()
+
+    
+#-----------------------------------------------------------------------
+def draw_border(widget, size='1px', color='solid black'): 
+#-----------------------------------------------------------------------
+    widget.setStyleSheet('border: '+size+' '+color+';')
+
+
+#-----------------------------------------------------------------------
+def delete_all_widgets_in_layout(layout):
+#-----------------------------------------------------------------------
+    '''
+   Deletes all widgets in a given layout, and all its
+   nested layout recursively
+
+    '''
+    for i in reversed(range(layout.count())):
+        #print(i, type(layout))
+        widget = layout.itemAt(i).widget()
+        if widget:
+            #print(type(widget))
+            layout.removeWidget(widget)
+            widget.deleteLater()
+        else:
+            layout2 = layout.itemAt(i).layout()
+            if layout2:
+                #print(type(layout2))
+                delete_all_widgets_in_layout(layout2)
+
+#-----------------------------------------------------------------------
+def clear_layout(layout):
+#-----------------------------------------------------------------------
+    if layout is not None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                #layout.removeWidget(widget)
+                widget.deleteLater()
+            else:
+                clear_layout(item.layout())
+                
+#-----------------------------------------------------------------------
+def to_rgb(color):
+#-----------------------------------------------------------------------
+    #return 'rgb{}'.format( tuple(asarray(asarray(matplotlib.colors.to_rgb(color))*255, dtype='int')) )
+    return 'rgb{}'.format( tuple(asarray(asarray(colors_to_rgb(color))*255, dtype='int')) )
+    
+
+#-----------------------------------------------------------------------
+def num_checked(boxes):
+#-----------------------------------------------------------------------
+    return npsum([b.isChecked() for b in boxes.values()])
+
+#-----------------------------------------------------------------------
+def set_checkbox(box, value, block_signal=True):
+#-----------------------------------------------------------------------
+    box.blockSignals(block_signal)
+    box.setChecked(value)
+    #box.setEnabled(value)
+    box.blockSignals(not block_signal)
+
+
+#-----------------------------------------------------------------------
+def get_checked_boxes(box_dict):
+#-----------------------------------------------------------------------
+    return ((name,box) for name,box in box_dict.items() if box.isChecked())
+
+#-----------------------------------------------------------------------
+def str_to_bool(s):
+#-----------------------------------------------------------------------
+    #if s.lower() in ('true','1'):
+    if s.lower() == 'true':
+        return True
+    #elif s.lower() in ('false','0'):
+    elif s.lower() == 'false':
+        return False
+    else:
+        return s
+        #raise ValueError("Valid case-insensitive strings in str_to_bool() are 'true','false','1','0', got " + s)
+
+#===========================================================================
+class WorkerSignals(QObject):                                              
+#===========================================================================
+    finished = pyqtSignal()
+    error = pyqtSignal(tuple)
+    progress = pyqtSignal(int)
+    plot = pyqtSignal()
+    show_message = pyqtSignal(tuple)
+    status_message = pyqtSignal(str)
+    stop = pyqtSignal()
+    
+#===========================================================================
+class Base_worker(QRunnable):                                              
+#===========================================================================
+    #def __init__(self, sim, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
+        super(Base_worker, self).__init__()
+        self.killed = False
+        self.finished = True
+        self.args = args
+        self.kwargs = kwargs
+        self.signals = WorkerSignals()
+        self.status_message = self.signals.status_message.emit
+        self.show_message = self.signals.show_message.emit
+        self.update_progress = self.signals.progress.emit
+        self.update_plot = self.signals.plot.emit
+        self.signals.stop.connect(self.killsim)
+        self.t = 0
+        
+    #-----------------------------------------------------------------------
+    def killsim(self):
+    #-----------------------------------------------------------------------
+        self.killed = True 
+                         
+    #-----------------------------------------------------------------------
+    def is_killed(self):
+    #-----------------------------------------------------------------------
+        return self.killed
+            
+    #-----------------------------------------------------------------------
+    def stop_msg(self):
+    #-----------------------------------------------------------------------
+        return 'Run stopped after ' + str(self.t) + ' timesteps'
+                         
+    @pyqtSlot()
+    #-----------------------------------------------------------------------
+    def run(self):
+    #-----------------------------------------------------------------------
+        try:
+            self.finished = False
+            self.runnable()
+        except:
+            traceback.print_exc()
+            exctype, value = sys.exc_info()[:2]
+            self.signals.error.emit((exctype, value, traceback.format_exc()))
+        #else:
+        #    self.signals.result.emit(result)
+        finally:
+            self.signals.finished.emit()
+            self.finished = True
+            #print('FINISHED!')
+            
+#===========================================================================
+class Backward(Base_worker):                                              
+#===========================================================================
+    def __init__(self, sim, *args, **kwargs):
+        super(Backward, self).__init__()
+        self.sim = sim
+        
+    @pyqtSlot()
+    #-----------------------------------------------------------------------
+    def runnable(self):
+    #-----------------------------------------------------------------------
+        sim = self.sim
+        msg = err = ''
+        t = 0
+        try:            
+            sim.check_input()
+            sim.init_runs()
+        except SystemError as e:
+                self.show_message(('error', str(e)))
+                return
+        try:
+            self.status_message('Starting Eclipse and IORSim...')
+            sim.start_runs(kill_func=self.is_killed)
+            self.status_message('Eclipse and IORSim started')
+            if self.is_killed():
+                raise SystemError('Run cancelled')
+            # start timestep loop
+            for self.t in range(1, sim.nsteps+1):
+                sim.run_one_step(self.t, kill_func=self.is_killed)                
+                self.update_progress(self.t)
+                self.update_plot()
+                self.status_message(sim.status_message(self.t, rft=False))
+                if self.is_killed():
+                    raise SystemError(self.stop_msg())
+            # timestep loop finished
+            sim.terminate_runs()
+            runtime = str(datetime.now()-sim.starttime).split('.')[0]
+            msg = 'Simulation complete, run-time was {}'.format(runtime)
+            err = ''
+        except (SystemError, psutil.NoSuchProcess) as e:
+            sim.kill_runs()
+            err = str(e)
+            if 'stopped' in err: 
+                if 'loop_until' in err:
+                    err = self.stop_msg()
+                self.show_message(('info', err))
+            else:
+                msg = 'Simulation stopped unexpectedly'
+                self.show_message(('error', msg+'\n'+err))
+            #self.update_progress(0)
+        finally:
+            self.status_message(msg)
+            sim.print2log('\n======  ' + msg + err + '  ======')
+            sim.close_logfiles()
+            self.update_plot()
+            self.update_progress(0)
+
+
+#===========================================================================
+class Forward(Base_worker):                                              
+#===========================================================================
+    def __init__(self, sim, kind=None, *args, **kwargs):
+        super(Forward, self).__init__()
+        self.sim = sim
+        self.kind = kind
+        self.current = None
+        
+    @pyqtSlot()
+    #-----------------------------------------------------------------------
+    def wait_func(self):
+    #-----------------------------------------------------------------------
+        self.update_plot()
+        self.update_progress(-1)
+        
+
+    @pyqtSlot()
+    #-----------------------------------------------------------------------
+    def runnable(self):
+    #-----------------------------------------------------------------------
+        sim = self.sim
+        try:
+            msg = None
+            sim.check_input()
+            sim.init_runs()
+            # deleting previous output-files
+            sim.delete_eclipse_files()
+            sim.delete_iorsim_files()
+            self.update_progress(0)
+            # start Eclipse
+            self.status_message('Starting Eclipse...')
+            sim.ecl.start()
+            self.current = 'ecl'
+            self.status_message('Eclipse running')
+            sim.ecl.wait_for_process_to_quit(sleep_sec=1, wait_func=self.wait_func, wait=2, kill_func=self.is_killed)
+            self.wait_func()
+            self.current = None
+            self.update_progress(0)
+            # start IORSim
+            self.status_message('Starting IORSim...')
+            sim.ior.start()
+            self.current = 'ior'
+            self.status_message('IORSim running')
+            sim.ior.wait_for_process_to_quit(sleep_sec=1, wait_func=self.wait_func, wait=2, kill_func=self.is_killed)
+            self.wait_func()
+            #self.current = 'None'
+            self.status_message('Simulation completed')
+        except (SystemError, ProcessLookupError, psutil.NoSuchProcess) as e:
+            msg = str(e)
+            kind = 'error'
+            if 'stopped' in msg:
+                msg = self.stop_msg()
+                kind = 'info'
+            self.status_message(msg)
+            self.show_message((kind, msg))
+        finally:
+            sim.kill_runs()
+            if msg:
+                sim.print2log('\n======  ' + msg + '  ======')
+            sim.close_logfiles()
+            self.update_plot()
+            self.update_progress(0)
+
+            
+#===========================================================================
+class Convert(Base_worker):                                              
+#===========================================================================
+    def __init__(self, root, *args, **kwargs):
+        super(Convert, self).__init__()
+        self.root = str(root)
+        # convert file
+        ior = self.root+'_IORSim_PLOT'  
+        self.funrst = ior+'.FUNRST'
+        self.unrst = ior+'.UNRST'
+      
+    @pyqtSlot()
+    #-----------------------------------------------------------------------
+    def runnable(self):
+    #-----------------------------------------------------------------------
+        self.status_message('Writing unformatted restart file')
+        #formatted_file(ior+'.FUNRST').convert(duplicate='ImMobGel', ignore=1, progress=self.update_progress, message=self.show_message)
+        formatted_file(self.funrst).convert(duplicate='ImMobGel', ignore=1, progress=self.update_progress) #, message=self.show_message)
+        # copy files
+        if Path(self.root+'.UNRST').is_file():
+            shutil.copy(self.root+'.UNRST', self.root+'_Eclipse.UNRST')
+        if Path(self.unrst).is_file():
+            shutil.copy(self.unrst, self.root+'.UNRST')
+        self.update_progress(0)
+        self.status_message('Unformatted restart file ready')
+        
+
+#===========================================================================
+class Mpl_canvas(FigureCanvasQTAgg):                                              
+#===========================================================================
+    def __init__(self, parent=None, width=5, height=4, dpi=100):
+        self.fig = Figure(figsize=(width, height), dpi=dpi)
+        #self.axes = fig.add_subplot(subplot)
+        super(Mpl_canvas, self).__init__(self.fig)
+
+
+                
+#===========================================================================
+class User_input(QDialog):                                              
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, parent=None, title=None, label=None, text=None, delete_src=False):
+    #-----------------------------------------------------------------------
+        #super(User_input, self).__init__(*args, **kwargs)
+        super(User_input, self).__init__(parent)
+        self.setWindowTitle(title)
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
+        self.func = None
+        ### input
+        self.inp_layout = QHBoxLayout()
+        self.layout.addLayout(self.inp_layout)
+        self.lbl = QLabel(label)
+        self.lbl.setStyleSheet('padding: 20px')
+        self.var = QLineEdit(self)
+        self.var.setFixedWidth(250)
+        self.var.setText(text)
+        self.inp_layout.addWidget(self.lbl)
+        self.inp_layout.addWidget(self.var)
+        ### buttons
+        self.btn_layout = QHBoxLayout()
+        self.layout.addLayout(self.btn_layout)
+        buttons = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        self.button_box = QDialogButtonBox(buttons)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+        self.btn_layout.addWidget(self.button_box)
+
+    #-----------------------------------------------------------------------
+    def set_func(self, func):
+    #-----------------------------------------------------------------------
+        self.func = func
+        
+    #-----------------------------------------------------------------------
+    def accept(self):
+    #-----------------------------------------------------------------------
+        if self.func:
+            self.func()
+        super().accept()
+
+        
+#===========================================================================
+class Settings(QDialog):                                              
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, parent=None, file=None):
+    #-----------------------------------------------------------------------
+        super(Settings, self).__init__(parent)
+        self.setWindowTitle('Settings')
+        self.setMinimumSize(500,300)
+        self.get = {}
+        self.set = {}
+        self.required = []
+        #self.default = {'eclrun':'eclrun', 'unrst':True, 'rft':True, 'fontsize':'10'}
+        self.default = {'eclrun':'eclrun', 'unrst':True, 'rft':True, 'dt':'1'}
+        self.abs_path = False
+        self.initUI()
+        self.file = Path(file) 
+        self.load()
+        
+        
+    #-----------------------------------------------------------------------
+    def initUI(self):                                             # settings
+    #-----------------------------------------------------------------------
+        self.layout = QGridLayout()
+        self.setLayout(self.layout)
+        #self.layout.setColumnStretch(0,20)
+        #self.layout.setColumnStretch(1,33)
+        #self.layout.setColumnStretch(2,33)
+        #self.layout.setColumnStretch(3,15)
+        #self.layout.setColumnStretch(4,15)
+
+        ### IORSim executable
+        n = 0
+        var, text = 'iorsim', 'IORSim program'
+        label, self.iorsim, button = self.new_line(var=var, text=text, required=True, open_func=self.open_ior_prog)
+        self.layout.addWidget(label       , n, 0)
+        # layout given as (row, col, rowspan, colspan)
+        self.layout.addWidget(self.iorsim , n, 1, 1, 2)
+        self.layout.addWidget(button      , n, 3)
+        
+        ### IORSim args
+        n += 1
+        var, text = 'iorarg', 'IORSim arguments'
+        label, self.iorarg = self.new_line(var=var, text=text, required=False)
+        self.layout.addWidget(label       , n, 0)
+        self.layout.addWidget(self.iorarg , n, 1, 1, 2)
+    
+        ### Eclipse executable
+        n += 1
+        var, text = 'eclrun', 'Eclipse program'
+        label, self.eclrun, button = self.new_line(var=var, text=text, required=True, open_func=self.open_ecl_prog)
+        self.layout.addWidget(label       , n, 0)
+        self.layout.addWidget(self.eclrun , n, 1, 1, 2)
+        self.layout.addWidget(button      , n, 3)
+ 
+        ### Eclipse file checks
+        n += 1
+        label = QLabel()
+        label.setText('Output checks')
+        var, text = 'unrst', 'UNRST-file'
+        self.unrst = self.new_box(var=var, text=text)
+        var, text = 'rft', 'RFT-file'
+        self.rft = self.new_box(var=var, text=text)
+        self.layout.addWidget(label,      n, 0)
+        self.layout.addWidget(self.unrst, n, 1)
+        self.layout.addWidget(self.rft,   n, 2)
+        
+        ### Timestep
+        n += 1
+        var, text = 'dt', 'Initial timestep'
+        label, self.dt = self.new_line(var=var, text=text, required=True)
+        self.layout.addWidget(label       , n, 0)
+        self.layout.addWidget(self.dt , n, 1)
+        # self.layout.addWidget(self.fontsize , 4, 1, 1, 1)
+
+        ### OK / Cancel buttons
+        n += 1
+        yes_no = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        self.yes_no_btns = QDialogButtonBox(yes_no)
+        self.yes_no_btns.accepted.connect(self.on_OK_click)
+        self.yes_no_btns.rejected.connect(self.reject)
+        self.layout.addWidget(self.yes_no_btns, n, 0, 1, 5)
+        #self.layout.addWidget(self.yes_no_btns, 4, 0, 1, 4)
+        
+    #-----------------------------------------------------------------------
+    def new_box(self, var=None, text='', required=False):
+    #-----------------------------------------------------------------------
+        if required:
+            self.required.append(var)
+        box = QCheckBox(text)
+        self.get[var] = box.isChecked
+        self.set[var] = box.setChecked
+        self.set_default(var)
+        return box
+
+    #-----------------------------------------------------------------------
+    def new_line(self, var=None, text='', required=False, open_func=None):
+    #-----------------------------------------------------------------------
+        if required:
+            self.required.append(var)
+        label = QLabel()
+        label.setText(text)
+        line = QLineEdit()
+        #line.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding )
+        #line.setMinimumSize(100,25)
+        self.get[var] = line.text 
+        self.set[var] = line.setText
+        self.set_default(var)
+        button = False
+        if open_func:
+            button = QDialogButtonBox(QDialogButtonBox.Open)
+            button.clicked.connect(open_func)
+        if button:
+            return label, line, button
+        else:
+            return label, line
+
+        
+    #-----------------------------------------------------------------------
+    def set_default(self, var):
+    #-----------------------------------------------------------------------
+        if var in self.default:
+            self.set[var](self.default[var])
+        
+    #-----------------------------------------------------------------------
+    def open_ior_prog(self):
+    #-----------------------------------------------------------------------
+        fname = open_file_dialog(self, 'Locate IORSim program', 'All Files (*)')
+        if fname:
+            if not self.abs_path:
+                try:
+                    fname = str(Path(fname).relative_to(Path.cwd()))
+                except ValueError:
+                    pass
+            self.set['iorsim'](fname)
+            
+    #-----------------------------------------------------------------------
+    def open_ecl_prog(self):
+    #-----------------------------------------------------------------------
+        fname = open_file_dialog(self, 'Locate eclrun program', 'All Files (*)')
+        if fname:
+            self.set['eclrun'](fname)
+
+    #-----------------------------------------------------------------------
+    def on_OK_click(self):
+    #-----------------------------------------------------------------------
+        if self.save():
+            self.done(1)
+        
+    #-----------------------------------------------------------------------
+    def save(self):                                      # settings
+    #-----------------------------------------------------------------------
+        self.file.touch(exist_ok=True)
+        with open(self.file, 'w') as f:
+            f.write('# This is a settings-file for ior2ecl_GUI.py, do not edit.\n')
+            for var,val in self.get.items():
+                if var in self.required and len(val())==0:
+                    show_message(self, 'error', text=var+' cannot be empty!')
+                    return False
+                line = '{} {}'.format(var,val())
+                f.write(line+'\n')
+                #print(line)
+        return True
+    
+    #-----------------------------------------------------------------------
+    def load(self):                                      # settings
+    #-----------------------------------------------------------------------
+        if self.file.is_file():
+            with open(self.file) as f:
+                for line in f:
+                    if line.lstrip().startswith('#'):
+                        continue
+                    try:
+                        (var, val) = line.split()
+                    except ValueError:
+                        var = line.rstrip()
+                        val = ''
+                    else:
+                        self.set[var.strip()]( str_to_bool(val.strip()) )
+
+                        
+#===========================================================================
+class window(QWidget):                                              # window
+#===========================================================================
+
+    #-----------------------------------------------------------------------
+    def __init__(self, title=None, pos=None, size=None, parent=None):   # window
+    #-----------------------------------------------------------------------
+        super(window, self).__init__()
+        self.setWindowTitle(title)
+        self.setGeometry(QRect(pos, size))
+        self.parent = parent
+        
+
+#===========================================================================
+class help_window(window):                                    # help_window
+#===========================================================================
+
+    #-----------------------------------------------------------------------
+    def __init__(self, pos, parent=None):                    # help_window
+    #-----------------------------------------------------------------------
+        super().__init__(title='Help', pos=pos, size=QSize(500, 400), parent=parent)
+        self.initUI()
+
+    #-----------------------------------------------------------------------
+    def initUI(self):                                          # help_window
+    #-----------------------------------------------------------------------
+        text ='''
+                                  Welcome to ior2ecl!
+
+  This program runs Eclipse and IORSim sequentally to allow
+  IORSim to communicate information back to Eclipse 
+
+
+  Keyboard shortcuts:
+                     
+                       Ctrl+S : Open Settings
+                       Ctrl+H : Open Help
+                       Ctrl+R : Run simulation
+                       Ctrl+E : Stop simulation
+                       Ctrl+Q : Quit application
+
+'''
+        self.text = create_label(self, pos=QPoint(margin, margin), text=text)
+        self.close_btn = create_center_button(self, text='Close', func=self.close, shortcut='Return')
+        
+    #-----------------------------------------------------------------------
+    def open_win(self):                                        # help_window
+    #-----------------------------------------------------------------------
+        self.move( get_center_new_window(self.parent, self) )
+        self.show()
+    
+                     
+        
+#===========================================================================
+class main_window(QMainWindow):                                    # main_window 
+#===========================================================================
+
+    #-----------------------------------------------------------------------
+    def __init__(self, *args, **kwargs):                       # main_window
+    #-----------------------------------------------------------------------
+        super(main_window, self).__init__(*args, **kwargs)
+        self.setWindowTitle('Run IORSim with Eclipse') 
+        self.setGeometry(300, 100, 1100, 800)
+        self.font = QFont().defaultFamily()
+        self.menu_fontsize = 7
+        self.help_win = help_window(self.pos(), parent=self)
+        self.data = {}
+        self.days = None
+        self.log_file = None
+        self.unsmry = None
+        self.worker = None
+        self.convert = None
+        self.max_3_checked = []
+        self.plot_prop = {}
+        self.view = False
+        guidir = Path('GUI')
+        guidir.mkdir(exist_ok=True)
+        self.settings = Settings(self, file=str(guidir/'settings.txt'))
+        #font = QFont(default_font, pointSize=default_size, weight=default_weight)
+        #print(self.settings.get['fontsize']())
+        #self.setFont(font)
+        self.casedir = guidir/'cases'
+        self.input_file = guidir/'input.txt'
+        self.input = {'root':None, 'dt':None, 'nsteps':None, 'dtecl':None, 'TSTEP':None, 'species':[], 'mode':None} #, 'case':None}
+        self.input_to_save = ['root','dt','nsteps','mode']
+        self.load_input()
+        self.initUI()
+        self.set_input_field()
+        self.threadpool = QThreadPool()
+        self.show()
+
+    #-----------------------------------------------------------------------
+    def initUI(self):                                          # main_window
+    #-----------------------------------------------------------------------
+        self.create_actions()
+        self.create_menus()
+        self.create_toolbar()
+        self.create_statusbar()
+        self.create_central_widget()
+        
+    #-----------------------------------------------------------------------
+    def create_actions(self):                                  # main_window
+    #-----------------------------------------------------------------------
+        ### actions
+        self.set_act = create_action(self, text='&Settings', icon='gear.png', shortcut='Ctrl+S', tip='Edit settings', func=self.settings.open)
+        self.start_act = create_action(self, text=None, icon='start_24.png', shortcut='Ctrl+R', tip='Run simulation', func=self.run)
+        self.stop_act = create_action(self, text=None, icon='stop_24.png', shortcut='Ctrl+E', tip='Stop simulation',  func=self.killsim)
+        self.help_act = create_action(self, text='Keyboard shortcuts',  shortcut='', tip='Display help',     func=self.help_win.open_win)
+        self.exit_act = create_action(self, text='&Exit', icon='control-power.png', shortcut='Ctrl+Q', tip='Exit application', func=self.quit)
+        self.add_case_act = create_action(self, text='Add case...', icon='document--plus.png', func=self.add_case_from_file)
+        self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy.png', func=self.duplicate_current_case)
+        self.rename_case_act = create_action(self, text='Rename current case..', icon='document-rename.png', func=self.rename_current_case)
+        self.clear_case_act = create_action(self, text='Clear current case', icon='document.png', func=self.clear_current_case)
+        self.delete_case_act = create_action(self, text='Delete current case', icon='document--minus.png', func=self.delete_current_case)
+        self.plot_act = create_action(self, text='Plot', icon='guide.png', func=self.view_plot, checkable=True)
+        self.plot_act.setChecked(True)
+        self.ecl_inp_act = create_action(self, text='Eclipse input file', icon='document-attribute-e.png', func=self.view_eclipse_input, checkable=True)
+        self.ior_inp_act = create_action(self, text='IORSim input file', icon='document-attribute-i.png', func=self.view_iorsim_input, checkable=True)
+        self.chem_inp_act = create_action(self, text='IORSim geochem file', icon='document-attribute-g.png', func=self.view_geochem_input, checkable=True)
+        self.ecl_log_act = create_action(self, text='Eclipse log file', icon='terminal.png', func=self.view_eclipse_log, checkable=True)
+        self.ior_log_act = create_action(self, text='IORSim log file', icon='terminal.png', func=self.view_iorsim_log, checkable=True)
+        self.py_log_act = create_action(self, text='Program log file', icon='terminal.png', func=self.view_program_log, checkable=True)
+        #self.show_manual_act = create_action(self, text='View user manual', icon='document.png', func=self.on_show_manual)
+                
+        
+    #-----------------------------------------------------------------------
+    def create_menus(self):                                          # main_window
+    #-----------------------------------------------------------------------
+        ### menu
+        menu = self.menuBar()
+        self.setStyleSheet('QMainWindow::menuBar { padding: 10px; }')
+        file_menu = menu.addMenu('&File')
+        file_menu.addAction(self.add_case_act)
+        file_menu.addAction(self.dupl_case_act) 
+        file_menu.addAction(self.rename_case_act)
+        file_menu.addAction(self.clear_case_act)
+        file_menu.addAction(self.delete_case_act)
+        file_menu.addSeparator()
+        file_menu.addAction(self.exit_act)
+        edit_menu = menu.addMenu('&Edit')
+        #edit_ag = QActionGroup(self)
+        self.view_ag = QActionGroup(self)
+        for act in (self.ecl_inp_act, self.ior_inp_act, self.chem_inp_act):
+            edit_menu.addAction(act)
+            self.view_ag.addAction(act)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self.set_act)
+        view_menu = menu.addMenu('&View')
+        self.view_ag.addAction(self.plot_act)
+        view_menu.addAction(self.plot_act)
+        view_menu.addSeparator()
+        for act in (self.ecl_log_act, self.ior_log_act, self.py_log_act):
+            view_menu.addAction(act)
+            self.view_ag.addAction(act)
+        help_menu = menu.addMenu('&Help')
+        help_menu.addAction(self.help_act)
+        
+            
+    #-----------------------------------------------------------------------
+    def create_toolbar(self):                                  # main_window
+    #-----------------------------------------------------------------------
+        ### toolbar
+        self.toolbar = QToolBar('Toolbar')
+        self.toolbar.setStyleSheet('QToolBar{spacing:15px; padding:5px;}')
+        self.addToolBar(self.toolbar)
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.toolbar.setStyleSheet('QToolButton { padding: 0px 0px 0px 0px}')
+        self.toolbar.addSeparator()
+        self.toolbar.addAction(self.start_act)
+        self.toolbar.addAction(self.stop_act)
+        self.toolbar.addSeparator()
+        self.create_toolbar_widgets()
+
+    #-----------------------------------------------------------------------
+    def create_toolbar_widgets(self):                           # main_window
+    #-----------------------------------------------------------------------
+        ### simulation controls
+        widgets = {'case'    : QComboBox(),
+                   'steps'   : QLineEdit(),
+                   'timestep': QLineEdit(),
+                   'mode'    : QComboBox(),
+                   'ref'     : QComboBox()} 
+        tips = ('Choose a case, or add new from the File-menu',
+                'Set simulation steps (only backward mode)',
+                'Set initial timestep (only backward mode)',
+                'Forward: IORSim after Eclipse  |  Backward: IORSim updates Eclipse',
+                'Reference case for plotting')
+        for i,(text,wid) in enumerate(widgets.items()):
+            ql = QLabel()
+            ql.setText(text.capitalize())
+            ql.setStatusTip(tips[i])
+            wid.setStatusTip(tips[i])
+            self.toolbar.addWidget(ql)
+            self.toolbar.addWidget(wid)
+            if i==2:
+                ql = QLabel()
+                ql.setText('days')
+                ql.setStatusTip(tips[i])
+                self.toolbar.addWidget(ql)
+            self.toolbar.addSeparator()
+        # mode
+        self.sim_cb = widgets['mode']
+        self.sim_cb.addItems(['forward', 'backward'])
+        self.sim_cb.currentIndexChanged[int].connect(self.on_sim_select)
+        # case
+        self.case_cb = widgets['case']
+        self.case_cb.setStyleSheet('QComboBox {min-width: 120px;}')
+        self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
+        # timestep
+        self.dt_box = widgets['timestep']
+        self.dt_box.setFixedWidth(45)
+        self.dt_box.setObjectName('dt')
+        self.dt_box.textChanged[str].connect(self.on_input_change)
+        # steps
+        self.nstep_box = widgets['steps']
+        self.nstep_box.setFixedWidth(80)
+        self.nstep_box.setObjectName('nsteps')
+        self.nstep_box.textChanged[str].connect(self.on_input_change)
+        # reference
+        self.ref_case = widgets['ref']
+        self.ref_case.setObjectName('ref')
+        
+    #-----------------------------------------------------------------------
+    def create_statusbar(self):                                          # main_window
+    #-----------------------------------------------------------------------
+        ### statusbar
+        self.remaining_time = QLabel()
+        self.remaining_time.setText('Remaining time:  0:00:00')
+        self.progressbar = QProgressBar()
+        self.progressbar.setMaximumWidth(300)
+        self.progressbar.setMaximumHeight(10)
+        self.progressbar.setFormat('')
+        self.messages = QLabel()
+        self.messages.setGeometry(QRect(0,0,100,25))
+        self.statusBar().addPermanentWidget(self.messages)
+        self.statusBar().addPermanentWidget(self.progressbar)
+        self.statusBar().addPermanentWidget(self.remaining_time)
+        self.statusBar().setStyleSheet('padding-bottom: 10 px;padding-top: 10 px;')
+        
+    #-----------------------------------------------------------------------
+    def create_central_widget(self):                                          # main_window
+    #-----------------------------------------------------------------------
+        ### central widget
+        # layout given as (row, col, rowspan, colspan)
+        # self.position = {'input'       : (0, 0),
+        #                  'ior_menu': (1, 0),
+        #                  'ecl_menu': (2, 0),
+        #                  'plot'        : (0, 1, 3, 1)}
+        self.position = {'ior_menu': (0, 0),
+                         'ecl_menu': (1, 0),
+                         'plot'        : (0, 1, 2, 1)}
+        self.layout = QGridLayout()
+        self.layout.setSpacing(10)
+        self.layout.setColumnStretch(0,25)
+        self.layout.setColumnStretch(1,75)
+        self.layout.setRowStretch(0,50)
+        self.layout.setRowStretch(1,50)
+        #self.layout.setRowStretch(2,35)
+        widget = QWidget()
+        widget.setLayout(self.layout)
+        self.setCentralWidget(widget)
+        # input field
+        #self.create_input_field()
+        # iorplot menu
+        self.create_ior_menu()
+        # eclplot menu
+        self.create_ecl_menu()
+        # plot
+        self.create_plot_field()
+        self.create_editor_field()
+        #print(self.layout.columnCount(), self.layout.rowCount())
+
+        
+    # #-----------------------------------------------------------------------
+    # def create_input_field(self):                                # main_window
+    # #-----------------------------------------------------------------------
+    #     group = QGroupBox()
+    #     group.setTitle('Input')
+    #     layout = QGridLayout()
+    #     layout.setColumnStretch(0,3)
+    #     layout.setColumnStretch(1,7)
+    #     ### simulation mode
+    #     lbl1 = QLabel()
+    #     lbl1.setText('Simulation')
+    #     self.sim_cb = QComboBox()
+    #     self.sim_cb.addItems(['Forward', 'Backward'])
+    #     self.sim_cb.currentIndexChanged[int].connect(self.on_sim_select)
+    #     ### case
+    #     lbl2 = QLabel()
+    #     lbl2.setText('Case')
+    #     self.case_cb = QComboBox()
+    #     self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
+    #     #self.case_cb.activated[int].connect(self.on_case_select)
+    #     #self.case_cb.highlighted[int].connect(self.on_case_select)
+    #     ### timestep
+    #     lbl3 = QLabel()
+    #     lbl3.setText('Timestep')
+    #     self.dt_box = QLineEdit()
+    #     self.dt_box.setObjectName('dt')
+    #     self.dt_box.textChanged[str].connect(self.on_input_change)
+    #     lbl31 = QLabel()
+    #     lbl31.setText('days')
+    #     ### number of steps
+    #     lbl4 = QLabel()
+    #     lbl4.setText('Steps')
+    #     self.nstep_box = QLineEdit()
+    #     self.nstep_box.setObjectName('nsteps')
+    #     self.nstep_box.textChanged[str].connect(self.on_input_change)
+
+    #     ### layout
+    #     layout.setColumnStretch(0,3)
+    #     layout.setColumnStretch(1,3)
+    #     layout.setColumnStretch(2,4)
+    #     layout.addWidget(lbl1           ,0,0,1,1, alignment=Qt.AlignVCenter)
+    #     layout.addWidget(self.sim_cb    ,0,1,1,2, alignment=Qt.AlignVCenter)        
+    #     layout.addWidget(lbl2           ,1,0,1,1, alignment=Qt.AlignVCenter)
+    #     layout.addWidget(self.case_cb   ,1,1,1,2, alignment=Qt.AlignVCenter)        
+    #     layout.addWidget(lbl3           ,2,0,1,1, alignment=Qt.AlignVCenter)
+    #     layout.addWidget(self.dt_box    ,2,1,1,1, alignment=Qt.AlignVCenter)        
+    #     layout.addWidget(lbl31          ,2,2,1,1, alignment=Qt.AlignVCenter)
+    #     layout.addWidget(lbl4           ,3,0,1,1, alignment=Qt.AlignVCenter)
+    #     layout.addWidget(self.nstep_box ,3,1,1,1, alignment=Qt.AlignVCenter)        
+    #     group.setLayout(layout)
+    #     self.layout.addWidget(group, *self.position['input'])
+    #     self.input_field = group
+
+
+    #-----------------------------------------------------------------------
+    def set_input_field(self):
+    #-----------------------------------------------------------------------
+        ### set values from input-file or default
+        mode, case_nr, dt, nsteps = (1, 0, 1, 10)
+        ### mode
+        self.modes = ('forward', 'backward')
+        if not self.input.get('mode') is None:
+            mode = self.input.get('mode')
+        self.mode = self.modes[mode]
+        self.sim_cb.blockSignals(True)
+        self.sim_cb.setCurrentIndex(-1)
+        self.sim_cb.blockSignals(False)
+        self.sim_cb.setCurrentIndex(mode) 
+        ### case
+        self.cases = self.read_case_dir()
+        self.case = self.input.get('root')
+        self.create_caselist(choose=self.case)
+        ### timestep
+        if self.input['dt']:
+            dt = self.input['dt']
+        self.dt_box.setText(str(dt))
+        ### number of steps
+        if self.input['nsteps']:
+            nsteps = self.input['nsteps']
+        self.nstep_box.setText(str(nsteps))
+        
+        
+    #-----------------------------------------------------------------------
+    def save_input(self):                                   # main_window
+    #-----------------------------------------------------------------------
+        self.input_file.touch(exist_ok=True)
+        with open(self.input_file, 'w') as f:
+            f.write('# This is an input-file for ior2ecl_GUI.py, do not edit.\n')
+            #for var,val in self.input.items():
+            for var in self.input_to_save:
+                line = '{} {}'.format(var,self.input.get(var) or '')
+                f.write(line+'\n')
+                #print('saved input: '+line)
+        return True
+    
+    #-----------------------------------------------------------------------
+    def load_input(self):                                   # main_window
+    #-----------------------------------------------------------------------
+        if self.input_file.is_file():
+            with open(self.input_file) as f:
+                for line in f:
+                    if line.lstrip().startswith('#'):
+                        continue
+                    try:
+                        (var, val) = line.split()
+                    except ValueError:
+                        var = line.rstrip()
+                        val = None
+                    finally:
+                        try:
+                            v = int(val) 
+                        except (TypeError,ValueError):
+                            v = val
+                        finally:
+                            self.input[var] = v
+        #for var,val in self.input.items():
+        #    print('{} = {} ({})'.format(var,val,type(val)))
+                            
+    #-----------------------------------------------------------------------
+    def set_variables_from_casefiles(self):                # main_window
+    #-----------------------------------------------------------------------
+        inp = self.input
+        inp['dtecl'] = inp['TSTEP'] = inp['species'] = None
+        if inp['root']:
+            inp['dtecl']   = get_timestep_iorsim(inp['root'])
+            inp['TSTEP']   = get_timestep_eclipse(inp['root'])
+            inp['species'] = get_species(inp['root'])
+
+    #-----------------------------------------------------------------------
+    def set_plot_properties(self):                # main_window
+    #-----------------------------------------------------------------------
+        #colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+                  '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+
+        species = enumerate(self.input['species'] or [])
+        prop = {}
+        prop['color'] = None
+        prop['line'] = None
+        prop['alpha'] = None
+        species = self.input['species']
+        if species:
+            prop['color'] = {specie:colors[i] for i,specie in enumerate(species)}
+            prop['line'] = {specie:'-' for i,specie in enumerate(species)}
+            prop['alpha'] = {specie:1.0 for i,specie in enumerate(species)}
+            for var in ('Temp','Temp_ecl'):
+                prop['color'][var] = '#000000' 
+                prop['line'][var] = '--' 
+                prop['alpha'][var] = 0.5
+            var = 'Oil'
+            prop['color'][var] = '#d62728' # red
+            prop['line'][var] = '-' 
+            prop['alpha'][var] = 1.0
+            var = 'Water'
+            prop['color'][var] = '#1f77b4' # blue
+            prop['line'][var] = '-' 
+            prop['alpha'][var] = 1.0
+            var = 'Gas'
+            prop['color'][var] = '#2ca02c' # green
+            prop['line'][var] = '-' 
+            prop['alpha'][var] = 1.0
+        self.plot_prop = prop
+
+            
+    #-----------------------------------------------------------------------
+    def create_caselist(self, remove=None, insert=None, choose=None):
+    #-----------------------------------------------------------------------
+        if remove:
+            self.cases.pop(self.case_nr(remove))
+        if insert:
+            self.cases.insert(0, insert)
+            self.cases = sorted(self.cases)
+        self.case_cb.blockSignals(True)
+        self.case_cb.clear()
+        items = [Path(f).stem for f in self.cases]
+        self.case_cb.addItems(items)
+        self.case_cb.setCurrentIndex(-1)
+        self.case_cb.blockSignals(False)
+        if choose:
+            self.case_cb.setCurrentIndex(self.case_nr(choose))
+
+        
+    #-----------------------------------------------------------------------
+    def add_case(self, case, rename=False, choose_new=True):   # main_window
+    #-----------------------------------------------------------------------
+        self.case = self.copy_case(case, rename=rename)
+        if not self.case:
+            return None
+        choose = None
+        if choose_new:
+            choose = self.case
+        self.create_caselist(insert=self.case, choose=choose)
+
+                
+    #-----------------------------------------------------------------------
+    def copy_case(self, case, rename=False): 
+    #-----------------------------------------------------------------------
+        case = Path(case)
+        from_root = case.parent/case.stem
+        to_root = self.casedir/case.stem/case.stem
+        if rename:
+            name = Path(rename).stem
+            to_root = self.casedir/name/name
+        try:
+            to_root.parent.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            show_message(self, 'warning', text='A case named {} already exists, please choose another name'.format(to_root.name))
+            return None
+        self.copy_case_files(from_root, to_root) 
+        return str(to_root)
+
+    
+    #-----------------------------------------------------------------------
+    def copy_case_files(self, from_root, to_root):             # main_window
+    #-----------------------------------------------------------------------
+        #print('COPY: {} -> {}'.format(from_root, to_root))
+        for ext in ('.DATA','.trcinp','.geocheminp'):
+            from_fil = str(from_root)+ext
+            if Path(from_fil).is_file():
+                to_fil = str(to_root)+ext
+                shutil.copy(from_fil, to_fil)
+        for ext in ('INC','DAT','GRDECL'):
+            for fil in Path(from_root).parent.glob('*.'+ext):
+                shutil.copy(str(fil), str(Path(to_root).parent/fil.name))
+            
+        
+    #-----------------------------------------------------------------------
+    def read_case_dir(self):
+    #-----------------------------------------------------------------------
+        cases = []
+        if self.casedir.is_dir():
+            for d in Path(self.casedir).glob('*'):
+                if d.is_dir():
+                    cases.append(str(d/d.name))
+        return cases
+
+    #-----------------------------------------------------------------------
+    def case_nr(self, case):
+    #-----------------------------------------------------------------------
+        if not case:
+            return -1
+        nr = -1
+        try:
+            nr = self.cases.index(case)
+            return nr
+        except ValueError:
+            show_message(self, 'warning', text="Case '{}' not found!".format(case))
+            return nr
+            
+            
+        
+    #-----------------------------------------------------------------------
+    def on_sim_select(self, nr):                               # main_window
+    #-----------------------------------------------------------------------
+        self.input['mode'] = nr
+        self.mode = self.modes[nr]
+        if self.mode=='forward':
+            self.dt_box.setEnabled(False)
+            self.nstep_box.setEnabled(False)
+        if self.mode=='backward':
+            self.dt_box.setEnabled(True)
+            self.nstep_box.setEnabled(True)
+
+            
+    #-----------------------------------------------------------------------
+    def on_input_change(self, text):                           # main_window
+    #-----------------------------------------------------------------------
+        name = self.sender().objectName()
+        var = {'dt':'Timestep', 'nsteps':'Number of steps'}
+        if not text:
+            self.input[name] = 0
+            return
+        try:
+            val = int(text)
+        except:
+            show_message(self, 'error', text=var[name]+' must be an integer!')
+        else:
+            self.input[name] = val
+            
+    #-----------------------------------------------------------------------
+    def on_case_select(self, nr):                              # main_window
+    #-----------------------------------------------------------------------
+        if self.cases:
+            self.sender().blockSignals(True)
+            self.sender().setCurrentIndex(nr)
+            self.sender().blockSignals(False)
+            self.input['root'] = self.case = str(self.cases[nr])
+            self.prepare_case(self.input['root'])
+            # set simulation mode based on READDATA keyword in .DATA-file
+            mode = 'forward'
+            try:
+                if file_contains(self.case+'.DATA', text='READDATA', comment='--'):
+                    mode = 'backward'
+            except FileNotFoundError as e:
+                show_message(self, 'error', text='The Eclipse DATA-file is missing for this case')
+            self.sim_cb.setCurrentIndex(self.modes.index(mode))
+                
+    #-----------------------------------------------------------------------
+    def add_case_from_file(self):                   # main_window
+    #-----------------------------------------------------------------------
+        case = open_file_dialog(self, 'Locate Eclipse DATA-file', 'DATA files (*.DATA)')
+        if case:
+            root = Path(case.split('.DATA')[0])
+            self.add_case(root)
+
+            
+    #-----------------------------------------------------------------------
+    def clear_current_case(self):                              # main_window
+    #-----------------------------------------------------------------------
+        case = Path(self.case)
+        clean_dir = case.parent/'CLEAN'
+        clean_dir.mkdir(exist_ok=True)
+        # copy case-files to the CLEAN-folder
+        self.copy_case_files(case, clean_dir/case.stem)
+        # delete all files in case-folder
+        for fil in case.parent.glob('*'):
+            if fil.is_file():
+                fil.unlink()
+        # copy case-files back from CLEAN-folder
+        self.copy_case_files(clean_dir/case.stem, case)
+        # delete all sub-folders and their files 
+        for d in case.parent.iterdir():
+            if d.is_dir():
+                delete_all(d)
+        self.prepare_case(self.case)
+
+    #-----------------------------------------------------------------------
+    def delete_case(self, case):                              # main_window
+    #-----------------------------------------------------------------------
+        #print('Deleting ' + str(case))
+        delete_all(Path(case).parent)
+        # remove case from caselist
+        self.create_caselist(remove=str(case))
+
+
+    #-----------------------------------------------------------------------
+    def delete_current_case(self):                              # main_window
+    #-----------------------------------------------------------------------
+        self.delete_case(self.case)
+        self.input['root'] = self.case = None
+        self.prepare_case(None)
+
+        
+    #-----------------------------------------------------------------------
+    def duplicate_current_case(self):                              # main_window
+    #-----------------------------------------------------------------------
+        new_name = User_input(self, title='Duplicate current case', label='Name of duplicate case', text=Path(self.case).name)
+        def func():
+            from_case = self.case
+            name = Path(new_name.var.text().upper()).stem
+            to_case = self.casedir/name/name
+            print(str(from_case)+' -> '+str(to_case))
+            self.add_case(from_case, rename=to_case)
+        new_name.set_func(func)
+        new_name.open()
+        
+    #-----------------------------------------------------------------------
+    def rename_current_case(self):                              # main_window
+    #-----------------------------------------------------------------------
+        rename = User_input(self, title='Rename current case', label='New case name', text=Path(self.case).name)
+        def func():
+            oldname = Path(self.case).stem
+            newname = rename.var.text().upper()
+            casedir = Path(self.casedir)
+            newdir = (casedir/oldname).rename(casedir/newname)
+            #print(str(casedir/oldname)+' => '+str(newdir))
+            for x in newdir.iterdir():
+                if x.is_file() and oldname in str(x):
+                    new = str(x.name).replace(oldname,newname)
+                    #print(str(x)+' -> '+str(newdir/new))
+                    x.rename(newdir/new)
+            newroot = casedir/newname/newname
+            self.create_caselist(remove=self.case, insert=newroot, choose=newroot)
+            ## set self.case to the new name
+            #self.add_case(self.case, rename=newname) #, delete_src=True)
+            #self.delete_case(old_case)
+        rename.set_func(func)
+        rename.open()
+        
+
+    #-----------------------------------------------------------------------
+    def prepare_case(self, root):
+    #-----------------------------------------------------------------------
+        try:
+            self.out_wells, self.in_wells = get_wells(root)
+            self.set_variables_from_casefiles()
+            self.set_plot_properties()
+            self.update_ior_menu()
+            self.read_ior_data()
+            self.unsmry = None
+            self.ecl_yaxis = []
+            self.ecl_fluids = []
+            self.ecl_wells = []
+            self.read_ecl_data()
+            self.update_ecl_menu()
+            self.create_plot()
+            self.update_message()
+            self.view_ag.checkedAction().trigger()
+            #self.update_view_area()
+            # enable/disable geochem edit action
+            if self.input['root'] and Path(self.input['root']+'.geocheminp').is_file():
+                self.chem_inp_act.setEnabled(True)
+            else:
+                self.chem_inp_act.setEnabled(False)
+        except SystemError as e:
+            show_message(self, 'error', text=str(e))
+            return False
+            
+    #-----------------------------------------------------------------------
+    def create_ecl_menu(self):                                # main_window
+    #-----------------------------------------------------------------------
+        self.ecl_menu = QGroupBox()
+        self.ecl_menu.setTitle('ECLIPSE plot options')
+        self.layout.addWidget(self.ecl_menu, *self.position['ecl_menu']) # 
+        self.ecl_menu_layout = QHBoxLayout()
+        self.ecl_menu.setLayout(self.ecl_menu_layout)
+        self.ecl_menu_col = []
+        for i in range(2):
+            c = QVBoxLayout()
+            c.setAlignment(Qt.AlignTop)
+            self.ecl_menu_col.append(c)
+            self.ecl_menu_layout.addLayout(c)
+        
+    #-----------------------------------------------------------------------
+    def on_ecl_var_click(self):
+    #-----------------------------------------------------------------------
+        #print('on_ecl_var_click')
+        name = self.sender().objectName()
+        is_checked = self.sender().isChecked()
+        self.update_plot_line(name, is_checked)
+        self.canvas.draw()
+
+    #-----------------------------------------------------------------------
+    def create_ior_menu(self):                                # main_window
+    #-----------------------------------------------------------------------
+        self.ior_menu_group = QGroupBox()
+        self.ior_menu_group.setTitle('IORSim plot options')
+        self.layout.addWidget(self.ior_menu_group, *self.position['ior_menu']) # 
+        self.ior_menu_layout = QHBoxLayout()
+        self.ior_menu_group.setLayout(self.ior_menu_layout)
+        self.ior_menu_col = []
+        for i in range(2):
+            c = QVBoxLayout()
+            c.setAlignment(Qt.AlignTop)
+            self.ior_menu_col.append(c)
+            self.ior_menu_layout.addLayout(c)
+
+    #-----------------------------------------------------------------------
+    def new_box_with_line_layout(self, name, boxname=None, func=None, linestyle='solid', color=None):
+    #-----------------------------------------------------------------------
+        if not boxname:
+            boxname=name
+        box = self.new_checkbox(name=boxname, toggle=True, func=func, pad_left=15) 
+        #box.setStyleSheet('padding-left: 15px ')
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        if not color:
+            color = to_rgb(self.plot_prop['color'][name])
+        line.setStyleSheet('border: 3px '+linestyle+' '+color)
+        label = QLabel(name)
+        #font = QFont()
+        label.setFont(QFont(self.font, self.menu_fontsize))
+        layout = QHBoxLayout()
+        layout.addWidget(box,1)
+        layout.addWidget(line,1)
+        layout.addWidget(label,3)
+        return layout, box
+
+    #-----------------------------------------------------------------------
+    def new_checkbox(self, text='', name='', func=None, toggle=False, pad_left=10, size=15):
+    #-----------------------------------------------------------------------
+        box = QCheckBox(text)
+        box.setObjectName(name)
+        box.setFont(QFont(self.font, self.menu_fontsize))
+        #box.setStyleSheet('padding-left: 10px;')
+        box.setStyleSheet('QCheckBox { padding-left: '+str(pad_left)+'px; }\nQCheckBox::indicator { width: '+str(size)+'px; height: '+str(size)+'px;};')
+        if toggle:
+            box.toggle()
+        if func: #is None:
+            #func = self.update_plot
+            box.stateChanged.connect(func)
+        return box
+        
+    #-----------------------------------------------------------------------
+    def update_ior_menu(self, checked=True):                   # main_window
+    #-----------------------------------------------------------------------
+        #print('update_ior_menu')
+        delete_all_widgets_in_layout(self.ior_menu_layout)
+        if not self.input['root']:
+            return False
+        col = self.ior_menu_col
+        self.ior_boxes = {}
+        # add conc / prod boxes
+        lbl = QLabel()
+        lbl.setText('Y-axis')
+        lbl.setStyleSheet('padding-left: 10px')
+        #lbl.setFont(QFont(self.font, self.menu_fontsize))
+        col[0].addWidget(lbl)
+        self.ior_boxes['yaxis'] = {}
+        for text in ('Prod', 'Conc'):
+            box = self.new_checkbox(text=text+'.', name='yaxis '+text.lower()+' ior', func=self.on_ior_menu_click)
+            col[0].addWidget(box, alignment=Qt.AlignTop)
+            self.ior_boxes['yaxis'][text.lower()] = box
+        # add well boxes
+        lbl = QLabel()
+        lbl.setText('Wells')
+        #lbl.setFont(QFont(self.font, self.menu_fontsize))
+        lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
+        col[0].addWidget(lbl)
+        self.ior_boxes['well'] = {}
+        for i,well in enumerate(self.out_wells or []):
+            box = self.new_checkbox(text=well, name='well '+well+' ior', func=self.on_ior_menu_click)
+            col[0].addWidget(box, alignment=Qt.AlignTop)
+            self.ior_boxes['well'][well] = box
+        # add specie boxes
+        lbl = QLabel()
+        lbl.setText('Variables')
+        #lbl.setFont(QFont(self.font, self.menu_fontsize))
+        lbl.setStyleSheet('padding-left: 15px')
+        col[1].addWidget(lbl)
+        self.ior_boxes['var'] = {}
+        for i,specie in enumerate(self.input['species'] or []):
+            layout, box = self.new_box_with_line_layout(specie, func=self.on_specie_click)
+            self.ior_boxes['var'][specie] = box
+            col[1].addLayout(layout)
+        # add temperature box
+        layout, box = self.new_box_with_line_layout('Temp', linestyle='dotted', color='#707070', func=self.on_specie_click)
+        self.ior_boxes['var']['Temp'] = box
+        col[1].addLayout(layout)
+        # set default checked boxes and add them to the checked list
+        self.max_3_checked = []
+        if checked:
+            for box in [self.ior_boxes['yaxis']['conc']]+[b for i,b in enumerate(self.ior_boxes['well'].values()) if i<2]:
+                set_checkbox(box, True, block_signal=True)
+                self.max_3_checked.append(box)
+            
+
+    #-----------------------------------------------------------------------
+    def init_ecl_data(self):
+    #-----------------------------------------------------------------------
+        #  WOPR    - well oil rate,
+        #  WWPR    - well water rate
+        #  WTPCHEA - well temp (Temp_ecl)
+        #  WOPT    - well oil prod
+        #  WWCT    - well water cut (prod)
+        #  WWIR    - well water injection rate
+        #  WWIT    - well water injection prod
+        #  FOPT    - field oil prod total
+        #  FWIT    - field water injection total
+        #  FWCT    - field water cut total (prod)
+        #  ROIP    - Reservoir oil in place
+
+        varlist = ['WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT',
+                   'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT'] #,'FWIT','FWIR'] 
+        #print('{} : {}'.format(type(self.input['root']),self.input['root']))
+        smspec = Path(self.input['root']+'.SMSPEC')
+        unsmry = Path(self.input['root']+'.UNSMRY')
+        if not smspec.is_file() or not unsmry.is_file():
+            return False
+        self.unsmry = unformatted_file(unsmry)
+        smspec = unformatted_file(smspec)
+
+        ### read variable specifications
+        ecl_data = namedtuple('ecl_data','time fluid wells yaxis units')
+        for block in smspec.blocks():
+            if block.key()   == 'KEYWORDS':
+                varnames = get_substrings(block.data()[0].decode(), 8)
+                #print(varnames)
+            elif block.key() == 'WGNAMES':
+                #ecl_data.wells = [s.capitalize() for s in get_substrings(block.data()[0].decode(), 8)]
+                ecl_data.wells = [s for s in get_substrings(block.data()[0].decode(), 8)]
+                #print(ecl_data.wells)
+            elif block.key() == 'MEASRMNT':
+                data = block.data()[0].decode().lower()
+                width = len(data)/len(varnames)
+                measure = get_substrings(data, width)
+                #print(measure)
+            elif block.key() == 'UNITS':
+                ecl_data.units = get_substrings(block.data()[0].decode(), 8)                
+                #print(ecl_data.units)
+                
+        ecl_data.time = varnames.index('TIME')
+        fluid_type = {'O':'Oil', 'W':'Water', 'G':'Gas'}
+        ecl_data.fluid = {var:('Temp_ecl' if ecl_data.units[i]=='DEG C' else fluid_type.get(var[1])) for i,var in enumerate(varnames)}
+        yaxis_type = ['prod','rate']
+        ecl_data.yaxis = {var:return_matching_string(yaxis_type, measure[i]) for i,var in enumerate(varnames)}
+        ecl_data.yaxis['WTPCHEA'] = 'rate'
+        ecl_data.index = {var:[] for var in varlist}
+
+        ### prepare data dict 
+        ecl = {}
+        ecl['days'] = []
+        for w in [wn for wn in  set(ecl_data.wells) if not ':+:' in wn]:
+            ecl[w] = {}
+            for y in set(yaxis_type):
+                ecl[w][y] = {}
+                for f in list(fluid_type.values())+['Temp_ecl']:
+                    #print(w,y,f)
+                    ecl[w][y][f] = []
+                    
+        for var in varlist:
+            match = False
+            for i,name in enumerate(varnames):
+                well = ecl_data.wells[i]
+                if var==name and not ':+:' in well:
+                    match = True
+                    ecl_data.index[var].append(i)
+                    #ecl_data.wells[var].append(well)
+                    y = ecl_data.yaxis[var]
+                    f = ecl_data.fluid[var]
+                    #print(well, y, f, var)
+                    self.ecl_wells.append(well)
+                    self.ecl_yaxis.append(y)
+                    self.ecl_fluids.append(f)
+                    #ecl[well][y][f] = []
+                    ecl[well][y][f+' var'] = [var]
+                    if 'Temp' in f:
+                        ecl[well]['prod'][f] = ecl[well]['rate'][f] 
+            if not match:
+                del ecl_data.index[var]
+                #print('WARNING! Variable {} not found in {}'.format(var, self.unsmry.name()))
+        self.ecl_data = ecl_data
+        self.data['ecl'] = ecl
+        # unique well, yaxis, fluids lists 
+        self.ecl_wells = list(set(self.ecl_wells))
+        self.ecl_yaxis = list(set(self.ecl_yaxis))
+        self.ecl_fluids = list(set(self.ecl_fluids))
+        # put Field at top of list 
+        if 'FIELD' in self.ecl_wells:
+            self.ecl_wells.pop(self.ecl_wells.index('FIELD'))
+            self.ecl_wells.insert(0,'Field')
+        # remove Temp_ecl
+        if 'Temp_ecl' in self.ecl_fluids:
+            self.ecl_fluids.pop(self.ecl_fluids.index('Temp_ecl'))
+        self.update_ecl_menu()
+        return True
+
+        
+    #-----------------------------------------------------------------------
+    def read_ecl_data(self):
+    #-----------------------------------------------------------------------
+        if not self.input['root']:
+            self.data['ecl'] = {}
+            return False
+        ### read data 
+        if not self.unsmry:
+            if not self.init_ecl_data():
+                return False
+        for block in self.unsmry.blocks(only_new=True):
+            #block.print()
+            if block.key()=='PARAMS':
+                data = block.data()
+                time = data[self.ecl_data.time]
+                if time==0.0:
+                    continue
+                self.data['ecl']['days'].append( time )
+                for var,index in self.ecl_data.index.items():
+                    yaxis = self.ecl_data.yaxis[var]
+                    fluid = self.ecl_data.fluid[var]
+                    wells = self.ecl_data.wells
+                    for i in index:
+                        self.data['ecl'][wells[i]][yaxis][fluid].append(data[i])
+        #print_dict(self.data['ecl'])
+                        
+    #-----------------------------------------------------------------------
+    def update_ecl_menu(self):                                # main_window
+    #-----------------------------------------------------------------------
+        # delete checkboxes before creating new
+        delete_all_widgets_in_layout(self.ecl_menu_layout)
+        if not self.input['root'] or not self.ecl_yaxis:
+            return False
+        col = self.ecl_menu_col
+        self.ecl_boxes = {}
+        # prod/rate
+        self.ecl_boxes['yaxis'] = {}
+        lbl = QLabel()
+        lbl.setText('Y-axis')
+        lbl.setStyleSheet('padding-left: 10px')
+        col[0].addWidget(lbl)
+        #for i,(text,name) in enumerate( (('Prod.','prod'),('Rate','rate')) ):
+        for i,name in enumerate(self.ecl_yaxis): #get_yaxis('ecl')):
+            box = self.new_checkbox(text=name.capitalize(), name='yaxis '+name+' ecl', func=self.on_ecl_plot_click)
+            self.ecl_boxes['yaxis'][name] = box
+            col[0].addWidget(box, alignment=Qt.AlignTop)
+        # wells
+        lbl = QLabel()
+        lbl.setText('Wells')
+        lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
+        col[0].addWidget(lbl)
+        #print(self.get_wells('ecl'))
+        self.ecl_boxes['well'] = {}
+        #for i,well in enumerate(['Field']+(self.out_wells or [])+(self.in_wells or [])):
+        for i,well in enumerate(self.ecl_wells):
+            box = self.new_checkbox(text=well, name='well '+well+' ecl', func=self.on_ecl_plot_click)
+            col[0].addWidget(box, alignment=Qt.AlignTop)
+            self.ecl_boxes['well'][well] = box
+        # variables
+        lbl = QLabel()
+        lbl.setText('Variables')
+        lbl.setStyleSheet('padding-left: 15px')
+        col[1].addWidget(lbl)
+        self.ecl_boxes['var'] = {}
+        #for var in ['Oil','Water','Gas']:
+        for var in self.ecl_fluids: 
+            layout, box = self.new_box_with_line_layout(var, func=self.on_ecl_var_click)
+            self.ecl_boxes['var'][var] = box
+            col[1].addLayout(layout)
+        layout, box = self.new_box_with_line_layout('Temp', boxname='Temp_ecl', linestyle='dotted', color='#707070', func=self.on_ecl_var_click)
+        self.ecl_boxes['var']['Temp_ecl'] = box
+        self.ecl_menu_col[int((i+1)/7+1)].addLayout(layout)
+
+    # #-----------------------------------------------------------------------
+    # def get_wells(self, kind):
+    # #-----------------------------------------------------------------------
+    #     wells = [k for k in self.data[kind].keys() if bool(k) and k!='days']
+    #     if 'FIELD' in wells:
+    #         wells.pop(wells.index('FIELD'))
+    #         wells.insert(0,'Field')
+    #     return wells
+            
+    # #-----------------------------------------------------------------------
+    # def get_yaxis(self, kind):
+    # #-----------------------------------------------------------------------
+    #     well = self.get_wells('ecl')[0]
+    #     yaxis = [y.lower() for y in (self.data[kind][well]).keys()]
+    #     print(yaxis)
+    #     return yaxis
+        
+    #-----------------------------------------------------------------------
+    def on_ecl_plot_click(self):
+    #-----------------------------------------------------------------------
+        self.update_checked_list(self.sender())
+        self.create_plot()
+
+                    
+    #-----------------------------------------------------------------------
+    def create_plot_field(self):                                # main_window
+    #-----------------------------------------------------------------------
+        self.plot_group = QGroupBox()
+        self.current_view = self.plot_group
+        self.plot_group.setTitle('Plot')
+        self.plot_group.setObjectName('plot')
+        layout = QVBoxLayout()
+        self.plot_group.setLayout(layout)
+        self.layout.addWidget(self.plot_group, *self.position['plot'])
+        self.canvas = Mpl_canvas(self)
+        toolbar = NavigationToolbar(self.canvas, self)
+        layout.addWidget(toolbar)
+        layout.addWidget(self.canvas)
+        self.checked_boxes = {}
+        self.plotted_lines = {}
+
+        
+    #-----------------------------------------------------------------------
+    def create_editor_field(self):                                # main_window
+    #-----------------------------------------------------------------------
+        self.editor = QPlainTextEdit()
+        self.editor.textChanged.connect(self.activate_save)
+        self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.editor_group = QGroupBox()
+        self.editor_group.setObjectName('editor')
+        layout = QVBoxLayout()
+        self.editor_group.setLayout(layout)
+        # buttons
+        buttons = QHBoxLayout()
+        self.save_btn = QPushButton('Save')
+        self.save_btn.clicked.connect(self.save_text)
+        buttons.addWidget(self.save_btn)
+        self.undo_btn = QPushButton('Undo')
+        self.undo_btn.clicked.connect(self.editor.undo)
+        buttons.addWidget(self.undo_btn)
+        layout.addLayout(buttons)
+        # editor
+        layout.addWidget(self.editor)
+
+        
+    #-----------------------------------------------------------------------
+    def save_text(self):
+    #-----------------------------------------------------------------------
+        #print('save_text')
+        text = self.editor.toPlainText()
+        with open(self.editor.objectName(), 'w') as f:
+            f.write(text)
+        self.save_btn.setEnabled(False)
+        self.prepare_case(self.case)
+
+    #-----------------------------------------------------------------------
+    def activate_save(self):
+    #-----------------------------------------------------------------------
+        #print(self.sender())
+        self.save_btn.setEnabled(True)
+        
+    #-----------------------------------------------------------------------
+    #def on_show_manual(self, nr):                               # main_window
+    #-----------------------------------------------------------------------
+    #    return
+            
+    #-----------------------------------------------------------------------
+    def view_file(self, file, title):                                # main_window
+    #-----------------------------------------------------------------------
+        text = ''
+        if Path(file).is_file():
+            text = open(file).read()
+            self.editor.setObjectName(str(file))
+        self.editor.setPlainText(text)
+        self.editor_group.setTitle(title)
+        self.current_view.setParent(None)
+        self.layout.addWidget(self.editor_group, *self.position['plot'])
+        self.current_view = self.editor_group
+
+    #-----------------------------------------------------------------------
+    def view_input_file(self, ext=None, title=None, comment='#'):                                # main_window
+    #-----------------------------------------------------------------------
+        if self.input['root']:
+            fil = Path(self.input['root']+'.'+ext)
+            if fil.is_file():
+                self.view_file(fil, title=title+', '+str(fil.name))        
+                self.ior_highlight = Highlighter(self.editor.document(), comment=comment)
+                self.save_btn.setEnabled(False)
+
+    #-----------------------------------------------------------------------
+    def view_eclipse_input(self):                                # main_window
+    #-----------------------------------------------------------------------
+        self.view_input_file(ext='DATA', title='Eclipse input file', comment='--')
+        #if self.input['root']:
+        #    fil = self.input['root']+'.DATA'
+        #    self.view_file(fil, title='Eclipse input file, '+str(Path(fil).name))        
+        #    self.ecl_highlight = Highlighter(self.editor.document(), comment='--')
+        #    self.save_btn.setEnabled(False)
+
+        
+    #-----------------------------------------------------------------------
+    def view_iorsim_input(self):                                # main_window
+    #-----------------------------------------------------------------------
+        self.view_input_file(ext='trcinp', title='IORSim input file', comment='#')
+        #if self.input['root']:
+        #    fil = self.input['root']+'.trcinp'
+        #    self.view_file(fil, title='IORSim input file, '+str(Path(fil).name))        
+        #    self.ior_highlight = Highlighter(self.editor.document(), comment='#')
+        #    self.save_btn.setEnabled(False)
+        
+    #-----------------------------------------------------------------------
+    def view_geochem_input(self):                                # main_window
+    #-----------------------------------------------------------------------
+        self.view_input_file(ext='geocheminp', title='IORSim geochem file', comment='#')
+        #if self.input['root'] and Path(self.input['root']+'.geocheminp').is_file():
+        #    fil = self.input['root']+'.geocheminp'
+        #    self.view_file(fil, title='IORSim geochem file, '+str(Path(fil).name))        
+        #    self.ior_highlight = Highlighter(self.editor.document(), comment='#')
+        #    self.save_btn.setEnabled(False)
+        
+    #-----------------------------------------------------------------------
+    def view_log(self, file, title=None):                                # main_window
+    #-----------------------------------------------------------------------
+        self.log_file = file
+        self.view_file(self.log_file, title=title)
+        self.save_btn.setEnabled(False)
+        self.undo_btn.setEnabled(False)
+        
+    #-----------------------------------------------------------------------
+    def view_eclipse_log(self):                                # main_window
+    #-----------------------------------------------------------------------
+        if self.input['root']:
+            self.view_log(Path(self.input['root']).parent / 'eclipse.log', title='ECLIPSE logfile')
+        
+    #-----------------------------------------------------------------------
+    def view_iorsim_log(self):                                # main_window
+    #-----------------------------------------------------------------------
+        if self.input['root']:
+            self.view_log(Path(self.input['root']).parent / 'iorsim.log', title='IORSim logfile')
+    
+    #-----------------------------------------------------------------------
+    def view_program_log(self):                                # main_window
+    #-----------------------------------------------------------------------
+        if self.input['root']:
+            self.view_log(Path(self.input['root']).parent / 'ior2ecl.log', title='Program logfile')
+    
+    #-----------------------------------------------------------------------
+    def update_log(self):                                # main_window
+    #-----------------------------------------------------------------------
+        if self.log_file:
+            self.editor.setPlainText(open(self.log_file).read())
+            #self.editor.setCenterOnScroll(True)
+            #self.editor.ensureCursorVisible()
+            self.editor.moveCursor(QTextCursor.End)
+            self.save_btn.setEnabled(False)
+    
+    #-----------------------------------------------------------------------
+    def view_plot(self):                                # main_window
+    #-----------------------------------------------------------------------
+        self.current_view.setParent(None)
+        self.layout.addWidget(self.plot_group, *self.position['plot'])
+        self.current_view = self.plot_group
+        if not self.worker:
+            self.read_ior_data()
+            self.read_ecl_data()
+            self.update_all_plot_lines()
+
+            
+    #-----------------------------------------------------------------------
+    def update_checked_list(self, box): 
+    #-----------------------------------------------------------------------
+        #print('update_checked_list: '+self.sender().objectName())
+        max_3 = self.max_3_checked
+        if box.isChecked():
+            max_3.append(box)
+        else:
+            max_3.remove(box)
+        names = [b.objectName().split() for b in max_3]
+        data = [n[2] for n in names]
+        if len(set(data)) > 1:
+            # both ecl and ior are checked
+            for ie in ('ior','ecl'):
+                if data.count(ie)>2:
+                    # check if 2 yaxis or 2 wells are checked
+                    for yw in ('yaxis','well'):
+                        ind = [i for i,(a,b,c) in enumerate(names) if a==yw and c==ie]
+                        if len(ind)>1:
+                            box = max_3.pop(min(ind))
+                            set_checkbox(box, False)
+        else:
+            # only ecl or ior is checked
+            if len(max_3)>3:
+                box = max_3.pop(0)
+                set_checkbox(box, False)
+            names = [b.objectName().split()[0] for b in max_3]    
+            for key in ('yaxis','well'):
+                if names.count(key)>2:
+                    box = max_3.pop(names.index(key))
+                    set_checkbox(box, False)
+                
+            
+    #-----------------------------------------------------------------------
+    def on_specie_click(self):
+    #-----------------------------------------------------------------------
+        #print('on_specie_click')
+        specie = self.sender().objectName()
+        is_checked = self.sender().isChecked()
+        self.update_plot_line(specie, is_checked)
+        self.canvas.draw()
+
+    #-----------------------------------------------------------------------
+    def update_plot_line(self, name, is_checked):
+    #-----------------------------------------------------------------------
+        if not self.plot_lines:
+            self.create_plot_lines()
+        if not name in self.plot_lines:
+            #print(name+' not in {}'.format(self.plot_lines))
+            return
+        for ax,line in self.plot_lines[name].items():
+            #print('update_plot_line {},{}'.format(name,ax))
+            line.set_visible(is_checked)
+            if is_checked:
+                well, yaxis, var, data = line.get_label().split()
+                if not self.data[data]:
+                    return
+                xdata = self.data[data]['days']
+                ydata = self.data[data][well][yaxis][var]
+                line.set_data(xdata, ydata)
+            ax.relim(visible_only=True)
+            ax.autoscale_view()
+        if 'temp' in name.lower():
+            for ax in self.plot_lines[name].keys():
+                ax.set_visible(is_checked)
+
+            
+    #-----------------------------------------------------------------------
+    def update_plot_line_v2(self, name, is_checked):
+    #-----------------------------------------------------------------------
+        if not name in self.plot_lines:
+            # create new line
+            line, = ax[ind].plot(xdata, ydata, color=self.plot_prop['color'][var],
+                                 linestyle=self.plot_prop['line'][var], alpha=self.plot_prop['alpha'][var],
+                                 lw=2, label=well+' '+yaxis+' '+var+' '+data)
+            ax[ind].relim(visible_only=True)
+            ax[ind].autoscale_view()
+            line.set_visible(var_box[var].isChecked())
+
+        #print('update_plot_line ' + name)
+        for ax,line in self.plot_lines[name].items():
+            line.set_visible(is_checked)
+            if is_checked:
+                well, yaxis, var, data = line.get_label().split()
+                #print(var, varname)
+                line.set_data(self.data[data]['days'], self.data[data][well][yaxis][var])
+            ax.relim(visible_only=True)
+            ax.autoscale_view()
+        if name.lower() == 'temp':
+            for ax in self.plot_lines[name].keys():
+                ax.set_visible(is_checked)
+            
+
+    #-----------------------------------------------------------------------
+    def update_axes_limits(self):
+    #-----------------------------------------------------------------------
+        #try:
+        for ax in self.plot_axes:
+            ax.relim(visible_only=True)
+            ax.autoscale_view()
+        #except ValueError:
+        #    print('ValueError in update_axes_limits()')
+            
+    #-----------------------------------------------------------------------
+    def on_ior_menu_click(self):
+    #-----------------------------------------------------------------------
+        self.update_checked_list(self.sender())
+        self.create_plot()
+
+        
+    #-----------------------------------------------------------------------
+    def read_ior_data(self):
+    #-----------------------------------------------------------------------
+        #  Format:
+        #     data['days']
+        #     data[well]['conc'|'prod'][var]
+        #
+        #print('read_ior_data')
+        self.data['ior'] = {}
+        if not self.input['root']:
+            return False
+        root = Path(self.input['root'])
+        files = list(root.parent.glob(root.name+'_W_*.trc*'))
+        if len(files)<1 or not files[0].is_file() or files[0].stat().st_size<210:
+            # last check is to avoid UserWarning from genfromtxt about: Empty input file
+            return False
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            data = genfromtxt(str(files[0]))
+        if data.ndim < 2: # if ndim==1 only one line of data, abort....
+            return False
+        inp = self.input
+        ior = {}
+        for w in self.out_wells:
+            ior[w] = {}
+            ior[w]['conc'] = {}
+            ior[w]['prod'] = {}
+        for file in files:
+            if not file.is_file():
+                continue
+            # read data
+            well, yaxis = file.name.split('_W_')[-1].split('.trc')
+            if yaxis=='prd':
+                yaxis = 'prod'
+            data = genfromtxt(str(file))
+            ior['days'] = data[1:,0]
+            for i,name in enumerate(inp['species']):
+                ior[well][yaxis][name] = data[1:,i+1]
+            if 'conc' in yaxis:
+                ior[well]['conc']['Temp'] = data[1:,-1]
+                ior[well]['prod']['Temp'] = data[1:,-1]
+        self.data['ior'] = ior
+        return True
+
+    
+    #-----------------------------------------------------------------------
+    def update_axes_names(self):                   # main_window
+    #-----------------------------------------------------------------------                
+    #
+    #  Checkboxes are named 'yaxis prod ior', 'yaxis conc ior', 'yaxis rate ecl'
+    #  'well P1 ior', 'well I1 ecl'
+    #
+        #print('update_axes_names')
+        #print(self.max_3_checked)
+        name0 = [b.objectName().split()[0] for b in self.max_3_checked]    
+        y_idx = [i for i,x in enumerate(name0) if x=='yaxis']
+        w_idx = [i for i,x in enumerate(name0) if x=='well']
+        name1 = [b.objectName().split()[1] for b in self.max_3_checked]            
+        name2 = [b.objectName().split()[2] for b in self.max_3_checked]            
+        self.ioraxes_names = []
+        for y in y_idx:
+            for w in w_idx:
+                if name2[y] == name2[w]:
+                    self.ioraxes_names.append(name1[y]+' '+name1[w]+' '+name2[w])
+    
+    
+    #-----------------------------------------------------------------------
+    def create_plot(self):#, xlim=False):                         # main_window
+    #-----------------------------------------------------------------------                
+        #print('create_plot')
+        # clear figure 
+        self.canvas.fig.clf()
+        if not self.input['root']:
+            self.canvas.draw()
+            return False
+        self.update_axes_names()
+        #if len(self.canvas.fig.axes)>0:
+        #    print('AXES NOT DELETED')
+        # create new axes
+        self.temp_axis = []
+        self.plot_axes = []
+        #self.plot_axes = {}
+        nplot = len(self.ioraxes_names)
+        #print(nplot)
+        #print(self.ioraxes_names)
+        src = {'ecl':'Eclipse', 'ior':'IORSim'}
+        for i, ax_name in enumerate(self.ioraxes_names):
+            yaxis, well, data = ax_name.split()
+            ax = self.canvas.fig.add_subplot(nplot, 1, i+1)
+            #self.plot_axes[ax_name] = ax
+            self.plot_axes.append(ax)
+            ax.set_label(ax_name)
+            ax.set_xlabel('days')
+            ax.title.set_text(src[data]+', well '+well)
+            if yaxis=='conc':
+                ax.set_ylabel('concentration [mol/L]')
+            elif yaxis=='prod':
+                ylabel = 'production '
+                if data=='ior':
+                    ylabel += '[mass/day]'
+                elif data=='ecl':
+                    ylabel += '[SM3]'
+                ax.set_ylabel(ylabel)
+            elif yaxis=='rate':
+                ax.set_ylabel('rate [SM3/day]')                
+            ax.autoscale_view()
+            # add temperature axis
+            axx = ax.twinx()
+            self.plot_axes.append(axx)            
+            #self.plot_axes[ax_name+' temp'] = axx
+            if data=='ior':
+                axx.set_visible(self.ior_boxes['var']['Temp'].isChecked())
+            elif data=='ecl':
+                axx.set_visible(self.ecl_boxes['var']['Temp_ecl'].isChecked())
+            #axx.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+            axx.ticklabel_format(axis='y', style='plain', useOffset=False) #scilimits=[-1,1])
+            axx.set_label('Temp '+ax_name)
+            axx.set_ylabel('Temperature [C]')
+            axx.autoscale_view()
+            #if self.worker:
+            #    ax.set_xlim(*self.xlim)
+            #    axx.set_xlim(*self.xlim)
+        self.create_plot_lines()
+        self.canvas.fig.subplots_adjust(top=.93, hspace=0.4, right=.87)
+        self.canvas.draw()
+        return True
+
+    
+    #-----------------------------------------------------------------------
+    def create_plot_lines(self):
+    #-----------------------------------------------------------------------
+        self.plot_lines = {}
+        lines = {}        
+        ax = self.plot_axes   # or self.canvas.fig.axes
+        for i, ax_name in enumerate(self.ioraxes_names):
+            yaxis, well, data = ax_name.split()
+            if not self.data[data]:
+                return
+            xdata = self.data[data]['days']
+            if data=='ior':
+                var_box = self.ior_boxes['var']
+            elif data=='ecl':
+                var_box = self.ecl_boxes['var']
+            var_list = var_box.keys() 
+            for var in var_list:#+['Temp']:
+                #print(data, well, yaxis, var)
+                try:
+                    ydata = self.data[data][well][yaxis][var]
+                except KeyError:
+                    continue
+                if len(xdata) != len(ydata):
+                    #print('Size mismatch: {},{}'.format(len(xdata),len(ydata)))
+                    continue
+                if 'temp' in var.lower():
+                    #print(var)
+                    ind = i*2+1 # extra right axis for temperature
+                else:
+                    ind = i*2   # main axes
+                line, = ax[ind].plot(xdata, ydata, color=self.plot_prop['color'][var],
+                                     linestyle=self.plot_prop['line'][var], alpha=self.plot_prop['alpha'][var],
+                                     lw=2, label=well+' '+yaxis+' '+var+' '+data)
+                ax[ind].relim(visible_only=True)
+                ax[ind].autoscale_view()
+                line.set_visible(var_box[var].isChecked())
+                if var not in lines:
+                    lines[var] = {}
+                lines[var][ax[ind]] = line
+            self.plot_lines = lines
+            
+            
+        
+    #-----------------------------------------------------------------------
+    def update_remaining_time(self, text='0:00:00'):           # main_window
+    #-----------------------------------------------------------------------
+        self.remaining_time.setText('Remaining time:  ' + text)
+        self.remaining_time.repaint()
+
+
+    #-----------------------------------------------------------------------
+    def update_all_plot_lines(self): #, read_data=True):
+    #-----------------------------------------------------------------------
+        # update plot-lines
+        #if read_data:
+        #    self.read_ior_data()
+        #    self.read_ecl_data()
+        if not self.plot_lines:
+            self.create_plot_lines()
+        for name,ax_line in self.plot_lines.items():
+            for ax,line in ax_line.items():
+                #print(var, ax, line)
+                well, yaxis, var, data = line.get_label().split()
+                if not self.data[data]:
+                    return
+                if data=='ior':
+                    is_checked = self.ior_boxes['var'][name].isChecked()
+                else: # data=='ecl'
+                    is_checked = self.ecl_boxes['var'][name].isChecked()
+                line.set_visible(is_checked)
+                if is_checked:
+                    try:
+                        xdata = self.data[data]['days']
+                        ydata = self.data[data][well][yaxis][var]
+                        line.set_data(xdata, ydata)
+                    except KeyError:
+                        pass
+                #try:
+                #    ax.relim(visible_only=True)
+                #    ax.autoscale_view()
+                #except ValueError:
+                #    print('ValueError in update_all_plot_lines()')
+                #    #pass
+        try:
+            self.update_axes_limits()
+            self.canvas.draw()
+        except ValueError:
+            print('ValueError!')
+
+    #-----------------------------------------------------------------------
+    def update_progressbar(self, t):
+    #-----------------------------------------------------------------------
+        if t>=0:
+            self.progressbar.setValue(t)
+
+    #-----------------------------------------------------------------------
+    def reset_progressbar(self, N=1):
+    #-----------------------------------------------------------------------
+        self.progressbar.reset()
+        #print(N)
+        self.progressbar.setMaximum(N)
+        self.progressbar.setValue(0)
+
+    #-----------------------------------------------------------------------
+    def update_progress(self, t):
+    #-----------------------------------------------------------------------
+        if t<0: # and self.days is not None and len(self.days)>1:
+            try:
+                t = int(self.days[-1])
+            except (ValueError, TypeError):
+                t = 0
+                #t = -1
+            finally:
+                if self.worker:
+                    self.worker.t = t
+        #print(t)
+        self.update_progressbar(t)
+        self.update_remaining_time( self.progress.remaining_time(t) )
+        
+    #-----------------------------------------------------------------------
+    def update_view_area(self):
+    #-----------------------------------------------------------------------
+        if self.mode == 'backward':
+            self.read_ior_data()
+            self.read_ecl_data()
+
+        self.days = None
+        if self.mode == 'forward' and self.worker and self.worker.current:
+            run = self.worker.current
+            if run=='ecl':
+                self.read_ecl_data()
+            if run=='ior':
+                self.read_ior_data()
+            if self.data.get(run):
+                self.days = (self.data[run]).get('days')
+
+        if self.current_view.objectName()=='plot':
+            self.update_all_plot_lines()
+        elif self.current_view.objectName()=='editor':
+            self.update_log()
+
+    #-----------------------------------------------------------------------
+    def input_OK(self):
+    #-----------------------------------------------------------------------
+        i = self.input
+        if i['nsteps']==0:
+            show_message(self, 'error', text='Number of timesteps missing.')
+            return False
+        #if i['dt']==0:
+        if not self.settings.get['dt']():
+            show_message(self, 'error', text='Timestep missing in settings.')
+            self.settings.open()
+            return False
+        if not i['root']:
+            show_message(self, 'error', text='No input-case selected.')
+            return False
+        if not self.settings.get['iorsim']():
+            show_message(self, 'error', text='IORSim program missing in Settings')
+            self.settings.open()
+            return False
+        return True
+    
+        
+    #-----------------------------------------------------------------------
+    def run(self):                                    # main_window
+    #-----------------------------------------------------------------------
+        runmode = {'forward':self.run_forward, 'backward':self.run_backward}
+        runmode[self.mode]()
+
+        
+    #-----------------------------------------------------------------------
+    def set_toolbar_enabled(self, value):                                  # main_window
+    #-----------------------------------------------------------------------
+        self.start_act.setEnabled(value)
+        self.case_cb.setEnabled(value)
+        self.dt_box.setEnabled(value)
+        self.nstep_box.setEnabled(value)
+        self.sim_cb.setEnabled(value)
+
+        
+    #-----------------------------------------------------------------------
+    def run_backward(self):                                    # main_window
+    #-----------------------------------------------------------------------
+        if not self.input_OK():
+            return
+        i = self.input
+        s = self.settings
+        self.unsmry = None
+        # clear messages and progress
+        self.update_message()
+        self.update_remaining_time()
+        self.reset_progressbar(N=i['nsteps'])
+        self.progress = Progress(N=i['nsteps'])
+        # disable Start button
+        self.set_toolbar_enabled(False)
+        #self.start_act.setEnabled(False)
+        #self.case_cb.setEnabled(False)
+        # create ior2ecl instance
+        sim = ior2ecl(root=i['root'], dt=s.get['dt'](), nsteps=i['nsteps'],
+                      iorsim=self.settings.get['iorsim'](),
+                      eclrun=self.settings.get['eclrun'](),
+                      check_unrst=self.settings.get['unrst'](),
+                      check_rft=self.settings.get['rft'](),
+                      to_screen=to_screen, quiet=quiet)
+        # thread running the simulation
+        self.worker = Backward(sim)
+        self.worker.signals.status_message.connect(self.update_message)
+        self.worker.signals.show_message.connect(self.show_message)
+        self.worker.signals.progress.connect(self.update_progress)
+        self.worker.signals.plot.connect(self.update_view_area)
+        self.worker.signals.finished.connect(self.run_finished)
+        self.threadpool.start(self.worker)
+
+    #-----------------------------------------------------------------------
+    def run_forward(self):                                  # main_window
+    #-----------------------------------------------------------------------
+        if not self.input_OK():
+            return
+        i = self.input
+        # clear messages and progress
+        self.update_message()
+        self.update_remaining_time()
+        self.reset_progressbar(N=i['TSTEP'])
+        self.progress = Progress(N=i['TSTEP'])
+        # disable start button
+        self.set_toolbar_enabled(False)
+        #self.start_act.setEnabled(False)
+        #self.case_cb.setEnabled(False)
+        # create ior2ecl instance
+        #sim = ior2ecl(root=i['root'], dt=i['dt'],
+        s = self.settings
+        sim = ior2ecl(root=i['root'],
+                      iorsim=s.get['iorsim'](),
+                      eclrun=s.get['eclrun'](),
+                      to_screen=to_screen, quiet=quiet,
+                      readdata=False)
+        # thread running the simulation
+        self.worker = Forward(sim)
+        self.worker.signals.status_message.connect(self.update_message)
+        self.worker.signals.show_message.connect(self.show_message)
+        self.worker.signals.plot.connect(self.update_view_area)
+        self.worker.signals.progress.connect(self.update_progress)
+        self.worker.signals.finished.connect(self.run_finished)
+        self.threadpool.start(self.worker)
+
+
+    #-----------------------------------------------------------------------
+    def show_message(self, par):
+    #-----------------------------------------------------------------------
+        #show_message(self, 'error', text=text)
+        show_message(self, par[0], text=par[1])
+        
+    #-----------------------------------------------------------------------
+    def run_finished(self):
+    #-----------------------------------------------------------------------
+        self.set_toolbar_enabled(True)
+        if self.mode=='forward':
+            self.dt_box.setEnabled(False)
+            self.nstep_box.setEnabled(False)
+        #self.start_act.setEnabled(True)
+        #self.case_cb.setEnabled(True)
+        self.worker = None
+        self.convert_FUNRST()
+
+    #-----------------------------------------------------------------------
+    def convert_FUNRST(self):
+    #-----------------------------------------------------------------------
+        # convert FUNRST to UNRST
+        self.convert = Convert(self.input['root'])
+        if not Path(self.convert.funrst).is_file() or self.progressbar.value() < 1:
+            return
+        self.convert.signals.progress.connect(self.update_progressbar)
+        self.convert.signals.finished.connect(self.convert_finished)
+        self.convert.signals.status_message.connect(self.update_message)
+        self.convert.signals.show_message.connect(self.show_message)
+        self.progressbar.reset()
+        #self.progressbar.setMaximum(self.input['nsteps'])
+        self.progressbar.setMaximum(len(self.data['ior']['days']))
+        self.progressbar.setValue(0)
+        self.threadpool.start(self.convert)
+
+        
+    #-----------------------------------------------------------------------
+    def convert_finished(self):
+    #-----------------------------------------------------------------------
+        self.convert = None
+
+    #-----------------------------------------------------------------------
+    def killsim(self):                                          # main_window
+    #-----------------------------------------------------------------------
+        if self.worker:
+            self.worker.signals.stop.emit()
+            while not self.worker.finished:
+                #print('sleep')
+                sleep(0.1)
+            
+        
+    #-----------------------------------------------------------------------
+    def quit(self):                                            # main_window
+    #-----------------------------------------------------------------------
+        self.killsim()
+        #self.settings.close()
+        self.help_win.close()
+        #self.write_casefile()
+        #self.write_case_dir()
+        self.save_input()
+        qApp.quit()
+                
+
+    #-----------------------------------------------------------------------
+    def update_message(self, text=''):
+    #-----------------------------------------------------------------------
+        self.messages.setText(text)
+        
+### 
+###  Adapted from code at:         
+###  https://github.com/pyside/Examples/blob/master/examples/richtext/syntaxhighlighter.py
+###
+class Highlighter(QSyntaxHighlighter):
+    def __init__(self, parent=None, comment='#', color=Qt.gray):
+        super(Highlighter, self).__init__(parent)
+
+        #keywordFormat = QTextCharFormat()
+        #keywordFormat.setForeground(Qt.darkBlue)
+        #keywordFormat.setFontWeight(QFont.Bold)
+
+        #keywordPatterns = ["\\b*TEMPERATURE\\b", "\\b*INTEGRATION\\b", "\\b*MODELTYPE\\b"]
+        #self.highlightingRules = [(QRegExp(pattern), keywordFormat) for pattern in keywordPatterns]
+        self.highlightingRules = []
+        singleLineCommentFormat = QTextCharFormat()
+        singleLineCommentFormat.setForeground(color)
+        self.highlightingRules.append((QRegExp(comment+'[^\n]*'), singleLineCommentFormat))
+
+    def highlightBlock(self, text):
+        for pattern, format in self.highlightingRules:
+            expression = QRegExp(pattern)
+            index = expression.indexIn(text)
+            while index >= 0:
+                length = expression.matchedLength()
+                self.setFormat(index, length, format)
+                index = expression.indexIn(text, index + length)
+
+                
+                
+###################################
+#                                 #
+#            M A I N              #
+#                                 #
+###################################
+
+if __name__ == '__main__':
+    assert_python_version(major=3, minor=6)
+    app = QApplication(sys.argv) 
+    #app.setFont(QFont(default_font, pointSize=default_size, weight=default_weight))
+    #app.setWindowIcon(QIcon('ior2ecl_logo.png'))
+    window = main_window()
+    app.exec()
+        
+    exit_without_atexit()
+
+    
