@@ -10,7 +10,7 @@ from shutil import which
 from datetime import datetime
 from time import sleep
 
-from IORlib.utils import safeopen, Progress, check_endtag, warn_empty_file, loop_until, silentdelete, assert_python_version, exit_without_atexit, delete_files_matching
+from IORlib.utils import safeopen, Progress, check_endtag, warn_empty_file, loop_until, silentdelete, assert_python_version, exit_without_atexit, delete_files_matching, file_contains
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks
 
@@ -77,13 +77,15 @@ def parse_input():
 
 
 #--------------------------------------------------------------------------------
-def wait_for(runner, func, *args, log=False, assert_running=True, error=None, raise_error=True, limit=100000, sleep_sec=0.01, kill_func=None, **kwargs):
+def wait_for(runner, func, *args, log=False, assert_running=True, error=None, raise_error=True,
+             limit=100000, sleep_sec=0.01, kill_func=None, **kwargs):
 #--------------------------------------------------------------------------------
     runner._print('calling wait_for( ' + func.__qualname__ + ' )...', v=3, end='')
     if assert_running:
         assert_running = runner.assert_running
     try:
-        n = loop_until(func, *args, **kwargs, limit=limit, assert_running=assert_running, error=error, sleep_sec=sleep_sec, kill_func=kill_func)
+        n = loop_until(func, *args, **kwargs, limit=limit, assert_running=assert_running,
+                       error=error, sleep_sec=sleep_sec, kill_func=kill_func)
         runner._print(' {:d} loops'.format(n), v=3, tag='')
         if callable(log):
             runner._print(log())
@@ -102,7 +104,9 @@ def wait_for(runner, func, *args, log=False, assert_running=True, error=None, ra
 class ior2ecl:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, root=None, dt=None, nsteps=None, eclrun='eclrun', iorsim='IORSimX', iorargs='', v=3, timer=False, keep_files=False, to_screen=True, quiet=False, check_unrst=True, check_rft=True, readdata=True):
+    def __init__(self, root=None, dt=None, nsteps=None, eclrun='eclrun', iorsim='IORSimX',
+                 iorargs='', v=3, timer=False, keep_files=False, to_screen=True, quiet=False,
+                 check_unrst=True, check_rft=True, readdata=True):
     #--------------------------------------------------------------------------------
         self.name = 'ior2ecl'
         self.starttime = datetime.now()
@@ -145,26 +149,31 @@ class ior2ecl:
         if not to_screen and not quiet:
             self.progress = Progress(N=self.nsteps)
 
+    #--------------------------------------------------------------------------------
+    def _runner(self, name=None, case=None, cmd=None, ext_iface=None, ext_OK=None):
+    #--------------------------------------------------------------------------------
+        return runner(name=name, case=case, cmd=cmd, ext_iface=ext_iface, ext_OK=ext_OK,
+                      verbose=self.v, timer=self.timer, runlog=self.runlog)
+            
             
     #--------------------------------------------------------------------------------
-    def init_runs(self):
+    def init_eclipse_run(self):
     #--------------------------------------------------------------------------------
-        ### helper function to simplify init of ecl and ior
-        def myrunner(name=None, case=None, cmd=None, ext_iface=None, ext_OK=None):
-            return runner(name=name, case=case, cmd=cmd, ext_iface=ext_iface, ext_OK=ext_OK,
-                          verbose=self.v, timer=self.timer, runlog=self.runlog)
-
         ### init Eclipse
-        self.ecl = myrunner(name = 'Eclipse',
-                            case = self.root,
-                            cmd  = [self.eclrun, 'eclipse', self.root],
-                            ext_iface = 'I{:04d}',
-                            ext_OK = 'OK')
+        self.ecl = self._runner(name = 'Eclipse',
+                                case = self.root,
+                                cmd  = [self.eclrun, 'eclipse', self.root],
+                                ext_iface = 'I{:04d}',
+                                ext_OK = 'OK')
         self.unrst = Path(self.root+'.UNRST')
         self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
         self.rft = Path(self.root+'.RFT')
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
     
+        
+    #--------------------------------------------------------------------------------
+    def init_iorsim_run(self):
+    #--------------------------------------------------------------------------------
         ### init IORSim
         # IORSim only accepts root relative to the current directory
         root = Path(self.root)
@@ -174,14 +183,22 @@ class ior2ecl:
         cmd = [self.iorsim, '-root_name={}'.format(root)]
         if self.readdata:
             cmd.append('-readdata')
-        self.ior = myrunner(name = 'IORSim',
-                            case = self.root,
-                            cmd = cmd + list(self.iorargs.split()),
-                            ext_iface = 'IORSimI{:04d}',
-                            ext_OK = 'IORSimOK')
+        self.ior = self._runner(name = 'IORSim',
+                                case = self.root,
+                                cmd = cmd + list(self.iorargs.split()),
+                                ext_iface = 'IORSimI{:04d}',
+                                ext_OK = 'IORSimOK')
         self.satnum = Path('satnum.dat')
         self.satnum_check = check_endtag(file=self.satnum, endtag='-- IORSimX done.')
 
+        
+    #--------------------------------------------------------------------------------
+    def init_runs(self):
+    #--------------------------------------------------------------------------------
+        self.init_eclipse_run()
+        self.init_iorsim_run()
+
+        
     #--------------------------------------------------------------------------------
     def check_UNRST_file(self, kill_func=None):
     #--------------------------------------------------------------------------------
@@ -363,62 +380,66 @@ class ior2ecl:
 
     
     #--------------------------------------------------------------------------------
+    def terminate_eclipse_run(self):
+    #--------------------------------------------------------------------------------
+        self.print2log('\nTerminating Eclipse')
+        ecl = self.ecl
+        self.ecl.resume()
+        self.ecl.wait_for_process_to_quit()
+        self.clean_up(self.ecl)        
+
+        
+    #--------------------------------------------------------------------------------
+    def terminate_iorsim_run(self):
+    #--------------------------------------------------------------------------------
+        self.print2log('\nTerminating IORSim')
+        self.ior.interface_file(self.nsteps+2).append('Quit')
+        self.ior.OK_file().create_empty()
+        self.ior.resume()
+        self.ior.wait_for_process_to_quit()
+        self.clean_up(self.ior)
+
+        
+    #--------------------------------------------------------------------------------
     def terminate_runs(self):
     #--------------------------------------------------------------------------------
-        ### terminating
-        self.print2log('\nTerminating processes')
-        ### Eclipse
-        ecl = self.ecl
-        ecl.resume()
-        ecl.wait_for_process_to_quit()
-        ### IORSim
-        ior = self.ior
-        ior.interface_file(self.nsteps+2).append('Quit')
-        ior.OK_file().create_empty()
-        ior.resume()
-        ior.wait_for_process_to_quit()
+        self.terminate_eclipse_run()
+        self.terminate_iorsim_run()
+
         
+    #--------------------------------------------------------------------------------
+    def clean_up(self, run):
+    #--------------------------------------------------------------------------------
         ### cleaning up
         if not self.keep_files:
-            ecl.interface_file('all').delete()
-            ior.interface_file('all').delete()
+            run.interface_file('all').delete()
         if not self.quiet:
             print()
+        
 
+    #--------------------------------------------------------------------------------
+    def kill_run(self, run):
+    #--------------------------------------------------------------------------------
+        self.print2log('\nKilling processes')
+        run.kill()
+        self.clean_up(run)
 
     #--------------------------------------------------------------------------------
     def kill_eclipse(self):
     #--------------------------------------------------------------------------------
-        ### terminating
-        self.print2log('\nKilling Eclipse')
-        ### Eclipse
-        self.ecl.kill()
-        ### cleaning up
-        if not self.keep_files:
-            self.ecl.interface_file('all').delete()
-        if not self.quiet:
-            print()
-
+        self.kill_run(self.ecl)
 
     #--------------------------------------------------------------------------------
     def kill_iorsim(self):
     #--------------------------------------------------------------------------------
-        ### terminating
-        self.print2log('\nKilling IORSim')
-        ### IORSim
-        self.ior.kill()
-        ### cleaning up
-        if not self.keep_files:
-            self.ior.interface_file('all').delete()
-        if not self.quiet:
-            print()
+        self.kill_run(self.ior)
 
     #--------------------------------------------------------------------------------
     def kill_runs(self):
     #--------------------------------------------------------------------------------
-        self.kill_eclipse()
-        self.kill_iorsim()
-        
+        self.kill_run(self.ecl)
+        self.kill_run(self.ior)
+
         
     #--------------------------------------------------------------------------------
     def check_eclipse_input(self):
@@ -431,56 +452,38 @@ class ior2ecl:
         ### check root.DATA exists and if READDATA keyword is present or not
         data = self.root + '.DATA'
         if Path(data).is_file():
-            readdata_found = False
-            with open(data, 'r') as f:
-                for line in f:
-                    if not line.startswith('--') and 'READDATA' in line:
-                        readdata_found = True 
-            if self.readdata and not readdata_found:
-                raise_error('The current case cannot be used in backward-mode because the READDATA keyword is missing in the Eclipse DATA-file.')
-            if not self.readdata and readdata_found:
-                raise_error('The current case cannot be used in forward-mode because the READDATA keyword is given in the Eclipse DATA-file.')
-        else:
-            raise_error(' Eclipse DATA file is missing: ' + data)
+            DATA_with_readdata = file_contains(data, text='READDATA', comment='--')
+            if DATA_with_readdata and not self.readdata:
+                raise SystemError('The current case cannot be used in forward-mode: '+
+                                  'the Eclipse DATA-file contains the READDATA keyword.')
+            if not DATA_with_readdata and self.readdata:
+                # READDATA is missing
+                raise SystemError('The current case cannot be used in backward-mode: '+
+                                  'the Eclipse DATA-file is missing the READDATA keyword.')
 
             
     #--------------------------------------------------------------------------------
-    def check_input(self):
+    def check_iorsim_input(self):
     #--------------------------------------------------------------------------------
-        def raise_error(string):
-            raise SystemError(string)
-        
-        def check_executable(exe):
-            if which(exe) is None:
-                raise_error('Executable not found: ' + exe)
-
         if '.exe' not in self.iorsim and sys.platform == 'win32':
             self.iorsim += '.exe'
 
         ### check if executables exist on the system
-        check_executable(self.eclrun)
-        check_executable(self.iorsim)
+        exe = self.iorsim
+        if which(exe) is None:
+            raise SystemError('Executable not found: ' + exe)
 
         ### check root.trcinp exists
         inp_file = self.root + '.trcinp'
         if not Path(inp_file).is_file():
             raise_error('IORSim input file, ' + inp_file + ', is missing!')
 
-        ### check root.DATA exists and that READDATA keyword is present
-        data = self.root + '.DATA'
-        if Path(data).is_file():
-            readdata_found = False
-            with open(data, 'r') as f:
-                for line in f:
-                    if not line.startswith('--') and 'READDATA' in line:
-                        readdata_found = True 
-            if self.readdata and not readdata_found:
-                raise_error('The current case cannot be used in backward-mode because the READDATA keyword is missing in the Eclipse DATA-file.')
-            if not self.readdata and readdata_found:
-                raise_error('The current case cannot be used in forward-mode because the READDATA keyword is given in the Eclipse DATA-file.')
-        else:
-            raise_error(' Eclipse DATA file is missing: ' + data)
 
+    #--------------------------------------------------------------------------------
+    def check_input(self):
+    #--------------------------------------------------------------------------------
+        self.check_eclipse_input()
+        self.check_iorsim_input()
             
         
     #--------------------------------------------------------------------------------
