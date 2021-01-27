@@ -169,6 +169,10 @@ class ior2ecl:
         self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
         self.rft = Path(self.root+'.RFT')
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
+        # check input
+        self.check_eclipse_input()
+        # delete output from previous runs
+        self.delete_eclipse_files()
     
         
     #--------------------------------------------------------------------------------
@@ -190,14 +194,31 @@ class ior2ecl:
                                 ext_OK = 'IORSimOK')
         self.satnum = Path('satnum.dat')
         self.satnum_check = check_endtag(file=self.satnum, endtag='-- IORSimX done.')
+        # check input
+        self.check_iorsim_input()
+        # delete output from previous runs
+        self.delete_iorsim_files()
 
-        
+    
     #--------------------------------------------------------------------------------
-    def init_runs(self):
+    def init_runs(self, run='all'):
     #--------------------------------------------------------------------------------
-        self.init_eclipse_run()
-        self.init_iorsim_run()
-
+        eclipse = True
+        iorsim = True
+        if run != 'all':
+            run = run.strip().lower()
+            eclipse = run=='eclipse'
+            iorsim = run=='iorsim'
+        if not eclipse and not iorsim:
+            raise SystemError('init_runs(): Unknown run-argument, ' + run)
+        runs = []
+        if eclipse:
+            self.init_eclipse_run()
+            runs.append(self.ecl)
+        if iorsim:
+            self.init_iorsim_run()
+            runs.append(self.ior)
+        return runs
         
     #--------------------------------------------------------------------------------
     def check_UNRST_file(self, kill_func=None):
@@ -239,6 +260,15 @@ class ior2ecl:
         delete_files_matching(self.root+'*.FUNRST')
 
         
+    # #--------------------------------------------------------------------------------
+    # def delete_files(self):
+    # #--------------------------------------------------------------------------------
+    #     if self.run_eclipse:
+    #         self.delete_eclipse_files()
+    #     if self.run_iorsim:
+    #         self.delete_iorsim_files()
+
+        
     #--------------------------------------------------------------------------------
     def start_eclipse(self, kill_func=None):
     #--------------------------------------------------------------------------------
@@ -249,7 +279,7 @@ class ior2ecl:
         ecl.interface_file('all').delete()
         [ecl.interface_file(i).create_empty() for i in range(1, self.nsteps+1)] # create all now to avoid Eclipse termination
         ecl.OK_file().delete()
-        self.delete_eclipse_files()
+        #self.delete_eclipse_files()
         ecl.start()
         wait_for( ecl, self.unrst.exists, error=self.unrst.name+' not created', kill_func=kill_func )
         wait_for( ecl, self.rft.exists, error=self.rft.name+' not created', kill_func=kill_func )
@@ -284,7 +314,7 @@ class ior2ecl:
         ior.OK_file().create_empty()
         #delete_files_matching(self.root+'*.trcconc')
         #delete_files_matching(self.root+'*.trcprd')
-        self.delete_iorsim_files()
+        #self.delete_iorsim_files()
         ior.start()    
         wait_for( ior, ior.OK_file().is_deleted, error=ior.OK_file().name()+' not deleted', kill_func=kill_func )
         ior.suspend()
@@ -318,7 +348,6 @@ class ior2ecl:
         for f in open_files:
             if Path(f.path).name == self.rft.name:
                 print(f)
-
         
     #--------------------------------------------------------------------------------
     def check_RFT_size(self):
@@ -332,7 +361,6 @@ class ior2ecl:
         else:
             return False
 
-        
     #--------------------------------------------------------------------------------
     def run_one_step(self, t, kill_func=None):
     #--------------------------------------------------------------------------------
@@ -378,34 +406,42 @@ class ior2ecl:
             message += ', {} : {:.2f}'.format(rft['start'].rstrip(), rft['values'][0]) 
         return message
 
-    
     #--------------------------------------------------------------------------------
-    def terminate_eclipse_run(self):
+    def terminate(run):
     #--------------------------------------------------------------------------------
-        self.print2log('\nTerminating Eclipse')
-        ecl = self.ecl
-        self.ecl.resume()
-        self.ecl.wait_for_process_to_quit()
-        self.clean_up(self.ecl)        
+        self.print2log('\nTerminating ' + run.name)
+        run.resume()
+        run.wait_for_process_to_quit()
+        self.clean_up(run)        
+            
+    #--------------------------------------------------------------------------------
+    def terminate_eclipse(self):
+    #--------------------------------------------------------------------------------
+        self.terminate_run(self.ecl)
+        #self.print2log('\nTerminating Eclipse')
+        #ecl = self.ecl
+        #self.ecl.resume()
+        #self.ecl.wait_for_process_to_quit()
+        #self.clean_up(self.ecl)        
 
         
     #--------------------------------------------------------------------------------
-    def terminate_iorsim_run(self):
+    def terminate_iorsim(self):
     #--------------------------------------------------------------------------------
-        self.print2log('\nTerminating IORSim')
         self.ior.interface_file(self.nsteps+2).append('Quit')
         self.ior.OK_file().create_empty()
-        self.ior.resume()
-        self.ior.wait_for_process_to_quit()
-        self.clean_up(self.ior)
+        self.terminate_run(self.ior)
+        #self.print2log('\nTerminating IORSim')
+        #self.ior.resume()
+        #self.ior.wait_for_process_to_quit()
+        #self.clean_up(self.ior)
 
         
     #--------------------------------------------------------------------------------
     def terminate_runs(self):
     #--------------------------------------------------------------------------------
-        self.terminate_eclipse_run()
-        self.terminate_iorsim_run()
-
+        self.terminate_eclipse()
+        self.terminate_iorsim()
         
     #--------------------------------------------------------------------------------
     def clean_up(self, run):
@@ -424,15 +460,15 @@ class ior2ecl:
         run.kill()
         self.clean_up(run)
 
-    #--------------------------------------------------------------------------------
-    def kill_eclipse(self):
-    #--------------------------------------------------------------------------------
-        self.kill_run(self.ecl)
+    # #--------------------------------------------------------------------------------
+    # def kill_eclipse(self):
+    # #--------------------------------------------------------------------------------
+    #     self.kill_run(self.ecl)
 
-    #--------------------------------------------------------------------------------
-    def kill_iorsim(self):
-    #--------------------------------------------------------------------------------
-        self.kill_run(self.ior)
+    # #--------------------------------------------------------------------------------
+    # def kill_iorsim(self):
+    # #--------------------------------------------------------------------------------
+    #     self.kill_run(self.ior)
 
     #--------------------------------------------------------------------------------
     def kill_runs(self):
@@ -479,11 +515,11 @@ class ior2ecl:
             raise_error('IORSim input file, ' + inp_file + ', is missing!')
 
 
-    #--------------------------------------------------------------------------------
-    def check_input(self):
-    #--------------------------------------------------------------------------------
-        self.check_eclipse_input()
-        self.check_iorsim_input()
+    # #--------------------------------------------------------------------------------
+    # def check_input(self):
+    # #--------------------------------------------------------------------------------
+    #     self.check_eclipse_input()
+    #     self.check_iorsim_input()
             
         
     #--------------------------------------------------------------------------------

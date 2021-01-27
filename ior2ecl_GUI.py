@@ -465,17 +465,20 @@ class Backward(Base_worker):
         msg = err = ''
         t = 0
         try:            
-            sim.check_input()
+            #sim.check_input()
             sim.init_runs()
         except SystemError as e:
                 self.show_message(('error', str(e)))
                 return
         try:
-            self.status_message('Starting Eclipse and IORSim...')
-            sim.start_runs(kill_func=self.is_killed)
-            self.status_message('Eclipse and IORSim started')
-            if self.is_killed():
-                raise SystemError('Run cancelled')
+            self.status_message('Starting Eclipse...')
+            sim.start_eclipse(kill_func=self.is_killed)
+            self.status_message('Starting IORSim...')
+            sim.start_iorsim(kill_func=self.is_killed)
+            #sim.start_runs(kill_func=self.is_killed)
+            #self.status_message('Eclipse and IORSim started')
+            #if self.is_killed():
+            #    raise SystemError('Run cancelled')
             # start timestep loop
             for self.t in range(1, sim.nsteps+1):
                 sim.run_one_step(self.t, kill_func=self.is_killed)                
@@ -511,10 +514,10 @@ class Backward(Base_worker):
 #===========================================================================
 class Forward(Base_worker):                                              
 #===========================================================================
-    def __init__(self, sim, kind=None, *args, **kwargs):
+    def __init__(self, sim, run='all', *args, **kwargs):
         super(Forward, self).__init__()
         self.sim = sim
-        self.kind = kind
+        self.run = run
         self.current = None
         
     @pyqtSlot()
@@ -532,30 +535,20 @@ class Forward(Base_worker):
         sim = self.sim
         try:
             msg = None
-            sim.check_input()
-            sim.init_runs()
-            # deleting previous output-files
-            sim.delete_eclipse_files()
-            sim.delete_iorsim_files()
-            self.update_progress(0)
-            # start Eclipse
-            self.status_message('Starting Eclipse...')
-            sim.ecl.start()
-            self.current = 'ecl'
-            self.status_message('Eclipse running')
-            sim.ecl.wait_for_process_to_quit(sleep_sec=1, wait_func=self.wait_func, wait=2, kill_func=self.is_killed)
-            self.wait_func()
-            self.current = None
-            self.update_progress(0)
-            # start IORSim
-            self.status_message('Starting IORSim...')
-            sim.ior.start()
-            self.current = 'ior'
-            self.status_message('IORSim running')
-            sim.ior.wait_for_process_to_quit(sleep_sec=1, wait_func=self.wait_func, wait=2, kill_func=self.is_killed)
-            self.wait_func()
-            #self.current = 'None'
-            self.status_message('Simulation completed')
+            runs = sim.init_runs(run=self.run)
+            for run in runs:
+                # start run
+                self.status_message('Starting ' + run.name)
+                self.update_progress(0)
+                run.start()
+                self.current = run.name.lower()[:3] # 'ecl' or 'ior'
+                self.status_message(run.name + ' running')
+                run.wait_for_process_to_quit(sleep_sec=1, wait_func=self.wait_func, wait=2, kill_func=self.is_killed)
+                self.wait_func()
+                self.current = None
+                self.update_progress(0)
+                #if self.run=='eclipse':
+            self.status_message('Simulation complete')                
         except (SystemError, ProcessLookupError, psutil.NoSuchProcess) as e:
             msg = str(e)
             kind = 'error'
@@ -2374,10 +2367,13 @@ class main_window(QMainWindow):                                    # main_window
         self.days = None
         if self.mode == 'forward' and self.worker and self.worker.current:
             run = self.worker.current
-            if run=='ecl':
+            #print(run)
+            if run in ('ecl','eclipse'):
                 self.read_ecl_data()
-            if run=='ior':
+                run = 'ecl'
+            if run in ('ior','iorsim'):
                 self.read_ior_data()
+                run = 'ior'
             if self.data.get(run):
                 self.days = (self.data[run]).get('days')
 
