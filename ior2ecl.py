@@ -223,7 +223,7 @@ class ior2ecl:
 
         
     #--------------------------------------------------------------------------------
-    def start_runs(self, kill_func=None):
+    def start_eclipse(self, kill_func=None):
     #--------------------------------------------------------------------------------
         ### start Eclipse
         if not self.quiet:
@@ -233,9 +233,6 @@ class ior2ecl:
         [ecl.interface_file(i).create_empty() for i in range(1, self.nsteps+1)] # create all now to avoid Eclipse termination
         ecl.OK_file().delete()
         self.delete_eclipse_files()
-        #silentdelete( [self.unrst, self.rft] + [self.root+ext for ext in ('.SMSPEC','.UNSMRY','.RTELOG','RTEMSG')],
-        #              echo=True )
-        #silentdelete(self.rft)
         ecl.start()
         wait_for( ecl, self.unrst.exists, error=self.unrst.name+' not created', kill_func=kill_func )
         wait_for( ecl, self.rft.exists, error=self.rft.name+' not created', kill_func=kill_func )
@@ -254,8 +251,12 @@ class ior2ecl:
             self.rft_size = int(0.5*self.rft.stat().st_size)
             if 2*self.rft_size != self.rft.stat().st_size:
                 print('WARNING! Initial size of RFT size not even!')
-        
-    
+
+                
+                
+    #--------------------------------------------------------------------------------
+    def start_iorsim(self, kill_func=None):
+    #--------------------------------------------------------------------------------
         ### start IORSim
         if not self.quiet:
             print('\n  Starting IORSim...', end='', flush=True)
@@ -276,6 +277,13 @@ class ior2ecl:
             print('  ' + ior.timer.info) if ior.timer else None
     
     
+    #--------------------------------------------------------------------------------
+    def start_runs(self, kill_func=None):
+    #--------------------------------------------------------------------------------
+        self.start_eclipse(kill_func=kill_func)
+        self.start_iorsim(kill_func=kill_func)
+        
+        
     #--------------------------------------------------------------------------------
     def loop_all(self):
     #--------------------------------------------------------------------------------
@@ -352,7 +360,8 @@ class ior2ecl:
             rft = self.rft_check.start_values()
             message += ', {} : {:.2f}'.format(rft['start'].rstrip(), rft['values'][0]) 
         return message
-        
+
+    
     #--------------------------------------------------------------------------------
     def terminate_runs(self):
     #--------------------------------------------------------------------------------
@@ -378,21 +387,61 @@ class ior2ecl:
 
 
     #--------------------------------------------------------------------------------
-    def kill_runs(self):
+    def kill_eclipse(self):
     #--------------------------------------------------------------------------------
         ### terminating
-        self.print2log('\nKilling processes')
+        self.print2log('\nKilling Eclipse')
         ### Eclipse
         self.ecl.kill()
+        ### cleaning up
+        if not self.keep_files:
+            self.ecl.interface_file('all').delete()
+        if not self.quiet:
+            print()
+
+
+    #--------------------------------------------------------------------------------
+    def kill_iorsim(self):
+    #--------------------------------------------------------------------------------
+        ### terminating
+        self.print2log('\nKilling IORSim')
         ### IORSim
         self.ior.kill()
         ### cleaning up
         if not self.keep_files:
-            self.ecl.interface_file('all').delete()
             self.ior.interface_file('all').delete()
         if not self.quiet:
             print()
 
+    #--------------------------------------------------------------------------------
+    def kill_runs(self):
+    #--------------------------------------------------------------------------------
+        self.kill_eclipse()
+        self.kill_iorsim()
+        
+        
+    #--------------------------------------------------------------------------------
+    def check_eclipse_input(self):
+    #--------------------------------------------------------------------------------
+        ### check if executables exist on the system
+        exe = self.eclrun
+        if which(exe) is None:
+            raise SystemError('Executable not found: ' + exe)
+
+        ### check root.DATA exists and if READDATA keyword is present or not
+        data = self.root + '.DATA'
+        if Path(data).is_file():
+            readdata_found = False
+            with open(data, 'r') as f:
+                for line in f:
+                    if not line.startswith('--') and 'READDATA' in line:
+                        readdata_found = True 
+            if self.readdata and not readdata_found:
+                raise_error('The current case cannot be used in backward-mode because the READDATA keyword is missing in the Eclipse DATA-file.')
+            if not self.readdata and readdata_found:
+                raise_error('The current case cannot be used in forward-mode because the READDATA keyword is given in the Eclipse DATA-file.')
+        else:
+            raise_error(' Eclipse DATA file is missing: ' + data)
 
             
     #--------------------------------------------------------------------------------

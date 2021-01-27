@@ -127,3 +127,35 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+*.CFE
+*.DBG
+*.DATA
+*.dbprtx
+*.session
+*.sessionlock
+*.ECLEND
+*.EGRID
+*.h5
+*.INIT
+*.INSPEC
+*.IORSimOK
+*.MSG
+*.PRT
+*.PRTX
+*.RFT
+*.RSM
+*.RSSPEC
+*.RTELOG
+*.RTEMSG
+*.SMSPEC
+*.trcinp
+*.trwlres
+*.UNRST
+*.UNSMRY
+*.FUNRST
+*.trcconc
+*.trcprd
+*.INC
+GUI/
+*.py~
+satnum.dat

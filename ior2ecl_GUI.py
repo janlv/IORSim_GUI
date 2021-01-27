@@ -110,20 +110,6 @@ def create_group(win, title='', pos=None, size=None):
     group.show()
     return group
 
-# #-----------------------------------------------------------------------
-# def create_box(win, text='', pos=None, width=None, fontsize=default_size-1):
-# #-----------------------------------------------------------------------
-#     box = QLineEdit(win)
-#     #box.setStyleSheet('QLineEdit { font-size: %d;}'%fontsize)
-#     #box.setStyleSheet('QLineEdit { font-size: 8;}')
-#     #font = QFont()
-#     #font.setPointSize(fontsize)
-#     box.setFont(QFont(default_font, fontsize, fontweight))
-#     box.move(pos)
-#     box.resize(QSize(width, box_height))
-#     box.setText(text)
-#     return box
-
 #-----------------------------------------------------------------------
 def create_label(win, pos=None, size=None, text='', fontsize=default_size):
 #-----------------------------------------------------------------------
@@ -394,10 +380,8 @@ def get_checked_boxes(box_dict):
 #-----------------------------------------------------------------------
 def str_to_bool(s):
 #-----------------------------------------------------------------------
-    #if s.lower() in ('true','1'):
     if s.lower() == 'true':
         return True
-    #elif s.lower() in ('false','0'):
     elif s.lower() == 'false':
         return False
     else:
