@@ -428,9 +428,12 @@ class Base_worker(QRunnable):
         return self.killed
             
     #-----------------------------------------------------------------------
-    def stop_msg(self):
+    def stop_msg(self, run=None, step='timesteps'):
     #-----------------------------------------------------------------------
-        return 'Run stopped after ' + str(self.t) + ' timesteps'
+        name = 'Run'
+        if run:
+            name = run.name
+        return name + ' stopped after ' + str(self.t) + ' ' + step
                          
     @pyqtSlot()
     #-----------------------------------------------------------------------
@@ -485,15 +488,15 @@ class Backward(Base_worker):
                 self.update_progress(self.t)
                 self.update_plot()
                 self.status_message(sim.status_message(self.t, rft=False))
-                if self.is_killed():
-                    raise SystemError(self.stop_msg())
+                #if self.is_killed():
+                #    raise SystemError(self.stop_msg())
             # timestep loop finished
             sim.terminate_runs()
             runtime = str(datetime.now()-sim.starttime).split('.')[0]
             msg = 'Simulation complete, run-time was {}'.format(runtime)
             err = ''
         except (SystemError, psutil.NoSuchProcess) as e:
-            sim.kill_runs()
+            #sim.kill_and_clean()
             err = str(e)
             if 'stopped' in err: 
                 if 'loop_until' in err:
@@ -504,6 +507,7 @@ class Backward(Base_worker):
                 self.show_message(('error', msg+'\n'+err))
             #self.update_progress(0)
         finally:
+            sim.kill_and_clean()
             self.status_message(msg)
             sim.print2log('\n======  ' + msg + err + '  ======')
             sim.close_logfiles()
@@ -533,35 +537,40 @@ class Forward(Base_worker):
     def runnable(self):
     #-----------------------------------------------------------------------
         sim = self.sim
+        runs = []
+        msg = None
         try:
-            msg = None
             runs = sim.init_runs(run=self.run)
             for run in runs:
                 # start run
                 self.status_message('Starting ' + run.name)
                 self.update_progress(0)
                 run.start()
-                self.current = run.name.lower()[:3] # 'ecl' or 'ior'
+                self.current = run.name.lower()#[:3] # 'ecl' or 'ior'
                 self.status_message(run.name + ' running')
                 run.wait_for_process_to_quit(sleep_sec=1, wait_func=self.wait_func, wait=2, kill_func=self.is_killed)
                 self.wait_func()
                 self.current = None
                 self.update_progress(0)
-                #if self.run=='eclipse':
             self.status_message('Simulation complete')                
         except (SystemError, ProcessLookupError, psutil.NoSuchProcess) as e:
             msg = str(e)
             kind = 'error'
             if 'stopped' in msg:
-                msg = self.stop_msg()
+                msg = self.stop_msg(run=run, step='days')
                 kind = 'info'
             self.status_message(msg)
             self.show_message((kind, msg))
         finally:
-            sim.kill_runs()
+            # kill possible remaining processes
+            for run in runs:
+                run.kill()
+                run.log.close()
+                sim.clean_up(run)
             if msg:
                 sim.print2log('\n======  ' + msg + '  ======')
-            sim.close_logfiles()
+            sim.runlog.close()
+            #sim.close_logfiles()
             self.update_plot()
             self.update_progress(0)
 
@@ -582,8 +591,7 @@ class Convert(Base_worker):
     def runnable(self):
     #-----------------------------------------------------------------------
         self.status_message('Writing unformatted restart file')
-        #formatted_file(ior+'.FUNRST').convert(duplicate='ImMobGel', ignore=1, progress=self.update_progress, message=self.show_message)
-        formatted_file(self.funrst).convert(duplicate='ImMobGel', ignore=1, progress=self.update_progress) #, message=self.show_message)
+        formatted_file(self.funrst).convert(duplicate='ImMobGel', ignore=1, progress=self.update_progress) 
         # copy files
         if Path(self.root+'.UNRST').is_file():
             shutil.copy(self.root+'.UNRST', self.root+'_Eclipse.UNRST')
@@ -903,6 +911,7 @@ class main_window(QMainWindow):                                    # main_window
         self.max_3_checked = []
         self.plot_prop = {}
         self.view = False
+        #self.modes = ('forward', 'backward', 'eclipse', 'iorsim')
         guidir = Path('GUI')
         guidir.mkdir(exist_ok=True)
         self.settings = Settings(self, file=str(guidir/'settings.txt'))
@@ -911,8 +920,8 @@ class main_window(QMainWindow):                                    # main_window
         #self.setFont(font)
         self.casedir = guidir/'cases'
         self.input_file = guidir/'input.txt'
-        self.input = {'root':None, 'dt':None, 'nsteps':None, 'dtecl':None, 'TSTEP':None, 'species':[], 'mode':None} #, 'case':None}
-        self.input_to_save = ['root','dt','nsteps','mode']
+        self.input = {'root':None, 'nsteps':None, 'dtecl':None, 'TSTEP':None, 'species':[], 'mode':None} #, 'case':None}
+        self.input_to_save = ['root','nsteps','mode']
         self.load_input()
         self.initUI()
         self.set_input_field()
@@ -932,24 +941,49 @@ class main_window(QMainWindow):                                    # main_window
     def create_actions(self):                                  # main_window
     #-----------------------------------------------------------------------
         ### actions
-        self.set_act = create_action(self, text='&Settings', icon='gear.png', shortcut='Ctrl+S', tip='Edit settings', func=self.settings.open)
-        self.start_act = create_action(self, text=None, icon='start_24.png', shortcut='Ctrl+R', tip='Run simulation', func=self.run)
-        self.stop_act = create_action(self, text=None, icon='stop_24.png', shortcut='Ctrl+E', tip='Stop simulation',  func=self.killsim)
-        self.help_act = create_action(self, text='Keyboard shortcuts',  shortcut='', tip='Display help',     func=self.help_win.open_win)
-        self.exit_act = create_action(self, text='&Exit', icon='control-power.png', shortcut='Ctrl+Q', tip='Exit application', func=self.quit)
-        self.add_case_act = create_action(self, text='Add case...', icon='document--plus.png', func=self.add_case_from_file)
-        self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy.png', func=self.duplicate_current_case)
-        self.rename_case_act = create_action(self, text='Rename current case..', icon='document-rename.png', func=self.rename_current_case)
-        self.clear_case_act = create_action(self, text='Clear current case', icon='document.png', func=self.clear_current_case)
-        self.delete_case_act = create_action(self, text='Delete current case', icon='document--minus.png', func=self.delete_current_case)
+        self.set_act = create_action(self, text='&Settings', icon='gear.png', shortcut='Ctrl+S',
+                                     tip='Edit settings', func=self.settings.open)
+        self.start_act = create_action(self, text=None, icon='start_24.png', shortcut='Ctrl+R',
+                                       tip='Run simulation', func=self.run_sim)
+        self.stop_act = create_action(self, text=None, icon='stop_24.png', shortcut='Ctrl+E',
+                                      tip='Stop simulation', func=self.killsim)
+        self.help_act = create_action(self, text='Keyboard shortcuts',  shortcut='',
+                                      tip='Display help', func=self.help_win.open_win)
+        self.exit_act = create_action(self, text='&Exit', icon='control-power.png', shortcut='Ctrl+Q',
+                                      tip='Exit application', func=self.quit)
+        self.add_case_act = create_action(self, text='Add case...', icon='document--plus.png',
+                                          func=self.add_case_from_file)
+        self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy.png',
+                                           func=self.duplicate_current_case)
+        self.rename_case_act = create_action(self, text='Rename current case..', icon='document-rename.png',
+                                             func=self.rename_current_case)
+        self.clear_case_act = create_action(self, text='Clear current case', icon='document.png',
+                                            func=self.clear_current_case)
+        self.delete_case_act = create_action(self, text='Delete current case', icon='document--minus.png',
+                                             func=self.delete_current_case)
         self.plot_act = create_action(self, text='Plot', icon='guide.png', func=self.view_plot, checkable=True)
         self.plot_act.setChecked(True)
-        self.ecl_inp_act = create_action(self, text='Eclipse input file', icon='document-attribute-e.png', func=self.view_eclipse_input, checkable=True)
-        self.ior_inp_act = create_action(self, text='IORSim input file', icon='document-attribute-i.png', func=self.view_iorsim_input, checkable=True)
-        self.chem_inp_act = create_action(self, text='IORSim geochem file', icon='document-attribute-g.png', func=self.view_geochem_input, checkable=True)
-        self.ecl_log_act = create_action(self, text='Eclipse log file', icon='terminal.png', func=self.view_eclipse_log, checkable=True)
-        self.ior_log_act = create_action(self, text='IORSim log file', icon='terminal.png', func=self.view_iorsim_log, checkable=True)
-        self.py_log_act = create_action(self, text='Program log file', icon='terminal.png', func=self.view_program_log, checkable=True)
+        self.ecl_inp_act = create_action(self, text='Eclipse input file', icon='document-attribute-e.png',
+                                         func=self.view_eclipse_input, checkable=True)
+        self.ior_inp_act = create_action(self, text='IORSim input file', icon='document-attribute-i.png',
+                                         func=self.view_iorsim_input, checkable=True)
+        self.chem_inp_act = create_action(self, text='IORSim geochem file', icon='document-attribute-g.png',
+                                          func=self.view_geochem_input, checkable=True)
+        self.ecl_log_act = create_action(self, text='Eclipse log file', icon='terminal.png',
+                                         func=self.view_eclipse_log, checkable=True)
+        self.ior_log_act = create_action(self, text='IORSim log file', icon='terminal.png',
+                                         func=self.view_iorsim_log, checkable=True)
+        self.py_log_act = create_action(self, text='Program log file', icon='terminal.png',
+                                        func=self.view_program_log, checkable=True)
+        fwd = create_action(self, text='Forward', icon='',
+                            func=self.mode_forward, checkable=True)
+        back = create_action(self, text='Backward', icon='',
+                             func=self.mode_backward, checkable=True)
+        ecl = create_action(self, text='Eclipse', icon='',
+                            func=self.mode_eclipse, checkable=True)
+        ior = create_action(self, text='IORSim', icon='',
+                            func=self.mode_iorsim, checkable=True)
+        self.mode_act = {'forward':fwd, 'backward':back, 'eclipse':ecl, 'iorsim':ior}
         #self.show_manual_act = create_action(self, text='View user manual', icon='document.png', func=self.on_show_manual)
                 
         
@@ -968,7 +1002,6 @@ class main_window(QMainWindow):                                    # main_window
         file_menu.addSeparator()
         file_menu.addAction(self.exit_act)
         edit_menu = menu.addMenu('&Edit')
-        #edit_ag = QActionGroup(self)
         self.view_ag = QActionGroup(self)
         for act in (self.ecl_inp_act, self.ior_inp_act, self.chem_inp_act):
             edit_menu.addAction(act)
@@ -982,10 +1015,16 @@ class main_window(QMainWindow):                                    # main_window
         for act in (self.ecl_log_act, self.ior_log_act, self.py_log_act):
             view_menu.addAction(act)
             self.view_ag.addAction(act)
-        help_menu = menu.addMenu('&Help')
-        help_menu.addAction(self.help_act)
+        mode_menu = menu.addMenu('&Mode')
+        self.mode_ag = QActionGroup(self)
+        for act in self.mode_act.values():
+            mode_menu.addAction(act)
+            self.mode_ag.addAction(act)
         
-            
+        #help_menu = menu.addMenu('&Help')
+        #help_menu.addAction(self.help_act)
+        
+        
     #-----------------------------------------------------------------------
     def create_toolbar(self):                                  # main_window
     #-----------------------------------------------------------------------
@@ -1007,14 +1046,17 @@ class main_window(QMainWindow):                                    # main_window
         ### simulation controls
         widgets = {'case'    : QComboBox(),
                    'steps'   : QLineEdit(),
-                   'timestep': QLineEdit(),
-                   'mode'    : QComboBox(),
                    'ref'     : QComboBox()} 
         tips = ('Choose a case, or add new from the File-menu',
                 'Set simulation steps (only backward mode)',
-                'Set initial timestep (only backward mode)',
-                'Forward: IORSim after Eclipse  |  Backward: IORSim updates Eclipse',
                 'Reference case for plotting')
+        ql = QLabel()
+        ql.setText('')
+        ql.setFixedWidth(70)
+        ql.setStatusTip('Set simulation mode from the Mode menu')
+        self.toolbar.addWidget(ql)
+        self.mode_label = ql
+        self.toolbar.addSeparator()
         for i,(text,wid) in enumerate(widgets.items()):
             ql = QLabel()
             ql.setText(text.capitalize())
@@ -1022,25 +1064,11 @@ class main_window(QMainWindow):                                    # main_window
             wid.setStatusTip(tips[i])
             self.toolbar.addWidget(ql)
             self.toolbar.addWidget(wid)
-            if i==2:
-                ql = QLabel()
-                ql.setText('days')
-                ql.setStatusTip(tips[i])
-                self.toolbar.addWidget(ql)
             self.toolbar.addSeparator()
-        # mode
-        self.sim_cb = widgets['mode']
-        self.sim_cb.addItems(['forward', 'backward'])
-        self.sim_cb.currentIndexChanged[int].connect(self.on_sim_select)
         # case
         self.case_cb = widgets['case']
         self.case_cb.setStyleSheet('QComboBox {min-width: 120px;}')
         self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
-        # timestep
-        self.dt_box = widgets['timestep']
-        self.dt_box.setFixedWidth(45)
-        self.dt_box.setObjectName('dt')
-        self.dt_box.textChanged[str].connect(self.on_input_change)
         # steps
         self.nstep_box = widgets['steps']
         self.nstep_box.setFixedWidth(80)
@@ -1076,9 +1104,9 @@ class main_window(QMainWindow):                                    # main_window
         #                  'ior_menu': (1, 0),
         #                  'ecl_menu': (2, 0),
         #                  'plot'        : (0, 1, 3, 1)}
-        self.position = {'ior_menu': (0, 0),
-                         'ecl_menu': (1, 0),
-                         'plot'        : (0, 1, 2, 1)}
+        self.position = {'ior_menu' : (0, 0),
+                         'ecl_menu' : (1, 0),
+                         'plot'     : (0, 1, 2, 1)}
         self.layout = QGridLayout()
         self.layout.setSpacing(10)
         self.layout.setColumnStretch(0,25)
@@ -1099,84 +1127,17 @@ class main_window(QMainWindow):                                    # main_window
         self.create_plot_field()
         self.create_editor_field()
         #print(self.layout.columnCount(), self.layout.rowCount())
-
         
-    # #-----------------------------------------------------------------------
-    # def create_input_field(self):                                # main_window
-    # #-----------------------------------------------------------------------
-    #     group = QGroupBox()
-    #     group.setTitle('Input')
-    #     layout = QGridLayout()
-    #     layout.setColumnStretch(0,3)
-    #     layout.setColumnStretch(1,7)
-    #     ### simulation mode
-    #     lbl1 = QLabel()
-    #     lbl1.setText('Simulation')
-    #     self.sim_cb = QComboBox()
-    #     self.sim_cb.addItems(['Forward', 'Backward'])
-    #     self.sim_cb.currentIndexChanged[int].connect(self.on_sim_select)
-    #     ### case
-    #     lbl2 = QLabel()
-    #     lbl2.setText('Case')
-    #     self.case_cb = QComboBox()
-    #     self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
-    #     #self.case_cb.activated[int].connect(self.on_case_select)
-    #     #self.case_cb.highlighted[int].connect(self.on_case_select)
-    #     ### timestep
-    #     lbl3 = QLabel()
-    #     lbl3.setText('Timestep')
-    #     self.dt_box = QLineEdit()
-    #     self.dt_box.setObjectName('dt')
-    #     self.dt_box.textChanged[str].connect(self.on_input_change)
-    #     lbl31 = QLabel()
-    #     lbl31.setText('days')
-    #     ### number of steps
-    #     lbl4 = QLabel()
-    #     lbl4.setText('Steps')
-    #     self.nstep_box = QLineEdit()
-    #     self.nstep_box.setObjectName('nsteps')
-    #     self.nstep_box.textChanged[str].connect(self.on_input_change)
-
-    #     ### layout
-    #     layout.setColumnStretch(0,3)
-    #     layout.setColumnStretch(1,3)
-    #     layout.setColumnStretch(2,4)
-    #     layout.addWidget(lbl1           ,0,0,1,1, alignment=Qt.AlignVCenter)
-    #     layout.addWidget(self.sim_cb    ,0,1,1,2, alignment=Qt.AlignVCenter)        
-    #     layout.addWidget(lbl2           ,1,0,1,1, alignment=Qt.AlignVCenter)
-    #     layout.addWidget(self.case_cb   ,1,1,1,2, alignment=Qt.AlignVCenter)        
-    #     layout.addWidget(lbl3           ,2,0,1,1, alignment=Qt.AlignVCenter)
-    #     layout.addWidget(self.dt_box    ,2,1,1,1, alignment=Qt.AlignVCenter)        
-    #     layout.addWidget(lbl31          ,2,2,1,1, alignment=Qt.AlignVCenter)
-    #     layout.addWidget(lbl4           ,3,0,1,1, alignment=Qt.AlignVCenter)
-    #     layout.addWidget(self.nstep_box ,3,1,1,1, alignment=Qt.AlignVCenter)        
-    #     group.setLayout(layout)
-    #     self.layout.addWidget(group, *self.position['input'])
-    #     self.input_field = group
-
 
     #-----------------------------------------------------------------------
     def set_input_field(self):
     #-----------------------------------------------------------------------
         ### set values from input-file or default
-        mode, case_nr, dt, nsteps = (1, 0, 1, 10)
-        ### mode
-        self.modes = ('forward', 'backward')
-        if not self.input.get('mode') is None:
-            mode = self.input.get('mode')
-        self.mode = self.modes[mode]
-        self.sim_cb.blockSignals(True)
-        self.sim_cb.setCurrentIndex(-1)
-        self.sim_cb.blockSignals(False)
-        self.sim_cb.setCurrentIndex(mode) 
+        case_nr, nsteps = (0, 10)
         ### case
         self.cases = self.read_case_dir()
         self.case = self.input.get('root')
         self.create_caselist(choose=self.case)
-        ### timestep
-        if self.input['dt']:
-            dt = self.input['dt']
-        self.dt_box.setText(str(dt))
         ### number of steps
         if self.input['nsteps']:
             nsteps = self.input['nsteps']
@@ -1351,25 +1312,61 @@ class main_window(QMainWindow):                                    # main_window
             return nr
             
             
+    #-----------------------------------------------------------------------
+    def mode_forward(self):                               # main_window
+    #-----------------------------------------------------------------------
+        self.mode = self.input['mode'] = 'forward'
+        self.mode_label.setText('Forward')
+        self.nstep_box.setEnabled(False)
+        self.run_func = self.run_forward
+        self.run = 'all'
         
     #-----------------------------------------------------------------------
-    def on_sim_select(self, nr):                               # main_window
+    def mode_backward(self):                               # main_window
     #-----------------------------------------------------------------------
-        self.input['mode'] = nr
-        self.mode = self.modes[nr]
-        if self.mode=='forward':
-            self.dt_box.setEnabled(False)
-            self.nstep_box.setEnabled(False)
-        if self.mode=='backward':
-            self.dt_box.setEnabled(True)
-            self.nstep_box.setEnabled(True)
+        self.mode = self.input['mode'] = 'backward'
+        self.mode_label.setText('Backward')
+        self.nstep_box.setEnabled(True)
+        self.run_func = self.run_backward
+        self.run = None
+        
+    #-----------------------------------------------------------------------
+    def mode_eclipse(self):                               # main_window
+    #-----------------------------------------------------------------------
+        self.mode = self.input['mode'] = 'eclipse'
+        self.mode_label.setText('Eclipse')
+        self.nstep_box.setEnabled(False)
+        self.run_func = self.run_forward
+        self.run = 'eclipse'
+        
+    #-----------------------------------------------------------------------
+    def mode_iorsim(self):                               # main_window
+    #-----------------------------------------------------------------------
+        self.mode = self.input['mode'] = 'iorsim'
+        self.mode_label.setText('IORSim')
+        self.nstep_box.setEnabled(False)
+        self.run_func = self.run_forward
+        self.run = 'iorsim'
+        
+    # #-----------------------------------------------------------------------
+    # def mode_select(self, nr):                               # main_window
+    # #-----------------------------------------------------------------------
+    #     self.input['mode'] = nr
+    #     self.mode = self.modes[nr]
+    #     #if self.mode=='forward':
+    #     #    #self.dt_box.setEnabled(False)
+    #     #    self.nstep_box.setEnabled(False)
+    #     #if self.mode=='backward':
+    #     #    #self.dt_box.setEnabled(True)
+    #     #    self.nstep_box.setEnabled(True)
 
             
     #-----------------------------------------------------------------------
     def on_input_change(self, text):                           # main_window
     #-----------------------------------------------------------------------
         name = self.sender().objectName()
-        var = {'dt':'Timestep', 'nsteps':'Number of steps'}
+        #var = {'dt':'Timestep', 'nsteps':'Number of steps'}
+        var = {'nsteps':'Number of steps'}
         if not text:
             self.input[name] = 0
             return
@@ -1396,7 +1393,9 @@ class main_window(QMainWindow):                                    # main_window
                     mode = 'backward'
             except FileNotFoundError as e:
                 show_message(self, 'error', text='The Eclipse DATA-file is missing for this case')
-            self.sim_cb.setCurrentIndex(self.modes.index(mode))
+            #self.sim_cb.setCurrentIndex(self.modes.index(mode))
+            self.mode_act[mode].setChecked(True)
+            self.mode_ag.checkedAction().trigger()
                 
     #-----------------------------------------------------------------------
     def add_case_from_file(self):                   # main_window
@@ -2365,10 +2364,9 @@ class main_window(QMainWindow):                                    # main_window
             self.read_ecl_data()
 
         self.days = None
-        if self.mode == 'forward' and self.worker and self.worker.current:
+        if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current:
             run = self.worker.current
-            #print(run)
-            if run in ('ecl','eclipse'):
+            if run in ('ecl','eclipse','eclrun'):
                 self.read_ecl_data()
                 run = 'ecl'
             if run in ('ior','iorsim'):
@@ -2376,6 +2374,7 @@ class main_window(QMainWindow):                                    # main_window
                 run = 'ior'
             if self.data.get(run):
                 self.days = (self.data[run]).get('days')
+                #print(self.days[-1])
 
         if self.current_view.objectName()=='plot':
             self.update_all_plot_lines()
@@ -2390,7 +2389,7 @@ class main_window(QMainWindow):                                    # main_window
             show_message(self, 'error', text='Number of timesteps missing.')
             return False
         #if i['dt']==0:
-        if not self.settings.get['dt']():
+        if not self.settings.get['dt']() or int(self.settings.get['dt']())==0:
             show_message(self, 'error', text='Timestep missing in settings.')
             self.settings.open()
             return False
@@ -2405,10 +2404,11 @@ class main_window(QMainWindow):                                    # main_window
     
         
     #-----------------------------------------------------------------------
-    def run(self):                                    # main_window
+    def run_sim(self):                                    # main_window
     #-----------------------------------------------------------------------
-        runmode = {'forward':self.run_forward, 'backward':self.run_backward}
-        runmode[self.mode]()
+        self.run_func()
+        #runmode = {'forward':self.run_forward, 'backward':self.run_backward}
+        #runmode[self.mode]()
 
         
     #-----------------------------------------------------------------------
@@ -2416,9 +2416,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.start_act.setEnabled(value)
         self.case_cb.setEnabled(value)
-        self.dt_box.setEnabled(value)
+        #self.dt_box.setEnabled(value)
         self.nstep_box.setEnabled(value)
-        self.sim_cb.setEnabled(value)
+        #self.sim_cb.setEnabled(value)
 
         
     #-----------------------------------------------------------------------
@@ -2455,7 +2455,7 @@ class main_window(QMainWindow):                                    # main_window
         self.threadpool.start(self.worker)
 
     #-----------------------------------------------------------------------
-    def run_forward(self):                                  # main_window
+    def run_forward(self):                          # main_window
     #-----------------------------------------------------------------------
         if not self.input_OK():
             return
@@ -2478,7 +2478,7 @@ class main_window(QMainWindow):                                    # main_window
                       to_screen=to_screen, quiet=quiet,
                       readdata=False)
         # thread running the simulation
-        self.worker = Forward(sim)
+        self.worker = Forward(sim, run=self.run)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message)
         self.worker.signals.plot.connect(self.update_view_area)
@@ -2498,7 +2498,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.set_toolbar_enabled(True)
         if self.mode=='forward':
-            self.dt_box.setEnabled(False)
+            #self.dt_box.setEnabled(False)
             self.nstep_box.setEnabled(False)
         #self.start_act.setEnabled(True)
         #self.case_cb.setEnabled(True)

@@ -418,12 +418,6 @@ class ior2ecl:
     def terminate_eclipse(self):
     #--------------------------------------------------------------------------------
         self.terminate_run(self.ecl)
-        #self.print2log('\nTerminating Eclipse')
-        #ecl = self.ecl
-        #self.ecl.resume()
-        #self.ecl.wait_for_process_to_quit()
-        #self.clean_up(self.ecl)        
-
         
     #--------------------------------------------------------------------------------
     def terminate_iorsim(self):
@@ -431,11 +425,6 @@ class ior2ecl:
         self.ior.interface_file(self.nsteps+2).append('Quit')
         self.ior.OK_file().create_empty()
         self.terminate_run(self.ior)
-        #self.print2log('\nTerminating IORSim')
-        #self.ior.resume()
-        #self.ior.wait_for_process_to_quit()
-        #self.clean_up(self.ior)
-
         
     #--------------------------------------------------------------------------------
     def terminate_runs(self):
@@ -452,29 +441,21 @@ class ior2ecl:
         if not self.quiet:
             print()
         
+    # #--------------------------------------------------------------------------------
+    # def kill_run(self, run):
+    # #--------------------------------------------------------------------------------
+    #     #self.print2log('\nKilling processes')
+    #     run.kill()
+    #     self.clean_up(run)
 
     #--------------------------------------------------------------------------------
-    def kill_run(self, run):
+    def kill_and_clean(self):
     #--------------------------------------------------------------------------------
-        self.print2log('\nKilling processes')
-        run.kill()
-        self.clean_up(run)
-
-    # #--------------------------------------------------------------------------------
-    # def kill_eclipse(self):
-    # #--------------------------------------------------------------------------------
-    #     self.kill_run(self.ecl)
-
-    # #--------------------------------------------------------------------------------
-    # def kill_iorsim(self):
-    # #--------------------------------------------------------------------------------
-    #     self.kill_run(self.ior)
-
-    #--------------------------------------------------------------------------------
-    def kill_runs(self):
-    #--------------------------------------------------------------------------------
-        self.kill_run(self.ecl)
-        self.kill_run(self.ior)
+        for run in (self.ecl, self.ior):
+            run.kill()
+            self.clean_up(run)
+        #self.kill_run(self.ecl)
+        #self.kill_run(self.ior)
 
         
     #--------------------------------------------------------------------------------
@@ -514,22 +495,29 @@ class ior2ecl:
         if not Path(inp_file).is_file():
             raise_error('IORSim input file, ' + inp_file + ', is missing!')
 
-
-    # #--------------------------------------------------------------------------------
-    # def check_input(self):
-    # #--------------------------------------------------------------------------------
-    #     self.check_eclipse_input()
-    #     self.check_iorsim_input()
             
+    # #--------------------------------------------------------------------------------
+    # def close_logfile(self, run):
+    # #--------------------------------------------------------------------------------
+    #     if self.runlog:
+    #         self.runlog.close()
+    #         self.runlog = None
+    #     run.log.close()
+
         
     #--------------------------------------------------------------------------------
     def close_logfiles(self):
     #--------------------------------------------------------------------------------
         if self.runlog:
             self.runlog.close()
+            self.runlog = None
         self.ecl.log.close()
         self.ior.log.close()
-
+        # if self.runlog:
+        #     self.runlog.close()
+        #     self.runlog = None
+        # self.ecl.log.close()
+        # self.ior.log.close()
 
         
 # #====================================================================================
