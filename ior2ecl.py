@@ -417,14 +417,14 @@ class ior2ecl:
     #--------------------------------------------------------------------------------
     def terminate_eclipse(self):
     #--------------------------------------------------------------------------------
-        self.terminate_run(self.ecl)
+        self.terminate(self.ecl)
         
     #--------------------------------------------------------------------------------
     def terminate_iorsim(self):
     #--------------------------------------------------------------------------------
         self.ior.interface_file(self.nsteps+2).append('Quit')
         self.ior.OK_file().create_empty()
-        self.terminate_run(self.ior)
+        self.terminate(self.ior)
         
     #--------------------------------------------------------------------------------
     def terminate_runs(self):

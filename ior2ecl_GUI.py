@@ -23,6 +23,7 @@ from numpy import ndarray, genfromtxt, asarray, sum as npsum
 from collections import namedtuple
 import shutil
 import warnings
+import copy
 
 from ior2ecl import ior2ecl
 from IORlib.utils import Progress, exit_without_atexit, assert_python_version, get_substrings, return_matching_string, silentdelete, delete_all, delete_files_matching, file_contains
@@ -911,6 +912,7 @@ class main_window(QMainWindow):                                    # main_window
         self.max_3_checked = []
         self.plot_prop = {}
         self.view = False
+        self.plot_ref = None
         #self.modes = ('forward', 'backward', 'eclipse', 'iorsim')
         guidir = Path('GUI')
         guidir.mkdir(exist_ok=True)
@@ -1046,7 +1048,7 @@ class main_window(QMainWindow):                                    # main_window
         ### simulation controls
         widgets = {'case'    : QComboBox(),
                    'steps'   : QLineEdit(),
-                   'ref'     : QComboBox()} 
+                   'compare'     : QComboBox()} 
         tips = ('Choose a case, or add new from the File-menu',
                 'Set simulation steps (only backward mode)',
                 'Reference case for plotting')
@@ -1075,8 +1077,9 @@ class main_window(QMainWindow):                                    # main_window
         self.nstep_box.setObjectName('nsteps')
         self.nstep_box.textChanged[str].connect(self.on_input_change)
         # reference
-        self.ref_case = widgets['ref']
-        self.ref_case.setObjectName('ref')
+        self.ref_case = widgets['compare']
+        self.ref_case.setObjectName('compare')
+        self.ref_case.currentIndexChanged[int].connect(self.on_mode_select)
         
     #-----------------------------------------------------------------------
     def create_statusbar(self):                                          # main_window
@@ -1233,13 +1236,20 @@ class main_window(QMainWindow):                                    # main_window
             self.cases.pop(self.case_nr(remove))
         if insert:
             self.cases.insert(0, insert)
-            self.cases = sorted(self.cases)
+            self.cases = sorted([str(case) for case in self.cases])
+        # case combobox
         self.case_cb.blockSignals(True)
         self.case_cb.clear()
         items = [Path(f).stem for f in self.cases]
         self.case_cb.addItems(items)
         self.case_cb.setCurrentIndex(-1)
         self.case_cb.blockSignals(False)
+        # ref case combobox
+        self.ref_case.blockSignals(True)
+        self.ref_case.clear()
+        self.ref_case.addItems(['None']+items)
+        self.ref_case.setCurrentIndex(0)
+        self.ref_case.blockSignals(False)
         if choose:
             self.case_cb.setCurrentIndex(self.case_nr(choose))
 
@@ -1305,7 +1315,8 @@ class main_window(QMainWindow):                                    # main_window
             return -1
         nr = -1
         try:
-            nr = self.cases.index(case)
+            cases = [Path(case) for case in self.cases]
+            nr = cases.index(Path(case))
             return nr
         except ValueError:
             show_message(self, 'warning', text="Case '{}' not found!".format(case))
@@ -1398,6 +1409,22 @@ class main_window(QMainWindow):                                    # main_window
             self.mode_ag.checkedAction().trigger()
                 
     #-----------------------------------------------------------------------
+    def on_mode_select(self, nr):                              # main_window
+    #-----------------------------------------------------------------------
+        if nr>0:
+            self.plot_ref = str(self.cases[nr-1])
+            self.unsmry = None
+            self.read_ecl_data(case=self.plot_ref)
+            self.read_ior_data(case=self.plot_ref)
+            self.plot_ref_data = copy.deepcopy(self.data)
+            self.data = {}
+        else:
+            self.plot_ref = self.plot_ref_data = None
+        #print(self.plot_ref)
+        self.create_plot()
+        
+        
+    #-----------------------------------------------------------------------
     def add_case_from_file(self):                   # main_window
     #-----------------------------------------------------------------------
         case = open_file_dialog(self, 'Locate Eclipse DATA-file', 'DATA files (*.DATA)')
@@ -1451,7 +1478,7 @@ class main_window(QMainWindow):                                    # main_window
             from_case = self.case
             name = Path(new_name.var.text().upper()).stem
             to_case = self.casedir/name/name
-            print(str(from_case)+' -> '+str(to_case))
+            #print(str(from_case)+' -> '+str(to_case))
             self.add_case(from_case, rename=to_case)
         new_name.set_func(func)
         new_name.open()
@@ -1638,7 +1665,7 @@ class main_window(QMainWindow):                                    # main_window
             
 
     #-----------------------------------------------------------------------
-    def init_ecl_data(self):
+    def init_ecl_data(self, case=None):
     #-----------------------------------------------------------------------
         #  WOPR    - well oil rate,
         #  WWPR    - well water rate
@@ -1655,8 +1682,11 @@ class main_window(QMainWindow):                                    # main_window
         varlist = ['WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT',
                    'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT'] #,'FWIT','FWIR'] 
         #print('{} : {}'.format(type(self.input['root']),self.input['root']))
-        smspec = Path(self.input['root']+'.SMSPEC')
-        unsmry = Path(self.input['root']+'.UNSMRY')
+        datafile = self.input['root']
+        if case:
+            datafile = case
+        smspec = Path(datafile+'.SMSPEC')
+        unsmry = Path(datafile+'.UNSMRY')
         if not smspec.is_file() or not unsmry.is_file():
             return False
         self.unsmry = unformatted_file(unsmry)
@@ -1739,14 +1769,17 @@ class main_window(QMainWindow):                                    # main_window
 
         
     #-----------------------------------------------------------------------
-    def read_ecl_data(self):
+    def read_ecl_data(self, case=None):
     #-----------------------------------------------------------------------
-        if not self.input['root']:
+        datafile = self.input['root']
+        if case:
+            datafile = case
+        if not datafile:
             self.data['ecl'] = {}
             return False
         ### read data 
         if not self.unsmry:
-            if not self.init_ecl_data():
+            if not self.init_ecl_data(case=case):
                 return False
         for block in self.unsmry.blocks(only_new=True):
             #block.print()
@@ -1924,32 +1957,16 @@ class main_window(QMainWindow):                                    # main_window
     def view_eclipse_input(self):                                # main_window
     #-----------------------------------------------------------------------
         self.view_input_file(ext='DATA', title='Eclipse input file', comment='--')
-        #if self.input['root']:
-        #    fil = self.input['root']+'.DATA'
-        #    self.view_file(fil, title='Eclipse input file, '+str(Path(fil).name))        
-        #    self.ecl_highlight = Highlighter(self.editor.document(), comment='--')
-        #    self.save_btn.setEnabled(False)
-
         
     #-----------------------------------------------------------------------
     def view_iorsim_input(self):                                # main_window
     #-----------------------------------------------------------------------
         self.view_input_file(ext='trcinp', title='IORSim input file', comment='#')
-        #if self.input['root']:
-        #    fil = self.input['root']+'.trcinp'
-        #    self.view_file(fil, title='IORSim input file, '+str(Path(fil).name))        
-        #    self.ior_highlight = Highlighter(self.editor.document(), comment='#')
-        #    self.save_btn.setEnabled(False)
         
     #-----------------------------------------------------------------------
     def view_geochem_input(self):                                # main_window
     #-----------------------------------------------------------------------
         self.view_input_file(ext='geocheminp', title='IORSim geochem file', comment='#')
-        #if self.input['root'] and Path(self.input['root']+'.geocheminp').is_file():
-        #    fil = self.input['root']+'.geocheminp'
-        #    self.view_file(fil, title='IORSim geochem file, '+str(Path(fil).name))        
-        #    self.ior_highlight = Highlighter(self.editor.document(), comment='#')
-        #    self.save_btn.setEnabled(False)
         
     #-----------------------------------------------------------------------
     def view_log(self, file, title=None):                                # main_window
@@ -2110,7 +2127,7 @@ class main_window(QMainWindow):                                    # main_window
 
         
     #-----------------------------------------------------------------------
-    def read_ior_data(self):
+    def read_ior_data(self, case=None):
     #-----------------------------------------------------------------------
         #  Format:
         #     data['days']
@@ -2118,9 +2135,12 @@ class main_window(QMainWindow):                                    # main_window
         #
         #print('read_ior_data')
         self.data['ior'] = {}
-        if not self.input['root']:
+        datafile = self.input['root']
+        if case:
+            datafile = case
+        if not datafile:
             return False
-        root = Path(self.input['root'])
+        root = Path(datafile)
         files = list(root.parent.glob(root.name+'_W_*.trc*'))
         if len(files)<1 or not files[0].is_file() or files[0].stat().st_size<210:
             # last check is to avoid UserWarning from genfromtxt about: Empty input file
@@ -2245,37 +2265,52 @@ class main_window(QMainWindow):                                    # main_window
         ax = self.plot_axes   # or self.canvas.fig.axes
         for i, ax_name in enumerate(self.ioraxes_names):
             yaxis, well, data = ax_name.split()
-            if not self.data[data]:
-                return
-            xdata = self.data[data]['days']
+            #if not self.data[data]:
+            #    return
             if data=='ior':
                 var_box = self.ior_boxes['var']
             elif data=='ecl':
                 var_box = self.ecl_boxes['var']
             var_list = var_box.keys() 
+            the_data = self.data.get(data)
+            if the_data:
+                xdata = the_data['days']
             for var in var_list:#+['Temp']:
                 #print(data, well, yaxis, var)
                 try:
-                    ydata = self.data[data][well][yaxis][var]
+                    if the_data:
+                        #ydata = self.data[data][well][yaxis][var]
+                        ydata = the_data[well][yaxis][var]
+                        if len(xdata) != len(ydata):
+                            #print('Size mismatch: {},{}'.format(len(xdata),len(ydata)))
+                            continue
                 except KeyError:
-                    continue
-                if len(xdata) != len(ydata):
-                    #print('Size mismatch: {},{}'.format(len(xdata),len(ydata)))
                     continue
                 if 'temp' in var.lower():
                     #print(var)
                     ind = i*2+1 # extra right axis for temperature
                 else:
                     ind = i*2   # main axes
-                line, = ax[ind].plot(xdata, ydata, color=self.plot_prop['color'][var],
-                                     linestyle=self.plot_prop['line'][var], alpha=self.plot_prop['alpha'][var],
-                                     lw=2, label=well+' '+yaxis+' '+var+' '+data)
+                line = None
+                if the_data:
+                    line, = ax[ind].plot(xdata, ydata, color=self.plot_prop['color'][var],
+                                         linestyle=self.plot_prop['line'][var], alpha=self.plot_prop['alpha'][var],
+                                         lw=2, label=well+' '+yaxis+' '+var+' '+data)
+                if self.plot_ref:
+                    refdata = self.plot_ref_data[data]
+                    #print(data, well, yaxis, var)
+                    #print(refdata['days'])
+                    if len(refdata['days'])==len(refdata[well][yaxis][var]):
+                        ax[ind].plot(refdata['days'], refdata[well][yaxis][var], color=self.plot_prop['color'][var],
+                                     linestyle=self.plot_prop['line'][var], alpha=0.4,
+                                     lw=2, label='ref '+well+' '+yaxis+' '+var+' '+data)
                 ax[ind].relim(visible_only=True)
                 ax[ind].autoscale_view()
-                line.set_visible(var_box[var].isChecked())
                 if var not in lines:
                     lines[var] = {}
-                lines[var][ax[ind]] = line
+                if line:
+                    line.set_visible(var_box[var].isChecked())
+                    lines[var][ax[ind]] = line
             self.plot_lines = lines
             
             
@@ -2417,7 +2452,7 @@ class main_window(QMainWindow):                                    # main_window
         self.start_act.setEnabled(value)
         self.case_cb.setEnabled(value)
         #self.dt_box.setEnabled(value)
-        self.nstep_box.setEnabled(value)
+        #self.nstep_box.setEnabled(value)
         #self.sim_cb.setEnabled(value)
 
         
@@ -2497,9 +2532,9 @@ class main_window(QMainWindow):                                    # main_window
     def run_finished(self):
     #-----------------------------------------------------------------------
         self.set_toolbar_enabled(True)
-        if self.mode=='forward':
-            #self.dt_box.setEnabled(False)
-            self.nstep_box.setEnabled(False)
+        #if self.mode=='forward':
+        #    #self.dt_box.setEnabled(False)
+        #    self.nstep_box.setEnabled(False)
         #self.start_act.setEnabled(True)
         #self.case_cb.setEnabled(True)
         self.worker = None
