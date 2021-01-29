@@ -45,7 +45,7 @@ def print_dict(adict, inc=3):
 #-----------------------------------------------------------------------
     for k,v in adict.items():
         if isinstance(v, list) or isinstance(v, ndarray):
-            print(' '*inc + '{} : {} ({})'.format(k,v,len(v)))
+            print(' '*inc + '{} : {},{} ({})'.format(k,v[0],v[-1],len(v)))
         if isinstance(v, str):
             print(' '*inc + '{} : {}'.format(k,v))
         if isinstance(v, dict):
@@ -173,7 +173,7 @@ def get_species(root):
                 
 
 #-----------------------------------------------------------------------
-def get_wells(root):
+def get_wells_iorsim(root):
 #-----------------------------------------------------------------------
     def get_wells(num, wells, line):
         if num is not None:
@@ -209,7 +209,59 @@ def get_wells(root):
     #print(out_well, in_well)
     return out_well, in_well
     
-                
+#-----------------------------------------------------------------------
+def get_eclipse_well_yaxis_fluid(root):
+#-----------------------------------------------------------------------
+    fil = str(root)+'.DATA'
+    if not Path(fil).is_file():
+        raise SystemError(fil + ' is missing!')
+    summary = well = False
+    vars = []
+    wells = []
+    with open(fil) as f:
+        for line in f:
+            if line.lstrip().startswith('--') or line.isspace():
+                continue
+            if line.lstrip().startswith('SUMMARY'):
+                summary = True
+                continue
+            if line.lstrip().startswith('RUNSUM'):
+                break
+            if summary:
+                kw = line.strip()
+                #print(kw)
+                if kw[0] in ('F','R'):
+                    vars.append(kw)
+                    #print('add: '+kw)
+                if kw[0] == 'W':
+                    vars.append(kw)
+                    well = True
+                    continue
+                if well:
+                    if '/' in kw:
+                        kw = kw[:-1].strip()
+                        well = False
+                    if ',' in kw:
+                        kw = kw.split(',')
+                    elif ' ' in kw:
+                        kw = kw.split()
+                    elif len(kw)>0:
+                        kw = (kw,)
+                    else:
+                        kw = []
+                    for k in kw:
+                        wells.append(k.strip())                  
+    vars = list(set(vars))
+    wells = list(set(wells))
+    F = {'O':'Oil', 'W':'Water', 'G':'Gas'}
+    P = {'P':'prod', 'R':'rate'}
+    fluids = list(set([F[v[1]] for v in vars if v[1] in F.keys()]))
+    yaxis = list(set([P[v[-1]] for v in vars if v[-1] in P.keys()]))
+    if any([v[0]=='F' and v[-1] in ('P','R') for v in vars]):
+        wells.insert(0, 'Field')
+    #fluids.insert(-1, 'Temp')
+    return wells, yaxis, fluids 
+        
 
 #-----------------------------------------------------------------------
 def get_timestep_iorsim(root):
@@ -904,6 +956,7 @@ class main_window(QMainWindow):                                    # main_window
         self.menu_fontsize = 7
         self.help_win = help_window(self.pos(), parent=self)
         self.data = {}
+        self.plot_ref_data = {}
         self.days = None
         self.log_file = None
         self.unsmry = None
@@ -1079,7 +1132,7 @@ class main_window(QMainWindow):                                    # main_window
         # reference
         self.ref_case = widgets['compare']
         self.ref_case.setObjectName('compare')
-        self.ref_case.currentIndexChanged[int].connect(self.on_mode_select)
+        self.ref_case.currentIndexChanged[int].connect(self.on_compare_select)
         
     #-----------------------------------------------------------------------
     def create_statusbar(self):                                          # main_window
@@ -1322,42 +1375,86 @@ class main_window(QMainWindow):                                    # main_window
             show_message(self, 'warning', text="Case '{}' not found!".format(case))
             return nr
             
+    #-----------------------------------------------------------------------
+    def set_mode(self, mode, text=None, box=False, func=None, run=None):  # main_window
+    #-----------------------------------------------------------------------
+        self.mode = self.input['mode'] = mode
+        self.mode_label.setText(text)
+        self.nstep_box.setEnabled(box)
+        self.run_func = func
+        self.run = run
             
     #-----------------------------------------------------------------------
     def mode_forward(self):                               # main_window
     #-----------------------------------------------------------------------
-        self.mode = self.input['mode'] = 'forward'
-        self.mode_label.setText('Forward')
-        self.nstep_box.setEnabled(False)
-        self.run_func = self.run_forward
-        self.run = 'all'
+        self.set_mode('forward', text='Forward', box=False, func=self.run_forward, run='all')
+        #self.mode = self.input['mode'] = 'forward'
+        #self.mode_label.setText('Forward')
+        #self.nstep_box.setEnabled(False)
+        #self.run_func = self.run_forward
+        #self.run = 'all'
         
     #-----------------------------------------------------------------------
     def mode_backward(self):                               # main_window
     #-----------------------------------------------------------------------
-        self.mode = self.input['mode'] = 'backward'
-        self.mode_label.setText('Backward')
-        self.nstep_box.setEnabled(True)
-        self.run_func = self.run_backward
-        self.run = None
+        self.set_mode('backward', text='Backward', box=True, func=self.run_backward)
+        #self.mode = self.input['mode'] = 'backward'
+        #self.mode_label.setText('Backward')
+        #self.nstep_box.setEnabled(True)
+        #self.run_func = self.run_backward
+        #self.run = None
         
     #-----------------------------------------------------------------------
     def mode_eclipse(self):                               # main_window
     #-----------------------------------------------------------------------
-        self.mode = self.input['mode'] = 'eclipse'
-        self.mode_label.setText('Eclipse')
-        self.nstep_box.setEnabled(False)
-        self.run_func = self.run_forward
-        self.run = 'eclipse'
-        
+        self.set_mode('eclipse', text='Eclipse', box=False, func=self.run_forward, run='eclipse')
+        #self.mode = self.input['mode'] = 'eclipse'
+        #self.mode_label.setText('Eclipse')
+        #self.nstep_box.setEnabled(False)
+        #self.run_func = self.run_forward
+        #self.run = 'eclipse'
+        self.update_menu_boxes('ecl')
+        self.create_plot()
+        #
+        #    print(box.objectName())
+        #     set_checkbox(box, False, block_signal=False)
+        # well = list(self.ecl_boxes['well'].keys())[0] 
+        # #self.max_3_checked = []
+        # for box in (self.ecl_boxes['yaxis']['prod'],
+        #             self.ecl_boxes['yaxis']['rate'],
+        #             self.ecl_boxes['well'][well]):
+        #     set_checkbox(box, True, block_signal=False)
+        #     self.max_3_checked.append(box)
+            
     #-----------------------------------------------------------------------
     def mode_iorsim(self):                               # main_window
     #-----------------------------------------------------------------------
-        self.mode = self.input['mode'] = 'iorsim'
-        self.mode_label.setText('IORSim')
-        self.nstep_box.setEnabled(False)
-        self.run_func = self.run_forward
-        self.run = 'iorsim'
+        self.set_mode('iorsim', text='IORSim', box=False, func=self.run_forward, run='iorsim')
+        #self.mode = self.input['mode'] = 'iorsim'
+        #self.mode_label.setText('IORSim')
+        #self.nstep_box.setEnabled(False)
+        #self.run_func = self.run_forward
+        #self.run = 'iorsim'
+
+    #-----------------------------------------------------------------------
+    def update_menu_boxes(self, data, block_signal=True):       # main_window
+    #-----------------------------------------------------------------------
+        for box in self.max_3_checked:
+            #print('Remove:' + box.objectName())
+            set_checkbox(box, False, block_signal=block_signal)
+        self.max_3_checked = []
+        if data=='ecl':
+            yaxis = ('prod','rate')
+            boxlist = self.ecl_boxes
+        if data=='ior':
+            yaxis = ('prod','conc')
+            boxlist = self.ior_boxes
+        well = list(boxlist['well'].keys())[0] 
+        for box in ([boxlist['yaxis'][y] for y in yaxis] + [boxlist['well'][well],]):
+            #print('Add: '+box.objectName())
+            set_checkbox(box, True, block_signal=block_signal)
+            self.max_3_checked.append(box)
+
         
     # #-----------------------------------------------------------------------
     # def mode_select(self, nr):                               # main_window
@@ -1409,19 +1506,32 @@ class main_window(QMainWindow):                                    # main_window
             self.mode_ag.checkedAction().trigger()
                 
     #-----------------------------------------------------------------------
-    def on_mode_select(self, nr):                              # main_window
+    def on_compare_select(self, nr):                              # main_window
     #-----------------------------------------------------------------------
         if nr>0:
             self.plot_ref = str(self.cases[nr-1])
+            data = copy.deepcopy(self.data)
+            #print('BEFORE')
+            #print_dict(self.data)
             self.unsmry = None
-            self.read_ecl_data(case=self.plot_ref)
-            self.read_ior_data(case=self.plot_ref)
-            self.plot_ref_data = copy.deepcopy(self.data)
-            self.data = {}
+            if self.read_ecl_data(case=self.plot_ref):
+                self.plot_ref_data['ecl'] = copy.deepcopy(self.data['ecl'])
+                print('ECL READ')
+                #self.data['ecl'] = {}                
+            if self.read_ior_data(case=self.plot_ref):
+                self.plot_ref_data['ior'] = copy.deepcopy(self.data['ior'])
+                print('IOR READ')
+                #self.data['ior'] = {}
+            self.data = data
+            #print('AFTER')
+            #print_dict(self.data)
+            self.unsmry = None
         else:
-            self.plot_ref = self.plot_ref_data = None
-        #print(self.plot_ref)
+            self.plot_ref = None
+            self.plot_ref_data = {}
+        print(self.plot_ref)
         self.create_plot()
+        self.plot_ref = None
         
         
     #-----------------------------------------------------------------------
@@ -1451,7 +1561,10 @@ class main_window(QMainWindow):                                    # main_window
         for d in case.parent.iterdir():
             if d.is_dir():
                 delete_all(d)
-        self.prepare_case(self.case)
+        self.data = {}
+        self.unsmry = None # read again
+        self.create_plot()
+        #self.prepare_case(self.case)
 
     #-----------------------------------------------------------------------
     def delete_case(self, case):                              # main_window
@@ -1511,15 +1624,16 @@ class main_window(QMainWindow):                                    # main_window
     def prepare_case(self, root):
     #-----------------------------------------------------------------------
         try:
-            self.out_wells, self.in_wells = get_wells(root)
+            self.out_wells, self.in_wells = get_wells_iorsim(root)
             self.set_variables_from_casefiles()
             self.set_plot_properties()
             self.update_ior_menu()
+            self.data = {}
             self.read_ior_data()
             self.unsmry = None
-            self.ecl_yaxis = []
-            self.ecl_fluids = []
-            self.ecl_wells = []
+            #self.ecl_yaxis = []
+            #self.ecl_fluids = []
+            #self.ecl_wells = []
             self.read_ecl_data()
             self.update_ecl_menu()
             self.create_plot()
@@ -1657,11 +1771,12 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_boxes['var']['Temp'] = box
         col[1].addLayout(layout)
         # set default checked boxes and add them to the checked list
-        self.max_3_checked = []
+        #self.max_3_checked = []
         if checked:
-            for box in [self.ior_boxes['yaxis']['conc']]+[b for i,b in enumerate(self.ior_boxes['well'].values()) if i<2]:
-                set_checkbox(box, True, block_signal=True)
-                self.max_3_checked.append(box)
+            self.update_menu_boxes('ior')
+            # for box in [self.ior_boxes['yaxis']['conc']]+[b for i,b in enumerate(self.ior_boxes['well'].values()) if i<2]:
+            #     set_checkbox(box, True, block_signal=False)
+            #     self.max_3_checked.append(box)
             
 
     #-----------------------------------------------------------------------
@@ -1679,6 +1794,7 @@ class main_window(QMainWindow):                                    # main_window
         #  FWCT    - field water cut total (prod)
         #  ROIP    - Reservoir oil in place
 
+        print('init_ecl_data: start')
         varlist = ['WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT',
                    'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT'] #,'FWIT','FWIR'] 
         #print('{} : {}'.format(type(self.input['root']),self.input['root']))
@@ -1687,30 +1803,40 @@ class main_window(QMainWindow):                                    # main_window
             datafile = case
         smspec = Path(datafile+'.SMSPEC')
         unsmry = Path(datafile+'.UNSMRY')
+        print(unsmry, smspec)
         if not smspec.is_file() or not unsmry.is_file():
             return False
+        print('init_ecl_data: inside')
         self.unsmry = unformatted_file(unsmry)
         smspec = unformatted_file(smspec)
 
         ### read variable specifications
         ecl_data = namedtuple('ecl_data','time fluid wells yaxis units')
-        for block in smspec.blocks():
-            if block.key()   == 'KEYWORDS':
-                varnames = get_substrings(block.data()[0].decode(), 8)
-                #print(varnames)
-            elif block.key() == 'WGNAMES':
-                #ecl_data.wells = [s.capitalize() for s in get_substrings(block.data()[0].decode(), 8)]
-                ecl_data.wells = [s for s in get_substrings(block.data()[0].decode(), 8)]
-                #print(ecl_data.wells)
-            elif block.key() == 'MEASRMNT':
-                data = block.data()[0].decode().lower()
-                width = len(data)/len(varnames)
-                measure = get_substrings(data, width)
-                #print(measure)
-            elif block.key() == 'UNITS':
-                ecl_data.units = get_substrings(block.data()[0].decode(), 8)                
-                #print(ecl_data.units)
-                
+        varnames = None
+        try:
+            for block in smspec.blocks():
+                if block.key()   == 'KEYWORDS':
+                    varnames = get_substrings(block.data()[0].decode(), 8)
+                    #print(varnames)
+                elif block.key() == 'WGNAMES':
+                    #ecl_data.wells = [s.capitalize() for s in get_substrings(block.data()[0].decode(), 8)]
+                    ecl_data.wells = [s for s in get_substrings(block.data()[0].decode(), 8)]
+                    #print(ecl_data.wells)
+                elif block.key() == 'MEASRMNT':
+                    data = block.data()[0].decode().lower()
+                    width = len(data)/len(varnames)
+                    measure = get_substrings(data, width)
+                    #print(measure)
+                elif block.key() == 'UNITS':
+                    ecl_data.units = get_substrings(block.data()[0].decode(), 8)                
+                    #print(ecl_data.units)
+        except SystemError as e:
+            #print(e)
+            self.unsmry = None # so that we call this function again
+            return
+        if not varnames:
+            self.unsmry = None # so that we call this function again
+            return
         ecl_data.time = varnames.index('TIME')
         fluid_type = {'O':'Oil', 'W':'Water', 'G':'Gas'}
         ecl_data.fluid = {var:('Temp_ecl' if ecl_data.units[i]=='DEG C' else fluid_type.get(var[1])) for i,var in enumerate(varnames)}
@@ -1741,9 +1867,9 @@ class main_window(QMainWindow):                                    # main_window
                     y = ecl_data.yaxis[var]
                     f = ecl_data.fluid[var]
                     #print(well, y, f, var)
-                    self.ecl_wells.append(well)
-                    self.ecl_yaxis.append(y)
-                    self.ecl_fluids.append(f)
+                    #self.ecl_wells.append(well)
+                    #self.ecl_yaxis.append(y)
+                    #self.ecl_fluids.append(f)
                     #ecl[well][y][f] = []
                     ecl[well][y][f+' var'] = [var]
                     if 'Temp' in f:
@@ -1753,34 +1879,39 @@ class main_window(QMainWindow):                                    # main_window
                 #print('WARNING! Variable {} not found in {}'.format(var, self.unsmry.name()))
         self.ecl_data = ecl_data
         self.data['ecl'] = ecl
-        # unique well, yaxis, fluids lists 
-        self.ecl_wells = list(set(self.ecl_wells))
-        self.ecl_yaxis = list(set(self.ecl_yaxis))
-        self.ecl_fluids = list(set(self.ecl_fluids))
-        # put Field at top of list 
-        if 'FIELD' in self.ecl_wells:
-            self.ecl_wells.pop(self.ecl_wells.index('FIELD'))
-            self.ecl_wells.insert(0,'Field')
-        # remove Temp_ecl
-        if 'Temp_ecl' in self.ecl_fluids:
-            self.ecl_fluids.pop(self.ecl_fluids.index('Temp_ecl'))
-        self.update_ecl_menu()
+        # # unique well, yaxis, fluids lists 
+        # self.ecl_wells = list(set(self.ecl_wells))
+        # self.ecl_yaxis = list(set(self.ecl_yaxis))
+        # self.ecl_fluids = list(set(self.ecl_fluids))
+        # # put Field at top of list 
+        # if 'FIELD' in self.ecl_wells:
+        #     self.ecl_wells.pop(self.ecl_wells.index('FIELD'))
+        #     self.ecl_wells.insert(0,'Field')
+        # # remove Temp_ecl
+        # if 'Temp_ecl' in self.ecl_fluids:
+        #     self.ecl_fluids.pop(self.ecl_fluids.index('Temp_ecl'))
+        #self.update_ecl_menu()
+        #print('complete')
         return True
 
         
     #-----------------------------------------------------------------------
     def read_ecl_data(self, case=None):
     #-----------------------------------------------------------------------
+        print('read_ecl_data: start')
         datafile = self.input['root']
         if case:
             datafile = case
+        #print('read_ecl_data: '+datafile)
         if not datafile:
             self.data['ecl'] = {}
             return False
-        ### read data 
+        ### read data
+        print('read_ecl_data: before init')        
         if not self.unsmry:
             if not self.init_ecl_data(case=case):
                 return False
+        print('read_ecl_data: reading')
         for block in self.unsmry.blocks(only_new=True):
             #block.print()
             if block.key()=='PARAMS':
@@ -1795,26 +1926,33 @@ class main_window(QMainWindow):                                    # main_window
                     wells = self.ecl_data.wells
                     for i in index:
                         self.data['ecl'][wells[i]][yaxis][fluid].append(data[i])
+        print('read_ecl_data: '+datafile)
+        return True
         #print_dict(self.data['ecl'])
                         
     #-----------------------------------------------------------------------
-    def update_ecl_menu(self):                                # main_window
+    def update_ecl_menu(self, case=None):                       # main_window
     #-----------------------------------------------------------------------
+        root = self.input['root']
+        if case:
+            root = case
         # delete checkboxes before creating new
         delete_all_widgets_in_layout(self.ecl_menu_layout)
-        if not self.input['root'] or not self.ecl_yaxis:
+        if not root: # or not self.ecl_yaxis:
             return False
+        wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root)
+        #print(wells, yaxis, fluids)
         col = self.ecl_menu_col
         self.ecl_boxes = {}
         # prod/rate
-        self.ecl_boxes['yaxis'] = {}
         lbl = QLabel()
         lbl.setText('Y-axis')
         lbl.setStyleSheet('padding-left: 10px')
         col[0].addWidget(lbl)
-        #for i,(text,name) in enumerate( (('Prod.','prod'),('Rate','rate')) ):
-        for i,name in enumerate(self.ecl_yaxis): #get_yaxis('ecl')):
-            box = self.new_checkbox(text=name.capitalize(), name='yaxis '+name+' ecl', func=self.on_ecl_plot_click)
+        self.ecl_boxes['yaxis'] = {}
+        for i,name in enumerate(yaxis): 
+            box = self.new_checkbox(text=name.capitalize(), name='yaxis '+name+' ecl',
+                                    func=self.on_ecl_plot_click)
             self.ecl_boxes['yaxis'][name] = box
             col[0].addWidget(box, alignment=Qt.AlignTop)
         # wells
@@ -1822,11 +1960,13 @@ class main_window(QMainWindow):                                    # main_window
         lbl.setText('Wells')
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
         col[0].addWidget(lbl)
-        #print(self.get_wells('ecl'))
         self.ecl_boxes['well'] = {}
         #for i,well in enumerate(['Field']+(self.out_wells or [])+(self.in_wells or [])):
-        for i,well in enumerate(self.ecl_wells):
+        #for i,well in enumerate(self.ecl_wells):
+        for i,well in enumerate(wells):
             box = self.new_checkbox(text=well, name='well '+well+' ecl', func=self.on_ecl_plot_click)
+            if well=='Field':
+                box.setObjectName('well FIELD ecl')
             col[0].addWidget(box, alignment=Qt.AlignTop)
             self.ecl_boxes['well'][well] = box
         # variables
@@ -1835,8 +1975,7 @@ class main_window(QMainWindow):                                    # main_window
         lbl.setStyleSheet('padding-left: 15px')
         col[1].addWidget(lbl)
         self.ecl_boxes['var'] = {}
-        #for var in ['Oil','Water','Gas']:
-        for var in self.ecl_fluids: 
+        for var in fluids: 
             layout, box = self.new_box_with_line_layout(var, func=self.on_ecl_var_click)
             self.ecl_boxes['var'][var] = box
             col[1].addLayout(layout)
@@ -1844,22 +1983,6 @@ class main_window(QMainWindow):                                    # main_window
         self.ecl_boxes['var']['Temp_ecl'] = box
         self.ecl_menu_col[int((i+1)/7+1)].addLayout(layout)
 
-    # #-----------------------------------------------------------------------
-    # def get_wells(self, kind):
-    # #-----------------------------------------------------------------------
-    #     wells = [k for k in self.data[kind].keys() if bool(k) and k!='days']
-    #     if 'FIELD' in wells:
-    #         wells.pop(wells.index('FIELD'))
-    #         wells.insert(0,'Field')
-    #     return wells
-            
-    # #-----------------------------------------------------------------------
-    # def get_yaxis(self, kind):
-    # #-----------------------------------------------------------------------
-    #     well = self.get_wells('ecl')[0]
-    #     yaxis = [y.lower() for y in (self.data[kind][well]).keys()]
-    #     print(yaxis)
-    #     return yaxis
         
     #-----------------------------------------------------------------------
     def on_ecl_plot_click(self):
@@ -2061,6 +2184,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_plot_line(self, name, is_checked):
     #-----------------------------------------------------------------------
+        print('update_plot_line')
         if not self.plot_lines:
             self.create_plot_lines()
         if not name in self.plot_lines:
@@ -2198,7 +2322,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_plot(self):#, xlim=False):                         # main_window
     #-----------------------------------------------------------------------                
-        #print('create_plot')
+        print('create_plot')
         # clear figure 
         self.canvas.fig.clf()
         if not self.input['root']:
@@ -2260,11 +2384,13 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_plot_lines(self):
     #-----------------------------------------------------------------------
+        print('create_plot_lines')
         self.plot_lines = {}
         lines = {}        
         ax = self.plot_axes   # or self.canvas.fig.axes
         for i, ax_name in enumerate(self.ioraxes_names):
             yaxis, well, data = ax_name.split()
+            #print(yaxis, well, data)
             #if not self.data[data]:
             #    return
             if data=='ior':
@@ -2275,16 +2401,21 @@ class main_window(QMainWindow):                                    # main_window
             the_data = self.data.get(data)
             if the_data:
                 xdata = the_data['days']
+                #print('x: '+str(len(xdata)))
             for var in var_list:#+['Temp']:
                 #print(data, well, yaxis, var)
                 try:
                     if the_data:
                         #ydata = self.data[data][well][yaxis][var]
+                        #print(data, well, yaxis)
                         ydata = the_data[well][yaxis][var]
+                        #print('y: '+str(len(ydata)))
                         if len(xdata) != len(ydata):
-                            #print('Size mismatch: {},{}'.format(len(xdata),len(ydata)))
+                            #print('Size mismatch for {} {} {} {}: {},{}'.
+                            #      format(data, well, yaxis, var, len(xdata), len(ydata)))
                             continue
-                except KeyError:
+                except KeyError as e:
+                    #print('KeyError: ' + str(e))
                     continue
                 if 'temp' in var.lower():
                     #print(var)
@@ -2293,24 +2424,30 @@ class main_window(QMainWindow):                                    # main_window
                     ind = i*2   # main axes
                 line = None
                 if the_data:
+                    #print('the_data: '+ data, well, yaxis, var)
                     line, = ax[ind].plot(xdata, ydata, color=self.plot_prop['color'][var],
                                          linestyle=self.plot_prop['line'][var], alpha=self.plot_prop['alpha'][var],
                                          lw=2, label=well+' '+yaxis+' '+var+' '+data)
+                if line:
+                    if var not in lines:
+                        lines[var] = {}
+                    #print('line.set_visible: '+var)
+                    line.set_visible(var_box[var].isChecked())
+                    lines[var][ax[ind]] = line
+                # if we have a compare case
                 if self.plot_ref:
-                    refdata = self.plot_ref_data[data]
+                    #self.plot_ref_data.get(data)
+                    refdata = self.plot_ref_data.get(data)
                     #print(data, well, yaxis, var)
                     #print(refdata['days'])
-                    if len(refdata['days'])==len(refdata[well][yaxis][var]):
-                        ax[ind].plot(refdata['days'], refdata[well][yaxis][var], color=self.plot_prop['color'][var],
+                    if refdata and len(refdata['days'])==len(refdata[well][yaxis][var]):
+                        #print('printing ref_data: ',well,yaxis,var)
+                        ax[ind].plot(refdata['days'], refdata[well][yaxis][var],
+                                     color=self.plot_prop['color'][var],
                                      linestyle=self.plot_prop['line'][var], alpha=0.4,
                                      lw=2, label='ref '+well+' '+yaxis+' '+var+' '+data)
                 ax[ind].relim(visible_only=True)
                 ax[ind].autoscale_view()
-                if var not in lines:
-                    lines[var] = {}
-                if line:
-                    line.set_visible(var_box[var].isChecked())
-                    lines[var][ax[ind]] = line
             self.plot_lines = lines
             
             
@@ -2325,10 +2462,12 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_all_plot_lines(self): #, read_data=True):
     #-----------------------------------------------------------------------
+        print('update_all_plot_lines')
         # update plot-lines
         #if read_data:
         #    self.read_ior_data()
         #    self.read_ecl_data()
+        #print('update_all_plot_lines: {}'.format(self.plot_lines))
         if not self.plot_lines:
             self.create_plot_lines()
         for name,ax_line in self.plot_lines.items():
@@ -2358,8 +2497,8 @@ class main_window(QMainWindow):                                    # main_window
         try:
             self.update_axes_limits()
             self.canvas.draw()
-        except ValueError:
-            print('ValueError!')
+        except ValueError as e:
+            print('ValueError: '+str(e))
 
     #-----------------------------------------------------------------------
     def update_progressbar(self, t):
@@ -2399,7 +2538,9 @@ class main_window(QMainWindow):                                    # main_window
             self.read_ecl_data()
 
         self.days = None
+        #print('Mode: '+self.mode)
         if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current:
+            #print('Current: '+self.worker.current)
             run = self.worker.current
             if run in ('ecl','eclipse','eclrun'):
                 self.read_ecl_data()
@@ -2411,9 +2552,11 @@ class main_window(QMainWindow):                                    # main_window
                 self.days = (self.data[run]).get('days')
                 #print(self.days[-1])
 
-        if self.current_view.objectName()=='plot':
+        view = self.current_view.objectName()
+        #print(view)
+        if view=='plot':
             self.update_all_plot_lines()
-        elif self.current_view.objectName()=='editor':
+        elif view=='editor':
             self.update_log()
 
     #-----------------------------------------------------------------------

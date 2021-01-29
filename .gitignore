@@ -159,3 +159,4 @@ dmypy.json
 GUI/
 *.py~
 satnum.dat
+test.py
