@@ -1383,58 +1383,33 @@ class main_window(QMainWindow):                                    # main_window
         self.nstep_box.setEnabled(box)
         self.run_func = func
         self.run = run
+        fh = open(str(Path(self.case).parent/'mode.gui'), 'w')
+        fh.write(mode+'\n')
+        fh.close()
             
     #-----------------------------------------------------------------------
     def mode_forward(self):                               # main_window
     #-----------------------------------------------------------------------
         self.set_mode('forward', text='Forward', box=False, func=self.run_forward, run='all')
-        #self.mode = self.input['mode'] = 'forward'
-        #self.mode_label.setText('Forward')
-        #self.nstep_box.setEnabled(False)
-        #self.run_func = self.run_forward
-        #self.run = 'all'
         
     #-----------------------------------------------------------------------
     def mode_backward(self):                               # main_window
     #-----------------------------------------------------------------------
         self.set_mode('backward', text='Backward', box=True, func=self.run_backward)
-        #self.mode = self.input['mode'] = 'backward'
-        #self.mode_label.setText('Backward')
-        #self.nstep_box.setEnabled(True)
-        #self.run_func = self.run_backward
-        #self.run = None
         
     #-----------------------------------------------------------------------
     def mode_eclipse(self):                               # main_window
     #-----------------------------------------------------------------------
         self.set_mode('eclipse', text='Eclipse', box=False, func=self.run_forward, run='eclipse')
-        #self.mode = self.input['mode'] = 'eclipse'
-        #self.mode_label.setText('Eclipse')
-        #self.nstep_box.setEnabled(False)
-        #self.run_func = self.run_forward
-        #self.run = 'eclipse'
         self.update_menu_boxes('ecl')
         self.create_plot()
-        #
-        #    print(box.objectName())
-        #     set_checkbox(box, False, block_signal=False)
-        # well = list(self.ecl_boxes['well'].keys())[0] 
-        # #self.max_3_checked = []
-        # for box in (self.ecl_boxes['yaxis']['prod'],
-        #             self.ecl_boxes['yaxis']['rate'],
-        #             self.ecl_boxes['well'][well]):
-        #     set_checkbox(box, True, block_signal=False)
-        #     self.max_3_checked.append(box)
             
     #-----------------------------------------------------------------------
     def mode_iorsim(self):                               # main_window
     #-----------------------------------------------------------------------
         self.set_mode('iorsim', text='IORSim', box=False, func=self.run_forward, run='iorsim')
-        #self.mode = self.input['mode'] = 'iorsim'
-        #self.mode_label.setText('IORSim')
-        #self.nstep_box.setEnabled(False)
-        #self.run_func = self.run_forward
-        #self.run = 'iorsim'
+        self.update_menu_boxes('ior')
+        self.create_plot()
 
     #-----------------------------------------------------------------------
     def update_menu_boxes(self, data, block_signal=True):       # main_window
@@ -1501,7 +1476,10 @@ class main_window(QMainWindow):                                    # main_window
                     mode = 'backward'
             except FileNotFoundError as e:
                 show_message(self, 'error', text='The Eclipse DATA-file is missing for this case')
-            #self.sim_cb.setCurrentIndex(self.modes.index(mode))
+            # set mode from file
+            mode_file = Path(self.case).parent/'mode.gui'
+            if mode_file.is_file():
+                mode = open(mode_file).readline().strip()
             self.mode_act[mode].setChecked(True)
             self.mode_ag.checkedAction().trigger()
                 
@@ -1516,11 +1494,11 @@ class main_window(QMainWindow):                                    # main_window
             self.unsmry = None
             if self.read_ecl_data(case=self.plot_ref):
                 self.plot_ref_data['ecl'] = copy.deepcopy(self.data['ecl'])
-                print('ECL READ')
+                #print('ECL READ')
                 #self.data['ecl'] = {}                
             if self.read_ior_data(case=self.plot_ref):
                 self.plot_ref_data['ior'] = copy.deepcopy(self.data['ior'])
-                print('IOR READ')
+                #print('IOR READ')
                 #self.data['ior'] = {}
             self.data = data
             #print('AFTER')
@@ -1529,9 +1507,9 @@ class main_window(QMainWindow):                                    # main_window
         else:
             self.plot_ref = None
             self.plot_ref_data = {}
-        print(self.plot_ref)
+        #print(self.plot_ref)
         self.create_plot()
-        self.plot_ref = None
+        #self.plot_ref = None
         
         
     #-----------------------------------------------------------------------
@@ -1794,7 +1772,7 @@ class main_window(QMainWindow):                                    # main_window
         #  FWCT    - field water cut total (prod)
         #  ROIP    - Reservoir oil in place
 
-        print('init_ecl_data: start')
+        #print('init_ecl_data: start')
         varlist = ['WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT',
                    'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT'] #,'FWIT','FWIR'] 
         #print('{} : {}'.format(type(self.input['root']),self.input['root']))
@@ -1803,10 +1781,10 @@ class main_window(QMainWindow):                                    # main_window
             datafile = case
         smspec = Path(datafile+'.SMSPEC')
         unsmry = Path(datafile+'.UNSMRY')
-        print(unsmry, smspec)
+        #print(unsmry, smspec)
         if not smspec.is_file() or not unsmry.is_file():
             return False
-        print('init_ecl_data: inside')
+        #print('init_ecl_data: inside')
         self.unsmry = unformatted_file(unsmry)
         smspec = unformatted_file(smspec)
 
@@ -1898,7 +1876,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def read_ecl_data(self, case=None):
     #-----------------------------------------------------------------------
-        print('read_ecl_data: start')
+        #print('read_ecl_data: start')
         datafile = self.input['root']
         if case:
             datafile = case
@@ -1907,11 +1885,11 @@ class main_window(QMainWindow):                                    # main_window
             self.data['ecl'] = {}
             return False
         ### read data
-        print('read_ecl_data: before init')        
+        #print('read_ecl_data: before init')        
         if not self.unsmry:
             if not self.init_ecl_data(case=case):
                 return False
-        print('read_ecl_data: reading')
+        #print('read_ecl_data: reading')
         for block in self.unsmry.blocks(only_new=True):
             #block.print()
             if block.key()=='PARAMS':
@@ -1926,7 +1904,7 @@ class main_window(QMainWindow):                                    # main_window
                     wells = self.ecl_data.wells
                     for i in index:
                         self.data['ecl'][wells[i]][yaxis][fluid].append(data[i])
-        print('read_ecl_data: '+datafile)
+        #print('read_ecl_data: '+datafile)
         return True
         #print_dict(self.data['ecl'])
                         
@@ -1988,6 +1966,8 @@ class main_window(QMainWindow):                                    # main_window
     def on_ecl_plot_click(self):
     #-----------------------------------------------------------------------
         self.update_checked_list(self.sender())
+        if self.plot_ref_data:
+            self.plot_ref = True
         self.create_plot()
 
                     
@@ -2184,7 +2164,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_plot_line(self, name, is_checked):
     #-----------------------------------------------------------------------
-        print('update_plot_line')
+        #print('update_plot_line')
         if not self.plot_lines:
             self.create_plot_lines()
         if not name in self.plot_lines:
@@ -2247,6 +2227,8 @@ class main_window(QMainWindow):                                    # main_window
     def on_ior_menu_click(self):
     #-----------------------------------------------------------------------
         self.update_checked_list(self.sender())
+        if self.plot_ref_data:
+            self.plot_ref = True
         self.create_plot()
 
         
@@ -2322,7 +2304,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_plot(self):#, xlim=False):                         # main_window
     #-----------------------------------------------------------------------                
-        print('create_plot')
+        #print('create_plot')
         # clear figure 
         self.canvas.fig.clf()
         if not self.input['root']:
@@ -2384,7 +2366,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_plot_lines(self):
     #-----------------------------------------------------------------------
-        print('create_plot_lines')
+        #print('create_plot_lines')
         self.plot_lines = {}
         lines = {}        
         ax = self.plot_axes   # or self.canvas.fig.axes
@@ -2449,7 +2431,8 @@ class main_window(QMainWindow):                                    # main_window
                 ax[ind].relim(visible_only=True)
                 ax[ind].autoscale_view()
             self.plot_lines = lines
-            
+        if self.plot_ref:
+            self.plot_ref = None
             
         
     #-----------------------------------------------------------------------
@@ -2462,7 +2445,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_all_plot_lines(self): #, read_data=True):
     #-----------------------------------------------------------------------
-        print('update_all_plot_lines')
+        #print('update_all_plot_lines')
         # update plot-lines
         #if read_data:
         #    self.read_ior_data()
