@@ -252,7 +252,11 @@ def get_eclipse_well_yaxis_fluid(root):
                     for k in kw:
                         wells.append(k.strip())                  
     vars = list(set(vars))
+    if len(vars)==0:
+        raise SystemError('No variables in SUMMARY section.'+
+                          '\n\nEclipse plotting disabled.')
     wells = list(set(wells))
+    print(wells)
     F = {'O':'Oil', 'W':'Water', 'G':'Gas'}
     P = {'P':'prod', 'R':'rate'}
     fluids = list(set([F[v[1]] for v in vars if v[1] in F.keys()]))
@@ -363,7 +367,15 @@ def show_message(window, kind, text='', extra='', detail=None):
     msg.setStandardButtons(QMessageBox.Ok)  # | QMessageBox.Cancel)
     msg.exec_()
 
-    
+#-----------------------------------------------------------------------
+def show_message_text(window, text):
+#-----------------------------------------------------------------------
+    kind = 'error'
+    if text.lstrip().startswith('WARNING'):
+        text = text.replace('WARNING','')
+        kind = 'warning'
+    show_message(window, kind, text=text)
+
 #-----------------------------------------------------------------------
 def draw_border(widget, size='1px', color='solid black'): 
 #-----------------------------------------------------------------------
@@ -548,6 +560,7 @@ class Backward(Base_worker):
             runtime = str(datetime.now()-sim.starttime).split('.')[0]
             msg = 'Simulation complete, run-time was {}'.format(runtime)
             err = ''
+            self.update_progress(0)
         except (SystemError, psutil.NoSuchProcess) as e:
             #sim.kill_and_clean()
             err = str(e)
@@ -562,10 +575,9 @@ class Backward(Base_worker):
         finally:
             sim.kill_and_clean()
             self.status_message(msg)
-            sim.print2log('\n======  ' + msg + err + '  ======')
+            sim.print2log('\n======  ' + msg + ' ' + err + '  ======')
             sim.close_logfiles()
             self.update_plot()
-            self.update_progress(0)
 
 
 #===========================================================================
@@ -957,6 +969,8 @@ class main_window(QMainWindow):                                    # main_window
         self.help_win = help_window(self.pos(), parent=self)
         self.data = {}
         self.plot_ref_data = {}
+        self.ecl_boxes = {}
+        self.ior_boxes = {}
         self.days = None
         self.log_file = None
         self.unsmry = None
@@ -1414,16 +1428,22 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_menu_boxes(self, data, block_signal=True):       # main_window
     #-----------------------------------------------------------------------
+        if data=='ecl':
+            if not self.ecl_boxes:
+                return
+            yaxis = ('prod','rate')
+            boxlist = self.ecl_boxes
+        if data=='ior':
+            if not self.ior_boxes:
+                return
+            yaxis = ('prod','conc')
+            boxlist = self.ior_boxes 
+        if not boxlist['yaxis'] or not boxlist['well']:
+            return
         for box in self.max_3_checked:
             #print('Remove:' + box.objectName())
             set_checkbox(box, False, block_signal=block_signal)
         self.max_3_checked = []
-        if data=='ecl':
-            yaxis = ('prod','rate')
-            boxlist = self.ecl_boxes
-        if data=='ior':
-            yaxis = ('prod','conc')
-            boxlist = self.ior_boxes
         well = list(boxlist['well'].keys())[0] 
         for box in ([boxlist['yaxis'][y] for y in yaxis] + [boxlist['well'][well],]):
             #print('Add: '+box.objectName())
@@ -1507,7 +1527,8 @@ class main_window(QMainWindow):                                    # main_window
         else:
             self.plot_ref = None
             self.plot_ref_data = {}
-        #print(self.plot_ref)
+            self.ref_plot_lines = {}
+            #print(self.plot_ref)
         self.create_plot()
         #self.plot_ref = None
         
@@ -1606,26 +1627,23 @@ class main_window(QMainWindow):                                    # main_window
             self.set_variables_from_casefiles()
             self.set_plot_properties()
             self.update_ior_menu()
-            self.data = {}
-            self.read_ior_data()
-            self.unsmry = None
-            #self.ecl_yaxis = []
-            #self.ecl_fluids = []
-            #self.ecl_wells = []
-            self.read_ecl_data()
-            self.update_ecl_menu()
-            self.create_plot()
-            self.update_message()
-            self.view_ag.checkedAction().trigger()
-            #self.update_view_area()
-            # enable/disable geochem edit action
-            if self.input['root'] and Path(self.input['root']+'.geocheminp').is_file():
-                self.chem_inp_act.setEnabled(True)
-            else:
-                self.chem_inp_act.setEnabled(False)
         except SystemError as e:
-            show_message(self, 'error', text=str(e))
-            return False
+            show_message_text(self, str(e))
+        self.data = {}
+        self.unsmry = None
+        self.read_ior_data()
+        self.read_ecl_data()
+        self.update_ecl_menu()
+        self.create_plot()
+        self.update_message()
+        self.view_ag.checkedAction().trigger()
+        #self.update_view_area()
+        # enable/disable geochem edit action
+        if self.input['root'] and Path(self.input['root']+'.geocheminp').is_file():
+            self.chem_inp_act.setEnabled(True)
+        else:
+            self.chem_inp_act.setEnabled(False)
+
             
     #-----------------------------------------------------------------------
     def create_ecl_menu(self):                                # main_window
@@ -1649,6 +1667,9 @@ class main_window(QMainWindow):                                    # main_window
         name = self.sender().objectName()
         is_checked = self.sender().isChecked()
         self.update_plot_line(name, is_checked)
+        if self.plot_ref_data:
+            #print('ref_data')
+            self.update_plot_line(name, is_checked, lines=self.ref_plot_lines, set_data=False)
         self.canvas.draw()
 
     #-----------------------------------------------------------------------
@@ -1918,7 +1939,13 @@ class main_window(QMainWindow):                                    # main_window
         delete_all_widgets_in_layout(self.ecl_menu_layout)
         if not root: # or not self.ecl_yaxis:
             return False
-        wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root)
+        try:
+            wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root)
+        except SystemError as e:
+            lbl = QLabel()
+            lbl.setText(str(e))
+            self.ecl_menu_layout.addWidget(lbl)
+            return
         #print(wells, yaxis, fluids)
         col = self.ecl_menu_col
         self.ecl_boxes = {}
@@ -1939,8 +1966,6 @@ class main_window(QMainWindow):                                    # main_window
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
         col[0].addWidget(lbl)
         self.ecl_boxes['well'] = {}
-        #for i,well in enumerate(['Field']+(self.out_wells or [])+(self.in_wells or [])):
-        #for i,well in enumerate(self.ecl_wells):
         for i,well in enumerate(wells):
             box = self.new_checkbox(text=well, name='well '+well+' ecl', func=self.on_ecl_plot_click)
             if well=='Field':
@@ -1957,7 +1982,8 @@ class main_window(QMainWindow):                                    # main_window
             layout, box = self.new_box_with_line_layout(var, func=self.on_ecl_var_click)
             self.ecl_boxes['var'][var] = box
             col[1].addLayout(layout)
-        layout, box = self.new_box_with_line_layout('Temp', boxname='Temp_ecl', linestyle='dotted', color='#707070', func=self.on_ecl_var_click)
+        layout, box = self.new_box_with_line_layout('Temp', boxname='Temp_ecl', linestyle='dotted',
+                                                    color='#707070', func=self.on_ecl_var_click)
         self.ecl_boxes['var']['Temp_ecl'] = box
         self.ecl_menu_col[int((i+1)/7+1)].addLayout(layout)
 
@@ -1966,8 +1992,8 @@ class main_window(QMainWindow):                                    # main_window
     def on_ecl_plot_click(self):
     #-----------------------------------------------------------------------
         self.update_checked_list(self.sender())
-        if self.plot_ref_data:
-            self.plot_ref = True
+        #if self.plot_ref_data:
+        #    self.plot_ref = True
         self.create_plot()
 
                     
@@ -1992,26 +2018,102 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_editor_field(self):                                # main_window
     #-----------------------------------------------------------------------
+        layout = QVBoxLayout()
+        buttons = QHBoxLayout()
+        layout.addLayout(buttons)
         self.editor = QPlainTextEdit()
+        self.cursor_pos = None
+        layout.addWidget(self.editor)
         self.editor.textChanged.connect(self.activate_save)
         self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.editor_group = QGroupBox()
         self.editor_group.setObjectName('editor')
-        layout = QVBoxLayout()
         self.editor_group.setLayout(layout)
-        # buttons
-        buttons = QHBoxLayout()
+        ### Save button
         self.save_btn = QPushButton('Save')
+        self.save_btn.setFixedWidth(60)
         self.save_btn.clicked.connect(self.save_text)
         buttons.addWidget(self.save_btn)
+        ### Undo button
         self.undo_btn = QPushButton('Undo')
+        self.undo_btn.setFixedWidth(60)
         self.undo_btn.clicked.connect(self.editor.undo)
         buttons.addWidget(self.undo_btn)
-        layout.addLayout(buttons)
-        # editor
-        layout.addWidget(self.editor)
+        ### End button
+        self.end_btn = QPushButton('End')
+        self.end_btn.setFixedWidth(60)
+        self.end_btn.clicked.connect(self.goto_end)
+        buttons.addWidget(self.end_btn)
+        ### Search field
+        self.search_pos = []
+        self.search_field = QLineEdit() 
+        self.search_field.setPlaceholderText('Search text')
+        self.search_field.textChanged.connect(self.search_text)
+        buttons.addWidget(self.search_field)
+        ### Next button
+        self.next_btn = QPushButton('Next')
+        self.next_btn.setFixedWidth(60)
+        self.next_btn.clicked.connect(self.search_next)
+        buttons.addWidget(self.next_btn)
+        ### Prev button
+        self.prev_btn = QPushButton('Prev')
+        self.prev_btn.setFixedWidth(60)
+        self.prev_btn.clicked.connect(self.search_prev)
+        buttons.addWidget(self.prev_btn)
 
+    #-----------------------------------------------------------------------
+    def goto_end(self):
+    #-----------------------------------------------------------------------
+        self.editor.moveCursor(QTextCursor.End)
         
+    #-----------------------------------------------------------------------
+    def search_next(self):
+    #-----------------------------------------------------------------------
+        #print(self.search_string+' '+str(self.search_pos))
+        start = 0
+        if self.search_pos:
+            start = self.search_pos[-1]
+        self.search_text(self.search_field.text(), start=start)
+        
+    #-----------------------------------------------------------------------
+    def search_prev(self):
+    #-----------------------------------------------------------------------
+        #print(self.search_string+' '+str(self.search_pos))
+        if self.search_pos:
+            string = self.search_field.text()
+            if len(self.search_pos)==1:
+                pos = self.search_pos[0]
+            else:
+                pos = self.search_pos.pop()
+                if self.editor.textCursor().position() == pos:
+                    pos = self.search_pos.pop()
+            self.set_cursor(pos-len(string), string)
+        
+    #-----------------------------------------------------------------------
+    def search_text(self, string, start=0):
+    #-----------------------------------------------------------------------
+        #print('search_text: '+string+' '+str(start))
+        if start==0:
+            self.search_pos = []          
+        text = self.editor.toPlainText()
+        pos = text[start:].find(string)
+        if pos < 0:
+            return
+        pos += start
+        #print(pos)
+        self.search_pos.append(pos+len(string))
+        #self.search_string = string
+        self.set_cursor(pos, string)
+        
+    #-----------------------------------------------------------------------
+    def set_cursor(self, start, string):
+    #-----------------------------------------------------------------------
+        cursor = self.editor.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(start+len(string), QTextCursor.KeepAnchor)
+        #print(cursor.position())
+        self.editor.setTextCursor(cursor)
+                
     #-----------------------------------------------------------------------
     def save_text(self):
     #-----------------------------------------------------------------------
@@ -2019,6 +2121,7 @@ class main_window(QMainWindow):                                    # main_window
         text = self.editor.toPlainText()
         with open(self.editor.objectName(), 'w') as f:
             f.write(text)
+        #self.cursor_pos = self.editor.textCursor().position()
         self.save_btn.setEnabled(False)
         self.prepare_case(self.case)
 
@@ -2041,6 +2144,7 @@ class main_window(QMainWindow):                                    # main_window
             text = open(file).read()
             self.editor.setObjectName(str(file))
         self.editor.setPlainText(text)
+        #self.editor_text = text
         self.editor_group.setTitle(title)
         self.current_view.setParent(None)
         self.layout.addWidget(self.editor_group, *self.position['plot'])
@@ -2159,21 +2263,23 @@ class main_window(QMainWindow):                                    # main_window
         specie = self.sender().objectName()
         is_checked = self.sender().isChecked()
         self.update_plot_line(specie, is_checked)
+        if self.plot_ref_data:
+            self.update_plot_line(name, is_checked, lines=self.ref_plot_lines, set_data=False)
         self.canvas.draw()
 
     #-----------------------------------------------------------------------
-    def update_plot_line(self, name, is_checked):
+    def update_plot_line(self, name, is_checked, lines=None, set_data=True):
     #-----------------------------------------------------------------------
         #print('update_plot_line')
-        if not self.plot_lines:
+        if not lines:
+            lines = self.plot_lines
+        if not lines:
             self.create_plot_lines()
-        if not name in self.plot_lines:
-            #print(name+' not in {}'.format(self.plot_lines))
+        if not name in lines:
             return
-        for ax,line in self.plot_lines[name].items():
-            #print('update_plot_line {},{}'.format(name,ax))
+        for ax,line in lines[name].items():
             line.set_visible(is_checked)
-            if is_checked:
+            if is_checked and set_data:
                 well, yaxis, var, data = line.get_label().split()
                 if not self.data[data]:
                     return
@@ -2183,7 +2289,7 @@ class main_window(QMainWindow):                                    # main_window
             ax.relim(visible_only=True)
             ax.autoscale_view()
         if 'temp' in name.lower():
-            for ax in self.plot_lines[name].keys():
+            for ax in lines[name].keys():
                 ax.set_visible(is_checked)
 
             
@@ -2226,9 +2332,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_ior_menu_click(self):
     #-----------------------------------------------------------------------
+        print('ior_menu: '+self.sender().objectName())
         self.update_checked_list(self.sender())
-        if self.plot_ref_data:
-            self.plot_ref = True
+        #if self.plot_ref_data:
+        #    self.plot_ref = True
         self.create_plot()
 
         
@@ -2305,6 +2412,8 @@ class main_window(QMainWindow):                                    # main_window
     def create_plot(self):#, xlim=False):                         # main_window
     #-----------------------------------------------------------------------                
         #print('create_plot')
+        if self.plot_ref_data:
+            self.plot_ref = True
         # clear figure 
         self.canvas.fig.clf()
         if not self.input['root']:
@@ -2368,73 +2477,94 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         #print('create_plot_lines')
         self.plot_lines = {}
-        lines = {}        
+        lines = {}
+        self.ref_plot_lines = {}
+        ref_lines = {}
         ax = self.plot_axes   # or self.canvas.fig.axes
         for i, ax_name in enumerate(self.ioraxes_names):
             yaxis, well, data = ax_name.split()
-            #print(yaxis, well, data)
-            #if not self.data[data]:
-            #    return
             if data=='ior':
                 var_box = self.ior_boxes['var']
             elif data=='ecl':
                 var_box = self.ecl_boxes['var']
             var_list = var_box.keys() 
             the_data = self.data.get(data)
-            if the_data:
-                xdata = the_data['days']
-                #print('x: '+str(len(xdata)))
-            for var in var_list:#+['Temp']:
-                #print(data, well, yaxis, var)
-                try:
-                    if the_data:
-                        #ydata = self.data[data][well][yaxis][var]
-                        #print(data, well, yaxis)
-                        ydata = the_data[well][yaxis][var]
-                        #print('y: '+str(len(ydata)))
-                        if len(xdata) != len(ydata):
-                            #print('Size mismatch for {} {} {} {}: {},{}'.
-                            #      format(data, well, yaxis, var, len(xdata), len(ydata)))
-                            continue
-                except KeyError as e:
-                    #print('KeyError: ' + str(e))
-                    continue
+            for var in var_list:
                 if 'temp' in var.lower():
-                    #print(var)
                     ind = i*2+1 # extra right axis for temperature
                 else:
                     ind = i*2   # main axes
                 line = None
                 if the_data:
-                    #print('the_data: '+ data, well, yaxis, var)
+                    try:
+                        xdata = the_data['days']
+                        ydata = the_data[well][yaxis][var]
+                        if len(xdata) != len(ydata):
+                            continue
+                    except KeyError as e:
+                        continue
                     line, = ax[ind].plot(xdata, ydata, color=self.plot_prop['color'][var],
-                                         linestyle=self.plot_prop['line'][var], alpha=self.plot_prop['alpha'][var],
+                                         linestyle=self.plot_prop['line'][var],
+                                         alpha=self.plot_prop['alpha'][var],
                                          lw=2, label=well+' '+yaxis+' '+var+' '+data)
                 if line:
                     if var not in lines:
                         lines[var] = {}
-                    #print('line.set_visible: '+var)
                     line.set_visible(var_box[var].isChecked())
                     lines[var][ax[ind]] = line
                 # if we have a compare case
+                ref_line = None
                 if self.plot_ref:
-                    #self.plot_ref_data.get(data)
                     refdata = self.plot_ref_data.get(data)
-                    #print(data, well, yaxis, var)
-                    #print(refdata['days'])
-                    if refdata and len(refdata['days'])==len(refdata[well][yaxis][var]):
-                        #print('printing ref_data: ',well,yaxis,var)
-                        ax[ind].plot(refdata['days'], refdata[well][yaxis][var],
-                                     color=self.plot_prop['color'][var],
-                                     linestyle=self.plot_prop['line'][var], alpha=0.4,
-                                     lw=2, label='ref '+well+' '+yaxis+' '+var+' '+data)
+                    if refdata: # and var_box[var].isChecked():
+                        try:
+                            xdata = refdata['days']
+                            ydata = refdata[well][yaxis][var]
+                            if len(xdata) != len(ydata):
+                                continue
+                        except KeyError as e:
+                            continue                        
+                        ref_line, = ax[ind].plot(refdata['days'], refdata[well][yaxis][var],
+                                                 color=self.plot_prop['color'][var],
+                                                 linestyle=self.plot_prop['line'][var], alpha=0.4,
+                                                 lw=2, label=well+' '+yaxis+' '+var+' '+data)
+                if ref_line:
+                    if var not in ref_lines:
+                        ref_lines[var] = {}
+                    ref_line.set_visible(var_box[var].isChecked())
+                    ref_lines[var][ax[ind]] = ref_line
                 ax[ind].relim(visible_only=True)
                 ax[ind].autoscale_view()
             self.plot_lines = lines
+            self.ref_plot_lines = ref_lines
         if self.plot_ref:
             self.plot_ref = None
             
-        
+    #-----------------------------------------------------------------------
+    def plot_line(self, axis, var, data, axisname, var_box, lines):           # main_window
+    #-----------------------------------------------------------------------
+        if not data:
+            return
+        try:
+            y, w, d = axisname.split() # yaxis well data
+            xdata = data['days']
+            ydata = data[w][y][var]
+            if len(xdata) != len(ydata):
+                return
+        except KeyError as e:
+            return
+        line, = axis.plot(xdata, ydata,
+                          color=self.plot_prop['color'][var],
+                          linestyle=self.plot_prop['line'][var],
+                          alpha=self.plot_prop['alpha'][var],
+                          lw=2,
+                          label=w+' '+y+' '+var+' '+d)
+        if var not in lines:
+            lines[var] = {}
+        line.set_visible(var_box[var].isChecked())
+        lines[var][ax[ind]] = line
+
+            
     #-----------------------------------------------------------------------
     def update_remaining_time(self, text='0:00:00'):           # main_window
     #-----------------------------------------------------------------------
