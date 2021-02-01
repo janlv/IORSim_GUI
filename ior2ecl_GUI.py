@@ -256,7 +256,7 @@ def get_eclipse_well_yaxis_fluid(root):
         raise SystemError('No variables in SUMMARY section.'+
                           '\n\nEclipse plotting disabled.')
     wells = list(set(wells))
-    print(wells)
+    #print(wells)
     F = {'O':'Oil', 'W':'Water', 'G':'Gas'}
     P = {'P':'prod', 'R':'rate'}
     fluids = list(set([F[v[1]] for v in vars if v[1] in F.keys()]))
@@ -1507,23 +1507,27 @@ class main_window(QMainWindow):                                    # main_window
     def on_compare_select(self, nr):                              # main_window
     #-----------------------------------------------------------------------
         if nr>0:
-            self.plot_ref = str(self.cases[nr-1])
+            ior = ecl = False
+            case = str(self.cases[nr-1])
             data = copy.deepcopy(self.data)
             #print('BEFORE')
             #print_dict(self.data)
-            self.unsmry = None
-            if self.read_ecl_data(case=self.plot_ref):
+            # Eclipse
+            if self.read_ecl_data(case=case, reinit=True):
                 self.plot_ref_data['ecl'] = copy.deepcopy(self.data['ecl'])
-                #print('ECL READ')
-                #self.data['ecl'] = {}                
-            if self.read_ior_data(case=self.plot_ref):
+                ecl = True
+            self.unsmry = None
+            # IOR
+            if self.read_ior_data(case=case):
                 self.plot_ref_data['ior'] = copy.deepcopy(self.data['ior'])
-                #print('IOR READ')
-                #self.data['ior'] = {}
+                ior = True                
             self.data = data
+            if (not ecl and not ior) or (not ecl and self.mode=='eclipse') or (not ior and self.mode=='iorsim'):
+                self.ref_case.setCurrentIndex(0)
+                return
+            self.plot_ref = case
             #print('AFTER')
             #print_dict(self.data)
-            self.unsmry = None
         else:
             self.plot_ref = None
             self.plot_ref_data = {}
@@ -1623,6 +1627,7 @@ class main_window(QMainWindow):                                    # main_window
     def prepare_case(self, root):
     #-----------------------------------------------------------------------
         try:
+            self.ref_case.setCurrentIndex(0)
             self.out_wells, self.in_wells = get_wells_iorsim(root)
             self.set_variables_from_casefiles()
             self.set_plot_properties()
@@ -1895,7 +1900,7 @@ class main_window(QMainWindow):                                    # main_window
 
         
     #-----------------------------------------------------------------------
-    def read_ecl_data(self, case=None):
+    def read_ecl_data(self, case=None, reinit=False):
     #-----------------------------------------------------------------------
         #print('read_ecl_data: start')
         datafile = self.input['root']
@@ -1907,7 +1912,7 @@ class main_window(QMainWindow):                                    # main_window
             return False
         ### read data
         #print('read_ecl_data: before init')        
-        if not self.unsmry:
+        if reinit or not self.unsmry:
             if not self.init_ecl_data(case=case):
                 return False
         #print('read_ecl_data: reading')
@@ -2332,7 +2337,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_ior_menu_click(self):
     #-----------------------------------------------------------------------
-        print('ior_menu: '+self.sender().objectName())
+        #print('ior_menu: '+self.sender().objectName())
         self.update_checked_list(self.sender())
         #if self.plot_ref_data:
         #    self.plot_ref = True
@@ -2378,11 +2383,14 @@ class main_window(QMainWindow):                                    # main_window
                 yaxis = 'prod'
             data = genfromtxt(str(file))
             ior['days'] = data[1:,0]
-            for i,name in enumerate(inp['species']):
-                ior[well][yaxis][name] = data[1:,i+1]
-            if 'conc' in yaxis:
-                ior[well]['conc']['Temp'] = data[1:,-1]
-                ior[well]['prod']['Temp'] = data[1:,-1]
+            try:
+                for i,name in enumerate(inp['species']):
+                    ior[well][yaxis][name] = data[1:,i+1]
+                if 'conc' in yaxis:
+                    ior[well]['conc']['Temp'] = data[1:,-1]
+                    ior[well]['prod']['Temp'] = data[1:,-1]
+            except KeyError as e:
+                return False
         self.data['ior'] = ior
         return True
 
