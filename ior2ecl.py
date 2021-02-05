@@ -407,7 +407,7 @@ class ior2ecl:
         return message
 
     #--------------------------------------------------------------------------------
-    def terminate(run):
+    def terminate(self, run):
     #--------------------------------------------------------------------------------
         self.print2log('\nTerminating ' + run.name)
         run.resume()

@@ -27,7 +27,7 @@ import copy
 
 from ior2ecl import ior2ecl
 from IORlib.utils import Progress, exit_without_atexit, assert_python_version, get_substrings, return_matching_string, silentdelete, delete_all, delete_files_matching, file_contains
-from IORlib.ECL import RSM_file, unformatted_file, formatted_file
+from IORlib.ECL import RSM_file, unfmt_file, fmt_file
 
 button_size = QSize(100, 25)
 box_height = 25
@@ -1811,8 +1811,8 @@ class main_window(QMainWindow):                                    # main_window
         if not smspec.is_file() or not unsmry.is_file():
             return False
         #print('init_ecl_data: inside')
-        self.unsmry = unformatted_file(unsmry)
-        smspec = unformatted_file(smspec)
+        self.unsmry = unfmt_file(unsmry)
+        smspec = unfmt_file(smspec)
 
         ### read variable specifications
         ecl_data = namedtuple('ecl_data','time fluid wells yaxis units')
