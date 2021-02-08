@@ -28,6 +28,7 @@ import copy
 from ior2ecl import ior2ecl
 from IORlib.utils import Progress, exit_without_atexit, assert_python_version, get_substrings, return_matching_string, silentdelete, delete_all, delete_files_matching, file_contains
 from IORlib.ECL import RSM_file, unfmt_file, fmt_file, Section
+import GUI_icons
 
 button_size = QSize(100, 25)
 box_height = 25
@@ -38,7 +39,7 @@ default_size = 10
 default_weight = 50
 to_screen = False
 quiet = True
-icon_path = Path('icons')
+#icon_path = Path('icons')
 
 #-----------------------------------------------------------------------
 def print_dict(adict, inc=3):
@@ -155,7 +156,8 @@ def create_action(win, text=None, shortcut=None, tip=None, func=None, icon=None,
     if tip:
         act.setStatusTip(tip)
     if icon:
-        act.setIcon(QIcon(str(icon_path/Path(icon))))
+        #act.setIcon(QIcon(str(icon_path/Path(icon))))
+        act.setIcon(QIcon(':'+icon)) #QIcon(str(icon_path/Path(icon))))
     act.triggered.connect(func)
     return act
 
@@ -769,39 +771,57 @@ class Settings(QDialog):
         #self.layout.setColumnStretch(2,33)
         #self.layout.setColumnStretch(3,15)
         #self.layout.setColumnStretch(4,15)
+        tool_tip = {'iorsim':'Set path to the IORSim executable',
+                    'iorarg':'Additional arguments passed to IORSim',
+                    'eclrun':"Eclipse command, default is 'eclrun'",
+                    'unrst':'Only for backward mode:\nCheck complete Eclipse UNRST-file before IORSim takes over',
+                    'rft':'Only for backward mode:\nCheck complete Eclipse RFT-file before IORSim takes over',
+                    'dt':'Only backward mode:\nInitial timestep for IORSim run'}
 
         ### IORSim executable
         n = 0
         var, text = 'iorsim', 'IORSim program'
-        label, self.iorsim, button = self.new_line(var=var, text=text, required=True, open_func=self.open_ior_prog)
-        self.layout.addWidget(label       , n, 0)
+        # label, setting, button = self.new_line()
+        widget = self.new_line(var=var, text=text, required=True, open_func=self.open_ior_prog)
+        self.layout.addWidget(widget[0] , n, 0)
         # layout given as (row, col, rowspan, colspan)
-        self.layout.addWidget(self.iorsim , n, 1, 1, 2)
-        self.layout.addWidget(button      , n, 3)
-        
+        self.layout.addWidget(widget[1] , n, 1, 1, 2)
+        self.layout.addWidget(widget[2] , n, 3)
+        #for w in widget[1:]:
+        widget[1].setToolTip(tool_tip[var])
+        self.iorsim = widget[1]
+            
         ### IORSim args
         n += 1
         var, text = 'iorarg', 'IORSim arguments'
-        label, self.iorarg = self.new_line(var=var, text=text, required=False)
-        self.layout.addWidget(label       , n, 0)
-        self.layout.addWidget(self.iorarg , n, 1, 1, 2)
-    
+        widget = self.new_line(var=var, text=text, required=False)
+        self.layout.addWidget(widget[0] , n, 0)
+        self.layout.addWidget(widget[1] , n, 1, 1, 2)
+        #for w in widget[1:]:
+        widget[1].setToolTip(tool_tip[var])
+        self.iorarg = widget[1]
+        
         ### Eclipse executable
         n += 1
         var, text = 'eclrun', 'Eclipse program'
-        label, self.eclrun, button = self.new_line(var=var, text=text, required=True, open_func=self.open_ecl_prog)
-        self.layout.addWidget(label       , n, 0)
-        self.layout.addWidget(self.eclrun , n, 1, 1, 2)
-        self.layout.addWidget(button      , n, 3)
- 
+        widget = self.new_line(var=var, text=text, required=True, open_func=self.open_ecl_prog)
+        self.layout.addWidget(widget[0] , n, 0)
+        self.layout.addWidget(widget[1] , n, 1, 1, 2)
+        self.layout.addWidget(widget[2] , n, 3)
+        #for w in widget[1:]:
+        widget[1].setToolTip(tool_tip[var])
+        self.eclrun = widget[1]
+        
         ### Eclipse file checks
         n += 1
         label = QLabel()
         label.setText('Output checks')
         var, text = 'unrst', 'UNRST-file'
         self.unrst = self.new_box(var=var, text=text)
+        self.unrst.setToolTip(tool_tip[var])
         var, text = 'rft', 'RFT-file'
         self.rft = self.new_box(var=var, text=text)
+        self.rft.setToolTip(tool_tip[var])
         self.layout.addWidget(label,      n, 0)
         self.layout.addWidget(self.unrst, n, 1)
         self.layout.addWidget(self.rft,   n, 2)
@@ -810,6 +830,7 @@ class Settings(QDialog):
         n += 1
         var, text = 'dt', 'Initial timestep'
         label, self.dt = self.new_line(var=var, text=text, required=True)
+        self.dt.setToolTip(tool_tip[var])
         self.layout.addWidget(label       , n, 0)
         self.layout.addWidget(self.dt , n, 1)
         # self.layout.addWidget(self.fontsize , 4, 1, 1, 1)
@@ -1029,39 +1050,39 @@ class main_window(QMainWindow):                                    # main_window
     def create_actions(self):                                  # main_window
     #-----------------------------------------------------------------------
         ### actions
-        self.set_act = create_action(self, text='&Settings', icon='gear.png', shortcut='Ctrl+S',
+        self.set_act = create_action(self, text='&Settings', icon='gear', shortcut='Ctrl+S',
                                      tip='Edit settings', func=self.settings.open)
-        self.start_act = create_action(self, text=None, icon='start_24.png', shortcut='Ctrl+R',
+        self.start_act = create_action(self, text=None, icon='start_24', shortcut='Ctrl+R',
                                        tip='Run simulation', func=self.run_sim)
-        self.stop_act = create_action(self, text=None, icon='stop_24.png', shortcut='Ctrl+E',
+        self.stop_act = create_action(self, text=None, icon='stop_24', shortcut='Ctrl+E',
                                       tip='Stop simulation', func=self.killsim)
         self.help_act = create_action(self, text='Keyboard shortcuts',  shortcut='',
                                       tip='Display help', func=self.help_win.open_win)
-        self.exit_act = create_action(self, text='&Exit', icon='control-power.png', shortcut='Ctrl+Q',
+        self.exit_act = create_action(self, text='&Exit', icon='control-power', shortcut='Ctrl+Q',
                                       tip='Exit application', func=self.quit)
-        self.add_case_act = create_action(self, text='Add case...', icon='document--plus.png',
+        self.add_case_act = create_action(self, text='Add case...', icon='document--plus',
                                           func=self.add_case_from_file)
-        self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy.png',
+        self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy',
                                            func=self.duplicate_current_case)
-        self.rename_case_act = create_action(self, text='Rename current case..', icon='document-rename.png',
+        self.rename_case_act = create_action(self, text='Rename current case..', icon='document-rename',
                                              func=self.rename_current_case)
-        self.clear_case_act = create_action(self, text='Clear current case', icon='document.png',
+        self.clear_case_act = create_action(self, text='Clear current case', icon='document',
                                             func=self.clear_current_case)
-        self.delete_case_act = create_action(self, text='Delete current case', icon='document--minus.png',
+        self.delete_case_act = create_action(self, text='Delete current case', icon='document--minus',
                                              func=self.delete_current_case)
-        self.plot_act = create_action(self, text='Plot', icon='guide.png', func=self.view_plot, checkable=True)
+        self.plot_act = create_action(self, text='Plot', icon='guide', func=self.view_plot, checkable=True)
         self.plot_act.setChecked(True)
-        self.ecl_inp_act = create_action(self, text='Eclipse input file', icon='document-attribute-e.png',
+        self.ecl_inp_act = create_action(self, text='Eclipse input file', icon='document-e',
                                          func=self.view_eclipse_input, checkable=True)
-        self.ior_inp_act = create_action(self, text='IORSim input file', icon='document-attribute-i.png',
+        self.ior_inp_act = create_action(self, text='IORSim input file', icon='document-i',
                                          func=self.view_iorsim_input, checkable=True)
-        self.chem_inp_act = create_action(self, text='IORSim geochem file', icon='document-attribute-g.png',
+        self.chem_inp_act = create_action(self, text='IORSim geochem file', icon='document-g',
                                           func=self.view_geochem_input, checkable=True)
-        self.ecl_log_act = create_action(self, text='Eclipse log file', icon='terminal.png',
+        self.ecl_log_act = create_action(self, text='Eclipse log file', icon='terminal',
                                          func=self.view_eclipse_log, checkable=True)
-        self.ior_log_act = create_action(self, text='IORSim log file', icon='terminal.png',
+        self.ior_log_act = create_action(self, text='IORSim log file', icon='terminal',
                                          func=self.view_iorsim_log, checkable=True)
-        self.py_log_act = create_action(self, text='Program log file', icon='terminal.png',
+        self.py_log_act = create_action(self, text='Program log file', icon='terminal',
                                         func=self.view_program_log, checkable=True)
         fwd = create_action(self, text='Forward', icon='',
                             func=self.mode_forward, checkable=True)
@@ -1072,7 +1093,7 @@ class main_window(QMainWindow):                                    # main_window
         ior = create_action(self, text='IORSim', icon='',
                             func=self.mode_iorsim, checkable=True)
         self.mode_act = {'forward':fwd, 'backward':back, 'eclipse':ecl, 'iorsim':ior}
-        #self.show_manual_act = create_action(self, text='View user manual', icon='document.png', func=self.on_show_manual)
+        #self.show_manual_act = create_action(self, text='View user manual', icon='document', func=self.on_show_manual)
                 
         
     #-----------------------------------------------------------------------
