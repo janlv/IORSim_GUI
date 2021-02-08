@@ -1002,8 +1002,9 @@ class main_window(QMainWindow):                                    # main_window
     def __init__(self, *args, **kwargs):                       # main_window
     #-----------------------------------------------------------------------
         super(main_window, self).__init__(*args, **kwargs)
-        self.setWindowTitle('Run IORSim with Eclipse') 
+        self.setWindowTitle('GUI for IORSim') 
         self.setGeometry(300, 100, 1100, 800)
+        self.setWindowIcon(QIcon(':program_icon'))
         self.font = QFont().defaultFamily()
         self.menu_fontsize = 7
         self.help_win = help_window(self.pos(), parent=self)

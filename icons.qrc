@@ -1,21 +1,22 @@
 <!DOCTYPE RCC><RCC version="1.0">
 <qresource>
-    <file alias="gear">icons/gear.png</file>
-    <file alias="guide">icons/guide.png</file>
-    <file alias="start_24">icons/start_24.png</file>
-    <file alias="stop_24">icons/stop_24.png</file>
-    <file alias="control-power">icons/control-power.png</file>
-    <file alias="document">icons/document.png</file>
-    <file alias="document-e">icons/document-attribute-e.png</file>
-    <file alias="document-g">icons/document-attribute-g.png</file>
-    <file alias="document-i">icons/document-attribute-i.png</file>
-    <file alias="document-copy">icons/document-copy.png</file>
-    <file alias="document-import">icons/document-import.png</file>
-    <file alias="document-insert">icons/document-insert.png</file>
-    <file alias="document-rename">icons/document-rename.png</file>
-    <file alias="document--minus">icons/document--minus.png</file>
-    <file alias="document--plus">icons/document--plus.png</file>
-    <file alias="terminal">icons/terminal.png</file>
+  <file alias="program_icon">icons/ior2ecl_icon.png</file>  
+  <file alias="gear">icons/gear.png</file>
+  <file alias="guide">icons/guide.png</file>
+  <file alias="start_24">icons/start_24.png</file>
+  <file alias="stop_24">icons/stop_24.png</file>
+  <file alias="control-power">icons/control-power.png</file>
+  <file alias="document">icons/document.png</file>
+  <file alias="document-e">icons/document-attribute-e.png</file>
+  <file alias="document-g">icons/document-attribute-g.png</file>
+  <file alias="document-i">icons/document-attribute-i.png</file>
+  <file alias="document-copy">icons/document-copy.png</file>
+  <file alias="document-import">icons/document-import.png</file>
+  <file alias="document-insert">icons/document-insert.png</file>
+  <file alias="document-rename">icons/document-rename.png</file>
+  <file alias="document--minus">icons/document--minus.png</file>
+  <file alias="document--plus">icons/document--plus.png</file>
+  <file alias="terminal">icons/terminal.png</file>
 </qresource>
 </RCC>
 
