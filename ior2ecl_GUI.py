@@ -27,7 +27,7 @@ import copy
 
 from ior2ecl import ior2ecl
 from IORlib.utils import Progress, exit_without_atexit, assert_python_version, get_substrings, return_matching_string, silentdelete, delete_all, delete_files_matching, file_contains
-from IORlib.ECL import RSM_file, unfmt_file, fmt_file
+from IORlib.ECL import RSM_file, unfmt_file, fmt_file, Section
 
 button_size = QSize(100, 25)
 box_height = 25
@@ -457,6 +457,7 @@ def str_to_bool(s):
 class WorkerSignals(QObject):                                              
 #===========================================================================
     finished = pyqtSignal()
+    result = pyqtSignal(int)
     error = pyqtSignal(tuple)
     progress = pyqtSignal(int)
     plot = pyqtSignal()
@@ -506,17 +507,17 @@ class Base_worker(QRunnable):
     #-----------------------------------------------------------------------
         try:
             self.finished = False
-            self.runnable()
+            result = self.runnable()
         except:
             traceback.print_exc()
             exctype, value = sys.exc_info()[:2]
             self.signals.error.emit((exctype, value, traceback.format_exc()))
-        #else:
-        #    self.signals.result.emit(result)
+        else:
+            self.signals.result.emit(result)
         finally:
             self.signals.finished.emit()
             self.finished = True
-            #print('FINISHED!')
+            #print('RUN FINISHED!')
             
 #===========================================================================
 class Backward(Base_worker):                                              
@@ -561,6 +562,7 @@ class Backward(Base_worker):
             msg = 'Simulation complete, run-time was {}'.format(runtime)
             err = ''
             self.update_progress(0)
+            result = True
         except (SystemError, psutil.NoSuchProcess) as e:
             #sim.kill_and_clean()
             err = str(e)
@@ -572,12 +574,14 @@ class Backward(Base_worker):
                 msg = 'Simulation stopped unexpectedly'
                 self.show_message(('error', msg+'\n'+err))
             #self.update_progress(0)
+            result = False
         finally:
             sim.kill_and_clean()
             self.status_message(msg)
             sim.print2log('\n======  ' + msg + ' ' + err + '  ======')
             sim.close_logfiles()
             self.update_plot()
+            return result
 
 
 #===========================================================================
@@ -617,7 +621,8 @@ class Forward(Base_worker):
                 self.wait_func()
                 self.current = None
                 self.update_progress(0)
-            self.status_message('Simulation complete')                
+            self.status_message('Simulation complete')
+            result = True
         except (SystemError, ProcessLookupError, psutil.NoSuchProcess) as e:
             msg = str(e)
             kind = 'error'
@@ -626,6 +631,7 @@ class Forward(Base_worker):
                 kind = 'info'
             self.status_message(msg)
             self.show_message((kind, msg))
+            result = False
         finally:
             # kill possible remaining processes
             for run in runs:
@@ -638,8 +644,8 @@ class Forward(Base_worker):
             #sim.close_logfiles()
             self.update_plot()
             self.update_progress(0)
-
-            
+            return result
+                        
 #===========================================================================
 class Convert(Base_worker):                                              
 #===========================================================================
@@ -649,21 +655,34 @@ class Convert(Base_worker):
         # convert file
         ior = self.root+'_IORSim_PLOT'  
         self.funrst = ior+'.FUNRST'
-        self.unrst = ior+'.UNRST'
+        #self.unrst = ior+'.UNRST'
       
     @pyqtSlot()
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
-        self.status_message('Writing unformatted restart file')
-        formatted_file(self.funrst).convert(duplicate='ImMobGel', ignore=1, progress=self.update_progress) 
-        # copy files
-        if Path(self.root+'.UNRST').is_file():
-            shutil.copy(self.root+'.UNRST', self.root+'_Eclipse.UNRST')
-        if Path(self.unrst).is_file():
-            shutil.copy(self.unrst, self.root+'.UNRST')
+        self.status_message('Converting restart file...')
+        ior_unrst = fmt_file(self.funrst).convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
+                                                  progress=self.update_progress) 
+        #self.status_message('Convert finished')        
+        # Backup original Eclipse UNRST-file
+        root_unrst = Path(self.root+'.UNRST')
+        if root_unrst.is_file():
+            shutil.copy(root_unrst, self.root+'_Eclipse.UNRST')
+        # Merge Eclipse and IORSim UNRST-files
+        self.status_message('Merging Eclipse and IORSim restart files...')
+        ecl_sec = Section(root_unrst, start_before='SEQNUM' , end_before='SEQNUM', skip_sections=(0,-1))
+        ior_sec = Section(ior_unrst,  start_after='DOUBHEAD', end_before='SEQNUM')
+        ior = Path(ior_unrst)
+        out = str(ior.parent/ior.stem)+'_MERGED.UNRST'
+        merged = unfmt_file(self.root+'.merged').create(ecl_sec, ior_sec)
+        #print(merged)
+        # Rename merged UNRST-file to the case name
+        if merged.is_file():
+            merged.replace(self.root+'.UNRST')
+        # reset progressbar
+        self.status_message('Restart file ready')
         self.update_progress(0)
-        self.status_message('Unformatted restart file ready')
         
 
 #===========================================================================
@@ -2809,7 +2828,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         # convert FUNRST to UNRST
         self.convert = Convert(self.input['root'])
-        if not Path(self.convert.funrst).is_file() or self.progressbar.value() < 1:
+        if not Path(self.convert.funrst).is_file():# or self.progressbar.value() < 1:
             return
         self.convert.signals.progress.connect(self.update_progressbar)
         self.convert.signals.finished.connect(self.convert_finished)
