@@ -13,7 +13,10 @@
    version="1.1"
    id="SVGRoot"
    sodipodi:docname="ior2ecl_icon.svg"
-   inkscape:version="1.0.2 (e86c8708, 2021-01-15)">
+   inkscape:version="1.0.2 (e86c8708, 2021-01-15)"
+   inkscape:export-filename="/Users/janlv/codes/IORSim_GUI/ior2ecl_24x24.png"
+   inkscape:export-xdpi="144.00002"
+   inkscape:export-ydpi="144.00002">
   <defs
      id="defs10">
     <marker
@@ -39,7 +42,7 @@
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="20.077256"
-     inkscape:cx="4.5724656"
+     inkscape:cx="-6.0614575"
      inkscape:cy="7.5018802"
      inkscape:document-units="px"
      inkscape:current-layer="layer1"
