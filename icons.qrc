@@ -1,6 +1,6 @@
 <!DOCTYPE RCC><RCC version="1.0">
 <qresource>
-  <file alias="program_icon">icons/ior2ecl_icon.png</file>  
+  <file alias="program_icon">icons/ior2ecl_icon.svg</file>  
   <file alias="gear">icons/gear.png</file>
   <file alias="guide">icons/guide.png</file>
   <file alias="start_24">icons/start_24.png</file>
