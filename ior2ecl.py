@@ -395,13 +395,13 @@ class ior2ecl:
 
 
     #--------------------------------------------------------------------------------
-    def status_message(self, t, unrst=True, rft=True):
+    def status_message(self, t): #, unrst=True, rft=True):
     #--------------------------------------------------------------------------------
         message = 'Step {}/{} '.format(t, self.nsteps)
-        if unrst:
+        if self.check_unrst:
             unrst = self.unrst_check.start_values()
             message += ':  {} : {}'.format(unrst['start'].rstrip(), unrst['values'][0])
-        if rft:
+        if self.check_rft:
             rft = self.rft_check.start_values()
             message += ', {} : {:.2f}'.format(rft['start'].rstrip(), rft['values'][0]) 
         return message
