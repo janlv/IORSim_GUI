@@ -164,3 +164,5 @@ IORSim_GUI.exe
 IORSim_GUI.zip
 merge.test
 test_merge.py
+.#ior2ecl_GUI.py
+\#ior2ecl_GUI.py#

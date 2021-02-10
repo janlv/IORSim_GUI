@@ -536,7 +536,6 @@ class Backward(Base_worker):
         msg = err = ''
         t = 0
         try:            
-            #sim.check_input()
             sim.init_runs()
         except SystemError as e:
                 self.show_message(('error', str(e)))
@@ -546,19 +545,13 @@ class Backward(Base_worker):
             sim.start_eclipse(kill_func=self.is_killed)
             self.status_message('Starting IORSim...')
             sim.start_iorsim(kill_func=self.is_killed)
-            #sim.start_runs(kill_func=self.is_killed)
-            #self.status_message('Eclipse and IORSim started')
-            #if self.is_killed():
-            #    raise SystemError('Run cancelled')
-            # start timestep loop
+            # Start timestep loop
             for self.t in range(1, sim.nsteps+1):
                 sim.run_one_step(self.t, kill_func=self.is_killed)                
                 self.update_progress(self.t)
                 self.update_plot()
-                self.status_message(sim.status_message(self.t, rft=False))
-                #if self.is_killed():
-                #    raise SystemError(self.stop_msg())
-            # timestep loop finished
+                self.status_message(sim.status_message(self.t))
+            # Timestep loop finished
             sim.terminate_runs()
             runtime = str(datetime.now()-sim.starttime).split('.')[0]
             msg = 'Simulation complete, run-time was {}'.format(runtime)
@@ -621,7 +614,7 @@ class Forward(Base_worker):
                 self.status_message(run.name + ' running')
                 run.wait_for_process_to_quit(sleep_sec=1, wait_func=self.wait_func, wait=2, kill_func=self.is_killed)
                 self.wait_func()
-                self.current = None
+                #self.current = None
                 self.update_progress(0)
             self.status_message('Simulation complete')
             result = True
@@ -646,6 +639,7 @@ class Forward(Base_worker):
             #sim.close_logfiles()
             self.update_plot()
             self.update_progress(0)
+            #self.current = None
             return result
                         
 #===========================================================================
@@ -666,20 +660,23 @@ class Convert(Base_worker):
         self.status_message('Converting restart file...')
         ior_unrst = fmt_file(self.funrst).convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
                                                   progress=self.update_progress) 
+        #print(ior_unrst)
         #self.status_message('Convert finished')        
         # Backup original Eclipse UNRST-file
         root_unrst = Path(self.root+'.UNRST')
         if root_unrst.is_file():
-            shutil.copy(root_unrst, self.root+'_Eclipse.UNRST')
+            shutil.copy(root_unrst, self.root+'_ECLIPSE.UNRST')
         # Merge Eclipse and IORSim UNRST-files
         self.status_message('Merging Eclipse and IORSim restart files...')
-        ecl_sec = Section(root_unrst, start_before='SEQNUM' , end_before='SEQNUM', skip_sections=(0,-1))
+        ecl_sec = Section(root_unrst, start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
         ior_sec = Section(ior_unrst,  start_after='DOUBHEAD', end_before='SEQNUM')
         ior = Path(ior_unrst)
-        out = str(ior.parent/ior.stem)+'_MERGED.UNRST'
-        merged = unfmt_file(self.root+'.merged').create(ecl_sec, ior_sec)
+        merged = ior.parent/(ior.stem+'_MERGED.UNRST')
+        merged = unfmt_file(merged).create(ecl_sec, ior_sec)
         #print(merged)
         # Rename merged UNRST-file to the case name
+        if not merged:
+            raise SystemError('Unable to merge {} and {}'.format(root_unrst, ior_unrst))
         if merged.is_file():
             merged.replace(self.root+'.UNRST')
         # reset progressbar
@@ -1002,7 +999,7 @@ class main_window(QMainWindow):                                    # main_window
     def __init__(self, *args, **kwargs):                       # main_window
     #-----------------------------------------------------------------------
         super(main_window, self).__init__(*args, **kwargs)
-        self.setWindowTitle('GUI for IORSim') 
+        self.setWindowTitle('IORSim') 
         self.setGeometry(300, 100, 1100, 800)
         self.setWindowIcon(QIcon(':program_icon'))
         self.font = QFont().defaultFamily()
@@ -1053,9 +1050,9 @@ class main_window(QMainWindow):                                    # main_window
         ### actions
         self.set_act = create_action(self, text='&Settings', icon='gear', shortcut='Ctrl+S',
                                      tip='Edit settings', func=self.settings.open)
-        self.start_act = create_action(self, text=None, icon='start_24', shortcut='Ctrl+R',
+        self.start_act = create_action(self, text=None, icon='start', shortcut='Ctrl+R',
                                        tip='Run simulation', func=self.run_sim)
-        self.stop_act = create_action(self, text=None, icon='stop_24', shortcut='Ctrl+E',
+        self.stop_act = create_action(self, text=None, icon='stop', shortcut='Ctrl+E',
                                       tip='Stop simulation', func=self.killsim)
         self.help_act = create_action(self, text='Keyboard shortcuts',  shortcut='',
                                       tip='Display help', func=self.help_win.open_win)
@@ -1591,6 +1588,12 @@ class main_window(QMainWindow):                                    # main_window
     def clear_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
         case = Path(self.case)
+        try:
+            for fil in case.parent.glob('*UNRST'):
+                fil.unlink()
+        except PermissionError as e:
+            show_message(self, 'error', text='Unable to clear case, '+str(e))
+            return False
         clean_dir = case.parent/'CLEAN'
         clean_dir.mkdir(exist_ok=True)
         # copy case-files to the CLEAN-folder
@@ -1624,7 +1627,11 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.delete_case(self.case)
         self.input['root'] = self.case = None
+        self.max_3_checked = []
+        if self.current_view.objectName()=='editor':
+            self.view_file(None)
         self.prepare_case(None)
+
 
         
     #-----------------------------------------------------------------------
@@ -1908,14 +1915,8 @@ class main_window(QMainWindow):                                    # main_window
                 if var==name and not ':+:' in well:
                     match = True
                     ecl_data.index[var].append(i)
-                    #ecl_data.wells[var].append(well)
                     y = ecl_data.yaxis[var]
                     f = ecl_data.fluid[var]
-                    #print(well, y, f, var)
-                    #self.ecl_wells.append(well)
-                    #self.ecl_yaxis.append(y)
-                    #self.ecl_fluids.append(f)
-                    #ecl[well][y][f] = []
                     ecl[well][y][f+' var'] = [var]
                     if 'Temp' in f:
                         ecl[well]['prod'][f] = ecl[well]['rate'][f] 
@@ -1924,19 +1925,6 @@ class main_window(QMainWindow):                                    # main_window
                 #print('WARNING! Variable {} not found in {}'.format(var, self.unsmry.name()))
         self.ecl_data = ecl_data
         self.data['ecl'] = ecl
-        # # unique well, yaxis, fluids lists 
-        # self.ecl_wells = list(set(self.ecl_wells))
-        # self.ecl_yaxis = list(set(self.ecl_yaxis))
-        # self.ecl_fluids = list(set(self.ecl_fluids))
-        # # put Field at top of list 
-        # if 'FIELD' in self.ecl_wells:
-        #     self.ecl_wells.pop(self.ecl_wells.index('FIELD'))
-        #     self.ecl_wells.insert(0,'Field')
-        # # remove Temp_ecl
-        # if 'Temp_ecl' in self.ecl_fluids:
-        #     self.ecl_fluids.pop(self.ecl_fluids.index('Temp_ecl'))
-        #self.update_ecl_menu()
-        #print('complete')
         return True
 
         
@@ -1947,18 +1935,14 @@ class main_window(QMainWindow):                                    # main_window
         datafile = self.input['root']
         if case:
             datafile = case
-        #print('read_ecl_data: '+datafile)
         if not datafile:
             self.data['ecl'] = {}
             return False
         ### read data
-        #print('read_ecl_data: before init')        
         if reinit or not self.unsmry:
             if not self.init_ecl_data(case=case):
                 return False
-        #print('read_ecl_data: reading')
         for block in self.unsmry.blocks(only_new=True):
-            #block.print()
             if block.key()=='PARAMS':
                 data = block.data()
                 time = data[self.ecl_data.time]
@@ -1971,9 +1955,8 @@ class main_window(QMainWindow):                                    # main_window
                     wells = self.ecl_data.wells
                     for i in index:
                         self.data['ecl'][wells[i]][yaxis][fluid].append(data[i])
-        #print('read_ecl_data: '+datafile)
         return True
-        #print_dict(self.data['ecl'])
+
                         
     #-----------------------------------------------------------------------
     def update_ecl_menu(self, case=None):                       # main_window
@@ -2068,7 +2051,7 @@ class main_window(QMainWindow):                                    # main_window
         buttons = QHBoxLayout()
         layout.addLayout(buttons)
         self.editor = QPlainTextEdit()
-        self.cursor_pos = None
+        self.vscroll_pos = None
         layout.addWidget(self.editor)
         self.editor.textChanged.connect(self.activate_save)
         self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
@@ -2152,14 +2135,26 @@ class main_window(QMainWindow):                                    # main_window
         self.set_cursor(pos, string)
         
     #-----------------------------------------------------------------------
-    def set_cursor(self, start, string):
+    def set_cursor(self, start, string, center=True):
     #-----------------------------------------------------------------------
         cursor = self.editor.textCursor()
         cursor.setPosition(start)
-        cursor.setPosition(start+len(string), QTextCursor.KeepAnchor)
-        #print(cursor.position())
+        cursor.setPosition(start+len(string), QTextCursor.KeepAnchor)   
+        #print(cursor.blockNumber(), cursor.columnNumber())
         self.editor.setTextCursor(cursor)
-                
+        #self.editor.verticalScrollBar().setValue(self.editor.verticalScrollBar().value()+10)
+        if center:
+            cursor = self.editor.cursorRect()
+            cursor_line = int(cursor.y()/cursor.height())
+            page_height = self.editor.geometry().height()-self.editor.horizontalScrollBar().height()
+            mid_line = int(0.5*page_height/cursor.height())
+            shift = cursor_line-mid_line
+            vbar = self.editor.verticalScrollBar()
+            newpos = shift + vbar.value()
+            if newpos>0:
+                vbar.setValue(newpos)            
+                #print(newpos)
+        
     #-----------------------------------------------------------------------
     def save_text(self):
     #-----------------------------------------------------------------------
@@ -2168,6 +2163,8 @@ class main_window(QMainWindow):                                    # main_window
         with open(self.editor.objectName(), 'w') as f:
             f.write(text)
         #self.cursor_pos = self.editor.textCursor().position()
+        self.vscroll_pos = self.editor.verticalScrollBar().value()
+        #print(self.vscroll_pos)
         self.save_btn.setEnabled(False)
         self.prepare_case(self.case)
 
@@ -2183,10 +2180,10 @@ class main_window(QMainWindow):                                    # main_window
     #    return
             
     #-----------------------------------------------------------------------
-    def view_file(self, file, title):                                # main_window
+    def view_file(self, file, title=''):                                # main_window
     #-----------------------------------------------------------------------
         text = ''
-        if Path(file).is_file():
+        if file and Path(file).is_file():
             text = open(file).read()
             self.editor.setObjectName(str(file))
         self.editor.setPlainText(text)
@@ -2195,7 +2192,10 @@ class main_window(QMainWindow):                                    # main_window
         self.current_view.setParent(None)
         self.layout.addWidget(self.editor_group, *self.position['plot'])
         self.current_view = self.editor_group
-
+        if self.vscroll_pos:
+            self.editor.verticalScrollBar().setValue(self.vscroll_pos)
+            #print(self.cursor_pos)
+ 
     #-----------------------------------------------------------------------
     def view_input_file(self, ext=None, title=None, comment='#'):                                # main_window
     #-----------------------------------------------------------------------
@@ -2660,7 +2660,8 @@ class main_window(QMainWindow):                                    # main_window
             self.update_axes_limits()
             self.canvas.draw()
         except ValueError as e:
-            print('ValueError: '+str(e))
+            pass
+            #print('ValueError: '+str(e))
 
     #-----------------------------------------------------------------------
     def update_progressbar(self, t):
@@ -2858,7 +2859,10 @@ class main_window(QMainWindow):                                    # main_window
         self.convert.signals.show_message.connect(self.show_message)
         self.progressbar.reset()
         #self.progressbar.setMaximum(self.input['nsteps'])
-        self.progressbar.setMaximum(len(self.data['ior']['days']))
+        try:
+            self.progressbar.setMaximum(len(self.data['ior']['days']))
+        except KeyError:
+            pass
         self.progressbar.setValue(0)
         self.threadpool.start(self.convert)
 
