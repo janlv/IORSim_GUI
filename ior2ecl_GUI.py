@@ -475,6 +475,7 @@ class Base_worker(QRunnable):
         super(Base_worker, self).__init__()
         self.killed = False
         self.finished = True
+        self.success = None
         self.args = args
         self.kwargs = kwargs
         self.signals = WorkerSignals()
@@ -509,13 +510,13 @@ class Base_worker(QRunnable):
     #-----------------------------------------------------------------------
         try:
             self.finished = False
-            result = self.runnable()
+            self.success = self.runnable()
         except:
             traceback.print_exc()
             exctype, value = sys.exc_info()[:2]
             self.signals.error.emit((exctype, value, traceback.format_exc()))
-        else:
-            self.signals.result.emit(result)
+#        else:
+#            self.signals.result.emit(result)
         finally:
             self.signals.finished.emit()
             self.finished = True
@@ -2843,8 +2844,9 @@ class main_window(QMainWindow):                                    # main_window
         #    self.nstep_box.setEnabled(False)
         #self.start_act.setEnabled(True)
         #self.case_cb.setEnabled(True)
+        if self.worker.success:
+            self.convert_FUNRST()   
         self.worker = None
-        self.convert_FUNRST()
 
     #-----------------------------------------------------------------------
     def convert_FUNRST(self):
