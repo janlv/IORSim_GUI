@@ -7,9 +7,9 @@
    xmlns="http://www.w3.org/2000/svg"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   width="24"
-   height="24"
-   viewBox="0 0 24 24"
+   width="32"
+   height="32"
+   viewBox="0 0 32 32"
    version="1.1"
    id="SVGRoot"
    sodipodi:docname="start_small.svg"
@@ -35,7 +35,7 @@
      showgrid="true"
      inkscape:window-width="1248"
      inkscape:window-height="697"
-     inkscape:window-x="26"
+     inkscape:window-x="50"
      inkscape:window-y="25"
      inkscape:window-maximized="0">
     <inkscape:grid
@@ -74,7 +74,7 @@
        inkscape:randomized="0"
        d="M 27,15.588457 0,31.176914 0,-1.6057595e-7 Z"
        inkscape:transform-center-x="-3.9999982"
-       transform="scale(0.88888889,0.76980037)"
+       transform="matrix(0.88888889,0,0,0.76980037,4,4.0000001)"
        inkscape:export-xdpi="72"
        inkscape:export-ydpi="72"
        inkscape:export-filename="/Users/janlv/OneDrive - NORCE/NORCE/Prosjekter/IORSim/python/icons/start_green_24.png" />
