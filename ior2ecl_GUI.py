@@ -1050,9 +1050,9 @@ class main_window(QMainWindow):                                    # main_window
         ### actions
         self.set_act = create_action(self, text='&Settings', icon='gear', shortcut='Ctrl+S',
                                      tip='Edit settings', func=self.settings.open)
-        self.start_act = create_action(self, text=None, icon='start_24', shortcut='Ctrl+R',
+        self.start_act = create_action(self, text=None, icon='start', shortcut='Ctrl+R',
                                        tip='Run simulation', func=self.run_sim)
-        self.stop_act = create_action(self, text=None, icon='stop_24', shortcut='Ctrl+E',
+        self.stop_act = create_action(self, text=None, icon='stop', shortcut='Ctrl+E',
                                       tip='Stop simulation', func=self.killsim)
         self.help_act = create_action(self, text='Keyboard shortcuts',  shortcut='',
                                       tip='Display help', func=self.help_win.open_win)
@@ -2135,14 +2135,26 @@ class main_window(QMainWindow):                                    # main_window
         self.set_cursor(pos, string)
         
     #-----------------------------------------------------------------------
-    def set_cursor(self, start, string):
+    def set_cursor(self, start, string, center=True):
     #-----------------------------------------------------------------------
         cursor = self.editor.textCursor()
         cursor.setPosition(start)
-        cursor.setPosition(start+len(string), QTextCursor.KeepAnchor)
+        cursor.setPosition(start+len(string), QTextCursor.KeepAnchor)   
         #print(cursor.blockNumber(), cursor.columnNumber())
         self.editor.setTextCursor(cursor)
-                
+        #self.editor.verticalScrollBar().setValue(self.editor.verticalScrollBar().value()+10)
+        if center:
+            cursor = self.editor.cursorRect()
+            cursor_line = int(cursor.y()/cursor.height())
+            page_height = self.editor.geometry().height()-self.editor.horizontalScrollBar().height()
+            mid_line = int(0.5*page_height/cursor.height())
+            shift = cursor_line-mid_line
+            vbar = self.editor.verticalScrollBar()
+            newpos = shift + vbar.value()
+            if newpos>0:
+                vbar.setValue(newpos)            
+                #print(newpos)
+        
     #-----------------------------------------------------------------------
     def save_text(self):
     #-----------------------------------------------------------------------

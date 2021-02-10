@@ -3,8 +3,8 @@
   <file alias="program_icon">icons/ior2ecl_icon.svg</file>  
   <file alias="gear">icons/gear.png</file>
   <file alias="guide">icons/guide.png</file>
-  <file alias="start_24">icons/start_24.png</file>
-  <file alias="stop_24">icons/stop_24.png</file>
+  <file alias="start">icons/start_24.png</file>
+  <file alias="stop">icons/stop_24.png</file>
   <file alias="control-power">icons/control-power.png</file>
   <file alias="document">icons/document.png</file>
   <file alias="document-e">icons/document-attribute-e.png</file>
