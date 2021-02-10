@@ -32,8 +32,8 @@
      showgrid="true"
      inkscape:window-width="1248"
      inkscape:window-height="696"
-     inkscape:window-x="32"
-     inkscape:window-y="25"
+     inkscape:window-x="63"
+     inkscape:window-y="69"
      inkscape:window-maximized="0">
     <inkscape:grid
        type="xygrid"
@@ -56,12 +56,12 @@
      inkscape:groupmode="layer"
      id="layer1">
     <rect
-       style="fill:#d62728;fill-opacity:1;stroke-width:0.34375"
+       style="fill:#d62728;fill-opacity:1;stroke-width:0.3125"
        id="rect33"
-       width="22"
-       height="22"
-       x="5"
-       y="5"
+       width="20"
+       height="20"
+       x="6"
+       y="6"
        inkscape:export-xdpi="36"
        inkscape:export-ydpi="36"
        inkscape:export-filename="/Users/janlv/OneDrive - NORCE/NORCE/Prosjekter/IORSim/python/icons/stop_red_24.png" />
