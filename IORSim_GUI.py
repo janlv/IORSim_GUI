@@ -826,6 +826,7 @@ class main_window(QMainWindow):                                    # main_window
         self.font = QFont().defaultFamily()
         self.menu_fontsize = 7
         #self.help_win = help_window(self.pos(), parent=self)
+        self.plot_lines = None
         self.data = {}
         self.plot_ref_data = {}
         self.ecl_boxes = {}
@@ -963,10 +964,9 @@ class main_window(QMainWindow):                                    # main_window
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toolbar.setStyleSheet('QToolButton { padding: 0px 0px 0px 0px}')
         self.toolbar.addSeparator()
+        self.create_toolbar_widgets()
         self.toolbar.addAction(self.start_act)
         self.toolbar.addAction(self.stop_act)
-        self.toolbar.addSeparator()
-        self.create_toolbar_widgets()
 
     #-----------------------------------------------------------------------
     def create_toolbar_widgets(self):                           # main_window
@@ -1179,6 +1179,11 @@ class main_window(QMainWindow):                                    # main_window
         if choose:
             self.case_cb.setCurrentIndex(self.case_nr(choose))
 
+    #-----------------------------------------------------------------------
+    def missing_case_error(self, tag=''):
+    #-----------------------------------------------------------------------
+        show_message(self, 'warning', text=tag+'No case selected!\nAdd a case from the File-menu')
+
         
     #-----------------------------------------------------------------------
     def add_case(self, case, rename=False, choose_new=True):   # main_window
@@ -1251,6 +1256,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def set_mode(self, mode, text=None, box=False, func=None, run=None):  # main_window
     #-----------------------------------------------------------------------
+        if not self.case:
+            self.sender().setChecked(False)
+            self.missing_case_error(tag='set_mode: ')
+            return False
         self.mode = self.input['mode'] = mode
         self.mode_label.setText(text)
         self.nstep_box.setEnabled(box)
@@ -1290,12 +1299,12 @@ class main_window(QMainWindow):                                    # main_window
         if data=='ecl':
             if not self.ecl_boxes:
                 return
-            yaxis = ('prod','rate')
+            #yaxis = ('prod','rate')
             boxlist = self.ecl_boxes
         if data=='ior':
             if not self.ior_boxes:
                 return
-            yaxis = ('prod','conc')
+            #yaxis = ('prod','conc')
             boxlist = self.ior_boxes 
         if not boxlist['yaxis'] or not boxlist['well']:
             return
@@ -1304,7 +1313,7 @@ class main_window(QMainWindow):                                    # main_window
             set_checkbox(box, False, block_signal=block_signal)
         self.max_3_checked = []
         well = list(boxlist['well'].keys())[0] 
-        for box in ([boxlist['yaxis'][y] for y in yaxis] + [boxlist['well'][well],]):
+        for box in ([val for val in boxlist['yaxis'].values()] + [boxlist['well'][well],]):
             #print('Add: '+box.objectName())
             set_checkbox(box, True, block_signal=block_signal)
             self.max_3_checked.append(box)
@@ -1408,6 +1417,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def clear_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
+        if not self.case:
+            self.missing_case_error(tag='clear_case: ')
+            return False
         case = Path(self.case)
         try:
             for fil in case.parent.glob('*UNRST'):
@@ -1446,6 +1458,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def delete_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
+        if not self.case:
+            self.missing_case_error(tag='delete: ')
+            return False
         self.delete_case(self.case)
         self.input['root'] = self.case = None
         self.max_3_checked = []
@@ -1458,6 +1473,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def duplicate_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
+        if not self.case:
+            self.missing_case_error(tag='duplicate: ')
+            return False
         new_name = User_input(self, title='Duplicate current case', label='Name of duplicate case', text=Path(self.case).name)
         def func():
             from_case = self.case
@@ -1471,6 +1489,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def rename_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
+        if not self.case:
+            self.missing_case_error(tag='rename: ')
+            return False
         rename = User_input(self, title='Rename current case', label='New case name', text=Path(self.case).name)
         def func():
             oldname = Path(self.case).stem
@@ -1510,7 +1531,8 @@ class main_window(QMainWindow):                                    # main_window
         self.update_ecl_menu()
         self.create_plot()
         self.update_message()
-        self.view_ag.checkedAction().trigger()
+        if self.view_ag.checkedAction():
+           self.view_ag.checkedAction().trigger()
         #self.update_view_area()
         # enable/disable geochem edit action
         if self.input['root'] and Path(self.input['root']+'.geocheminp').is_file():
@@ -2026,6 +2048,10 @@ class main_window(QMainWindow):                                    # main_window
                 self.view_file(fil, title=title+', '+str(fil.name))        
                 self.ior_highlight = Highlighter(self.editor.document(), comment=comment)
                 self.save_btn.setEnabled(False)
+        else:
+            self.sender().setChecked(False)
+            self.sender().parent().missing_case_error(tag='input: ')
+            return False
 
     #-----------------------------------------------------------------------
     def view_eclipse_input(self):                                # main_window
@@ -2043,9 +2069,13 @@ class main_window(QMainWindow):                                    # main_window
         self.view_input_file(ext='geocheminp', title='IORSim geochem file', comment='#')
         
     #-----------------------------------------------------------------------
-    def view_log(self, file, title=None):                                # main_window
+    def view_log(self, logfile, title=None):                                # main_window
     #-----------------------------------------------------------------------
-        self.log_file = file
+        if not self.case:
+            self.sender().setChecked(False)
+            self.sender().parent().missing_case_error(tag='log: ')
+            return False
+        self.log_file = Path(self.case).parent/logfile
         self.view_file(self.log_file, title=title)
         self.save_btn.setEnabled(False)
         self.undo_btn.setEnabled(False)
@@ -2053,20 +2083,17 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_eclipse_log(self):                                # main_window
     #-----------------------------------------------------------------------
-        if self.input['root']:
-            self.view_log(Path(self.input['root']).parent / 'eclipse.log', title='ECLIPSE logfile')
+        self.view_log('eclipse.log', title='ECLIPSE logfile')
         
     #-----------------------------------------------------------------------
     def view_iorsim_log(self):                                # main_window
     #-----------------------------------------------------------------------
-        if self.input['root']:
-            self.view_log(Path(self.input['root']).parent / 'iorsim.log', title='IORSim logfile')
+        self.view_log('iorsim.log', title='IORSim logfile')
     
     #-----------------------------------------------------------------------
     def view_program_log(self):                                # main_window
     #-----------------------------------------------------------------------
-        if self.input['root']:
-            self.view_log(Path(self.input['root']).parent / 'ior2ecl.log', title='Program logfile')
+        self.view_log('ior2ecl.log', title='Program logfile')
     
     #-----------------------------------------------------------------------
     def update_log(self):                                # main_window
@@ -2081,10 +2108,14 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_plot(self):                                # main_window
     #-----------------------------------------------------------------------
+        #if not self.case:
+        #    #self.sender().setChecked(False)
+        #    self.missing_case_error('plot: ')
+        #    return False
         self.current_view.setParent(None)
         self.layout.addWidget(self.plot_group, *self.position['plot'])
         self.current_view = self.plot_group
-        if not self.worker:
+        if not self.worker:# and self.case:
             self.read_ior_data()
             self.read_ecl_data()
             self.update_all_plot_lines()
@@ -2548,18 +2579,18 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         i = self.input
         if i['nsteps']==0:
-            show_message(self, 'error', text='Number of timesteps missing.')
+            show_message(self, 'warning', text='Number of timesteps missing.')
             return False
         #if i['dt']==0:
         if not self.settings.get['dt']() or int(self.settings.get['dt']())==0:
-            show_message(self, 'error', text='Timestep missing in settings.')
+            show_message(self, 'warning', text='Timestep missing in settings.')
             self.settings.open()
             return False
         if not i['root']:
-            show_message(self, 'error', text='No input-case selected.')
+            show_message(self, 'warning', text='No input-case selected.')
             return False
         if not self.settings.get['iorsim']():
-            show_message(self, 'error', text='IORSim program missing in Settings')
+            show_message(self, 'warning', text='IORSim program missing in Settings')
             self.settings.open()
             return False
         return True
