@@ -30,99 +30,12 @@ from IORlib.utils import Progress, exit_without_atexit, assert_python_version, g
 from IORlib.ECL import RSM_file, unfmt_file, fmt_file, Section
 import GUI_icons
 
-button_size = QSize(100, 25)
-box_height = 25
-margin = 30
-#font = QFont().
 default_font = 'default'
 default_size = 10
 default_weight = 50
 to_screen = False
 quiet = True
-#icon_path = Path('icons')
 
-#-----------------------------------------------------------------------
-def print_dict(adict, inc=3):
-#-----------------------------------------------------------------------
-    for k,v in adict.items():
-        if isinstance(v, list) or isinstance(v, ndarray):
-            print(' '*inc + '{} : {},{} ({})'.format(k,v[0],v[-1],len(v)))
-        if isinstance(v, str):
-            print(' '*inc + '{} : {}'.format(k,v))
-        if isinstance(v, dict):
-            print(' '*inc + k)
-            print_dict(v, inc+2)
-
-
-#-----------------------------------------------------------------------
-def get_dict_values(adict):
-#-----------------------------------------------------------------------
-    for k,v in adict.items():
-        if not isinstance(v, dict):
-            yield v
-        else:
-            yield from get_dict_values(v)
-
-#-----------------------------------------------------------------------
-def get_dict_keys(adict):
-#-----------------------------------------------------------------------
-    for k,v in adict.items():
-        yield k
-        if isinstance(v, dict):
-            yield from get_dict_keys(v)
- 
-#-----------------------------------------------------------------------
-def get_dict_items(adict):
-#-----------------------------------------------------------------------
-    for k,v in adict.items():
-        yield k,v
-        if isinstance(v, dict):
-            yield from get_dict_items(v)
- 
-
-#-----------------------------------------------------------------------
-def get_center_new_window(main_win, new_win):
-#-----------------------------------------------------------------------
-    mwc = main_win.frameGeometry().center()
-    nws = new_win.size()
-    pos = QPoint( mwc.x()-round(0.5*nws.width()), mwc.y()-round(0.5*nws.height()) )
-    return pos
-    
-#-----------------------------------------------------------------------
-def create_button(win, text='', pos=None, func=None, tooltip=None, shortcut=None):
-#-----------------------------------------------------------------------
-    button = QPushButton(text, win)
-    button.move(pos)
-    button.resize(button_size)
-    button.clicked.connect(func)
-    if shortcut:
-        button.setShortcut(shortcut)
-    if tooltip:
-        button.setToolTip(tooltip)    
-    return button
-
-#-----------------------------------------------------------------------
-def create_group(win, title='', pos=None, size=None):
-#-----------------------------------------------------------------------
-    group = QGroupBox(win)
-    if pos and size:
-        group.setGeometry(QRect(pos, size))
-    group.setTitle(title)
-    #group.setStyleSheet('QGroupBox { font-weight: bold;}')
-    group.show()
-    return group
-
-#-----------------------------------------------------------------------
-def create_label(win, pos=None, size=None, text='', fontsize=default_size):
-#-----------------------------------------------------------------------
-    label = QLabel(win)
-    label.setFont(QFont(default_font, fontsize))
-    if size:
-        label.setGeometry(QRect(pos, size))
-    else:
-        label.move(pos+QPoint(0,4))
-    label.setText(text)
-    return label
 
 #-----------------------------------------------------------------------
 def open_file_dialog(win, text, filetype):
@@ -131,20 +44,6 @@ def open_file_dialog(win, text, filetype):
     fileName, _ = QFileDialog.getOpenFileName(win, text, "", filetype, options=options)
     return fileName
 
-#-----------------------------------------------------------------------
-def create_center_button(win, text='', func=None, shortcut=None):
-#-----------------------------------------------------------------------
-    x = int( 0.5*(win.size().width() - button_size.width()) )
-    y = win.size().height() - margin - button_size.height()
-    return create_button(win, text=text, pos=QPoint(x,y), func=func, shortcut=shortcut)
-
-#-----------------------------------------------------------------------
-def center_label_on_window(win, label, yshift=0):
-#-----------------------------------------------------------------------
-    text_size = label.fontMetrics().boundingRect(label.text())
-    x = int( 0.5*(win.size().width() - text_size.width()) )
-    y = int( 0.5*(win.size().height() - text_size.height()) )
-    label.move(x, y+yshift)
 
 
 #-----------------------------------------------------------------------
@@ -378,11 +277,6 @@ def show_message_text(window, text):
         kind = 'warning'
     show_message(window, kind, text=text)
 
-#-----------------------------------------------------------------------
-def draw_border(widget, size='1px', color='solid black'): 
-#-----------------------------------------------------------------------
-    widget.setStyleSheet('border: '+size+' '+color+';')
-
 
 #-----------------------------------------------------------------------
 def delete_all_widgets_in_layout(layout):
@@ -405,18 +299,6 @@ def delete_all_widgets_in_layout(layout):
                 #print(type(layout2))
                 delete_all_widgets_in_layout(layout2)
 
-#-----------------------------------------------------------------------
-def clear_layout(layout):
-#-----------------------------------------------------------------------
-    if layout is not None:
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                #layout.removeWidget(widget)
-                widget.deleteLater()
-            else:
-                clear_layout(item.layout())
                 
 #-----------------------------------------------------------------------
 def to_rgb(color):
@@ -426,11 +308,6 @@ def to_rgb(color):
     
 
 #-----------------------------------------------------------------------
-def num_checked(boxes):
-#-----------------------------------------------------------------------
-    return npsum([b.isChecked() for b in boxes.values()])
-
-#-----------------------------------------------------------------------
 def set_checkbox(box, value, block_signal=True):
 #-----------------------------------------------------------------------
     box.blockSignals(block_signal)
@@ -438,11 +315,6 @@ def set_checkbox(box, value, block_signal=True):
     #box.setEnabled(value)
     box.blockSignals(not block_signal)
 
-
-#-----------------------------------------------------------------------
-def get_checked_boxes(box_dict):
-#-----------------------------------------------------------------------
-    return ((name,box) for name,box in box_dict.items() if box.isChecked())
 
 #-----------------------------------------------------------------------
 def str_to_bool(s):
@@ -951,45 +823,6 @@ class window(QWidget):                                              # window
         self.setGeometry(QRect(pos, size))
         self.parent = parent
         
-
-#===========================================================================
-class help_window(window):                                    # help_window
-#===========================================================================
-
-    #-----------------------------------------------------------------------
-    def __init__(self, pos, parent=None):                    # help_window
-    #-----------------------------------------------------------------------
-        super().__init__(title='Help', pos=pos, size=QSize(500, 400), parent=parent)
-        self.initUI()
-
-    #-----------------------------------------------------------------------
-    def initUI(self):                                          # help_window
-    #-----------------------------------------------------------------------
-        text ='''
-                                  Welcome to ior2ecl!
-
-  This program runs Eclipse and IORSim sequentally to allow
-  IORSim to communicate information back to Eclipse 
-
-
-  Keyboard shortcuts:
-                     
-                       Ctrl+S : Open Settings
-                       Ctrl+H : Open Help
-                       Ctrl+R : Run simulation
-                       Ctrl+E : Stop simulation
-                       Ctrl+Q : Quit application
-
-'''
-        self.text = create_label(self, pos=QPoint(margin, margin), text=text)
-        self.close_btn = create_center_button(self, text='Close', func=self.close, shortcut='Return')
-        
-    #-----------------------------------------------------------------------
-    def open_win(self):                                        # help_window
-    #-----------------------------------------------------------------------
-        self.move( get_center_new_window(self.parent, self) )
-        self.show()
-    
                      
         
 #===========================================================================
@@ -1005,7 +838,7 @@ class main_window(QMainWindow):                                    # main_window
         self.setWindowIcon(QIcon(':program_icon'))
         self.font = QFont().defaultFamily()
         self.menu_fontsize = 7
-        self.help_win = help_window(self.pos(), parent=self)
+        #self.help_win = help_window(self.pos(), parent=self)
         self.data = {}
         self.plot_ref_data = {}
         self.ecl_boxes = {}
@@ -1055,8 +888,8 @@ class main_window(QMainWindow):                                    # main_window
                                        tip='Run simulation', func=self.run_sim)
         self.stop_act = create_action(self, text=None, icon='stop', shortcut='Ctrl+E',
                                       tip='Stop simulation', func=self.killsim)
-        self.help_act = create_action(self, text='Keyboard shortcuts',  shortcut='',
-                                      tip='Display help', func=self.help_win.open_win)
+#        self.help_act = create_action(self, text='Keyboard shortcuts',  shortcut='',
+#                                      tip='Display help', func=self.help_win.open_win)
         self.exit_act = create_action(self, text='&Exit', icon='control-power', shortcut='Ctrl+Q',
                                       tip='Exit application', func=self.quit)
         self.add_case_act = create_action(self, text='Add case...', icon='document--plus',
@@ -2889,7 +2722,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.killsim()
         #self.settings.close()
-        self.help_win.close()
+        #self.help_win.close()
         #self.write_casefile()
         #self.write_case_dir()
         self.save_input()
