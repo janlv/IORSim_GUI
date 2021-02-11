@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 # importing libraries 
-from PyQt5.QtWidgets import QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, qApp, QFrame, QFileDialog, QMessageBox
-from PyQt5.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
-from PyQt5.QtCore import QSize, QObject, pyqtSignal, pyqtSlot, QRunnable, QRect, QPoint, QThreadPool, Qt, QRegExp
+from PyQt6.QtWidgets import QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+from PyQt6.QtGui import QColor, QAction, QActionGroup, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
+from PyQt6.QtCore import QSize, QObject, pyqtSignal, pyqtSlot, QRunnable, QRect, QPoint, QThreadPool
 import sys, traceback
 import os
 import psutil
@@ -2759,7 +2759,7 @@ class main_window(QMainWindow):                                    # main_window
 ###  https://github.com/pyside/Examples/blob/master/examples/richtext/syntaxhighlighter.py
 ###
 class Highlighter(QSyntaxHighlighter):
-    def __init__(self, parent=None, comment='#', color=Qt.gray):
+    def __init__(self, parent=None, comment='#', color=QColor('gray')):
         super(Highlighter, self).__init__(parent)
 
         #keywordFormat = QTextCharFormat()
