@@ -811,19 +811,6 @@ class Settings(QDialog):
                         self.set[var.strip()]( str_to_bool(val.strip()) )
 
                         
-#===========================================================================
-class window(QWidget):                                              # window
-#===========================================================================
-
-    #-----------------------------------------------------------------------
-    def __init__(self, title=None, pos=None, size=None, parent=None):   # window
-    #-----------------------------------------------------------------------
-        super(window, self).__init__()
-        self.setWindowTitle(title)
-        self.setGeometry(QRect(pos, size))
-        self.parent = parent
-        
-                     
         
 #===========================================================================
 class main_window(QMainWindow):                                    # main_window 
