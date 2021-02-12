@@ -160,7 +160,6 @@ GUI/
 *.py~
 satnum.dat
 test.py
-IORSim_GUI.exe
 IORSim_GUI.zip
 merge.test
 test_merge.py
