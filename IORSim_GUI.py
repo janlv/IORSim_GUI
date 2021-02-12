@@ -1183,7 +1183,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def missing_case_error(self, tag=''):
     #-----------------------------------------------------------------------
-        show_message(self, 'warning', text=tag+'No case selected!\nAdd a case from the File-menu')
+        show_message(self, 'warning', text='No case selected!\nAdd a case from the File-menu')
 
         
     #-----------------------------------------------------------------------
