@@ -2041,13 +2041,13 @@ class main_window(QMainWindow):                                    # main_window
             #print(self.cursor_pos)
  
     #-----------------------------------------------------------------------
-    def view_input_file(self, ext=None, title=None, comment='#'):                                # main_window
+    def view_input_file(self, ext=None, title=None, comment='#', keywords=[]):                                # main_window
     #-----------------------------------------------------------------------
         if self.input['root']:
             fil = Path(self.input['root']+'.'+ext)
             if fil.is_file():
                 self.view_file(fil, title=title+', '+str(fil.name))        
-                self.ior_highlight = Highlighter(self.editor.document(), comment=comment)
+                self.ior_highlight = Highlighter(self.editor.document(), comment=comment, keywords=keywords)
                 self.save_btn.setEnabled(False)
                 self.undo_btn.setEnabled(True)
         else:
@@ -2058,7 +2058,14 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_eclipse_input(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_input_file(ext='DATA', title='Eclipse input file', comment='--')
+        kw = []
+        # Sections
+        kw.append([Qt.red, QFont.Bold, 'RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS','SOLUTION', 
+                  'SUMMARY','SCHEDULE','OPTIMIZE'])
+        # Global keywords
+        kw.append([Qt.darkGreen , QFont.Normal, 'COLUMN','DEBUG','DEBUG3','ECHO','END','ENDINC','ENDSKIP','SKIP',
+                  'SKIP100','SKIP300','EXTRAPMS','FORMFEED','GETDATA','INCLUDE','MESSAGES','NOECHO','NOWARN','WARN'])
+        self.view_input_file(ext='DATA', title='Eclipse input file', comment='--', keywords=kw)
         
     #-----------------------------------------------------------------------
     def view_iorsim_input(self):                                # main_window
@@ -2759,19 +2766,24 @@ class main_window(QMainWindow):                                    # main_window
 ###  https://github.com/pyside/Examples/blob/master/examples/richtext/syntaxhighlighter.py
 ###
 class Highlighter(QSyntaxHighlighter):
-    def __init__(self, parent=None, comment='#', color=Qt.gray):
+    def __init__(self, parent=None, comment='#', color=Qt.gray, keywords=[]):
         super(Highlighter, self).__init__(parent)
 
-        #keywordFormat = QTextCharFormat()
-        #keywordFormat.setForeground(Qt.darkBlue)
-        #keywordFormat.setFontWeight(QFont.Bold)
-
-        #keywordPatterns = ["\\b*TEMPERATURE\\b", "\\b*INTEGRATION\\b", "\\b*MODELTYPE\\b"]
-        #self.highlightingRules = [(QRegExp(pattern), keywordFormat) for pattern in keywordPatterns]
         self.highlightingRules = []
+        while keywords:
+            kword = keywords.pop(0)
+            keywordFormat = QTextCharFormat()
+            keywordFormat.setForeground(kword.pop(0))
+            keywordFormat.setFontWeight(kword.pop(0))
+            #keywordPatterns = ['\\b*'+ kw +'\\b' for kw in kword]
+            keywordPatterns = ['\\b*'+ kw +'\\b' for kw in kword]
+            #print(keywordPatterns)
+            #keywordPatterns = ["\\b*TEMPERATURE\\b", "\\b*INTEGRATION\\b", "\\b*MODELTYPE\\b"]
+            self.highlightingRules.extend( [(QRegExp(pattern), keywordFormat) for pattern in keywordPatterns] )
         singleLineCommentFormat = QTextCharFormat()
         singleLineCommentFormat.setForeground(color)
         self.highlightingRules.append((QRegExp(comment+'[^\n]*'), singleLineCommentFormat))
+        #print(self.highlightingRules)
 
     def highlightBlock(self, text):
         for pattern, format in self.highlightingRules:
