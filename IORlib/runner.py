@@ -304,11 +304,13 @@ class runner:                                                               # ru
         #self._print('done', v=v)
         
     #--------------------------------------------------------------------------------
-    def wait_for_process_to_quit(self, v=1, sleep_sec=None, wait_func=None, wait=None, kill_func=None):          # runner
+    def wait_for_process_to_quit(self, v=1, sleep_sec=None, refresh_func=None, refresh=None, kill_func=None,
+                                kill_msg=None):          # runner
     #--------------------------------------------------------------------------------
         self._print('waiting for process to quit', v=v)
         loop_until( self.parent_is_not_running, error='{} did not quit'.format(self.parent.name()),
-                    sleep_sec=sleep_sec, wait_func=wait_func, wait=wait, kill_func=kill_func)
+                    sleep_sec=sleep_sec, wait_func=refresh_func, wait=refresh, kill_func=kill_func, 
+                    kill_msg=kill_msg)
         self.parent = None
         
     #--------------------------------------------------------------------------------

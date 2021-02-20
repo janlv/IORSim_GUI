@@ -2,11 +2,14 @@
 # -*- coding: utf-8 -*-
 
 # importing libraries 
-from PyQt5.QtWidgets import QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, qApp, QFrame, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PyQt5.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
-from PyQt5.QtCore import QSize, QObject, pyqtSignal, pyqtSlot, QRunnable, QRect, QPoint, QThreadPool, Qt, QRegExp
+from PyQt5.QtCore import QObject, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QRect, QThreadPool, Qt, QRegExp
+#from PySide2.QtWidgets import QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+#from PySide2.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
+#from PySide2.QtCore import QObject, Signal, Slot, QRunnable, QRect, QThreadPool, Qt, QRegExp
 import sys, traceback
-import os
+#import os
 import psutil
 from time import sleep
 from datetime import datetime
@@ -16,7 +19,7 @@ from pathlib import Path
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
-from numpy import ndarray, genfromtxt, asarray, sum as npsum
+from numpy import genfromtxt, asarray, sum as npsum
 #import matplotlib.pyplot as plt
 #from matplotlib.ticker import FormatStrFormatter
 #import qpageview
@@ -27,7 +30,7 @@ import copy
 
 from ior2ecl import ior2ecl
 from IORlib.utils import Progress, exit_without_atexit, assert_python_version, get_substrings, return_matching_string, silentdelete, delete_all, delete_files_matching, file_contains
-from IORlib.ECL import RSM_file, unfmt_file, fmt_file, Section
+from IORlib.ECL import unfmt_file, fmt_file, Section
 import GUI_icons
 
 default_font = 'default'
@@ -58,6 +61,7 @@ def create_action(win, text=None, shortcut=None, tip=None, func=None, icon=None,
         #act.setIcon(QIcon(str(icon_path/Path(icon))))
         act.setIcon(QIcon(':'+icon)) #QIcon(str(icon_path/Path(icon))))
     act.triggered.connect(func)
+    #act.changed.connect(func)
     return act
 
 
@@ -271,11 +275,13 @@ def show_message(window, kind, text='', extra='', detail=None):
 #-----------------------------------------------------------------------
 def show_message_text(window, text):
 #-----------------------------------------------------------------------
-    kind = 'error'
-    if text.lstrip().startswith('WARNING'):
-        text = text.replace('WARNING','')
-        kind = 'warning'
-    show_message(window, kind, text=text)
+    text = text.lstrip()
+    if text.startswith(('ERROR','WARNING','INFO')):
+        kind = text.split()[0]
+        text = text.replace(kind,'').lstrip()
+        kind = kind.lower()
+        show_message(window, kind, text=text)
+        return text
 
 
 #-----------------------------------------------------------------------
@@ -328,16 +334,32 @@ def str_to_bool(s):
         #raise ValueError("Valid case-insensitive strings in str_to_bool() are 'true','false','1','0', got " + s)
 
 #===========================================================================
+class VLine(QFrame):
+#===========================================================================
+    def __init__(self):
+        super(VLine, self).__init__()
+        self.setFrameShape(self.VLine|self.Sunken)
+
+#===========================================================================
+class HLine(QFrame):
+#===========================================================================
+    def __init__(self):
+        super(HLine, self).__init__()
+        self.setFrameShape(self.HLine|self.Sunken)
+
+
+#===========================================================================
 class WorkerSignals(QObject):                                              
 #===========================================================================
-    finished = pyqtSignal()
-    result = pyqtSignal(int)
-    error = pyqtSignal(tuple)
-    progress = pyqtSignal(int)
-    plot = pyqtSignal()
-    show_message = pyqtSignal(tuple)
-    status_message = pyqtSignal(str)
-    stop = pyqtSignal()
+    finished = Signal()
+    result = Signal(int)
+    error = Signal(tuple)
+    progress = Signal(int)
+    plot = Signal()
+    #show_message = Signal(tuple)
+    show_message = Signal(str)
+    status_message = Signal(str)
+    stop = Signal()
     
 #===========================================================================
 class Base_worker(QRunnable):                                              
@@ -376,7 +398,7 @@ class Base_worker(QRunnable):
             name = run.name
         return name + ' stopped after ' + str(self.t) + ' ' + step
                          
-    @pyqtSlot()
+    @Slot()
     #-----------------------------------------------------------------------
     def run(self):
     #-----------------------------------------------------------------------
@@ -401,7 +423,7 @@ class Backward(Base_worker):
         super(Backward, self).__init__()
         self.sim = sim
         
-    @pyqtSlot()
+    @Slot()
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
@@ -411,7 +433,8 @@ class Backward(Base_worker):
         try:            
             sim.init_runs()
         except SystemError as e:
-                self.show_message(('error', str(e)))
+                #self.show_message(('error', str(e)))
+                self.show_message('ERROR '+str(e))
                 return
         try:
             self.status_message('Starting Eclipse...')
@@ -437,10 +460,12 @@ class Backward(Base_worker):
             if 'stopped' in err: 
                 if 'loop_until' in err:
                     err = self.stop_msg()
-                self.show_message(('info', err))
+                #self.show_message(('info', err))
+                self.show_message('INFO '+err)
             else:
                 msg = 'Simulation stopped unexpectedly'
-                self.show_message(('error', msg+'\n'+err))
+                #self.show_message(('error', msg+'\n'+err))
+                self.show_message('ERROR '+msg+'\n'+err)
             #self.update_progress(0)
             result = False
         finally:
@@ -455,50 +480,80 @@ class Backward(Base_worker):
 #===========================================================================
 class Forward(Base_worker):                                              
 #===========================================================================
-    def __init__(self, sim, run='all', *args, **kwargs):
+    def __init__(self, sim, run=None, *args, **kwargs):
         super(Forward, self).__init__()
         self.sim = sim
-        self.run = run
+        #self.run = run
         self.current = None
+        self.sleep_sec = 1
+        self.refresh_rate = 2
+        # Decide if we run Eclipse, IORSim, or both
+        #run = run.strip().lower()
+        if not run: #in ('all', 'eclipse', 'iorsim'):
+            raise SystemError('Forward-class: Missing run-argument')
+        if not isinstance(run, tuple):
+            run = (run,)
+        self.run_names = run
+        #if run == 'all':
+        #    # Need to run Eclipse before IORSim
+        #    self.run_names = ['eclipse','iorsim']
+        #else:
+        #   self.run_names = [run,]
         
-    @pyqtSlot()
+    @Slot()
     #-----------------------------------------------------------------------
-    def wait_func(self):
+    def refresh_func(self):
     #-----------------------------------------------------------------------
         self.update_plot()
         self.update_progress(-1)
         
+    #-----------------------------------------------------------------------
+    def stop_msg(self):
+    #-----------------------------------------------------------------------
+        return 'INFO ' + super().stop_msg(step='days')
 
-    @pyqtSlot()
+    @Slot()
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
+        #print('RUNNABLE')
         sim = self.sim
-        runs = []
         msg = None
+        runs = []
+        result = False
         try:
-            runs = sim.init_runs(run=self.run)
-            for run in runs:
+            for run_name in self.run_names:
+                print(run_name)
                 # start run
+                run = sim.init_run(run=run_name)
+                print(run.name)
+                runs.append(run)
+                #print(runs)
                 self.status_message('Starting ' + run.name)
                 self.update_progress(0)
                 run.start()
-                self.current = run.name.lower()#[:3] # 'ecl' or 'ior'
+                #print('STARTED')
+                self.current = run_name #.name.lower()#[:3] # 'ecl' or 'ior'
                 self.status_message(run.name + ' running')
-                run.wait_for_process_to_quit(sleep_sec=1, wait_func=self.wait_func, wait=2, kill_func=self.is_killed)
-                self.wait_func()
+                run.wait_for_process_to_quit(sleep_sec=self.sleep_sec, refresh_func=self.refresh_func, 
+                                             refresh=self.refresh_rate, kill_func=self.is_killed, 
+                                             kill_msg = self.stop_msg)
+                #print('AFTER')
+                self.refresh_func()
                 #self.current = None
                 self.update_progress(0)
             self.status_message('Simulation complete')
             result = True
         except (SystemError, ProcessLookupError, psutil.NoSuchProcess) as e:
             msg = str(e)
-            kind = 'error'
-            if 'stopped' in msg:
-                msg = self.stop_msg(run=run, step='days')
-                kind = 'info'
+            self.show_message(msg)
+            #msg = str(e)
+            #kind = 'error'
+            #if 'stopped' in msg:
+            #    msg = self.stop_msg(run=run, step='days')
+            #    kind = 'info'
             self.status_message(msg)
-            self.show_message((kind, msg))
+            #self.show_message(msg)
             result = False
         finally:
             # kill possible remaining processes
@@ -526,7 +581,7 @@ class Convert(Base_worker):
         self.funrst = ior+'.FUNRST'
         #self.unrst = ior+'.UNRST'
       
-    @pyqtSlot()
+    @Slot()
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
@@ -822,6 +877,9 @@ class main_window(QMainWindow):                                    # main_window
         super(main_window, self).__init__(*args, **kwargs)
         self.setWindowTitle('IORSim') 
         self.setGeometry(300, 100, 1100, 800)
+        self.setMinimumHeight(800)
+        self.setMinimumWidth(1000)
+        #self.setContentsMargins(2,2,2,2)
         self.setWindowIcon(QIcon(':program_icon'))
         self.font = QFont().defaultFamily()
         self.menu_fontsize = 7
@@ -831,6 +889,7 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_ref_data = {}
         self.ecl_boxes = {}
         self.ior_boxes = {}
+        self.current_view = None
         self.days = None
         self.log_file = None
         self.unsmry = None
@@ -904,15 +963,15 @@ class main_window(QMainWindow):                                    # main_window
                                          func=self.view_iorsim_log, checkable=True)
         self.py_log_act = create_action(self, text='Program log file', icon='terminal',
                                         func=self.view_program_log, checkable=True)
-        fwd = create_action(self, text='Forward', icon='',
-                            func=self.mode_forward, checkable=True)
-        back = create_action(self, text='Backward', icon='',
-                             func=self.mode_backward, checkable=True)
-        ecl = create_action(self, text='Eclipse', icon='',
-                            func=self.mode_eclipse, checkable=True)
-        ior = create_action(self, text='IORSim', icon='',
-                            func=self.mode_iorsim, checkable=True)
-        self.mode_act = {'forward':fwd, 'backward':back, 'eclipse':ecl, 'iorsim':ior}
+        # fwd = create_action(self, text='Forward', icon='',
+        #                     func=self.mode_forward, checkable=True)
+        # back = create_action(self, text='Backward', icon='',
+        #                      func=self.mode_backward, checkable=True)
+        # ecl = create_action(self, text='Eclipse', icon='',
+        #                     func=self.mode_eclipse, checkable=True)
+        # ior = create_action(self, text='IORSim', icon='',
+        #                     func=self.mode_iorsim, checkable=True)
+        # self.mode_act = {'forward':fwd, 'backward':back, 'eclipse':ecl, 'iorsim':ior}
         #self.show_manual_act = create_action(self, text='View user manual', icon='document', func=self.on_show_manual)
                 
         
@@ -921,8 +980,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         ### menu
         menu = self.menuBar()
-        self.setStyleSheet('QMainWindow::menuBar { padding: 10px; }')
-        file_menu = menu.addMenu('&File')
+        #self.setStyleSheet('QMainWindow::menuBar { padding: 10px; }')
+        file_menu = menu.addMenu('&Case')
         file_menu.addAction(self.add_case_act)
         file_menu.addAction(self.dupl_case_act) 
         file_menu.addAction(self.rename_case_act)
@@ -930,6 +989,11 @@ class main_window(QMainWindow):                                    # main_window
         file_menu.addAction(self.delete_case_act)
         file_menu.addSeparator()
         file_menu.addAction(self.exit_act)
+        # mode_menu = menu.addMenu('&Mode')
+        # self.mode_ag = QActionGroup(self)
+        # for act in self.mode_act.values():
+        #     mode_menu.addAction(act)
+        #     self.mode_ag.addAction(act)
         edit_menu = menu.addMenu('&Edit')
         self.view_ag = QActionGroup(self)
         for act in (self.ecl_inp_act, self.ior_inp_act, self.chem_inp_act):
@@ -944,11 +1008,6 @@ class main_window(QMainWindow):                                    # main_window
         for act in (self.ecl_log_act, self.ior_log_act, self.py_log_act):
             view_menu.addAction(act)
             self.view_ag.addAction(act)
-        mode_menu = menu.addMenu('&Mode')
-        self.mode_ag = QActionGroup(self)
-        for act in self.mode_act.values():
-            mode_menu.addAction(act)
-            self.mode_ag.addAction(act)
         
         #help_menu = menu.addMenu('&Help')
         #help_menu.addAction(self.help_act)
@@ -963,29 +1022,31 @@ class main_window(QMainWindow):                                    # main_window
         self.addToolBar(self.toolbar)
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toolbar.setStyleSheet('QToolButton { padding: 0px 0px 0px 0px}')
-        self.toolbar.addSeparator()
+        #self.toolbar.addSeparator()
         self.create_toolbar_widgets()
-        self.toolbar.addAction(self.start_act)
-        self.toolbar.addAction(self.stop_act)
+        #self.toolbar.addAction(self.start_act)
+        #self.toolbar.addAction(self.stop_act)
 
     #-----------------------------------------------------------------------
     def create_toolbar_widgets(self):                           # main_window
     #-----------------------------------------------------------------------
         ### simulation controls
-        widgets = {'case'    : QComboBox(),
+        widgets = {'mode'    : QComboBox(),
+                   'case'    : QComboBox(),
                    'steps'   : QLineEdit(),
-                   'compare'     : QComboBox()} 
-        tips = ('Choose a case, or add new from the File-menu',
+                   'compare' : QComboBox()} 
+        tips = ('Choose running mode',
+                'Choose a case, or add new from the File-menu',
                 'Set simulation steps (only backward mode)',
                 'Reference case for plotting')
-        ql = QLabel()
-        ql.setText('')
-        ql.setFixedWidth(70)
-        ql.setStatusTip('Set simulation mode from the Mode menu')
-        self.toolbar.addWidget(ql)
-        self.mode_label = ql
-        self.toolbar.addSeparator()
-        for i,(text,wid) in enumerate(widgets.items()):
+        #ql = QLabel()
+        #ql.setText('')
+        #ql.setFixedWidth(70)
+        #ql.setStatusTip('Set simulation mode from the Mode menu')
+        #self.toolbar.addWidget(ql)
+        #self.mode_label = ql
+        #self.toolbar.addSeparator()
+        for i,(text,wid) in enumerate(list(widgets.items())[:3]):
             ql = QLabel()
             ql.setText(text.capitalize())
             ql.setStatusTip(tips[i])
@@ -993,6 +1054,26 @@ class main_window(QMainWindow):                                    # main_window
             self.toolbar.addWidget(ql)
             self.toolbar.addWidget(wid)
             self.toolbar.addSeparator()
+        self.toolbar.addAction(self.start_act)
+        self.toolbar.addAction(self.stop_act)
+        self.toolbar.addSeparator()
+        text, wid = list(widgets.items())[-1]
+        i = len(widgets)-1
+        ql = QLabel()
+        ql.setText(text.capitalize())
+        ql.setStatusTip(tips[i])
+        wid.setStatusTip(tips[i])
+        self.toolbar.addWidget(ql)
+        self.toolbar.addWidget(wid)
+        # mode
+        self.mode_cb = widgets['mode']
+        #self.mode_cb.setStyleSheet('QComboBox {min-width: 100px;}')
+        self.modes = ['forward','backward','eclipse','iorsim']
+        mode_names = ['Forward','Backward','Eclipse','IORSim']
+        self.mode_cb.addItems(mode_names)
+        self.mode_cb.setPlaceholderText('Choose mode')
+        self.mode_cb.setCurrentIndex(-1)
+        self.mode_cb.currentIndexChanged[int].connect(self.on_mode_select)
         # case
         self.case_cb = widgets['case']
         self.case_cb.setStyleSheet('QComboBox {min-width: 120px;}')
@@ -1014,17 +1095,19 @@ class main_window(QMainWindow):                                    # main_window
         ### statusbar
         self.remaining_time = QLabel()
         self.remaining_time.setText('Remaining time:  0:00:00')
+        self.remaining_time.setStyleSheet('QLabel {margin-top:10px; margin-bottom: 10px;}')
         self.progressbar = QProgressBar()
-        self.progressbar.setMaximumWidth(300)
-        self.progressbar.setMaximumHeight(10)
+        self.progressbar.setStyleSheet('QProgressBar {max-width: 300px; height: 20px; padding: 0px;}')
         self.progressbar.setFormat('')
+        statusbar = QStatusBar()
+        statusbar.setStyleSheet("QStatusBar { border-top: 1px solid lightgrey; }\nQStatusBar::item { border:None; };"); 
         self.messages = QLabel()
-        self.messages.setGeometry(QRect(0,0,100,25))
-        self.statusBar().addPermanentWidget(self.messages)
-        self.statusBar().addPermanentWidget(self.progressbar)
-        self.statusBar().addPermanentWidget(self.remaining_time)
-        self.statusBar().setStyleSheet('padding-bottom: 10 px;padding-top: 10 px;')
-        
+        statusbar.addPermanentWidget(self.messages)
+        statusbar.addPermanentWidget(self.progressbar, stretch=0)
+        statusbar.addPermanentWidget(self.remaining_time, stretch=0)
+        self.setStatusBar(statusbar)
+
+
     #-----------------------------------------------------------------------
     def create_central_widget(self):                                          # main_window
     #-----------------------------------------------------------------------
@@ -1038,6 +1121,7 @@ class main_window(QMainWindow):                                    # main_window
                          'ecl_menu' : (1, 0),
                          'plot'     : (0, 1, 2, 1)}
         self.layout = QGridLayout()
+        self.layout.setContentsMargins(10,10,10,10)
         self.layout.setSpacing(10)
         self.layout.setColumnStretch(0,25)
         self.layout.setColumnStretch(1,75)
@@ -1045,10 +1129,9 @@ class main_window(QMainWindow):                                    # main_window
         self.layout.setRowStretch(1,50)
         #self.layout.setRowStretch(2,35)
         widget = QWidget()
+        #widget.setStyleSheet('QWidget {border: 1px solid black}')
         widget.setLayout(self.layout)
         self.setCentralWidget(widget)
-        # input field
-        #self.create_input_field()
         # iorplot menu
         self.create_ior_menu()
         # eclplot menu
@@ -1057,7 +1140,10 @@ class main_window(QMainWindow):                                    # main_window
         self.create_plot_field()
         self.create_editor_field()
         #print(self.layout.columnCount(), self.layout.rowCount())
-        
+        #margins = self.contentsMargins()
+        #margins.setBottom(0)    
+        #self.setContentsMargins(0,0,0,0)        
+
 
     #-----------------------------------------------------------------------
     def set_input_field(self):
@@ -1255,14 +1341,14 @@ class main_window(QMainWindow):                                    # main_window
             return nr
             
     #-----------------------------------------------------------------------
-    def set_mode(self, mode, text=None, box=False, func=None, run=None):  # main_window
+    def set_mode(self, mode, box=False, func=None, run=None):  # main_window
     #-----------------------------------------------------------------------
         if not self.case:
             self.sender().setChecked(False)
             self.missing_case_error(tag='set_mode: ')
             return False
         self.mode = self.input['mode'] = mode
-        self.mode_label.setText(text)
+        #self.mode_label.setText(text)
         self.nstep_box.setEnabled(box)
         self.run_func = func
         self.run = run
@@ -1270,29 +1356,29 @@ class main_window(QMainWindow):                                    # main_window
         fh.write(mode+'\n')
         fh.close()
             
-    #-----------------------------------------------------------------------
-    def mode_forward(self):                               # main_window
-    #-----------------------------------------------------------------------
-        self.set_mode('forward', text='Forward', box=False, func=self.run_forward, run='all')
+    # #-----------------------------------------------------------------------
+    # def mode_forward(self):                               # main_window
+    # #-----------------------------------------------------------------------
+    #     self.set_mode('forward', text='Forward', box=False, func=self.run_forward, run='all')
         
-    #-----------------------------------------------------------------------
-    def mode_backward(self):                               # main_window
-    #-----------------------------------------------------------------------
-        self.set_mode('backward', text='Backward', box=True, func=self.run_backward)
+    # #-----------------------------------------------------------------------
+    # def mode_backward(self):                               # main_window
+    # #-----------------------------------------------------------------------
+    #     self.set_mode('backward', text='Backward', box=True, func=self.run_backward)
         
-    #-----------------------------------------------------------------------
-    def mode_eclipse(self):                               # main_window
-    #-----------------------------------------------------------------------
-        self.set_mode('eclipse', text='Eclipse', box=False, func=self.run_forward, run='eclipse')
-        self.update_menu_boxes('ecl')
-        self.create_plot()
+    # #-----------------------------------------------------------------------
+    # def mode_eclipse(self):                               # main_window
+    # #-----------------------------------------------------------------------
+    #     self.set_mode('eclipse', text='Eclipse', box=False, func=self.run_forward, run='eclipse')
+    #     self.update_menu_boxes('ecl')
+    #     self.create_plot()
             
-    #-----------------------------------------------------------------------
-    def mode_iorsim(self):                               # main_window
-    #-----------------------------------------------------------------------
-        self.set_mode('iorsim', text='IORSim', box=False, func=self.run_forward, run='iorsim')
-        self.update_menu_boxes('ior')
-        self.create_plot()
+    # #-----------------------------------------------------------------------
+    # def mode_iorsim(self):                               # main_window
+    # #-----------------------------------------------------------------------
+    #     self.set_mode('iorsim', text='IORSim', box=False, func=self.run_forward, run='iorsim')
+    #     self.update_menu_boxes('ior')
+    #     self.create_plot()
 
     #-----------------------------------------------------------------------
     def update_menu_boxes(self, data, block_signal=True):       # main_window
@@ -1320,17 +1406,32 @@ class main_window(QMainWindow):                                    # main_window
             self.max_3_checked.append(box)
 
         
-    # #-----------------------------------------------------------------------
-    # def mode_select(self, nr):                               # main_window
-    # #-----------------------------------------------------------------------
-    #     self.input['mode'] = nr
-    #     self.mode = self.modes[nr]
-    #     #if self.mode=='forward':
-    #     #    #self.dt_box.setEnabled(False)
-    #     #    self.nstep_box.setEnabled(False)
-    #     #if self.mode=='backward':
-    #     #    #self.dt_box.setEnabled(True)
-    #     #    self.nstep_box.setEnabled(True)
+    #-----------------------------------------------------------------------
+    def on_mode_select(self, nr):                               # main_window
+    #-----------------------------------------------------------------------
+        #self.input['mode'] = nr
+        mode = self.modes[nr]
+        if mode=='forward':
+            # need to run Eclipse before IORSim
+            self.set_mode(mode, box=False, func=self.run_forward, run=('eclipse','iorsim'))
+        elif mode=='backward':
+            self.set_mode(mode, box=True, func=self.run_backward)
+        elif mode=='eclipse':
+            self.set_mode(mode, box=False, func=self.run_forward, run=mode)
+            self.update_menu_boxes('ecl')
+            self.create_plot()
+        elif mode=='iorsim':
+            self.set_mode(mode, box=False, func=self.run_forward, run=mode)
+            self.update_menu_boxes('ior')
+            self.create_plot()
+        else:
+            raise SystemError('ERROR Uknown mode: ' + mode)
+        #if self.mode=='forward':
+        #    #self.dt_box.setEnabled(False)
+        #    self.nstep_box.setEnabled(False)
+        #if self.mode=='backward':
+        #    #self.dt_box.setEnabled(True)
+        #    self.nstep_box.setEnabled(True)
 
             
     #-----------------------------------------------------------------------
@@ -1369,8 +1470,9 @@ class main_window(QMainWindow):                                    # main_window
             mode_file = Path(self.case).parent/'mode.gui'
             if mode_file.is_file():
                 mode = open(mode_file).readline().strip()
-            self.mode_act[mode].setChecked(True)
-            self.mode_ag.checkedAction().trigger()
+            self.mode_cb.setCurrentIndex(self.modes.index(mode))
+            #self.mode_act[mode].setChecked(True)
+            #self.mode_ag.checkedAction().trigger()
                 
     #-----------------------------------------------------------------------
     def on_compare_select(self, nr):                              # main_window
@@ -1891,11 +1993,20 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_editor_field(self):                                # main_window
     #-----------------------------------------------------------------------
+        width = 60
+        height = 32
+        def new_button(text, func):
+            btn = QPushButton(text)
+            btn.setFixedWidth(width)
+            btn.setFixedHeight(height)
+            btn.clicked.connect(func)
+            return btn
+
         layout = QVBoxLayout()
         buttons = QHBoxLayout()
         layout.addLayout(buttons)
         self.editor = QPlainTextEdit()
-        self.vscroll_pos = None
+        #self.vscroll_pos = None
         layout.addWidget(self.editor)
         self.editor.textChanged.connect(self.activate_save)
         self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
@@ -1903,35 +2014,30 @@ class main_window(QMainWindow):                                    # main_window
         self.editor_group.setObjectName('editor')
         self.editor_group.setLayout(layout)
         ### Save button
-        self.save_btn = QPushButton('Save')
-        self.save_btn.setFixedWidth(60)
-        self.save_btn.clicked.connect(self.save_text)
+        self.save_btn = new_button('Save', self.save_text)
         buttons.addWidget(self.save_btn)
         ### Undo button
-        self.undo_btn = QPushButton('Undo')
-        self.undo_btn.setFixedWidth(60)
-        self.undo_btn.clicked.connect(self.editor.undo)
+        self.undo_btn = new_button('Undo', self.editor_undo)
         buttons.addWidget(self.undo_btn)
+        ### Redo button
+        self.redo_btn = new_button('Redo', self.editor_redo)
+        buttons.addWidget(self.redo_btn)
         ### End button
-        self.end_btn = QPushButton('End')
-        self.end_btn.setFixedWidth(60)
-        self.end_btn.clicked.connect(self.goto_end)
+        self.end_btn = new_button('End', self.goto_end)
         buttons.addWidget(self.end_btn)
         ### Search field
         self.search_pos = []
-        self.search_field = QLineEdit() 
+        self.search_field = QLineEdit()
+        self.search_field.setFixedHeight(height)
+        self.search_field.setClearButtonEnabled(True) 
         self.search_field.setPlaceholderText('Search text')
         self.search_field.textChanged.connect(self.search_text)
         buttons.addWidget(self.search_field)
         ### Next button
-        self.next_btn = QPushButton('Next')
-        self.next_btn.setFixedWidth(60)
-        self.next_btn.clicked.connect(self.search_next)
+        self.next_btn = new_button('Next', self.search_next)
         buttons.addWidget(self.next_btn)
         ### Prev button
-        self.prev_btn = QPushButton('Prev')
-        self.prev_btn.setFixedWidth(60)
-        self.prev_btn.clicked.connect(self.search_prev)
+        self.prev_btn = new_button('Prev', self.search_prev)
         buttons.addWidget(self.prev_btn)
 
     #-----------------------------------------------------------------------
@@ -2003,14 +2109,15 @@ class main_window(QMainWindow):                                    # main_window
     def save_text(self):
     #-----------------------------------------------------------------------
         #print('save_text')
-        text = self.editor.toPlainText()
+        #self.editor.blockSignals(True)
         with open(self.editor.objectName(), 'w') as f:
-            f.write(text)
+            f.write(self.editor.toPlainText())
         #self.cursor_pos = self.editor.textCursor().position()
-        self.vscroll_pos = self.editor.verticalScrollBar().value()
+        #self.vscroll_pos = self.editor.verticalScrollBar().value()
         #print(self.vscroll_pos)
         self.save_btn.setEnabled(False)
         self.prepare_case(self.case)
+        #self.editor.blockSignals(False)
 
     #-----------------------------------------------------------------------
     def activate_save(self):
@@ -2019,13 +2126,25 @@ class main_window(QMainWindow):                                    # main_window
         self.save_btn.setEnabled(True)
         
     #-----------------------------------------------------------------------
-    #def on_show_manual(self, nr):                               # main_window
+    def editor_undo(self):                               # main_window
     #-----------------------------------------------------------------------
-    #    return
+        #self.vscroll_pos = self.editor.verticalScrollBar().value()
+        self.editor.undo()
+            
+    #-----------------------------------------------------------------------
+    def editor_redo(self):                               # main_window
+    #-----------------------------------------------------------------------
+        #self.vscroll_pos = self.editor.verticalScrollBar().value()
+        self.editor.redo()
             
     #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                                # main_window
     #-----------------------------------------------------------------------
+        # Avoid re-opening file after it is saved
+        if str(file) == self.editor.objectName():
+            return
+        #print('view_file')
+        self.search_field.setPlaceholderText('Search text')
         text = ''
         if file and Path(file).is_file():
             text = open(file).read()
@@ -2036,8 +2155,8 @@ class main_window(QMainWindow):                                    # main_window
         self.current_view.setParent(None)
         self.layout.addWidget(self.editor_group, *self.position['plot'])
         self.current_view = self.editor_group
-        if self.vscroll_pos:
-            self.editor.verticalScrollBar().setValue(self.vscroll_pos)
+        #if self.vscroll_pos:
+        #    self.editor.verticalScrollBar().setValue(self.vscroll_pos)
             #print(self.cursor_pos)
  
     #-----------------------------------------------------------------------
@@ -2050,27 +2169,55 @@ class main_window(QMainWindow):                                    # main_window
                 self.ior_highlight = Highlighter(self.editor.document(), comment=comment, keywords=keywords)
                 self.save_btn.setEnabled(False)
                 self.undo_btn.setEnabled(True)
+                self.redo_btn.setEnabled(True)
         else:
             self.sender().setChecked(False)
             self.sender().parent().missing_case_error(tag='input: ')
             return False
 
     #-----------------------------------------------------------------------
-    def view_eclipse_input(self):                                # main_window
+    def this_file_is_open_in_editor(self, ext):
     #-----------------------------------------------------------------------
-        kw = []
+        #print(self.input['root']+'.'+ext)
+        if self.input['root'] and (self.input['root']+'.'+ext == self.editor.objectName()):
+            return True
+        return False
+
+
+    #-----------------------------------------------------------------------
+    def view_eclipse_input(self):                 # main_window
+    #-----------------------------------------------------------------------
+        ext='DATA'
+        title='Eclipse input file'
+        comment='--'
+        # Avoid re-opening file after it is saved
+        if self.this_file_is_open_in_editor(ext):
+            return
         # Sections
-        kw.append([Qt.red, QFont.Bold, 'RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS','SOLUTION', 
-                  'SUMMARY','SCHEDULE','OPTIMIZE'])
+        sections = [Qt.red, QFont.Bold, Qt.CaseSensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
+                    'SOLUTION','SUMMARY','SCHEDULE','OPTIMIZE']
         # Global keywords
-        kw.append([Qt.darkGreen , QFont.Normal, 'COLUMN','DEBUG','DEBUG3','ECHO','END','ENDINC','ENDSKIP','SKIP',
-                  'SKIP100','SKIP300','EXTRAPMS','FORMFEED','GETDATA','INCLUDE','MESSAGES','NOECHO','NOWARN','WARN'])
-        self.view_input_file(ext='DATA', title='Eclipse input file', comment='--', keywords=kw)
+        globals = [Qt.darkGreen, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','COLUMN','DEBUG','DEBUG3','ECHO','END',
+                    'ENDINC','ENDSKIP','SKIP','SKIP100','SKIP300','EXTRAPMS','FORMFEED','GETDATA',
+                    'INCLUDE','MESSAGES','NOECHO','NOWARN','WARN']
+        self.view_input_file(ext=ext, title=title, comment=comment, keywords=[sections, globals])
         
     #-----------------------------------------------------------------------
     def view_iorsim_input(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_input_file(ext='trcinp', title='IORSim input file', comment='#')
+        ext='trcinp'
+        title='IORSim input file'
+        comment='#'
+        if self.this_file_is_open_in_editor(ext):
+            return
+        # Mandatory keywords
+        mandatory = [Qt.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b', '*RESTART_WRITE','*RESTART_FILE','*GRIDPLOT_WRITE','*GRIDPLOT_FILE' ,
+                     '*RESTART_READ','*INTEGRATION','*OUTPUT','*WELLPLOT_INTERVAL','*END']
+        # Optional keywords
+        optional = [Qt.darkGreen, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b', '*N_TRACER','*NAME','*K_WATER','*K_OIL','*K_GAS',
+                    '*DW','*DO','*DG','*K_ADS','*C_INIT','*CONC_INJECTION','*REACTING_SYSTEM','*INTEGRATE_SPECIES',
+                    '*MODELTYPE','*SPECIES','*MODELTEMPLATE','*TINIT','*MODELINSTANCE','*WELLSPECIES']
+        self.view_input_file(ext=ext, title=title, comment=comment, keywords=[mandatory, optional])
         
     #-----------------------------------------------------------------------
     def view_geochem_input(self):                                # main_window
@@ -2088,6 +2235,7 @@ class main_window(QMainWindow):                                    # main_window
         self.view_file(self.log_file, title=title)
         self.save_btn.setEnabled(False)
         self.undo_btn.setEnabled(False)
+        self.redo_btn.setEnabled(False)
         
     #-----------------------------------------------------------------------
     def view_eclipse_log(self):                                # main_window
@@ -2121,7 +2269,8 @@ class main_window(QMainWindow):                                    # main_window
         #    #self.sender().setChecked(False)
         #    self.missing_case_error('plot: ')
         #    return False
-        self.current_view.setParent(None)
+        if self.current_view:
+            self.current_view.setParent(None)
         self.layout.addWidget(self.plot_group, *self.position['plot'])
         self.current_view = self.plot_group
         if not self.worker:# and self.case:
@@ -2528,13 +2677,14 @@ class main_window(QMainWindow):                                    # main_window
     def update_progressbar(self, t):
     #-----------------------------------------------------------------------
         if t>=0:
+            print(t)
             self.progressbar.setValue(t)
 
     #-----------------------------------------------------------------------
-    def reset_progressbar(self, N=1):
+    def reset_progressbar(self, N=-1):
     #-----------------------------------------------------------------------
         self.progressbar.reset()
-        #print(N)
+        #print('reset bar')
         self.progressbar.setMaximum(N)
         self.progressbar.setValue(0)
 
@@ -2650,7 +2800,7 @@ class main_window(QMainWindow):                                    # main_window
         # thread running the simulation
         self.worker = Backward(sim)
         self.worker.signals.status_message.connect(self.update_message)
-        self.worker.signals.show_message.connect(self.show_message)
+        self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)
         self.worker.signals.plot.connect(self.update_view_area)
         self.worker.signals.finished.connect(self.run_finished)
@@ -2665,30 +2815,41 @@ class main_window(QMainWindow):                                    # main_window
         # clear messages and progress
         self.update_message()
         self.update_remaining_time()
-        self.reset_progressbar(N=i['TSTEP'])
-        self.progress = Progress(N=i['TSTEP'])
+        N = 0
+        if self.run == 'iorsim' and self.read_ecl_data():
+            days = self.data['ecl'].get('days') or [0,]
+            N = int(days[-1])
+        if self.run == 'eclipse':
+            N = i['TSTEP']
+        #print(self.run)
+        #print(N)
+        self.reset_progressbar(N=N)
+        self.progress = Progress(N=N)
         # disable start button
         self.set_toolbar_enabled(False)
-        #self.start_act.setEnabled(False)
-        #self.case_cb.setEnabled(False)
         # create ior2ecl instance
-        #sim = ior2ecl(root=i['root'], dt=i['dt'],
         s = self.settings
         sim = ior2ecl(root=i['root'],
                       iorsim=s.get['iorsim'](),
                       eclrun=s.get['eclrun'](),
                       to_screen=to_screen, quiet=quiet,
                       readdata=False)
-        # thread running the simulation
+        # start thread running the simulation
         self.worker = Forward(sim, run=self.run)
         self.worker.signals.status_message.connect(self.update_message)
-        self.worker.signals.show_message.connect(self.show_message)
+        self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.plot.connect(self.update_view_area)
         self.worker.signals.progress.connect(self.update_progress)
         self.worker.signals.finished.connect(self.run_finished)
         self.threadpool.start(self.worker)
 
 
+    #-----------------------------------------------------------------------
+    def show_message_text(self, text):
+    #-----------------------------------------------------------------------
+        #show_message(self, 'error', text=text)
+        show_message_text(self, text)
+        
     #-----------------------------------------------------------------------
     def show_message(self, par):
     #-----------------------------------------------------------------------
@@ -2707,6 +2868,8 @@ class main_window(QMainWindow):                                    # main_window
         if self.worker.success:
             self.convert_FUNRST()   
         self.worker = None
+        self.reset_progressbar()
+
 
     #-----------------------------------------------------------------------
     def convert_FUNRST(self):
@@ -2753,13 +2916,17 @@ class main_window(QMainWindow):                                    # main_window
         #self.write_casefile()
         #self.write_case_dir()
         self.save_input()
-        qApp.quit()
+        QApplication.quit()
                 
 
     #-----------------------------------------------------------------------
     def update_message(self, text=''):
     #-----------------------------------------------------------------------
+        if text.startswith(('WARNING','ERROR','INFO')):
+            text = text.replace(text.split()[0],'')
+        #print('|'+text+'|')
         self.messages.setText(text)
+        #self.statusBar().showMessage(text) 
         
 ### 
 ###  Adapted from code at:         
@@ -2775,13 +2942,18 @@ class Highlighter(QSyntaxHighlighter):
             keywordFormat = QTextCharFormat()
             keywordFormat.setForeground(kword.pop(0))
             keywordFormat.setFontWeight(kword.pop(0))
-            #keywordPatterns = ['\\b*'+ kw +'\\b' for kw in kword]
-            keywordPatterns = ['\\b*'+ kw +'\\b' for kw in kword]
+            case_sens = kword.pop(0)
+            front = kword.pop(0)
+            back = kword.pop(0)
+            keywordPatterns = [front + kw + back for kw in kword]
+            #keywordPatterns = kword
             #print(keywordPatterns)
             #keywordPatterns = ["\\b*TEMPERATURE\\b", "\\b*INTEGRATION\\b", "\\b*MODELTYPE\\b"]
-            self.highlightingRules.extend( [(QRegExp(pattern), keywordFormat) for pattern in keywordPatterns] )
+            
+            self.highlightingRules.extend( [(QRegExp(pattern, cs=case_sens), keywordFormat) for pattern in keywordPatterns] )
         singleLineCommentFormat = QTextCharFormat()
         singleLineCommentFormat.setForeground(color)
+        #singleLineCommentFormat.setFontItalic(True)
         self.highlightingRules.append((QRegExp(comment+'[^\n]*'), singleLineCommentFormat))
         #print(self.highlightingRules)
 
@@ -2808,7 +2980,7 @@ if __name__ == '__main__':
     #app.setFont(QFont(default_font, pointSize=default_size, weight=default_weight))
     #app.setWindowIcon(QIcon('ior2ecl_logo.png'))
     window = main_window()
-    app.exec()
+    app.exec_()
         
     exit_without_atexit()
 
