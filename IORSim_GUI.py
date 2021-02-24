@@ -447,19 +447,10 @@ class Backward(Base_worker):
             sim.init_iorsim_run()
             sim.start_iorsim(kill_func=self.is_killed, kill_msg=self.stop_msg)
             # Start timestep loop
-            #for self.t in range(1, sim.nsteps+1):
-            #days = 0
-            #self.t = days = 0
-            #for self.t in range(1, sim.nsteps+1):
             while sim.n < sim.nsteps:
-                #self.t = days
-                #if self.N-self.t < self.dt:
-                #    sim.satnum_tstep(self.N-self.t)
                 days = sim.run_one_step(kill_func=self.is_killed, kill_msg=self.stop_msg)                
-                #print(days, sim.n)
                 self.update_progress(sim.n)
                 self.update_plot()
-                #self.status_message(sim.status_message(self.t))
                 self.status_message('{}/{} days'.format(days, self.N))
                 #self.status_message('{}/{} days'.format(self.t, self.N))
             # Timestep loop finished
@@ -506,6 +497,7 @@ class Forward(Base_worker):
     #-----------------------------------------------------------------------
         self.update_plot()
         self.update_progress(-1)
+        self.status_message('{}/{} days'.format(self.t, self.N))
         
     #-----------------------------------------------------------------------
     def stop_msg(self):
@@ -516,56 +508,38 @@ class Forward(Base_worker):
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
-        #print('RUNNABLE')
         sim = self.sim
         msg = None
         runs = []
         result = False
         try:
             for run_name in self.run_names:
-                #print(run_name)
                 # start run
                 run = sim.init_run(run=run_name)
-                #print(run.name)
                 runs.append(run)
-                #print(runs)
                 self.status_message('Starting ' + run.name)
                 self.update_progress(0)
                 run.start()
-                #print('STARTED')
                 self.current = run_name #.name.lower()#[:3] # 'ecl' or 'ior'
                 self.status_message(run.name + ' running')
                 run.wait_for_process_to_finish(sleep_sec=self.sleep_sec, refresh_func=self.refresh_func, 
                                                refresh=self.refresh_rate, kill_func=self.is_killed, kill_msg = self.stop_msg, 
                                                assert_running=run.assert_running, progress=self.progress, progress_limit=0.95)
-                #print('AFTER')
                 self.refresh_func()
-                #self.current = None
                 self.update_progress(0)
             self.status_message('Simulation complete')
             result = True
         except (SystemError, ProcessLookupError, psutil.NoSuchProcess) as e:
-            #print(e)
             msg = str(e)
             self.show_message(msg)
-            #msg = str(e)
-            #kind = 'error'
-            #if 'stopped' in msg:
-            #    msg = self.stop_msg(run=run, step='days')
-            #    kind = 'info'
             self.status_message(msg)
-            #self.show_message(msg)
             result = False
         finally:
             # kill possible remaining processes
-            for run in runs:
-                run.kill()
-                run.log.close()
-                sim.clean_up(run)
+            sim.kill_and_clean(runs)
             if msg:
                 sim.print2log('\n======  ' + msg + '  ======')
             sim.runlog.close()
-            #sim.close_logfiles()
             self.update_plot()
             self.update_progress(0)
             #self.current = None
@@ -1038,7 +1012,7 @@ class main_window(QMainWindow):                                    # main_window
                    'compare' : QComboBox()} 
         tips = ('Set running mode',
                 'Choose a case, or add a new from the Case-menu',
-                'Set duration',
+                'Set total time interval',
                 'Compare current case to a previous case')
         #ql = QLabel()
         #ql.setText('')
@@ -1210,6 +1184,7 @@ class main_window(QMainWindow):                                    # main_window
             inp['ecl_days'], inp['ecl_step'] = get_timestep_eclipse(inp['root'])
             inp['species'] = get_species(inp['root'])
 
+
     #-----------------------------------------------------------------------
     def set_plot_properties(self):                # main_window
     #-----------------------------------------------------------------------
@@ -1371,7 +1346,7 @@ class main_window(QMainWindow):                                    # main_window
 
         
     #-----------------------------------------------------------------------
-    def set_mode(self, mode, box=False, days=None, func=None, run=None):  # main_window
+    def set_mode(self, mode, box=False, tip=None, days=None, func=None, run=None):  # main_window
     #-----------------------------------------------------------------------
         if not self.case:
             self.sender().setChecked(False)
@@ -1379,7 +1354,9 @@ class main_window(QMainWindow):                                    # main_window
             return False
         self.mode = self.input['mode'] = mode
         if days:
-            self.days_box.setText(days)
+            self.days_box.setText(str(days))
+        if tip:
+            self.days_box.setStatusTip(tip)
         self.days_box.setEnabled(box)
         self.run_func = func
         if not isinstance(run, tuple):
@@ -1393,29 +1370,31 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_mode_select(self, nr):                               # main_window
     #-----------------------------------------------------------------------
-        #self.input['mode'] = nr
+        if nr<0:
+            return
+        self.max_days = None
         mode = self.modes[nr]
+        fwd_tip = 'Edit TSTEP in Eclipse input to change the total time interval'
+        back_tip = 'Set total time interval'
         if mode=='forward':
             # need to run Eclipse before IORSim
-            self.set_mode(mode, box=False, func=self.run_forward, run=('eclipse','iorsim'))
+            self.set_mode(mode, days=self.input['ecl_days'], tip=fwd_tip, box=False, func=self.run_forward, run=('eclipse','iorsim'))
         elif mode=='backward':
-            self.set_mode(mode, box=True, func=self.run_backward)
+            self.set_mode(mode, box=True, tip=back_tip, func=self.run_backward)
         elif mode=='eclipse':
-            self.set_mode(mode, box=False, func=self.run_forward, run=mode)
+            self.set_mode(mode, days=self.input['ecl_days'], box=False, tip=fwd_tip, func=self.run_forward, run=mode)
             self.update_menu_boxes('ecl')
             self.create_plot()
         elif mode=='iorsim':
-            self.set_mode(mode, box=False, func=self.run_forward, run=mode)
+            days = [1,]
+            if self.read_ecl_data():
+                days = self.data['ecl'].get('days') or [1,]
+            self.max_days = int(days[-1])
+            self.set_mode(mode, days=self.max_days, box=True, tip='Set total time interval, maximun is '+str(self.max_days), func=self.run_forward, run=mode)
             self.update_menu_boxes('ior')
             self.create_plot()
         else:
             raise SystemError('ERROR Uknown mode: ' + mode)
-        #if self.mode=='forward':
-        #    #self.dt_box.setEnabled(False)
-        #    self.days_box.setEnabled(False)
-        #if self.mode=='backward':
-        #    #self.dt_box.setEnabled(True)
-        #    self.days_box.setEnabled(True)
 
             
     #-----------------------------------------------------------------------
@@ -1608,10 +1587,12 @@ class main_window(QMainWindow):                                    # main_window
             self.ref_case.setCurrentIndex(0)
             self.out_wells, self.in_wells = get_wells_iorsim(root)
             self.set_variables_from_casefiles()
+            #print('prepare_case: '+str(ind))
+            self.on_mode_select(self.mode_cb.currentIndex())
             self.set_plot_properties()
             self.update_ior_menu()
         except SystemError as e:
-            show_message_text(self, str(e))
+            self.show_message_text(str(e))
         self.data = {}
         self.unsmry = None  # Signals to re-read Eclipse data
         self.read_ior_data()
@@ -1979,9 +1960,10 @@ class main_window(QMainWindow):                                    # main_window
     def create_editor_field(self):                                # main_window
     #-----------------------------------------------------------------------
         width = 60
-        height = 32
+        height = 25
         def new_button(text, func):
             btn = QPushButton(text)
+            #btn.setStyleSheet('QPushButton {max-width}')
             btn.setFixedWidth(width)
             btn.setFixedHeight(height)
             btn.clicked.connect(func)
@@ -2728,7 +2710,11 @@ class main_window(QMainWindow):                                    # main_window
         i = self.input
         #if i['nsteps']==0:
         if i['days']==0:
-            show_message(self, 'warning', text='Duration of simulation in days is missing.')
+            show_message(self, 'warning', text='Total time interval is missing.')
+            return False
+        if self.max_days and i['days']>self.max_days:
+            show_message(self, 'warning', text='The Eclipse output read by IORSim currently sets a limit of ' + str(self.max_days) + 
+                                               ' days on the time interval. Run Eclipse with a higher TSTEP to increase the maximun time interval.')
             return False
         #if i['dt']==0:
         if not self.settings.get['dt']() or int(self.settings.get['dt']())==0:

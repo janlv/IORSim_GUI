@@ -463,8 +463,8 @@ class ior2ecl:
         ### cleaning up
         if not self.keep_files:
             run.interface_file('all').delete()
-        if not self.quiet:
-            print()
+        #if not self.quiet:
+        #    print()
         
     # #--------------------------------------------------------------------------------
     # def kill_run(self, run):
@@ -479,11 +479,20 @@ class ior2ecl:
     #--------------------------------------------------------------------------------
         return (run for run in (self.ecl, self.ior) if run)
 
+    # #--------------------------------------------------------------------------------
+    # def kill_all(self):
+    # #--------------------------------------------------------------------------------
+    #     for run in self.runs():
+    #         self.kill(run)
+
     #--------------------------------------------------------------------------------
-    def kill_and_clean(self):
+    def kill_and_clean(self, runs):
     #--------------------------------------------------------------------------------
-        for run in self.runs():
+        if not isinstance(runs, (tuple, list)):
+            runs = (runs,)
+        for run in runs:
             run.kill()
+            run.log.close()
             self.clean_up(run)
 
 
