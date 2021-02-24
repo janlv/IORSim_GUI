@@ -1,2 +1,2 @@
-- IORSim mode: sjekk om dei nødvendige Eclipse filene fins før vi starter kjøring
 - Legge inn 5. mode: kjøre IORSim som standalone utan input fra Eclipse? 
+- lag expert panel under settings
