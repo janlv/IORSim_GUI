@@ -212,6 +212,7 @@ def get_timestep_eclipse(root):
     #print('get_timestep_eclipse: '+root)
     read = False
     dt = []
+    step = 1
     with open(str(root)+'.DATA', encoding='latin-1') as f:
         for line in f:
             line = line.lstrip()
@@ -231,6 +232,7 @@ def get_timestep_eclipse(root):
                     if '*' in w:
                         d = [float(n) for n in w.split('*')]
                         dt.append(d[0]*d[1])
+                        step = int(d[1])
                     else:
                         dt.append(float(w))
                 #if len(dt)>2:
@@ -240,7 +242,7 @@ def get_timestep_eclipse(root):
                 #        return int(n[0])*int(n[1])
     #print(dt)
     #print(sum(dt))
-    return int(sum(dt))
+    return int(sum(dt)), step
             
     
     
@@ -272,16 +274,17 @@ def show_message(window, kind, text='', extra='', detail=None):
     msg.setStandardButtons(QMessageBox.Ok)  # | QMessageBox.Cancel)
     msg.exec_()
 
-#-----------------------------------------------------------------------
-def show_message_text(window, text):
-#-----------------------------------------------------------------------
-    text = text.lstrip()
-    if text.startswith(('ERROR','WARNING','INFO')):
-        kind = text.split()[0]
-        text = text.replace(kind,'').lstrip()
-        kind = kind.lower()
-        show_message(window, kind, text=text)
-        return text
+# #-----------------------------------------------------------------------
+# def show_message_text(window, text):
+# #-----------------------------------------------------------------------
+#     text = text.lstrip()
+#     kind = 'error'
+#     if text.startswith(('ERROR','WARNING','INFO')):
+#         kind = text.split()[0]
+#         text = text.replace(kind,'').lstrip()
+#         kind = kind.lower()
+#     show_message(window, kind, text=text)
+#     return text
 
 
 #-----------------------------------------------------------------------
@@ -365,7 +368,7 @@ class WorkerSignals(QObject):
 class Base_worker(QRunnable):                                              
 #===========================================================================
     #def __init__(self, sim, *args, **kwargs):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, N=1, **kwargs):
         super(Base_worker, self).__init__()
         self.killed = False
         self.finished = True
@@ -379,7 +382,13 @@ class Base_worker(QRunnable):
         self.update_plot = self.signals.plot.emit
         self.signals.stop.connect(self.killsim)
         self.t = 0
-        
+        self.N = int(N)
+
+    #-----------------------------------------------------------------------
+    def progress(self):
+    #-----------------------------------------------------------------------
+        return self.t/self.N
+
     #-----------------------------------------------------------------------
     def killsim(self):
     #-----------------------------------------------------------------------
@@ -396,7 +405,7 @@ class Base_worker(QRunnable):
         name = 'Run'
         if run:
             name = run.name
-        return name + ' stopped after ' + str(self.t) + ' ' + step
+        return 'INFO ' + name + ' stopped after ' + str(self.t) + ' ' + step
                          
     @Slot()
     #-----------------------------------------------------------------------
@@ -419,9 +428,10 @@ class Base_worker(QRunnable):
 #===========================================================================
 class Backward(Base_worker):                                              
 #===========================================================================
-    def __init__(self, sim, *args, **kwargs):
-        super(Backward, self).__init__()
+    def __init__(self, sim, *args, N=1, dt=1, **kwargs):
+        super(Backward, self).__init__(N=N)
         self.sim = sim
+        self.dt = dt
         
     @Slot()
     #-----------------------------------------------------------------------
@@ -429,24 +439,29 @@ class Backward(Base_worker):
     #-----------------------------------------------------------------------
         sim = self.sim
         msg = err = ''
-        t = 0
-        try:            
-            sim.init_runs()
-        except SystemError as e:
-                #self.show_message(('error', str(e)))
-                self.show_message('ERROR '+str(e))
-                return
         try:
             self.status_message('Starting Eclipse...')
-            sim.start_eclipse(kill_func=self.is_killed)
+            sim.init_eclipse_run()
+            sim.start_eclipse(kill_func=self.is_killed, kill_msg=self.stop_msg)
             self.status_message('Starting IORSim...')
-            sim.start_iorsim(kill_func=self.is_killed)
+            sim.init_iorsim_run()
+            sim.start_iorsim(kill_func=self.is_killed, kill_msg=self.stop_msg)
             # Start timestep loop
-            for self.t in range(1, sim.nsteps+1):
-                sim.run_one_step(self.t, kill_func=self.is_killed)                
-                self.update_progress(self.t)
+            #for self.t in range(1, sim.nsteps+1):
+            #days = 0
+            #self.t = days = 0
+            #for self.t in range(1, sim.nsteps+1):
+            while sim.n < sim.nsteps:
+                #self.t = days
+                #if self.N-self.t < self.dt:
+                #    sim.satnum_tstep(self.N-self.t)
+                days = sim.run_one_step(kill_func=self.is_killed, kill_msg=self.stop_msg)                
+                #print(days, sim.n)
+                self.update_progress(sim.n)
                 self.update_plot()
-                self.status_message(sim.status_message(self.t))
+                #self.status_message(sim.status_message(self.t))
+                self.status_message('{}/{} days'.format(days, self.N))
+                #self.status_message('{}/{} days'.format(self.t, self.N))
             # Timestep loop finished
             sim.terminate_runs()
             runtime = str(datetime.now()-sim.starttime).split('.')[0]
@@ -455,18 +470,11 @@ class Backward(Base_worker):
             self.update_progress(0)
             result = True
         except (SystemError, psutil.NoSuchProcess) as e:
-            #sim.kill_and_clean()
             err = str(e)
-            if 'stopped' in err: 
-                if 'loop_until' in err:
-                    err = self.stop_msg()
-                #self.show_message(('info', err))
-                self.show_message('INFO '+err)
-            else:
-                msg = 'Simulation stopped unexpectedly'
-                #self.show_message(('error', msg+'\n'+err))
-                self.show_message('ERROR '+msg+'\n'+err)
-            #self.update_progress(0)
+            #print(err)
+            self.show_message(err)
+            if not err.startswith(('INFO','WARNING')):
+                self.status_message('Simulation stopped unexpectedly')
             result = False
         finally:
             sim.kill_and_clean()
@@ -480,25 +488,17 @@ class Backward(Base_worker):
 #===========================================================================
 class Forward(Base_worker):                                              
 #===========================================================================
-    def __init__(self, sim, run=None, *args, **kwargs):
-        super(Forward, self).__init__()
+    def __init__(self, sim, N=1, run=None, *args, **kwargs):
+        super(Forward, self).__init__(N=N)
         self.sim = sim
-        #self.run = run
         self.current = None
         self.sleep_sec = 1
         self.refresh_rate = 2
-        # Decide if we run Eclipse, IORSim, or both
-        #run = run.strip().lower()
-        if not run: #in ('all', 'eclipse', 'iorsim'):
+        if not run: 
             raise SystemError('Forward-class: Missing run-argument')
         if not isinstance(run, tuple):
             run = (run,)
         self.run_names = run
-        #if run == 'all':
-        #    # Need to run Eclipse before IORSim
-        #    self.run_names = ['eclipse','iorsim']
-        #else:
-        #   self.run_names = [run,]
         
     @Slot()
     #-----------------------------------------------------------------------
@@ -510,7 +510,7 @@ class Forward(Base_worker):
     #-----------------------------------------------------------------------
     def stop_msg(self):
     #-----------------------------------------------------------------------
-        return 'INFO ' + super().stop_msg(step='days')
+        return super().stop_msg(step='days')
 
     @Slot()
     #-----------------------------------------------------------------------
@@ -523,10 +523,10 @@ class Forward(Base_worker):
         result = False
         try:
             for run_name in self.run_names:
-                print(run_name)
+                #print(run_name)
                 # start run
                 run = sim.init_run(run=run_name)
-                print(run.name)
+                #print(run.name)
                 runs.append(run)
                 #print(runs)
                 self.status_message('Starting ' + run.name)
@@ -535,9 +535,9 @@ class Forward(Base_worker):
                 #print('STARTED')
                 self.current = run_name #.name.lower()#[:3] # 'ecl' or 'ior'
                 self.status_message(run.name + ' running')
-                run.wait_for_process_to_quit(sleep_sec=self.sleep_sec, refresh_func=self.refresh_func, 
-                                             refresh=self.refresh_rate, kill_func=self.is_killed, 
-                                             kill_msg = self.stop_msg)
+                run.wait_for_process_to_finish(sleep_sec=self.sleep_sec, refresh_func=self.refresh_func, 
+                                               refresh=self.refresh_rate, kill_func=self.is_killed, kill_msg = self.stop_msg, 
+                                               assert_running=run.assert_running, progress=self.progress, progress_limit=0.95)
                 #print('AFTER')
                 self.refresh_func()
                 #self.current = None
@@ -545,6 +545,7 @@ class Forward(Base_worker):
             self.status_message('Simulation complete')
             result = True
         except (SystemError, ProcessLookupError, psutil.NoSuchProcess) as e:
+            #print(e)
             msg = str(e)
             self.show_message(msg)
             #msg = str(e)
@@ -908,8 +909,8 @@ class main_window(QMainWindow):                                    # main_window
         #self.setFont(font)
         self.casedir = guidir/'cases'
         self.input_file = guidir/'input.txt'
-        self.input = {'root':None, 'nsteps':None, 'dtecl':None, 'TSTEP':None, 'species':[], 'mode':None} #, 'case':None}
-        self.input_to_save = ['root','nsteps','mode']
+        self.input = {'root':None, 'ecl_days':None, 'ecl_step':None, 'dtecl':None, 'days':None, 'step':None, 'species':[], 'mode':None} #, 'case':None}
+        self.input_to_save = ['root','days','mode']
         self.load_input()
         self.initUI()
         self.set_input_field()
@@ -1033,12 +1034,12 @@ class main_window(QMainWindow):                                    # main_window
         ### simulation controls
         widgets = {'mode'    : QComboBox(),
                    'case'    : QComboBox(),
-                   'steps'   : QLineEdit(),
+                   'days'    : QLineEdit(),
                    'compare' : QComboBox()} 
-        tips = ('Choose running mode',
-                'Choose a case, or add new from the File-menu',
-                'Set simulation steps (only backward mode)',
-                'Reference case for plotting')
+        tips = ('Set running mode',
+                'Choose a case, or add a new from the Case-menu',
+                'Set duration',
+                'Compare current case to a previous case')
         #ql = QLabel()
         #ql.setText('')
         #ql.setFixedWidth(70)
@@ -1054,9 +1055,11 @@ class main_window(QMainWindow):                                    # main_window
             self.toolbar.addWidget(ql)
             self.toolbar.addWidget(wid)
             self.toolbar.addSeparator()
+        # Add start and stop buttons
         self.toolbar.addAction(self.start_act)
         self.toolbar.addAction(self.stop_act)
         self.toolbar.addSeparator()
+        # last widget
         text, wid = list(widgets.items())[-1]
         i = len(widgets)-1
         ql = QLabel()
@@ -1066,12 +1069,12 @@ class main_window(QMainWindow):                                    # main_window
         self.toolbar.addWidget(ql)
         self.toolbar.addWidget(wid)
         # mode
-        self.mode_cb = widgets['mode']
-        #self.mode_cb.setStyleSheet('QComboBox {min-width: 100px;}')
         self.modes = ['forward','backward','eclipse','iorsim']
         mode_names = ['Forward','Backward','Eclipse','IORSim']
+        self.mode_cb = widgets['mode']
+        #self.mode_cb.setStyleSheet('QComboBox {min-width: 100px;}')
         self.mode_cb.addItems(mode_names)
-        self.mode_cb.setPlaceholderText('Choose mode')
+        #self.mode_cb.setPlaceholderText('Choose mode')
         self.mode_cb.setCurrentIndex(-1)
         self.mode_cb.currentIndexChanged[int].connect(self.on_mode_select)
         # case
@@ -1079,10 +1082,10 @@ class main_window(QMainWindow):                                    # main_window
         self.case_cb.setStyleSheet('QComboBox {min-width: 120px;}')
         self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
         # steps
-        self.nstep_box = widgets['steps']
-        self.nstep_box.setFixedWidth(80)
-        self.nstep_box.setObjectName('nsteps')
-        self.nstep_box.textChanged[str].connect(self.on_input_change)
+        self.days_box = widgets['days']
+        self.days_box.setFixedWidth(80)
+        self.days_box.setObjectName('days')
+        self.days_box.textChanged[str].connect(self.on_input_change)
         # reference
         self.ref_case = widgets['compare']
         self.ref_case.setObjectName('compare')
@@ -1094,10 +1097,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         ### statusbar
         self.remaining_time = QLabel()
-        self.remaining_time.setText('Remaining time:  0:00:00')
         self.remaining_time.setStyleSheet('QLabel {margin-top:10px; margin-bottom: 10px;}')
+        self.update_remaining_time()
         self.progressbar = QProgressBar()
-        self.progressbar.setStyleSheet('QProgressBar {max-width: 300px; height: 20px; padding: 0px;}')
+        self.progressbar.setStyleSheet('QProgressBar {max-width: 300px; max-height: 15px; padding: 0px;}')
         self.progressbar.setFormat('')
         statusbar = QStatusBar()
         statusbar.setStyleSheet("QStatusBar { border-top: 1px solid lightgrey; }\nQStatusBar::item { border:None; };"); 
@@ -1149,15 +1152,16 @@ class main_window(QMainWindow):                                    # main_window
     def set_input_field(self):
     #-----------------------------------------------------------------------
         ### set values from input-file or default
-        case_nr, nsteps = (0, 10)
+        days = 100
         ### case
         self.cases = self.read_case_dir()
         self.case = self.input.get('root')
         self.create_caselist(choose=self.case)
         ### number of steps
-        if self.input['nsteps']:
-            nsteps = self.input['nsteps']
-        self.nstep_box.setText(str(nsteps))
+        #if self.input['nsteps']:
+        #    nsteps = self.input['nsteps']
+        #self.days_box.setText(str(nsteps))
+        self.days_box.setText(str(self.input.get('days') or days))
         
         
     #-----------------------------------------------------------------------
@@ -1200,10 +1204,10 @@ class main_window(QMainWindow):                                    # main_window
     def set_variables_from_casefiles(self):                # main_window
     #-----------------------------------------------------------------------
         inp = self.input
-        inp['dtecl'] = inp['TSTEP'] = inp['species'] = None
+        inp['dtecl'] = inp['ecl_days'] = inp['ecl_step'] = inp['species'] = None
         if inp['root']:
             inp['dtecl']   = get_timestep_iorsim(inp['root'])
-            inp['TSTEP']   = get_timestep_eclipse(inp['root'])
+            inp['ecl_days'], inp['ecl_step'] = get_timestep_eclipse(inp['root'])
             inp['species'] = get_species(inp['root'])
 
     #-----------------------------------------------------------------------
@@ -1341,46 +1345,6 @@ class main_window(QMainWindow):                                    # main_window
             return nr
             
     #-----------------------------------------------------------------------
-    def set_mode(self, mode, box=False, func=None, run=None):  # main_window
-    #-----------------------------------------------------------------------
-        if not self.case:
-            self.sender().setChecked(False)
-            self.missing_case_error(tag='set_mode: ')
-            return False
-        self.mode = self.input['mode'] = mode
-        #self.mode_label.setText(text)
-        self.nstep_box.setEnabled(box)
-        self.run_func = func
-        self.run = run
-        fh = open(str(Path(self.case).parent/'mode.gui'), 'w')
-        fh.write(mode+'\n')
-        fh.close()
-            
-    # #-----------------------------------------------------------------------
-    # def mode_forward(self):                               # main_window
-    # #-----------------------------------------------------------------------
-    #     self.set_mode('forward', text='Forward', box=False, func=self.run_forward, run='all')
-        
-    # #-----------------------------------------------------------------------
-    # def mode_backward(self):                               # main_window
-    # #-----------------------------------------------------------------------
-    #     self.set_mode('backward', text='Backward', box=True, func=self.run_backward)
-        
-    # #-----------------------------------------------------------------------
-    # def mode_eclipse(self):                               # main_window
-    # #-----------------------------------------------------------------------
-    #     self.set_mode('eclipse', text='Eclipse', box=False, func=self.run_forward, run='eclipse')
-    #     self.update_menu_boxes('ecl')
-    #     self.create_plot()
-            
-    # #-----------------------------------------------------------------------
-    # def mode_iorsim(self):                               # main_window
-    # #-----------------------------------------------------------------------
-    #     self.set_mode('iorsim', text='IORSim', box=False, func=self.run_forward, run='iorsim')
-    #     self.update_menu_boxes('ior')
-    #     self.create_plot()
-
-    #-----------------------------------------------------------------------
     def update_menu_boxes(self, data, block_signal=True):       # main_window
     #-----------------------------------------------------------------------
         if data=='ecl':
@@ -1407,6 +1371,26 @@ class main_window(QMainWindow):                                    # main_window
 
         
     #-----------------------------------------------------------------------
+    def set_mode(self, mode, box=False, days=None, func=None, run=None):  # main_window
+    #-----------------------------------------------------------------------
+        if not self.case:
+            self.sender().setChecked(False)
+            self.missing_case_error(tag='set_mode: ')
+            return False
+        self.mode = self.input['mode'] = mode
+        if days:
+            self.days_box.setText(days)
+        self.days_box.setEnabled(box)
+        self.run_func = func
+        if not isinstance(run, tuple):
+            run = (run,)
+        self.run = run
+        fh = open(str(Path(self.case).parent/'mode.gui'), 'w')
+        fh.write(mode+'\n')
+        fh.close()
+
+
+    #-----------------------------------------------------------------------
     def on_mode_select(self, nr):                               # main_window
     #-----------------------------------------------------------------------
         #self.input['mode'] = nr
@@ -1428,10 +1412,10 @@ class main_window(QMainWindow):                                    # main_window
             raise SystemError('ERROR Uknown mode: ' + mode)
         #if self.mode=='forward':
         #    #self.dt_box.setEnabled(False)
-        #    self.nstep_box.setEnabled(False)
+        #    self.days_box.setEnabled(False)
         #if self.mode=='backward':
         #    #self.dt_box.setEnabled(True)
-        #    self.nstep_box.setEnabled(True)
+        #    self.days_box.setEnabled(True)
 
             
     #-----------------------------------------------------------------------
@@ -1439,7 +1423,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         name = self.sender().objectName()
         #var = {'dt':'Timestep', 'nsteps':'Number of steps'}
-        var = {'nsteps':'Number of steps'}
+        #var = {'nsteps':'Number of steps'}
+        var = {'days':'Number of days'}
         if not text:
             self.input[name] = 0
             return
@@ -1520,33 +1505,33 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def clear_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
-        if not self.case:
-            self.missing_case_error(tag='clear_case: ')
-            return False
-        case = Path(self.case)
         try:
+            if not self.case:
+                self.missing_case_error(tag='clear_case: ')
+                return False
+            case = Path(self.case)
             for fil in case.parent.glob('*UNRST'):
                 fil.unlink()
+            clean_dir = case.parent/'CLEAN'
+            clean_dir.mkdir(exist_ok=True)
+            # copy case-files to the CLEAN-folder
+            self.copy_case_files(case, clean_dir/case.stem)
+            # delete all files in case-folder
+            for fil in case.parent.glob('*'):
+                if fil.is_file():
+                    fil.unlink()
+            # copy case-files back from CLEAN-folder
+            self.copy_case_files(clean_dir/case.stem, case)
+            # delete all sub-folders and their files 
+            for d in case.parent.iterdir():
+                if d.is_dir():
+                    delete_all(d)
+            self.data = {}
+            self.unsmry = None # read again
+            self.create_plot()
         except PermissionError as e:
             show_message(self, 'error', text='Unable to clear case, '+str(e))
             return False
-        clean_dir = case.parent/'CLEAN'
-        clean_dir.mkdir(exist_ok=True)
-        # copy case-files to the CLEAN-folder
-        self.copy_case_files(case, clean_dir/case.stem)
-        # delete all files in case-folder
-        for fil in case.parent.glob('*'):
-            if fil.is_file():
-                fil.unlink()
-        # copy case-files back from CLEAN-folder
-        self.copy_case_files(clean_dir/case.stem, case)
-        # delete all sub-folders and their files 
-        for d in case.parent.iterdir():
-            if d.is_dir():
-                delete_all(d)
-        self.data = {}
-        self.unsmry = None # read again
-        self.create_plot()
         #self.prepare_case(self.case)
 
     #-----------------------------------------------------------------------
@@ -1628,7 +1613,7 @@ class main_window(QMainWindow):                                    # main_window
         except SystemError as e:
             show_message_text(self, str(e))
         self.data = {}
-        self.unsmry = None
+        self.unsmry = None  # Signals to re-read Eclipse data
         self.read_ior_data()
         self.read_ecl_data()
         self.update_ecl_menu()
@@ -2144,6 +2129,7 @@ class main_window(QMainWindow):                                    # main_window
         if str(file) == self.editor.objectName():
             return
         #print('view_file')
+        self.highlight = None
         self.search_field.setPlaceholderText('Search text')
         text = ''
         if file and Path(file).is_file():
@@ -2166,7 +2152,7 @@ class main_window(QMainWindow):                                    # main_window
             fil = Path(self.input['root']+'.'+ext)
             if fil.is_file():
                 self.view_file(fil, title=title+', '+str(fil.name))        
-                self.ior_highlight = Highlighter(self.editor.document(), comment=comment, keywords=keywords)
+                self.highlight = Highlighter(self.editor.document(), comment=comment, keywords=keywords)
                 self.save_btn.setEnabled(False)
                 self.undo_btn.setEnabled(True)
                 self.redo_btn.setEnabled(True)
@@ -2627,7 +2613,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_remaining_time(self, text='0:00:00'):           # main_window
     #-----------------------------------------------------------------------
-        self.remaining_time.setText('Remaining time:  ' + text)
+        #self.remaining_time.setText('Remaining time:  ' + text)
+        self.remaining_time.setText(text)
         self.remaining_time.repaint()
 
 
@@ -2646,7 +2633,7 @@ class main_window(QMainWindow):                                    # main_window
             for ax,line in ax_line.items():
                 #print(var, ax, line)
                 well, yaxis, var, data = line.get_label().split()
-                if not self.data[data]:
+                if not self.data.get(data):
                     return
                 if data=='ior':
                     is_checked = self.ior_boxes['var'][name].isChecked()
@@ -2677,7 +2664,7 @@ class main_window(QMainWindow):                                    # main_window
     def update_progressbar(self, t):
     #-----------------------------------------------------------------------
         if t>=0:
-            print(t)
+            #print(t)
             self.progressbar.setValue(t)
 
     #-----------------------------------------------------------------------
@@ -2686,6 +2673,8 @@ class main_window(QMainWindow):                                    # main_window
         self.progressbar.reset()
         #print('reset bar')
         self.progressbar.setMaximum(N)
+        if self.worker:
+            self.worker.N = N
         self.progressbar.setValue(0)
 
     #-----------------------------------------------------------------------
@@ -2737,8 +2726,9 @@ class main_window(QMainWindow):                                    # main_window
     def input_OK(self):
     #-----------------------------------------------------------------------
         i = self.input
-        if i['nsteps']==0:
-            show_message(self, 'warning', text='Number of timesteps missing.')
+        #if i['nsteps']==0:
+        if i['days']==0:
+            show_message(self, 'warning', text='Duration of simulation in days is missing.')
             return False
         #if i['dt']==0:
         if not self.settings.get['dt']() or int(self.settings.get['dt']())==0:
@@ -2769,7 +2759,7 @@ class main_window(QMainWindow):                                    # main_window
         self.start_act.setEnabled(value)
         self.case_cb.setEnabled(value)
         #self.dt_box.setEnabled(value)
-        #self.nstep_box.setEnabled(value)
+        #self.days_box.setEnabled(value)
         #self.sim_cb.setEnabled(value)
 
         
@@ -2780,25 +2770,34 @@ class main_window(QMainWindow):                                    # main_window
             return
         i = self.input
         s = self.settings
+        # Clear data
+        self.data = {}
         self.unsmry = None
-        # clear messages and progress
+        # Clear messages and progress
         self.update_message()
         self.update_remaining_time()
-        self.reset_progressbar(N=i['nsteps'])
-        self.progress = Progress(N=i['nsteps'])
-        # disable Start button
+        #N = i['days'] = i['days']+i['ecl_days']+int(s['dt'])
+        N = int(i['days']/(i['dtecl']))+2
+        #self.reset_progressbar(N=i['nsteps'])
+        #self.progress = Progress(N=i['nsteps'])
+        self.reset_progressbar(N=N)
+        self.progress = Progress(N=N)
+        # Disable Start button
         self.set_toolbar_enabled(False)
         #self.start_act.setEnabled(False)
         #self.case_cb.setEnabled(False)
         # create ior2ecl instance
-        sim = ior2ecl(root=i['root'], dt=s.get['dt'](), nsteps=i['nsteps'],
+        #nsteps = 12
+        #print(N)
+        sim = ior2ecl(root=i['root'], dt=s.get['dt'](), nsteps=N,
                       iorsim=self.settings.get['iorsim'](),
                       eclrun=self.settings.get['eclrun'](),
                       check_unrst=self.settings.get['unrst'](),
                       check_rft=self.settings.get['rft'](),
                       to_screen=to_screen, quiet=quiet)
         # thread running the simulation
-        self.worker = Backward(sim)
+        days = i['days']+i['ecl_days']+int(s.get['dt']())
+        self.worker = Backward(sim, N=days)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)
@@ -2815,12 +2814,10 @@ class main_window(QMainWindow):                                    # main_window
         # clear messages and progress
         self.update_message()
         self.update_remaining_time()
-        N = 0
-        if self.run == 'iorsim' and self.read_ecl_data():
-            days = self.data['ecl'].get('days') or [0,]
-            N = int(days[-1])
-        if self.run == 'eclipse':
-            N = i['TSTEP']
+        N = i['days']
+        if self.run == ('iorsim',) and self.read_ecl_data():
+                days = self.data['ecl'].get('days') or [0,]
+                N = int(days[-1])
         #print(self.run)
         #print(N)
         self.reset_progressbar(N=N)
@@ -2829,13 +2826,17 @@ class main_window(QMainWindow):                                    # main_window
         self.set_toolbar_enabled(False)
         # create ior2ecl instance
         s = self.settings
+        # reset data
+        self.data = {}
+        #if 'eclipse' in self.run:
+        self.unsmry = None  # Signals to re-read Eclipse data
         sim = ior2ecl(root=i['root'],
                       iorsim=s.get['iorsim'](),
                       eclrun=s.get['eclrun'](),
                       to_screen=to_screen, quiet=quiet,
                       readdata=False)
         # start thread running the simulation
-        self.worker = Forward(sim, run=self.run)
+        self.worker = Forward(sim, N=N, run=self.run)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.plot.connect(self.update_view_area)
@@ -2847,8 +2848,14 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def show_message_text(self, text):
     #-----------------------------------------------------------------------
-        #show_message(self, 'error', text=text)
-        show_message_text(self, text)
+        text = text.lstrip()
+        kind = 'error'
+        if text.startswith(('ERROR','WARNING','INFO')):
+            kind = text.split()[0]
+            text = text.replace(kind,'').lstrip()
+            kind = kind.lower()
+        show_message(self, kind, text=text)
+        return text
         
     #-----------------------------------------------------------------------
     def show_message(self, par):
@@ -2862,13 +2869,14 @@ class main_window(QMainWindow):                                    # main_window
         self.set_toolbar_enabled(True)
         #if self.mode=='forward':
         #    #self.dt_box.setEnabled(False)
-        #    self.nstep_box.setEnabled(False)
+        #    self.days_box.setEnabled(False)
         #self.start_act.setEnabled(True)
         #self.case_cb.setEnabled(True)
         if self.worker.success:
             self.convert_FUNRST()   
         self.worker = None
         self.reset_progressbar()
+        self.update_remaining_time()
 
 
     #-----------------------------------------------------------------------
@@ -2888,7 +2896,9 @@ class main_window(QMainWindow):                                    # main_window
             self.progressbar.setMaximum(len(self.data['ior']['days']))
         except KeyError:
             pass
-        self.progressbar.setValue(0)
+        #print(self.progressbar.maximum())
+        #self.progressbar.setValue(0)
+        self.reset_progressbar(N=22)
         self.threadpool.start(self.convert)
 
         

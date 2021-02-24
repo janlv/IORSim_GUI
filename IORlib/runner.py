@@ -3,14 +3,14 @@
 
 from subprocess import Popen, PIPE, STDOUT
 import atexit
-import signal
-import os
-import sys
+#import signal
+#import os
+#import sys
 import psutil
 from time import sleep
-from pathlib import Path, PurePath
+from pathlib import Path #, PurePath
 from shutil import copy
-from struct import unpack
+#from struct import unpack
 from .utils import loop_until, list2str, tail_file, safeopen, Timer, silentdelete
 
 #--------------------------------------------------------------------------------
@@ -290,10 +290,12 @@ class runner:                                                               # ru
             #if all([p.is_running() and p.status()!=psutil.STATUS_ZOMBIE for p in self.procs]):
             if self.parent.is_running() and self.parent.status()!=psutil.STATUS_ZOMBIE: 
                 return True
-            raise SystemError('assert_running: Process ' + self.name + ' is not running, status is ' + self.parent.status())
+            raise SystemError('ERROR ' + self.name + ' is not running, status is ' + self.parent.status())
+            #raise SystemError('assert_running: Process ' + self.name + ' is not running, status is ' + self.parent.status())
         except psutil.NoSuchProcess:
-            raise SystemError('assert_running: Process ' + self.name + ' has disappeared, log-file says:\n'
-                              + (tail_file(self.log.name, nchars=300) or 'Log-file is missing') )
+            raise SystemError('ERROR ' + self.name + ' stopped unexpectedly, check the log')
+            #raise SystemError('assert_running: Process ' + self.name + ' has disappeared, log-file says:\n'
+            #                  + (tail_file(self.log.name, nchars=300) or 'Log-file is missing') )
         
         
     #--------------------------------------------------------------------------------
@@ -304,13 +306,15 @@ class runner:                                                               # ru
         #self._print('done', v=v)
         
     #--------------------------------------------------------------------------------
-    def wait_for_process_to_quit(self, v=1, sleep_sec=None, refresh_func=None, refresh=None, kill_func=None,
-                                kill_msg=None):          # runner
+    def wait_for_process_to_finish(self, v=1, limit=None, error=None, sleep_sec=None, refresh_func=None, refresh=None, 
+                                   assert_running=None, kill_func=None, kill_msg=None, progress=None, progress_limit=1):        # runner
     #--------------------------------------------------------------------------------
-        self._print('waiting for process to quit', v=v)
-        loop_until( self.parent_is_not_running, error='{} did not quit'.format(self.parent.name()),
-                    sleep_sec=sleep_sec, wait_func=refresh_func, wait=refresh, kill_func=kill_func, 
-                    kill_msg=kill_msg)
+        self._print('waiting for process to finish', v=v)
+        if not error:
+            error = '{} did not quit'.format(self.parent.name())
+        loop_until( self.parent_is_not_running, error=error,
+                    sleep_sec=sleep_sec, limit=limit, wait_func=refresh_func, wait=refresh, assert_running=assert_running, 
+                    kill_func=kill_func, kill_msg=kill_msg, progress=progress, progress_limit=progress_limit)
         self.parent = None
         
     #--------------------------------------------------------------------------------
