@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import Popen, PIPE, STDOUT, call
 import atexit
 #import signal
 #import os
@@ -11,7 +11,7 @@ from time import sleep
 from pathlib import Path #, PurePath
 from shutil import copy
 #from struct import unpack
-from .utils import loop_until, list2str, tail_file, safeopen, Timer, silentdelete
+from .utils import loop_until, loop_until_2, list2str, tail_file, safeopen, Timer, silentdelete
 
 #--------------------------------------------------------------------------------
 def permission_error(func):
@@ -139,7 +139,14 @@ class runner:                                                               # ru
         self.timer = timer
         if self.timer:
             self.timer = Timer(name.lower())
+        #self.is_killed = False
             
+    # #-----------------------------------------------------------------------
+    # def kill_func(self, t, step='days'):
+    # #-----------------------------------------------------------------------
+    #     if self.is_killed:
+    #         raise SystemError('INFO ' + self.name + ' stopped after ' + str(t) + ' ' + step)
+                       
 
     #--------------------------------------------------------------------------------
     def interface_file(self, nr):
@@ -317,6 +324,41 @@ class runner:                                                               # ru
                     kill_func=kill_func, kill_msg=kill_msg, progress=progress, progress_limit=progress_limit)
         self.parent = None
         
+    #--------------------------------------------------------------------------------
+    def wait_for_process_to_finish_2(self, v=1, limit=None, error=None, pause=None, loop_func=None):      # runner
+    #--------------------------------------------------------------------------------
+        self._print('waiting for process to finish', v=v)
+        if not error:
+            error = '{} did not quit'.format(self.parent.name())
+        loop_until_2( self.parent_is_not_running, error=error, pause=pause, limit=limit, loop_func=loop_func)
+        self.parent = None
+        
+    # #--------------------------------------------------------------------------------
+    # def wait_for(self, func, *args, v=1, log_msg=None, error=None, limit=None, pause=None, loop_func=None, **kwargs):
+    # #--------------------------------------------------------------------------------
+    #     self._print('calling wait_for( ' + func.__qualname__ + ' )...', v=v, end='')
+    #     try:
+    #         n = loop_until_2(func, *args, **kwargs, limit=limit, error=error, pause=pause, loop_func=loop_func)
+    #         self._print(' {:d} loops'.format(n), v=v, tag='')
+    #         msg = None
+    #         if callable(log_msg):
+    #             msg = log_msg()
+    #         elif log_msg:
+    #             msg = log_msg
+    #         if msg:
+    #             self._print(msg)
+    #     except SystemError as e:
+    #         msg = str(e)
+    #         if raise_error or msg.startswith('ERROR'):
+    #             raise e
+    #         else:
+    #             n = msg.split('>')[-1].split()[0]
+    #             runner._print(n + '  loops', v=3, tag='')            
+    #             return False
+    #     else:
+    #         return True
+
+
     #--------------------------------------------------------------------------------
     def write_to_stdin(self, i):                                             # runner
     #--------------------------------------------------------------------------------
