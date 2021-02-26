@@ -11,7 +11,7 @@ from time import sleep
 from pathlib import Path #, PurePath
 from shutil import copy
 #from struct import unpack
-from .utils import loop_until, loop_until_2, list2str, tail_file, safeopen, Timer, silentdelete
+from .utils import loop_until_2, list2str, tail_file, safeopen, Timer, silentdelete
 
 #--------------------------------------------------------------------------------
 def permission_error(func):
@@ -222,7 +222,7 @@ class runner:                                                               # ru
             self.timer.stop()
             #file.write('{:d}\t{:.3e}\n'.format(self.num_resume_called, time.time()-self.starttime))
         if check:
-            loop_until(self.parent_has_stopped, error='{} did not stop'.format(self.parent.name()))
+            loop_until_2(self.parent_has_stopped, error='{} did not stop'.format(self.parent.name()))
         
     #--------------------------------------------------------------------------------
     def resume(self, check=False, v=1):                                      # runner
@@ -232,7 +232,7 @@ class runner:                                                               # ru
         if self.timer:
             self.timer.start()
         if check:
-            loop_until(self.parent.is_running, error='{} is not running'.format(self.parent.name()))
+            loop_until_2(self.parent.is_running, error='{} is not running'.format(self.parent.name()))
         
     #--------------------------------------------------------------------------------
     def parent_is_not_running(self):                                         # runner
@@ -309,20 +309,20 @@ class runner:                                                               # ru
     def wait_until_sleeping(self, v=1):                                      # runner
     #--------------------------------------------------------------------------------
         self._print('waiting for process to sleep', v=v)
-        loop_until( self.parent_is_sleeping, error='{} did not sleep'.format(self.parent.name()) )
+        loop_until_2( self.parent_is_sleeping, error='{} did not sleep'.format(self.parent.name()) )
         #self._print('done', v=v)
         
-    #--------------------------------------------------------------------------------
-    def wait_for_process_to_finish(self, v=1, limit=None, error=None, sleep_sec=None, refresh_func=None, refresh=None, 
-                                   assert_running=None, kill_func=None, kill_msg=None, progress=None, progress_limit=1):        # runner
-    #--------------------------------------------------------------------------------
-        self._print('waiting for process to finish', v=v)
-        if not error:
-            error = '{} did not quit'.format(self.parent.name())
-        loop_until( self.parent_is_not_running, error=error,
-                    sleep_sec=sleep_sec, limit=limit, wait_func=refresh_func, wait=refresh, assert_running=assert_running, 
-                    kill_func=kill_func, kill_msg=kill_msg, progress=progress, progress_limit=progress_limit)
-        self.parent = None
+    # #--------------------------------------------------------------------------------
+    # def wait_for_process_to_finish(self, v=1, limit=None, error=None, sleep_sec=None, refresh_func=None, refresh=None, 
+    #                                assert_running=None, kill_func=None, kill_msg=None, progress=None, progress_limit=1):        # runner
+    # #--------------------------------------------------------------------------------
+    #     self._print('waiting for process to finish', v=v)
+    #     if not error:
+    #         error = '{} did not quit'.format(self.parent.name())
+    #     loop_until( self.parent_is_not_running, error=error,
+    #                 sleep_sec=sleep_sec, limit=limit, wait_func=refresh_func, wait=refresh, assert_running=assert_running, 
+    #                 kill_func=kill_func, kill_msg=kill_msg, progress=progress, progress_limit=progress_limit)
+    #     self.parent = None
         
     #--------------------------------------------------------------------------------
     def wait_for_process_to_finish_2(self, v=1, limit=None, error=None, pause=None, loop_func=None):      # runner

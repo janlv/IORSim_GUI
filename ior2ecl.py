@@ -10,7 +10,7 @@ from datetime import datetime
 from time import sleep
 from types import GeneratorType
 
-from IORlib.utils import safeopen, Progress, check_endtag, warn_empty_file, loop_until, loop_until_2, silentdelete, assert_python_version, exit_without_atexit, delete_files_matching, file_contains
+from IORlib.utils import safeopen, Progress, check_endtag, warn_empty_file, loop_until_2, silentdelete, assert_python_version, exit_without_atexit, delete_files_matching, file_contains
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks #, unfmt_file
 
@@ -106,7 +106,7 @@ class ior2ecl:
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, root=None, dt=None, nsteps=None, eclrun='eclrun', iorsim='IORSimX',
-                 iorargs='', v=3, timer=False, keep_files=True, to_screen=True, quiet=False,
+                 iorargs='', v=3, timer=False, keep_files=False, to_screen=True, quiet=False,
                  check_unrst=True, check_rft=True, readdata=True, step_unit='days'):
     #--------------------------------------------------------------------------------
         self.n = 0
@@ -253,14 +253,12 @@ class ior2ecl:
         self.init_iorsim_run()
         
     #--------------------------------------------------------------------------------
-    #def check_UNRST_file(self, kill_func=None, kill_msg=None):
     def check_UNRST_file(self):
     #--------------------------------------------------------------------------------
         self.wait_for( self.ecl, self.unrst_check.blocks_complete, nblocks=1, log=self.unrst_check.info,
-                       error=self.unrst_check.file.name()+' not complete' )#, kill_func=self.kill_eclipse)
+                       error=self.unrst_check.file.name()+' not complete' )
         
     #--------------------------------------------------------------------------------
-    #def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=10000, kill_func=None, kill_msg=None):
     def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=10000):
     #--------------------------------------------------------------------------------
         ###
@@ -292,18 +290,9 @@ class ior2ecl:
         delete_files_matching(self.root+'*.trcprd')
         delete_files_matching(self.root+'*.FUNRST')
 
-    # #--------------------------------------------------------------------------------
-    # def kill_func_eclipse(self):
-    # #--------------------------------------------------------------------------------
-    #     self.kill_func(self.ecl)
-
-    # #--------------------------------------------------------------------------------
-    # def kill_func_iorsim(self):
-    # #--------------------------------------------------------------------------------
-    #     self.kill_func(self.ior)
 
     #--------------------------------------------------------------------------------
-    def start_eclipse(self): #, kill_func=None, kill_msg=None):
+    def start_eclipse(self): 
     #--------------------------------------------------------------------------------
         # start Eclipse
         if not self.quiet:
@@ -314,12 +303,11 @@ class ior2ecl:
         [ecl.interface_file(i).create_empty() for i in range(1, self.nsteps+1)] 
         ecl.OK_file().delete()
         ecl.start()
-        self.wait_for( ecl, self.unrst.exists, error=self.unrst.name+' not created')#, kill_func=self.kill_func_eclipse) #kill_func, kill_msg=kill_msg )
-        self.wait_for( ecl, self.rft.exists, error=self.rft.name+' not created')#, kill_func=self.kill_func_eclipse) #kill_func, kill_msg=kill_msg )
-        self.check_UNRST_file() #kill_func=kill_func, kill_msg=kill_msg )
+        self.wait_for( ecl, self.unrst.exists, error=self.unrst.name+' not created')
+        self.wait_for( ecl, self.rft.exists, error=self.rft.name+' not created')
+        self.check_UNRST_file()
         self.nwell = self.unrst_check.var('nwell')
-        rft_wells = self.check_RFT_file(nwell_max=2*self.nwell, nwell_min=self.nwell, limit=100) #,
-                                        #kill_func=kill_func, kill_msg=kill_msg )
+        rft_wells = self.check_RFT_file(nwell_max=2*self.nwell, nwell_min=self.nwell, limit=100)
         ecl.suspend()
         if not self.quiet:
             print('\r  Eclipse started, log file is ' + ecl.get_logfile(), flush=True)
@@ -334,7 +322,7 @@ class ior2ecl:
 
                 
     #--------------------------------------------------------------------------------
-    def start_iorsim(self): #, kill_func=None, kill_msg=None):
+    def start_iorsim(self): 
     #--------------------------------------------------------------------------------
         # start IORSim
         if not self.quiet:
@@ -348,7 +336,7 @@ class ior2ecl:
         #delete_files_matching(self.root+'*.trcprd')
         #self.delete_iorsim_files()
         ior.start()    
-        self.wait_for( ior, ior.OK_file().is_deleted, error=ior.OK_file().name()+' not deleted') #kill_func, kill_msg=kill_msg )
+        self.wait_for( ior, ior.OK_file().is_deleted, error=ior.OK_file().name()+' not deleted')
         ior.suspend()
         self.satnum.write_text('\nTSTEP\n' + str(self.dt) + '  / \n')
         if not self.quiet:
@@ -357,10 +345,10 @@ class ior2ecl:
     
     
     #--------------------------------------------------------------------------------
-    def start_runs(self):#, kill_func=None, kill_msg=None):
+    def start_runs(self):
     #--------------------------------------------------------------------------------
-        self.start_eclipse()#(kill_func=kill_func, kill_msg=kill_msg)
-        self.start_iorsim()#(kill_func=kill_func, kill_msg=kill_msg)
+        self.start_eclipse()
+        self.start_iorsim()
         
         
     #--------------------------------------------------------------------------------
@@ -394,8 +382,7 @@ class ior2ecl:
             return False
 
     #--------------------------------------------------------------------------------
-    #def run_one_step(self, t, pause=0.5, kill_func=None, kill_msg=None):
-    def run_one_step(self, pause=0.5):#, kill_func=None, kill_msg=None):
+    def run_one_step(self, pause=0.5):
     #--------------------------------------------------------------------------------
         self.n += 1
         self.print2log('\nReport step {}'.format(self.n))
@@ -406,14 +393,14 @@ class ior2ecl:
         ecl.interface_file(self.n).copy(self.satnum, delete=True)
         ecl.OK_file().create_empty()
         ecl.resume(check=True)
-        self.wait_for( ecl, ecl.OK_file().is_deleted, error=ecl.OK_file().name()+' not deleted') #, kill_func=kill_func, kill_msg=kill_msg )
+        self.wait_for( ecl, ecl.OK_file().is_deleted, error=ecl.OK_file().name()+' not deleted')
         if self.check_unrst:
-            self.check_UNRST_file()#(kill_func=kill_func, kill_msg=kill_msg)
+            self.check_UNRST_file()
         if self.check_rft:
             if self.rft_size:
-                self.wait_for( ecl, self.check_RFT_size)#, kill_func=kill_func, kill_msg=kill_msg )
+                self.wait_for( ecl, self.check_RFT_size)
             else:
-                self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=100)#, kill_func=kill_func, kill_msg=kill_msg )
+                self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=100)
         ecl.suspend()
         sleep(pause)
 
@@ -422,8 +409,8 @@ class ior2ecl:
         ior.interface_file(self.n+1).create_empty()
         ior.OK_file().create_empty()
         ior.resume(check=True)
-        self.wait_for( ior, ior.OK_file().is_deleted, error=ior.OK_file().name()+' not deleted')#, kill_func=kill_func, kill_msg=kill_msg )
-        self.wait_for( ior, self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')#, kill_func=kill_func, kill_msg=kill_msg )
+        self.wait_for( ior, ior.OK_file().is_deleted, error=ior.OK_file().name()+' not deleted')
+        self.wait_for( ior, self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
         warn_empty_file(self.satnum, comment='--')
         ior.suspend()
 
@@ -435,6 +422,7 @@ class ior2ecl:
                     pass
             break
         days = line.strip().split()[0]
+        self.t = days
         return int(days)
 
     #--------------------------------------------------------------------------------
@@ -453,7 +441,7 @@ class ior2ecl:
 
 
     #--------------------------------------------------------------------------------
-    def status_message(self, n): #, unrst=True, rft=True):
+    def status_message(self, n):
     #--------------------------------------------------------------------------------
         message = 'Step {}/{} '.format(n, self.nsteps)
         if self.check_unrst:
@@ -471,7 +459,7 @@ class ior2ecl:
         run.resume()
         #print(run.name + ' resumed')
         try:
-            run.wait_for_process_to_finish(sleep_sec=0.01, limit=1000, error='RUNNING')
+            run.wait_for_process_to_finish_2(pause=0.01, limit=1000, error='RUNNING')
         except SystemError as e:
             if str(e).startswith('RUNNING'):
                 self.print2log(run.name + ' did not finish properly and was killed')
@@ -488,8 +476,6 @@ class ior2ecl:
     #--------------------------------------------------------------------------------
     def terminate_iorsim(self):
     #--------------------------------------------------------------------------------
-        #self.ior.interface_file(self.nsteps+2).append('Quit')
-        #print('Terminate IORSim at n = ' + str(self.n+2))
         self.ior.interface_file(self.n+2).append('Quit')
         self.ior.OK_file().create_empty()
         self.terminate(self.ior)
@@ -509,24 +495,11 @@ class ior2ecl:
         #if not self.quiet:
         #    print()
         
-    # #--------------------------------------------------------------------------------
-    # def kill_run(self, run):
-    # #--------------------------------------------------------------------------------
-    #     #self.print2log('\nKilling processes')
-    #     run.kill()
-    #     self.clean_up(run)
-
-
     #--------------------------------------------------------------------------------
     def runs(self):
     #--------------------------------------------------------------------------------
         return (run for run in (self.ecl, self.ior) if run)
 
-    # #--------------------------------------------------------------------------------
-    # def kill_all(self):
-    # #--------------------------------------------------------------------------------
-    #     for run in self.runs():
-    #         self.kill(run)
 
     #--------------------------------------------------------------------------------
     def kill_and_clean(self, runs):
@@ -586,15 +559,6 @@ class ior2ecl:
                 raise_error('Missing Eclipse file ' + str(Path(fname).name))
 
 
-            
-    # #--------------------------------------------------------------------------------
-    # def close_logfile(self, run):
-    # #--------------------------------------------------------------------------------
-    #     if self.runlog:
-    #         self.runlog.close()
-    #         self.runlog = None
-    #     run.log.close()
-
         
     #--------------------------------------------------------------------------------
     def close_logfiles(self):
@@ -604,20 +568,7 @@ class ior2ecl:
             self.runlog = None
         for run in self.runs():
             run.log.close()
-        #self.ior.log.close()
-        # if self.runlog:
-        #     self.runlog.close()
-        #     self.runlog = None
-        # self.ecl.log.close()
-        # self.ior.log.close()
 
-        
-# #====================================================================================
-# class run_forward:
-# #====================================================================================
-#     def __init__(name, case, cmd):
-#         self.run = runner(name=name, case=case, cmd=cmd)
-    
         
         
 ######################################################################################
