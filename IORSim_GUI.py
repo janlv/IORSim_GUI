@@ -1058,7 +1058,8 @@ class main_window(QMainWindow):                                    # main_window
         self.ref_case.setObjectName('compare')
         self.ref_case.setStyleSheet('QComboBox {min-width: 120px;}')
         self.ref_case.currentIndexChanged[int].connect(self.on_compare_select)
-        
+        self.ref_case.setProperty('lastitem',0)    
+
     #-----------------------------------------------------------------------
     def create_statusbar(self):                                          # main_window
     #-----------------------------------------------------------------------
@@ -1437,7 +1438,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_compare_select(self, nr):                              # main_window
     #-----------------------------------------------------------------------
-        self.reset_progress_and_message()
+        #self.reset_progress_and_message()
+        self.update_message()
         if nr>0:
             ior = ecl = False
             case = str(self.cases[nr-1])
@@ -1452,10 +1454,14 @@ class main_window(QMainWindow):                                    # main_window
             # IOR
             if self.read_ior_data(case=case):
                 self.plot_ref_data['ior'] = copy.deepcopy(self.data['ior'])
-                ior = True                
+                ior = True
+            # copy original data back
             self.data = data
-            if (not ecl and not ior) or (not ecl and self.mode=='eclipse') or (not ior and self.mode=='iorsim'):
-                self.ref_case.setCurrentIndex(0)
+            #print(case, ecl, ior, self.mode)
+            if (self.mode=='eclipse' and not ecl) or (self.mode=='iorsim' and not ior) or (not ecl or not ior):
+                self.ref_case.setCurrentIndex(self.ref_case.property('lastitem'))
+                self.update_message('Cannot compare {} against {}'.format(Path(case).name, Path(self.case).name))
+                #self.ref_case.setCurrentIndex(0)
                 return
             self.plot_ref = case
             #print('AFTER')
@@ -1465,6 +1471,7 @@ class main_window(QMainWindow):                                    # main_window
             self.plot_ref_data = {}
             self.ref_plot_lines = {}
             #print(self.plot_ref)
+        self.ref_case.setProperty('lastitem',nr)    
         self.create_plot()
         #self.plot_ref = None
         
@@ -2395,7 +2402,7 @@ class main_window(QMainWindow):                                    # main_window
             return False
         root = Path(datafile)
         files = list(root.parent.glob(root.name+'_W_*.trc*'))
-        if len(files)<1 or not files[0].is_file() or files[0].stat().st_size<210:
+        if len(files)<1 or not files[0].is_file():# or files[0].stat().st_size<210:
             # last check is to avoid UserWarning from genfromtxt about: Empty input file
             return False
         with warnings.catch_warnings():
@@ -2424,7 +2431,7 @@ class main_window(QMainWindow):                                    # main_window
                 if 'conc' in yaxis:
                     ior[well]['conc']['Temp'] = data[1:,-1]
                     ior[well]['prod']['Temp'] = data[1:,-1]
-            except KeyError as e:
+            except (KeyError, IndexError) as e:
                 return False
         self.data['ior'] = ior
         return True
