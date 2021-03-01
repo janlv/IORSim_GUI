@@ -28,7 +28,16 @@ from IORlib.utils import Progress, exit_without_atexit, assert_python_version, g
 from IORlib.ECL import unfmt_file, fmt_file, Section
 import GUI_icons
 
-green = QColor(100,180,40)
+blue   = QColor(31,119,180)  #1f77b4 
+orange = QColor(255,127,14)  #ff7f0e  
+green  = QColor(44,160,44)   #2ca02c
+red    = QColor(214,39,40)   #d62728
+violet = QColor(148,103,189) #9467bd
+brown  = QColor(140,86,75)   #8c564b
+pink   = QColor(227,119,194) #e377c2
+gray   = QColor(127,127,127) #7f7f7f
+yellow = QColor(188,189,34)  #bcbd22
+turq   = QColor(23,190,207)  #17becf
 default_font = 'default'
 default_size = 10
 default_weight = 50
@@ -421,10 +430,9 @@ class Backward(Base_worker):
                 days = sim.run_one_step()
                 self.update_progress(days)
                 self.update_plot()
-                self.status_message('{}/{} days'.format(int(days), self.N))
+                self.status_message('{}/{} days'.format(days, self.N))
                 if days>self.N:
                     raise SystemError('INFO Simulation complete')
-                #self.status_message('{}/{} days'.format(self.t, self.N))
             # Timestep loop finished
             sim.terminate_runs()
             runtime = str(datetime.now()-sim.starttime).split('.')[0]
@@ -443,7 +451,7 @@ class Backward(Base_worker):
             sim.print2log('\n======  ' + msg + ' ======')
             sim.runlog.close() 
             self.update_plot()
-            self.update_progress(-2)
+            self.update_progress(-1)
             return result
 
 
@@ -454,8 +462,6 @@ class Forward(Base_worker):
         super(Forward, self).__init__(N=N)
         self.sim = sim
         self.current = None
-        #self.sleep_sec = 1
-        #self.refresh_rate = 2
         if not run: 
             raise SystemError('Forward-class: Missing run-argument')
         if not isinstance(run, tuple):
@@ -463,17 +469,6 @@ class Forward(Base_worker):
         self.run_names = run
         self.run = None
         self.loop_count = 0
-        #self.t0 = 0
-        #self.nsteps = 0
-        
-    # #-----------------------------------------------------------------------
-    # def update_func(self):
-    # #-----------------------------------------------------------------------
-    #     self.update_plot()
-    #     self.t = self.sim.days(self.run.name)
-    #     self.update_progress(self.t)
-    #     self.status_message('{}/{} days'.format(self.t, self.N))
-    #     #print('{}/{} days'.format(self.t, self.N))
 
     #-----------------------------------------------------------------------
     def loop_func(self, n):
@@ -484,16 +479,16 @@ class Forward(Base_worker):
         if self.loop_count == 5:
             self.loop_count = 0
             days = self.sim.days(self.run.name)
-            #print('days: '+str(days))
             if days > self.N:
                 raise SystemError('INFO Simulation complete')
+            # Increment number of steps if days has increased. 
+            # NB! Possible to miss a step if refresh is slow            
             if days > self.t:
                 self.sim.n += 1
-            self.sim.t = self.t = int(days)
+            self.sim.t = self.t = days
             self.update_progress(self.t)
             self.status_message('{}/{} days'.format(self.t, self.N))
             self.update_plot()
-            #print(self.t, self.sim.n)
 
 
     @Slot()
@@ -513,7 +508,7 @@ class Forward(Base_worker):
                 self.status_message('Starting ' + run.name)
                 self.update_progress(0)
                 run.start()
-                self.current = run_name #.name.lower()#[:3] # 'ecl' or 'ior'
+                self.current = run_name 
                 self.status_message(run.name + ' running')
                 run.wait_for_process_to_finish_2(pause=0.2, loop_func=self.loop_func)
                 days = self.sim.days(self.run.name)
@@ -524,7 +519,6 @@ class Forward(Base_worker):
         except (SystemError, ProcessLookupError, psutil.NoSuchProcess) as e:
             msg = str(e)
             self.show_message(msg)
-            #self.status_message(msg)
             if msg.startswith('INFO Simulation complete'):
                 result = True
             else:
@@ -535,7 +529,7 @@ class Forward(Base_worker):
             sim.print2log('\n======  ' + msg + '  ======')
             sim.runlog.close()
             self.update_plot()
-            self.update_progress(-2)
+            self.update_progress(-1)
             self.status_message(msg)
             #self.current = None
             return result
@@ -583,7 +577,7 @@ class Convert(Base_worker):
             merged.replace(self.root+'.UNRST')
         # reset progressbar
         self.status_message('Simulation complete, restart file ready')
-        self.update_progress(-2)
+        self.update_progress(-1)
         
 
 #===========================================================================
@@ -1198,7 +1192,7 @@ class main_window(QMainWindow):                                    # main_window
         prop['alpha'] = None
         species = self.input['species']
         if species:
-            prop['color'] = {specie:colors[i] for i,specie in enumerate(species)}
+            prop['color'] = {specie:colors[i%len(colors)] for i,specie in enumerate(species)}
             prop['line'] = {specie:'-' for i,specie in enumerate(species)}
             prop['alpha'] = {specie:1.0 for i,specie in enumerate(species)}
             for var in ('Temp','Temp_ecl'):
@@ -2172,10 +2166,10 @@ class main_window(QMainWindow):                                    # main_window
         if self.this_file_is_open_in_editor(ext):
             return
         # Sections
-        sections = [Qt.red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
+        sections = [red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
                     'SOLUTION','SUMMARY','SCHEDULE','OPTIMIZE']
         # Global keywords
-        globals = [Qt.blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','COLUMN','DEBUG','DEBUG3','ECHO','END',
+        globals = [blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','COLUMN','DEBUG','DEBUG3','ECHO','END',
                     'ENDINC','ENDSKIP','SKIP','SKIP100','SKIP300','EXTRAPMS','FORMFEED','GETDATA',
                     'INCLUDE','MESSAGES','NOECHO','NOWARN','WARN']
         # Common keywords
@@ -2200,7 +2194,7 @@ class main_window(QMainWindow):                                    # main_window
         if self.this_file_is_open_in_editor(ext):
             return
         # Mandatory keywords
-        mandatory = [Qt.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b', '*RESTART_WRITE','*RESTART_FILE','*GRIDPLOT_WRITE','*GRIDPLOT_FILE' ,
+        mandatory = [blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b', '*RESTART_WRITE','*RESTART_FILE','*GRIDPLOT_WRITE','*GRIDPLOT_FILE' ,
                      '*RESTART_READ','*INTEGRATION','*OUTPUT','*WELLPLOT_INTERVAL','*END']
         # Optional keywords
         optional = [green, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b', '*TEMPERATURE', '*TRACER_LGR','*N_TRACER','*NAME','*K_WATER','*K_OIL','*K_GAS',
@@ -2683,33 +2677,31 @@ class main_window(QMainWindow):                                    # main_window
     def reset_progressbar(self, N=-1):
     #-----------------------------------------------------------------------
         self.progressbar.reset()
-        #print('reset bar, N = '+str(N))
+        if N==0:
+            N=-1
         self.progressbar.setMaximum(N)
-        #if self.worker:
-        #    self.worker.N = N
-        self.progressbar.setValue(0)
+        v = 0
+        if N<0:
+            v = N
+        self.progressbar.setValue(v)
 
     #-----------------------------------------------------------------------
     def update_progress(self, t):
     #-----------------------------------------------------------------------
-        if t==-1: # and self.days is not None and len(self.days)>1:
-            raise SystemError('ERROR DEPRECATION: update_progress(-1)')
-            #try:
-            #    t = int(self.days[-1])
-            #except (ValueError, TypeError) as e:
-            #    #print(e)
-            #    t = 0
-            #    #t = -1
-            #finally:
-            #    if self.worker:
-            #        self.worker.t = t
-            #        #print('worker.t: '+str(self.worker.t))
-        #print(t)
-        if t==-2:
-            self.reset_progressbar()
+        if t<0: 
+            # Set max=value to avoid animation effect when val<max
+            print('t<0:')
+            val = self.progressbar.value()
+            max = -1
+            if val>0:
+                max = val
+            self.progressbar.setMaximum(max)
+            print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
+            #self.reset_progressbar()
             return    
         self.update_progressbar(t)
         self.update_remaining_time( self.progress.remaining_time(t) )
+        print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
         
     #-----------------------------------------------------------------------
     def update_view_area(self):
@@ -2900,17 +2892,9 @@ class main_window(QMainWindow):                                    # main_window
     def run_finished(self):
     #-----------------------------------------------------------------------
         self.set_toolbar_enabled(True)
-        #if self.mode=='forward':
-        #    #self.dt_box.setEnabled(False)
-        #    self.days_box.setEnabled(False)
-        #self.start_act.setEnabled(True)
-        #self.case_cb.setEnabled(True)
         if self.worker.success:
             self.convert_FUNRST()   
         self.worker = None
-        #self.reset_progressbar()
-        #self.update_remaining_time()
-
 
     #-----------------------------------------------------------------------
     def convert_FUNRST(self):
@@ -2923,16 +2907,7 @@ class main_window(QMainWindow):                                    # main_window
         self.convert.signals.finished.connect(self.convert_finished)
         self.convert.signals.status_message.connect(self.update_message)
         self.convert.signals.show_message.connect(self.show_message)
-        #self.progressbar.reset()
-        #self.progressbar.setMaximum(self.input['nsteps'])
-        #try:
-        #    self.progressbar.setMaximum(len(self.data['ior']['days']))
-        #except KeyError:
-        #    pass
-        #print(self.progressbar.maximum())
-        #self.progressbar.setValue(0)
         self.reset_progressbar(N=self.worker.sim.n)
-        #print('convert:' + str(self.progressbar.maximum()))
         self.threadpool.start(self.convert)
 
         

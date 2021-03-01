@@ -155,10 +155,10 @@ class ior2ecl:
         self.progress = False
         if not to_screen and not quiet:
             self.progress = Progress(N=self.nsteps)
+        # output files for reading days
         self.ecl_days = 0
         self.ior_days = 0
         self.trcconc = None
-        # output file for reading days
         self.unsmry = unfmt_file(self.root+'.UNSMRY')
 
     #--------------------------------------------------------------------------------
@@ -449,7 +449,7 @@ class ior2ecl:
         for block in self.unsmry.blocks(only_new=True):
             if block.key()=='PARAMS':
                 self.ecl_days = block.data()[0]
-        return self.ecl_days        
+        return int(self.ecl_days)        
 
 
     #--------------------------------------------------------------------------------
@@ -471,7 +471,7 @@ class ior2ecl:
         if line:
             self.ior_days = float(line.split()[0])
         #print('iorsim_days: '+str(self.ior_days))
-        return self.ior_days
+        return int(self.ior_days)
 
 
     #--------------------------------------------------------------------------------
@@ -518,7 +518,7 @@ class ior2ecl:
                 raise e
         self.clean_up(run)        
 
-            
+
     #--------------------------------------------------------------------------------
     def terminate_eclipse(self):
     #--------------------------------------------------------------------------------
