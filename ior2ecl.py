@@ -5,14 +5,14 @@ import atexit
 from pathlib import Path
 import sys
 from argparse import ArgumentParser
-from shutil import which
+from shutil import Error, which
 from datetime import datetime
 from time import sleep
 from types import GeneratorType
 
 from IORlib.utils import safeopen, Progress, check_endtag, warn_empty_file, loop_until_2, silentdelete, assert_python_version, exit_without_atexit, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks #, unfmt_file
+from IORlib.ECL import check_blocks, unfmt_file #, unfmt_file
 
 
 #--------------------------------------------------------------------------------
@@ -32,10 +32,12 @@ def main():
                       iorargs=args['iorargs'], v=args['v'], timer=args['timer'], keep_files=args['keep_files'],
                       to_screen=args['to_screen']) 
         sim.check_input()
-        sim.init_runs()
+        sim.init_eclipse_run()
+        sim.init_iorsim_run()
         
         print()
-        sim.start_runs()
+        sim.start_eclipse()
+        sim.start_iorsim()
 
         print()
         for t in range(1, sim.nsteps+1):
@@ -153,7 +155,11 @@ class ior2ecl:
         self.progress = False
         if not to_screen and not quiet:
             self.progress = Progress(N=self.nsteps)
-
+        self.ecl_days = 0
+        self.ior_days = 0
+        self.trcconc = None
+        # output file for reading days
+        self.unsmry = unfmt_file(self.root+'.UNSMRY')
 
     #--------------------------------------------------------------------------------
     def wait_for(self, runner, func, *args, limit=100000, error='ERROR wait_for()', pause=0.01, 
@@ -246,11 +252,11 @@ class ior2ecl:
         raise SystemError("WARNING ior2ecl.init_run() expects 'eclipse' or 'iorsim' but got " + run)
 
 
-    #--------------------------------------------------------------------------------
-    def init_runs(self, run='all'):
-    #--------------------------------------------------------------------------------
-        self.init_eclipse_run()
-        self.init_iorsim_run()
+    # #--------------------------------------------------------------------------------
+    # def init_runs(self, run='all'):
+    # #--------------------------------------------------------------------------------
+    #     self.init_eclipse_run()
+    #     self.init_iorsim_run()
         
     #--------------------------------------------------------------------------------
     def check_UNRST_file(self):
@@ -344,11 +350,11 @@ class ior2ecl:
             print('  ' + ior.timer.info) if ior.timer else None
     
     
-    #--------------------------------------------------------------------------------
-    def start_runs(self):
-    #--------------------------------------------------------------------------------
-        self.start_eclipse()
-        self.start_iorsim()
+    # #--------------------------------------------------------------------------------
+    # def start_runs(self):
+    # #--------------------------------------------------------------------------------
+    #     self.start_eclipse()
+    #     self.start_iorsim()
         
         
     #--------------------------------------------------------------------------------
@@ -415,18 +421,61 @@ class ior2ecl:
         ior.suspend()
 
         ### Get days from IORSim output
-        root = Path(self.root) 
-        for outfile in root.parent.glob(root.stem+'*.trcconc'):
-            with open(outfile) as out:
-                for line in out:
-                    pass
-            break
-        days = line.strip().split()[0]
+        days = self.iorsim_days()
         self.t = days
-        return int(days)
+        return days
+        # root = Path(self.root) 
+        # for outfile in root.parent.glob(root.stem+'*.trcconc'):
+        #     with open(outfile) as out:
+        #         for line in out:
+        #             pass
+        #     break
+        # days = line.strip().split()[0]
+        # self.t = days
+        # return int(days)
 
     #--------------------------------------------------------------------------------
-    def satnum_tstep(self, tstep):
+    def days(self, run):
+    #--------------------------------------------------------------------------------
+        run = run.strip().lower()
+        if run=='eclipse':
+            return self.eclipse_days()
+        if run=='iorsim':
+            return self.iorsim_days()
+
+    #--------------------------------------------------------------------------------
+    def eclipse_days(self):
+    #--------------------------------------------------------------------------------
+        for block in self.unsmry.blocks(only_new=True):
+            if block.key()=='PARAMS':
+                self.ecl_days = block.data()[0]
+        return self.ecl_days        
+
+
+    #--------------------------------------------------------------------------------
+    def iorsim_days(self):
+    #--------------------------------------------------------------------------------
+        # Output file for reading days
+        if not self.trcconc:
+            root = Path(self.root)
+            for outfile in root.parent.glob(root.stem+'*.trcconc'):
+                if outfile.is_file():
+                    self.trcconc = outfile
+                break
+        ### Get days from IORSim output
+        with open(self.trcconc) as out:
+           for line in out:
+               pass
+        line = line.strip()
+        #print('line: |'+line+'|')
+        if line:
+            self.ior_days = float(line.split()[0])
+        #print('iorsim_days: '+str(self.ior_days))
+        return self.ior_days
+
+
+    #--------------------------------------------------------------------------------
+    def set_satnum_tstep(self, tstep):
     #--------------------------------------------------------------------------------
         data = []
         with open(self.satnum) as file:
@@ -452,6 +501,7 @@ class ior2ecl:
             message += ', {} : {:.2f}'.format(rft['start'].rstrip(), rft['values'][0]) 
         return message
 
+
     #--------------------------------------------------------------------------------
     def terminate(self, run):
     #--------------------------------------------------------------------------------
@@ -467,6 +517,7 @@ class ior2ecl:
             else:   
                 raise e
         self.clean_up(run)        
+
             
     #--------------------------------------------------------------------------------
     def terminate_eclipse(self):

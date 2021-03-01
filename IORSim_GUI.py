@@ -421,7 +421,7 @@ class Backward(Base_worker):
                 days = sim.run_one_step()
                 self.update_progress(days)
                 self.update_plot()
-                self.status_message('{}/{} days'.format(days, self.N))
+                self.status_message('{}/{} days'.format(int(days), self.N))
                 if days>self.N:
                     raise SystemError('INFO Simulation complete')
                 #self.status_message('{}/{} days'.format(self.t, self.N))
@@ -443,7 +443,7 @@ class Backward(Base_worker):
             sim.print2log('\n======  ' + msg + ' ======')
             sim.runlog.close() 
             self.update_plot()
-            self.update_progress(0)
+            self.update_progress(-2)
             return result
 
 
@@ -463,34 +463,37 @@ class Forward(Base_worker):
         self.run_names = run
         self.run = None
         self.loop_count = 0
-        self.t0 = 0
+        #self.t0 = 0
         #self.nsteps = 0
         
-    #-----------------------------------------------------------------------
-    def update_func(self):
-    #-----------------------------------------------------------------------
-        self.update_plot()
-        self.update_progress(-1)
-        self.status_message('{}/{} days'.format(self.t, self.N))
-        
+    # #-----------------------------------------------------------------------
+    # def update_func(self):
+    # #-----------------------------------------------------------------------
+    #     self.update_plot()
+    #     self.t = self.sim.days(self.run.name)
+    #     self.update_progress(self.t)
+    #     self.status_message('{}/{} days'.format(self.t, self.N))
+    #     #print('{}/{} days'.format(self.t, self.N))
+
     #-----------------------------------------------------------------------
     def loop_func(self, n):
     #-----------------------------------------------------------------------
+        if self.sim.is_killed:
+            raise SystemError('INFO ' + self.run.name + ' stopped after ' + str(self.t) + ' days')
         self.loop_count += 1
         if self.loop_count == 5:
             self.loop_count = 0
-            self.update_func()
-            if self.t > self.t0:
+            days = self.sim.days(self.run.name)
+            #print('days: '+str(days))
+            if days > self.N:
+                raise SystemError('INFO Simulation complete')
+            if days > self.t:
                 self.sim.n += 1
-            #print(self.t0, self.t, self.sim.n)
-            self.sim.t = self.t0 = self.t
-        progress = self.t/self.N    
-        if progress < 0.95:
-            self.run.assert_running()
-        if self.sim.is_killed:
-            raise SystemError('INFO ' + self.run.name + ' stopped after ' + str(self.t) + ' days')
-        if self.t>self.N:
-            raise SystemError('INFO Simulation complete')
+            self.sim.t = self.t = int(days)
+            self.update_progress(self.t)
+            self.status_message('{}/{} days'.format(self.t, self.N))
+            self.update_plot()
+            #print(self.t, self.sim.n)
 
 
     @Slot()
@@ -513,8 +516,9 @@ class Forward(Base_worker):
                 self.current = run_name #.name.lower()#[:3] # 'ecl' or 'ior'
                 self.status_message(run.name + ' running')
                 run.wait_for_process_to_finish_2(pause=0.2, loop_func=self.loop_func)
-                self.update_func()
-                self.update_progress(0)
+                days = self.sim.days(self.run.name)
+                if days<self.N:
+                    raise SystemError('ERROR ' + run.name + ' stopped unexpectedly, check the log')
             msg = 'Simulation complete'
             result = True
         except (SystemError, ProcessLookupError, psutil.NoSuchProcess) as e:
@@ -531,7 +535,7 @@ class Forward(Base_worker):
             sim.print2log('\n======  ' + msg + '  ======')
             sim.runlog.close()
             self.update_plot()
-            self.update_progress(0)
+            self.update_progress(-2)
             self.status_message(msg)
             #self.current = None
             return result
@@ -913,7 +917,7 @@ class main_window(QMainWindow):                                    # main_window
                                           func=self.add_case_from_file)
         self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy',
                                            func=self.duplicate_current_case)
-        self.rename_case_act = create_action(self, text='Rename current case..', icon='document-rename',
+        self.rename_case_act = create_action(self, text='Rename current case...', icon='document-rename',
                                              func=self.rename_current_case)
         self.clear_case_act = create_action(self, text='Clear current case', icon='document',
                                             func=self.clear_current_case)
@@ -1365,6 +1369,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_mode_select(self, nr):                               # main_window
     #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
         if nr<0:
             return
         self.max_days = None
@@ -1412,6 +1417,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_case_select(self, nr):                              # main_window
     #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
         if self.cases:
             self.sender().blockSignals(True)
             self.sender().setCurrentIndex(nr)
@@ -1436,6 +1442,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_compare_select(self, nr):                              # main_window
     #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
         if nr>0:
             ior = ecl = False
             case = str(self.cases[nr-1])
@@ -1470,6 +1477,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def add_case_from_file(self):                   # main_window
     #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
         case = open_file_dialog(self, 'Locate Eclipse DATA-file', 'DATA files (*.DATA)')
         if case:
             root = Path(case.split('.DATA')[0])
@@ -1479,6 +1487,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def clear_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
         try:
             if not self.case:
                 self.missing_case_error(tag='clear_case: ')
@@ -1520,6 +1529,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def delete_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
         if not self.case:
             self.missing_case_error(tag='delete: ')
             return False
@@ -1535,6 +1545,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def duplicate_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
         if not self.case:
             self.missing_case_error(tag='duplicate: ')
             return False
@@ -1551,6 +1562,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def rename_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
         if not self.case:
             self.missing_case_error(tag='rename: ')
             return False
@@ -1578,9 +1590,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def prepare_case(self, root):
     #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
+        self.plot_lines = {}
+        self.ref_plot_lines = {}
         try:
-            self.plot_lines = {}
-            self.ref_plot_lines = {}
             self.ref_case.setCurrentIndex(0)
             self.out_wells, self.in_wells = get_wells_iorsim(root)
             self.set_variables_from_casefiles()
@@ -1596,7 +1609,6 @@ class main_window(QMainWindow):                                    # main_window
         self.read_ecl_data()
         self.update_ecl_menu()
         self.create_plot()
-        self.update_message()
         if self.view_ag.checkedAction():
            self.view_ag.checkedAction().trigger()
         #self.update_view_area()
@@ -2104,6 +2116,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                                # main_window
     #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
         # Avoid re-opening file after it is saved
         if str(file) == self.editor.objectName():
             return
@@ -2660,6 +2673,13 @@ class main_window(QMainWindow):                                    # main_window
             self.progressbar.setValue(t)
 
     #-----------------------------------------------------------------------
+    def reset_progress_and_message(self):
+    #-----------------------------------------------------------------------
+        self.reset_progressbar()
+        self.update_remaining_time()
+        self.update_message()
+
+    #-----------------------------------------------------------------------
     def reset_progressbar(self, N=-1):
     #-----------------------------------------------------------------------
         self.progressbar.reset()
@@ -2673,14 +2693,17 @@ class main_window(QMainWindow):                                    # main_window
     def update_progress(self, t):
     #-----------------------------------------------------------------------
         if t==-1: # and self.days is not None and len(self.days)>1:
-            try:
-                t = int(self.days[-1])
-            except (ValueError, TypeError):
-                t = 0
-                #t = -1
-            finally:
-                if self.worker:
-                    self.worker.t = t
+            raise SystemError('ERROR DEPRECATION: update_progress(-1)')
+            #try:
+            #    t = int(self.days[-1])
+            #except (ValueError, TypeError) as e:
+            #    #print(e)
+            #    t = 0
+            #    #t = -1
+            #finally:
+            #    if self.worker:
+            #        self.worker.t = t
+            #        #print('worker.t: '+str(self.worker.t))
         #print(t)
         if t==-2:
             self.reset_progressbar()
@@ -2776,8 +2799,9 @@ class main_window(QMainWindow):                                    # main_window
         self.data = {}
         self.unsmry = None
         # Clear messages and progress
-        self.update_message()
-        self.update_remaining_time()
+        self.reset_progress_and_message()
+        #self.update_message()
+        #elf.update_remaining_time()
         #N = i['days'] = i['days']+i['ecl_days']+int(s['dt'])
         #if not i['dtecl'] or i['dtecl']==0:
         #    i['dtecl'] = 1
@@ -2820,8 +2844,9 @@ class main_window(QMainWindow):                                    # main_window
             return
         i = self.input
         # clear messages and progress
-        self.update_message()
-        self.update_remaining_time()
+        self.reset_progress_and_message()
+        #self.update_message()
+        #self.update_remaining_time()
         N = i['days']
         #if self.run == ('iorsim',) and self.read_ecl_data():
         #        days = self.data['ecl'].get('days') or [0,]
