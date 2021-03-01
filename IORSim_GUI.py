@@ -1067,8 +1067,9 @@ class main_window(QMainWindow):                                    # main_window
         self.remaining_time.setStyleSheet('QLabel {margin-top:10px; margin-bottom: 10px;}')
         self.update_remaining_time()
         self.progressbar = QProgressBar()
-        self.progressbar.setStyleSheet('QProgressBar {max-width: 300px; max-height: 15px; padding: 0px;}')
+        self.progressbar.setStyleSheet('QProgressBar {max-width: 300px; max-height: 15px; padding: 0px;}\nQProgressBar::chunk {background-color: #2ca02c;}')
         self.progressbar.setFormat('')
+        self.reset_progressbar()
         statusbar = QStatusBar()
         statusbar.setStyleSheet("QStatusBar { border-top: 1px solid lightgrey; }\nQStatusBar::item { border:None; };"); 
         self.messages = QLabel()
@@ -2674,34 +2675,36 @@ class main_window(QMainWindow):                                    # main_window
         self.update_message()
 
     #-----------------------------------------------------------------------
-    def reset_progressbar(self, N=-1):
+    def reset_progressbar(self, N=None):
     #-----------------------------------------------------------------------
         self.progressbar.reset()
-        if N==0:
-            N=-1
-        self.progressbar.setMaximum(N)
-        v = 0
-        if N<0:
-            v = N
-        self.progressbar.setValue(v)
+        #if N==0:
+        #    N=-1
+        if N:
+            self.progressbar.setMaximum(N)
+        #v = 0
+        #if N<0:
+        #    v = N
+        #self.progressbar.setValue(1)
+        #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
 
     #-----------------------------------------------------------------------
     def update_progress(self, t):
     #-----------------------------------------------------------------------
         if t<0: 
             # Set max=value to avoid animation effect when val<max
-            print('t<0:')
-            val = self.progressbar.value()
-            max = -1
-            if val>0:
-                max = val
-            self.progressbar.setMaximum(max)
-            print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
+            #print('t<0:')
+            #val = self.progressbar.value()
+            #max = -1
+            #if val>0:
+            #    max = val
+            #self.progressbar.setMaximum(max)
+            #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
             #self.reset_progressbar()
             return    
         self.update_progressbar(t)
         self.update_remaining_time( self.progress.remaining_time(t) )
-        print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
+        #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
         
     #-----------------------------------------------------------------------
     def update_view_area(self):
@@ -2739,6 +2742,9 @@ class main_window(QMainWindow):                                    # main_window
         #if i['nsteps']==0:
         if i['days']==0:
             show_message(self, 'warning', text='Total time interval is missing.')
+            return False
+        if i['days']<i['dtecl']:
+            show_message(self, 'warning', text='Total time interval of {} days is less than the IORSim timestep of {} days'.format(i['days'],i['dtecl']))
             return False
         if self.max_days and i['days']>self.max_days:
             show_message(self, 'warning', text='The Eclipse output read by IORSim currently sets a limit of ' + str(self.max_days) + 
