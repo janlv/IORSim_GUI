@@ -23,7 +23,7 @@ import shutil
 import warnings
 import copy
 
-from ior2ecl import ior2ecl
+from ior2ecl import ior2ecl, simulation, eclipse, iorsim
 from IORlib.utils import Progress, exit_without_atexit, assert_python_version, get_substrings, return_matching_string, delete_all, file_contains
 from IORlib.ECL import unfmt_file, fmt_file, Section
 import GUI_icons
@@ -43,6 +43,7 @@ default_size = 10
 default_weight = 50
 to_screen = False
 quiet = True
+echo = False
 
 
 #-----------------------------------------------------------------------
@@ -381,6 +382,7 @@ class Base_worker(QRunnable):
     #-----------------------------------------------------------------------
     def killsim(self):
     #-----------------------------------------------------------------------
+        print('Calling Base_worker.killsim()')
         if self.sim:
             self.sim.is_killed = True 
 
@@ -406,12 +408,13 @@ class Base_worker(QRunnable):
 #===========================================================================
 class Backward(Base_worker):                                              
 #===========================================================================
-    def __init__(self, sim, *args, N=1, dt=1, **kwargs):
-        super(Backward, self).__init__(N=N)
+    #def __init__(self, sim, *args, N=1, dt=1, **kwargs):
+    def __init__(self, sim, N=1): #, **kwargs):
+        #super(Backward, self).__init__(N=N)
+        super().__init__(N=N)
         self.sim = sim
-        self.dt = dt
+        #self.dt = dt
         
-
     @Slot()
     #-----------------------------------------------------------------------
     def runnable(self):
@@ -454,12 +457,40 @@ class Backward(Base_worker):
             self.update_progress(-1)
             return result
 
+    # #-----------------------------------------------------------------------
+    # def killsim(self):
+    # #-----------------------------------------------------------------------
+    #     #print('Calling Backward.killsim()',self.sim)
+    #     if self.sim:
+    #         #print('sim canceled!')
+    #         self.sim.cancel()
+
+    # #-----------------------------------------------------------------------
+    # def update(self, days):
+    # #-----------------------------------------------------------------------
+    #     self.update_progress(days)
+    #     self.update_plot()
+
+
+    # @Slot()
+    # #-----------------------------------------------------------------------
+    # def runnable(self):
+    # #-----------------------------------------------------------------------
+    #     result, msg = self.sim.run_backward(pause=0.5, status_func=self.status_message, update_func=self.update)
+    #     self.update(-1)
+    #     self.status_message(msg)
+    #     self.show_message(msg)
+    #     #self.update_plot()
+    #     #self.update_progress(-1)
+    #     return result
+
 
 #===========================================================================
 class Forward(Base_worker):                                              
 #===========================================================================
     def __init__(self, sim, N=1, run=None, *args, **kwargs):
-        super(Forward, self).__init__(N=N)
+        #super(Forward, self).__init__(N=N)
+        super().__init__(N=N)
         self.sim = sim
         self.current = None
         if not run: 
@@ -470,8 +501,9 @@ class Forward(Base_worker):
         self.run = None
         self.loop_count = 0
 
+
     #-----------------------------------------------------------------------
-    def loop_func(self, n):
+    def loop_func(self):
     #-----------------------------------------------------------------------
         if self.sim.is_killed:
             raise SystemError('INFO ' + self.run.name + ' stopped after ' + str(self.t) + ' days')
@@ -511,6 +543,7 @@ class Forward(Base_worker):
                 self.current = run_name 
                 self.status_message(run.name + ' running')
                 run.wait_for_process_to_finish_2(pause=0.2, loop_func=self.loop_func)
+                #run.wait_for( run.parent_is_not_running, pause=0.2, loop_func=self.loop_func )
                 days = self.sim.days(self.run.name)
                 if days<self.N:
                     raise SystemError('ERROR ' + run.name + ' stopped unexpectedly, check the log')
@@ -531,9 +564,62 @@ class Forward(Base_worker):
             self.update_plot()
             self.update_progress(-1)
             self.status_message(msg)
-            #self.current = None
+            self.current = None
             return result
                         
+
+
+#===========================================================================
+class Forward_2(Base_worker):                                              
+#===========================================================================
+    def __init__(self, sim, N=1, run=None): #, *args, **kwargs):
+        #super(Forward, self).__init__(N=N)
+        super().__init__(N=N)
+        self.sim = sim
+        if not run: 
+            raise SystemError('Forward-class: Missing run-argument')
+        if not isinstance(run, tuple):
+            run = (run,)
+        self.run_names = run
+        #self.loop_count = 0
+
+    #-----------------------------------------------------------------------
+    def killsim(self):
+    #-----------------------------------------------------------------------
+        if self.sim:
+            self.sim.cancel()
+
+    #-----------------------------------------------------------------------
+    def update(self, days):
+    #-----------------------------------------------------------------------
+        self.update_progress(days)
+        self.update_plot()
+
+    # #-----------------------------------------------------------------------
+    # def status(self, text):
+    # #-----------------------------------------------------------------------
+    #     self.status_message(text)
+
+    #-----------------------------------------------------------------------
+    def current_run(self):
+    #-----------------------------------------------------------------------
+        if self.sim:
+            return self.sim.current_run 
+
+    @Slot()
+    #-----------------------------------------------------------------------
+    def runnable(self):
+    #-----------------------------------------------------------------------
+        result, msg = self.sim.run_forward(self.run_names, status_func=self.status_message, update_func=self.update, 
+                                           pause=0.01, count=5)
+        #print(msg)
+        self.update(-1)
+        self.status_message(msg)
+        self.show_message(msg)
+        #print(self.sim.n)
+        return result
+
+
 #===========================================================================
 class Convert(Base_worker):                                              
 #===========================================================================
@@ -1359,6 +1445,7 @@ class main_window(QMainWindow):                                    # main_window
         self.run = run
         fh = open(str(Path(self.case).parent/'mode.gui'), 'w')
         fh.write(mode+'\n')
+        #print('mode write: '+mode)
         fh.close()
 
 
@@ -1415,25 +1502,29 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
         if self.cases:
-            self.sender().blockSignals(True)
-            self.sender().setCurrentIndex(nr)
-            self.sender().blockSignals(False)
+            #self.sender().blockSignals(True)
+            #self.sender().setCurrentIndex(nr)
+            #self.sender().blockSignals(False)
             self.input['root'] = self.case = str(self.cases[nr])
-            self.prepare_case(self.input['root'])
             # set simulation mode based on READDATA keyword in .DATA-file
             mode = 'forward'
+            #print(self.case, self.input['root'])
             try:
                 if file_contains(self.case+'.DATA', text='READDATA', comment='--'):
                     mode = 'backward'
+                    #print('file_contains: '+mode)
             except FileNotFoundError as e:
                 show_message(self, 'error', text='The Eclipse DATA-file is missing for this case')
             # set mode from file
             mode_file = Path(self.case).parent/'mode.gui'
             if mode_file.is_file():
                 mode = open(mode_file).readline().strip()
+            # on_mode_select() is called in prepare_case() and 
+            # dont need to be triggered here    
+            self.mode_cb.blockSignals(True)
             self.mode_cb.setCurrentIndex(self.modes.index(mode))
-            #self.mode_act[mode].setChecked(True)
-            #self.mode_ag.checkedAction().trigger()
+            self.mode_cb.blockSignals(False)
+            self.prepare_case(self.input['root'])
                 
     #-----------------------------------------------------------------------
     def on_compare_select(self, nr):                              # main_window
@@ -1854,7 +1945,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def read_ecl_data(self, case=None, reinit=False):
     #-----------------------------------------------------------------------
-        #print('read_ecl_data: start')
+        #print('read_ecl_data')
         datafile = self.input['root']
         if case:
             datafile = case
@@ -2699,15 +2790,7 @@ class main_window(QMainWindow):                                    # main_window
     def update_progress(self, t):
     #-----------------------------------------------------------------------
         if t<0: 
-            # Set max=value to avoid animation effect when val<max
-            #print('t<0:')
-            #val = self.progressbar.value()
-            #max = -1
-            #if val>0:
-            #    max = val
-            #self.progressbar.setMaximum(max)
-            #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
-            #self.reset_progressbar()
+            self.update_remaining_time()
             return    
         self.update_progressbar(t)
         self.update_remaining_time( self.progress.remaining_time(t) )
@@ -2722,9 +2805,11 @@ class main_window(QMainWindow):                                    # main_window
 
         self.days = None
         #print('Mode: '+self.mode)
-        if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current:
+        #if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current:
+        if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current_run():
             #print('Current: '+self.worker.current)
-            run = self.worker.current
+            #run = self.worker.current
+            run = self.worker.current_run()
             if run in ('ecl','eclipse','eclrun'):
                 self.read_ecl_data()
                 run = 'ecl'
@@ -2750,7 +2835,7 @@ class main_window(QMainWindow):                                    # main_window
         if i['days']==0:
             show_message(self, 'warning', text='Total time interval is missing.')
             return False
-        if i['days']<i['dtecl']:
+        if self.mode=='backward' and i['days']<i['dtecl']:
             show_message(self, 'warning', text='Total time interval of {} days is less than the IORSim timestep of {} days'.format(i['days'],i['dtecl']))
             return False
         if self.max_days and i['days']>self.max_days:
@@ -2815,11 +2900,11 @@ class main_window(QMainWindow):                                    # main_window
         #except ZeroDivisionError:
         #    self.show_message_text('WARNING Timestep from IORSim input is zero')
         #    return
-        days = i['days']+i['ecl_days']+int(s.get['dt']())
+        T = i['days']+i['ecl_days']+int(s.get['dt']())
         #self.reset_progressbar(N=i['nsteps'])
         #self.progress = Progress(N=i['nsteps'])
-        self.reset_progressbar(N=days)#(N=N)
-        self.progress = Progress(N=days)#(N=N)
+        self.reset_progressbar(N=T)#(N=N)
+        self.progress = Progress(N=T)#(N=N)
         # Disable Start button
         self.set_toolbar_enabled(False)
         #self.start_act.setEnabled(False)
@@ -2827,14 +2912,21 @@ class main_window(QMainWindow):                                    # main_window
         # create ior2ecl instance
         #nsteps = 12
         #print(N)
+        self.starttime = datetime.now()
         sim = ior2ecl(root=i['root'], dt=s.get['dt'](), nsteps=N,
                       iorsim=self.settings.get['iorsim'](),
                       eclrun=self.settings.get['eclrun'](),
                       check_unrst=self.settings.get['unrst'](),
                       check_rft=self.settings.get['rft'](),
                       to_screen=to_screen, quiet=quiet)
+        # sim = simulation(root=i['root'], N=N, T=T, dt=s.get['dt'](),
+        #                  iorsim=self.settings.get['iorsim'](),
+        #                  eclrun=self.settings.get['eclrun'](),
+        #                  check_unrst=self.settings.get['unrst'](),
+        #                  check_rft=self.settings.get['rft'](),
+        #                  to_screen=to_screen, echo=echo)
         # thread running the simulation
-        self.worker = Backward(sim, N=days)
+        self.worker = Backward(sim, N=T)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)
@@ -2852,14 +2944,14 @@ class main_window(QMainWindow):                                    # main_window
         self.reset_progress_and_message()
         #self.update_message()
         #self.update_remaining_time()
-        N = i['days']
+        T = i['days']
         #if self.run == ('iorsim',) and self.read_ecl_data():
         #        days = self.data['ecl'].get('days') or [0,]
         #        N = int(days[-1])
         #print(self.run)
         #print(N)
-        self.reset_progressbar(N=N)
-        self.progress = Progress(N=N)
+        self.reset_progressbar(N=T)
+        self.progress = Progress(N=T)
         # disable start button
         self.set_toolbar_enabled(False)
         # create ior2ecl instance
@@ -2868,13 +2960,15 @@ class main_window(QMainWindow):                                    # main_window
         self.data = {}
         #if 'eclipse' in self.run:
         self.unsmry = None  # Signals to re-read Eclipse data
-        sim = ior2ecl(root=i['root'],
-                      iorsim=s.get['iorsim'](),
-                      eclrun=s.get['eclrun'](),
-                      to_screen=to_screen, quiet=quiet,
-                      readdata=False)
-        # start thread running the simulation
-        self.worker = Forward(sim, N=N, run=self.run)
+        # sim = ior2ecl(root=i['root'],
+        #               iorsim=s.get['iorsim'](),
+        #               eclrun=s.get['eclrun'](),
+        #               to_screen=to_screen, quiet=quiet,
+        #               readdata=False)
+        sim = simulation(root=i['root'], T=T, iorsim=s.get['iorsim'](), eclrun=s.get['eclrun'](), to_screen=to_screen)
+        ## start thread running the simulation
+        #self.worker = Forward(sim, N=N, run=self.run)
+        self.worker = Forward_2(sim, N=T, run=self.run)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.plot.connect(self.update_view_area)
@@ -2904,6 +2998,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def run_finished(self):
     #-----------------------------------------------------------------------
+        print(datetime.now()-self.starttime)
         self.set_toolbar_enabled(True)
         if self.worker.success:
             self.convert_FUNRST()   
@@ -2920,7 +3015,7 @@ class main_window(QMainWindow):                                    # main_window
         self.convert.signals.finished.connect(self.convert_finished)
         self.convert.signals.status_message.connect(self.update_message)
         self.convert.signals.show_message.connect(self.show_message)
-        self.reset_progressbar(N=self.worker.sim.n)
+        self.reset_progressbar(N=self.worker.sim.N)
         self.threadpool.start(self.convert)
 
         

@@ -7,11 +7,12 @@ import atexit
 #import os
 #import sys
 import psutil
+from shutil import which
 from time import sleep
 from pathlib import Path #, PurePath
 from shutil import copy
 #from struct import unpack
-from .utils import loop_until_2, list2str, tail_file, safeopen, Timer, silentdelete
+from .utils import loop_until_2, loop_until_3, list2str, tail_file, safeopen, Timer, silentdelete
 
 #--------------------------------------------------------------------------------
 def permission_error(func):
@@ -31,7 +32,7 @@ class Control_file:
     def __init__(self, ext=None, root=None):
     #--------------------------------------------------------------------------------
         self._ext = ext
-        self._name = Path(root + '.' + ext)
+        self._name = Path(str(root) + '.' + ext)
 
     #--------------------------------------------------------------------------------
     def name(self):
@@ -118,11 +119,14 @@ class runner:                                                               # ru
     """
     
     #--------------------------------------------------------------------------------
-    def __init__(self, name=None, case=None, cmd=None, pipe=False,
-                 verbose=None, timer=False, runlog=None, ext_iface=None, ext_OK=None):           # runner
+    def __init__(self, N=0, T=0, name=None, case=None, exe=None, cmd=None, pipe=False, echo=False,
+                 verbose=3, timer=None, runlog=None, ext_iface=None, ext_OK=None,
+                 keep_files=False, **kwargs):           # runner
     #--------------------------------------------------------------------------------
+        print('runner.__init__: ',N,T,name,case,exe,cmd,ext_iface,ext_OK)
         self.name = name
         self.case = case
+        self.exe = exe
         self.cmd = cmd
         self.log = safeopen( Path(case).parent / Path(name.lower()+'.log'), 'w' )
         atexit.register(self.log.close)
@@ -133,12 +137,27 @@ class runner:                                                               # ru
         self.children = []
         self.pipe = pipe
         self.verbose = verbose
-        self.echo = False
-        if verbose > 2:
-            self.echo = True
+        self.echo = echo
+        #if verbose > 2:
+        #    self.echo = True
         self.timer = timer
         if self.timer:
             self.timer = Timer(name.lower())
+        #self._days = 0
+        #self._days_old = 0
+        self.keep_files = keep_files
+        self.canceled = False
+        self.t = 0  
+        self.n = 0
+        self.T = T   # Max time
+        self.N = N   # Max number of steps
+        #if T>0 and N>0:
+        #    raise SystemError('The run-limit for ' + self.name + 'must be given in time or steps, not both')
+        #self.step_unit = None    # Used in stop_if_canceled() to output step/time for cancellation
+        #if T>0:
+        #    self.step_unit = 'days'  
+        #if N>0:
+        #    self.step_unit = 'steps' 
         #self.is_killed = False
             
     # #-----------------------------------------------------------------------
@@ -147,6 +166,13 @@ class runner:                                                               # ru
     #     if self.is_killed:
     #         raise SystemError('INFO ' + self.name + ' stopped after ' + str(t) + ' ' + step)
                        
+    #--------------------------------------------------------------------------------
+    def check_input(self):                                                   # runner
+    #--------------------------------------------------------------------------------
+        ### check if executables exist on the system
+        if which(self.exe) is None:
+            raise SystemError('WARNING Executable not found: ' + self.exe)
+
 
     #--------------------------------------------------------------------------------
     def interface_file(self, nr):
@@ -265,7 +291,7 @@ class runner:                                                               # ru
             return True
                 
     #--------------------------------------------------------------------------------
-    def kill(self, v=2):                                                     # runner
+    def kill(self, v=1):                                                     # runner
     #--------------------------------------------------------------------------------
         # define local functions
         def name_pid(proc):
@@ -323,16 +349,169 @@ class runner:                                                               # ru
     #                 sleep_sec=sleep_sec, limit=limit, wait_func=refresh_func, wait=refresh, assert_running=assert_running, 
     #                 kill_func=kill_func, kill_msg=kill_msg, progress=progress, progress_limit=progress_limit)
     #     self.parent = None
+
+    #--------------------------------------------------------------------------------
+    def stop_if_canceled(self, step='days'):
+    #--------------------------------------------------------------------------------
+        if self.canceled:
+            c = int(self.n)
+            if not step in ('steps','step'):
+                # Use time a step unit
+                c = int(self.t)
+            raise SystemError('INFO Run stopped after ' + str(c) + ' ' + step)    
+
+    #--------------------------------------------------------------------------------
+    def assert_running_and_stop_if_canceled(self):
+    #--------------------------------------------------------------------------------
+        self.assert_running()
+        self.stop_if_canceled()
+
+    #--------------------------------------------------------------------------------
+    def time_and_step(self):
+    #--------------------------------------------------------------------------------
+        return None, None
+
+    # #--------------------------------------------------------------------------------
+    # def step(self):
+    # #--------------------------------------------------------------------------------
+    #     return None
+
+    # #--------------------------------------------------------------------------------
+    # def update_step_count(self, time=None): 
+    # #--------------------------------------------------------------------------------
+    #     # Increment number of steps if time has increased. 
+    #     # NB! Possible to miss a step if this function is not called often enough
+    #     if not time:
+    #         time = self.time()
+    #     if time > self.t_old:
+    #         self.n += 1
+    #     self.t_old = time
+    #     #print(old,days,self.n)
+    #     return self.n
+
+    #--------------------------------------------------------------------------------
+    def stop_if_limit_reached(self, limit='time', value=None, error='INFO Simulation complete'): 
+    #--------------------------------------------------------------------------------
         
+        if not value:
+            t, n = self.time_and_step()
+        if limit in ('step','steps'):
+            lim = self.N
+            value = value or n
+        else:
+            lim = self.T
+            value = value or t
+        #print(n, self.N)
+        if value > lim:
+            #print('Step limit reached')
+            raise SystemError(error)
+        return value
+
+    #--------------------------------------------------------------------------------
+    def wait_for(self, func, *args, error=None, limit=None, pause=None, log=None, loop_func=None, v=3, **kwargs):
+    #--------------------------------------------------------------------------------
+        if not loop_func:
+            # Default checks during loop
+            loop_func = self.assert_running_and_stop_if_canceled
+        self._print('calling wait_for( {}, limit={} )...'.format(func.__qualname__, limit), v=v, end='')
+        n = loop_until_3(func, *args, **kwargs, error=error, pause=pause, limit=limit, loop_func=loop_func)
+        if n<0:
+            return False    
+        self._print(str(n) + ' loops', v=3, tag='')
+        if callable(log):
+            self._print(log())
+        return True
+
+    # #--------------------------------------------------------------------------------
+    # def wait_for_process_to_finish_2(self, *args, v=1, limit=None, pause=None, **kwargs):      # runner
+    # #--------------------------------------------------------------------------------
+    #     self._print('waiting for process to finish', v=v)
+    #     success = self.wait_for( self.parent_is_not_running, *args, limit=limit, pause=pause, v=v, **kwargs )
+    #     if not success:
+    #         self._print('process did not finish within reasonable time ('+int(limit*pause)+' sec) and was killed', v=v)
+    #         self.kill()
+    #     self.parent = None
+    #     self.log.close()
+
     #--------------------------------------------------------------------------------
     def wait_for_process_to_finish_2(self, v=1, limit=None, error=None, pause=None, loop_func=None):      # runner
     #--------------------------------------------------------------------------------
-        self._print('waiting for process to finish', v=v)
-        if not error:
-            error = '{} did not quit'.format(self.parent.name())
-        loop_until_2( self.parent_is_not_running, error=error, pause=pause, limit=limit, loop_func=loop_func)
+        #self._print('waiting for process to finish', v=v)
+        #if not error:
+        #    error = '{} did not quit'.format(self.parent.name())
+        #print(error, pause, limit)
+        #n = loop_until_3( self.parent_is_not_running, error=error, pause=pause, limit=limit, loop_func=loop_func)
+        success = self.wait_for(self.parent_is_not_running, error=error, pause=pause, limit=limit, loop_func=loop_func)
+        #print('wait: ',n)
+        #if n<0:
+        if not success:
+             self._print('process did not finish within reasonable time and was killed', v=v)
+             self.kill()
         self.parent = None
         
+    #--------------------------------------------------------------------------------
+    def quit(self, v=1):
+    #--------------------------------------------------------------------------------
+        self._print('quitting process', v=v)
+        self.resume()
+        self.wait_for_process_to_finish_2(limit=1000, pause=0.01)
+        self.log.close()
+
+
+    # #--------------------------------------------------------------------------------
+    # def loop_func(self, count=5, update=None, status=None):
+    # #--------------------------------------------------------------------------------
+    #     self.assert_running_and_stop_if_canceled()
+    #     self.loop_count += 1
+    #     if self.loop_count == count:
+    #         self.loop_count = 0
+    #         days = self.stop_if_step_limit_reached(step='days')
+    #         n = self.update_step_count(days=days)
+    #         update(days)
+    #         status('{}/{} days'.format(days, self.N))
+
+    #--------------------------------------------------------------------------------
+    def wait_for_process_to_finish(self, v=1, limit=None, pause=None, loop_func=None):      # runner
+    #--------------------------------------------------------------------------------
+        self._print('waiting for process to finish', v=v)
+        self.resume()
+        try:
+            loop_until_2( self.parent_is_not_running, error='RUNNING', pause=pause, limit=limit, loop_func=loop_func)
+        except SystemError as e:
+            if str(e).startswith('RUNNING'):
+                self._print('process did not finish within reasonable time (10 sec) and was killed')
+                self.kill()
+            else:   
+                raise SystemError('ERROR '+str(e))
+        finally:    
+            self.parent = None
+            self.log.close()
+        
+    # #--------------------------------------------------------------------------------
+    # def wait_for_process_to_finish_2(self, v=1, limit=None, error=None, pause=None, loop_func=None):      # runner
+    # #--------------------------------------------------------------------------------
+    #     self._print('waiting for process to finish', v=v)
+    #     if not error:
+    #         error = '{} did not quit'.format(self.parent.name())
+    #     loop_until_2( self.parent_is_not_running, error=error, pause=pause, limit=limit, loop_func=loop_func)
+    #     self.parent = None
+        
+
+    #--------------------------------------------------------------------------------
+    def clean_up(self):
+    #--------------------------------------------------------------------------------
+        if self.ext_iface and not self.keep_files:
+            self.interface_file('all').delete()
+
+
+    #--------------------------------------------------------------------------------
+    def kill_and_clean(self):
+    #--------------------------------------------------------------------------------
+        self.kill()
+        self.log.close()
+        self.clean_up()
+
+
     # #--------------------------------------------------------------------------------
     # def wait_for(self, func, *args, v=1, log_msg=None, error=None, limit=None, pause=None, loop_func=None, **kwargs):
     # #--------------------------------------------------------------------------------
