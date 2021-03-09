@@ -164,7 +164,8 @@ class eclipse(runner):                                                      # ec
 class forward_mixin:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def init_control_functions(self, status_func=lambda *x:None, update_func=lambda *x:None, pause=0.01, count=5):
+    def init_control_functions(self, status_func=lambda *x:None, update_func=lambda *x:None, 
+                               pause=0.01, count=5, **kwargs):
     #--------------------------------------------------------------------------------
         self.status_func = status_func
         self.update_func = update_func
@@ -516,11 +517,9 @@ class simulation:
     #              check_unrst=True, check_rft=True, readdata=True, step_unit='days'):
     # #--------------------------------------------------------------------------------
     #--------------------------------------------------------------------------------
-    def __init__(self, iorsim=None, eclrun=None, to_screen=False, **kwargs):
+    def __init__(self, mode, iorsim=None, eclrun=None, to_screen=False, **kwargs):
     #--------------------------------------------------------------------------------
         name = 'ior2ecl'
-        #self.root = root
-        #self.n = 0
         self.kwargs = kwargs
         echo = kwargs.get('echo') or False
         root = kwargs.get('root') or False
@@ -540,16 +539,12 @@ class simulation:
         self.progress = False
         if not to_screen and echo:
             self.progress = Progress(N=self.N)
-        #self.dt = dt
-        #self.nsteps = nsteps
-        #self.readdata = readdata
         #self.v = v
         #self.timer = timer
-        #self.keep_files = keep_files
         self.runs = []
-        #self.starttime = datetime.now()
-        self.run = {'forward' :{'eclipse':ecl_forward,  'iorsim':ior_forward},
-                    'backward':{'eclipse':ecl_backward, 'iorsim':ior_backward}}
+        self.forward_run = {'eclipse':ecl_forward,  'iorsim':ior_forward}
+        self.backward_run = {'eclipse':ecl_backward, 'iorsim':ior_backward}
+        self.run_mode = {'forward':self.forward, 'backward':self.backward}[mode]
         self.exe = {'eclipse':eclrun, 'iorsim':iorsim}
         self.current_run = None
 
@@ -558,20 +553,82 @@ class simulation:
     #-----------------------------------------------------------------------
         for run in self.runs:
             run.canceled = True
-            #print(run.name + ' canceled!')
-
-    # #-----------------------------------------------------------------------
-    # def init_forward_run(self, name):
-    # #-----------------------------------------------------------------------
-    #     if name=='eclipse':
-    #         return ecl_forward(self.root, exe=self.exe[name], runlog=self.runlog, **self.kwargs)
-    #     if name=='iorsim':
-    #         return ior_forward(self.root, exe=self.exe[name], runlog=self.runlog, **self.kwargs)
 
     #-----------------------------------------------------------------------
-    #def forward(self, run_names, **kwargs):
+    def forward(self, **kwargs):
     #-----------------------------------------------------------------------
+        print('Forward run')
+        run_time = timedelta()
+        runs = kwargs.get('runs') or []
+        for name in runs:
+            run = self.forward_run[name](exe=self.exe[name], runlog=self.runlog, **self.kwargs)
+            self.runs.append(run)
+            self.current_run = name
+            run.execute(**kwargs)
+            run_time += run.run_time()
+        return run.complete_msg(run_time=run_time)
 
+
+    #-----------------------------------------------------------------------
+    def backward(self, **kwargs):
+    #-----------------------------------------------------------------------
+        print('Backward run')
+        pause = kwargs.get('pause') or 0.5
+        status_func = kwargs.get('status_func') or (lambda *x:None)
+        update_func = kwargs.get('update_func') or (lambda *x:None)
+        for name in ('eclipse', 'iorsim'):
+            run = self.backward_run[name](exe=self.exe[name], runlog=self.runlog, **self.kwargs)
+            self.runs.append(run)
+            status_func('Starting ' + run.name + '...')
+            run.delete_output_files()
+            run.start()
+        ecl, ior = self.runs
+        # Start timestep loop
+        for n in range(1, ecl.N+1):
+            self.print2log('\nReport step {}'.format(n))
+            ecl.run_one_step(n, ior.satnum)
+            # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
+            sleep(pause)
+            # Run IORSim to prepare satnum input for the next Eclipse run
+            ior.run_one_step(n+1)
+            t = ior.time_and_step()[0]
+            print(n,t,', ecl: ',ecl.n,ecl.N,ecl.t,ecl.T,', ior: ',ior.n,ior.N,ior.t,ior.T)
+            update_func(t)
+            status_func('{}/{} days'.format(t, ecl.T))
+            if t > ior.T:
+                #raise SystemError(self.complete_msg(start))
+                raise SystemError(ecl.complete_msg())
+        # Timestep loop finished
+        ecl.quit()
+        ior.quit()
+        return ecl.complete_msg()
+
+    #-----------------------------------------------------------------------
+    def run(self, **kwargs):
+    #-----------------------------------------------------------------------
+        msg = ''
+        self.runs = []
+        result = False
+        try:
+            msg = self.run_mode(**kwargs)
+            result = True
+        except (SystemError, ProcessLookupError, NoSuchProcess) as e:
+            msg = str(e)
+            if 'simulation complete' in msg.lower():
+                result = True
+            else:
+                result = False
+        finally:
+            # Set number of steps for convert_FUNRST progress 
+            self.N = min([run.time_and_step()[1] for run in self.runs])  
+            # kill possible remaining processes
+            for run in self.runs:
+                run.kill_and_clean()
+            self.print2log('\n======  ' + msg + '  ======')
+            self.runlog.close()
+            self.current_run = None
+            return result, msg
+                        
 
     #-----------------------------------------------------------------------
     def run_forward(self, run_names, **kwargs):
@@ -579,33 +636,20 @@ class simulation:
         msg = ''
         self.runs = []
         result = False
-        run = None
-        run_time = timedelta()
-        #start = datetime.now()
         try:
-            for name in run_names:
-                run = self.run['forward'][name](exe=self.exe[name], runlog=self.runlog, **self.kwargs)
-                self.runs.append(run)
-                self.current_run = name
-                run.execute(**kwargs)
-                run_time += run.run_time()
-            msg = run.complete_msg(run_time=run_time)
+            msg = self.forward(run_names, **kwargs)
             result = True
         except (SystemError, ProcessLookupError, NoSuchProcess) as e:
             msg = str(e)
-            #print('except:',msg)
-            if ('simulation complete') in msg.lower():
+            if 'simulation complete' in msg.lower():
                 result = True
             else:
                 result = False
         finally:
             # Set number of steps for convert_FUNRST progress 
             self.N = min([run.time_and_step()[1] for run in self.runs])  
-            #print(self.N)  
             # kill possible remaining processes
             for run in self.runs:
-                #print(run.name,': ',run.n)
-                #self.N = run.n
                 run.kill_and_clean()
             self.print2log('\n======  ' + msg + '  ======')
             self.runlog.close()
@@ -617,7 +661,7 @@ class simulation:
     #-----------------------------------------------------------------------
         msg = ''
         self.runs = []
-        start = datetime.now()
+        #start = datetime.now()
         try:
             for name in ('eclipse', 'iorsim'):
                 run = self.run['backward'][name](exe=self.exe[name], runlog=self.runlog, **self.kwargs)

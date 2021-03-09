@@ -473,7 +473,8 @@ class Backward(Base_worker):
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
-        result, msg = self.sim.run_backward(pause=0.5, status_func=self.status_message, update_func=self.update)
+        #result, msg = self.sim.run_backward(pause=0.5, status_func=self.status_message, update_func=self.update)
+        result, msg = self.sim.run(pause=0.5, status_func=self.status_message, update_func=self.update)
         self.update(-1)
         self.status_message(msg)
         self.show_message(msg)
@@ -608,8 +609,10 @@ class Forward_2(Base_worker):
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
-        result, msg = self.sim.run_forward(self.run_names, status_func=self.status_message, update_func=self.update, 
-                                           pause=0.01, count=5)
+        #result, msg = self.sim.run_forward(self.run_names, status_func=self.status_message, update_func=self.update, 
+        #                                   pause=0.01, count=5)
+        result, msg = self.sim.run(runs=self.run_names, status_func=self.status_message, update_func=self.update, 
+                                   pause=0.01, count=5)
         #print(msg)
         self.update(-1)
         self.status_message(msg)
@@ -2921,12 +2924,11 @@ class main_window(QMainWindow):                                    # main_window
         #               check_unrst=self.settings.get['unrst'](),
         #               check_rft=self.settings.get['rft'](),
         #               to_screen=to_screen, quiet=quiet)
-        sim = simulation(root=i['root'], N=N, T=T, dt=s.get['dt'](),
+        sim = simulation('backward', root=i['root'], N=N, T=T, dt=s.get['dt'](),
                          iorsim=self.settings.get['iorsim'](),
                          eclrun=self.settings.get['eclrun'](),
                          check_unrst=self.settings.get['unrst'](),
-                         check_rft=self.settings.get['rft'](),
-                         to_screen=to_screen, echo=echo)
+                         check_rft=self.settings.get['rft']())
         # thread running the simulation
         self.worker = Backward(sim, N=T)
         self.worker.signals.status_message.connect(self.update_message)
@@ -2967,7 +2969,7 @@ class main_window(QMainWindow):                                    # main_window
         #               eclrun=s.get['eclrun'](),
         #               to_screen=to_screen, quiet=quiet,
         #               readdata=False)
-        sim = simulation(root=i['root'], T=T, iorsim=s.get['iorsim'](), eclrun=s.get['eclrun'](), to_screen=to_screen)
+        sim = simulation('forward', runs=self.run, root=i['root'], T=T, iorsim=s.get['iorsim'](), eclrun=s.get['eclrun']())
         ## start thread running the simulation
         #self.worker = Forward(sim, N=N, run=self.run)
         self.worker = Forward_2(sim, N=T, run=self.run)
