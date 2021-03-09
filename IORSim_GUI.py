@@ -415,74 +415,72 @@ class Backward(Base_worker):
         self.sim = sim
         #self.dt = dt
         
-    @Slot()
-    #-----------------------------------------------------------------------
-    def runnable(self):
-    #-----------------------------------------------------------------------
-        sim = self.sim
-        msg = ''
-        try:
-            self.status_message('Starting Eclipse...')
-            sim.init_eclipse_run()
-            sim.start_eclipse()
-            self.status_message('Starting IORSim...')
-            sim.init_iorsim_run()
-            sim.start_iorsim()
-            # Start timestep loop
-            while sim.n < sim.nsteps:
-                days = sim.run_one_step()
-                self.update_progress(days)
-                self.update_plot()
-                self.status_message('{}/{} days'.format(days, self.N))
-                if days>self.N:
-                    raise SystemError('INFO Simulation complete')
-            # Timestep loop finished
-            sim.terminate_runs()
-            runtime = str(datetime.now()-sim.starttime).split('.')[0]
-            msg = 'Simulation complete, run-time was {}'.format(runtime)
-            result = True
-        except (SystemError, psutil.NoSuchProcess) as e:
-            msg = str(e)
-            self.show_message(msg)
-            if msg.startswith('INFO Simulation complete'):
-                result = True
-            else:
-                result = False
-        finally:
-            sim.kill_and_clean(sim.runs())
-            self.status_message(msg)
-            sim.print2log('\n======  ' + msg + ' ======')
-            sim.runlog.close() 
-            self.update_plot()
-            self.update_progress(-1)
-            return result
-
-    # #-----------------------------------------------------------------------
-    # def killsim(self):
-    # #-----------------------------------------------------------------------
-    #     #print('Calling Backward.killsim()',self.sim)
-    #     if self.sim:
-    #         #print('sim canceled!')
-    #         self.sim.cancel()
-
-    # #-----------------------------------------------------------------------
-    # def update(self, days):
-    # #-----------------------------------------------------------------------
-    #     self.update_progress(days)
-    #     self.update_plot()
-
-
     # @Slot()
     # #-----------------------------------------------------------------------
     # def runnable(self):
     # #-----------------------------------------------------------------------
-    #     result, msg = self.sim.run_backward(pause=0.5, status_func=self.status_message, update_func=self.update)
-    #     self.update(-1)
-    #     self.status_message(msg)
-    #     self.show_message(msg)
-    #     #self.update_plot()
-    #     #self.update_progress(-1)
-    #     return result
+    #     sim = self.sim
+    #     msg = ''
+    #     try:
+    #         self.status_message('Starting Eclipse...')
+    #         sim.init_eclipse_run()
+    #         sim.start_eclipse()
+    #         self.status_message('Starting IORSim...')
+    #         sim.init_iorsim_run()
+    #         sim.start_iorsim()
+    #         # Start timestep loop
+    #         while sim.n < sim.nsteps:
+    #             days = sim.run_one_step()
+    #             self.update_progress(days)
+    #             self.update_plot()
+    #             self.status_message('{}/{} days'.format(days, self.N))
+    #             if days>self.N:
+    #                 raise SystemError('INFO Simulation complete')
+    #         # Timestep loop finished
+    #         sim.terminate_runs()
+    #         runtime = str(datetime.now()-sim.starttime).split('.')[0]
+    #         msg = 'Simulation complete, run-time was {}'.format(runtime)
+    #         result = True
+    #     except (SystemError, psutil.NoSuchProcess) as e:
+    #         msg = str(e)
+    #         self.show_message(msg)
+    #         if msg.startswith('INFO Simulation complete'):
+    #             result = True
+    #         else:
+    #             result = False
+    #     finally:
+    #         sim.kill_and_clean(sim.runs())
+    #         self.status_message(msg)
+    #         sim.print2log('\n======  ' + msg + ' ======')
+    #         sim.runlog.close() 
+    #         self.update_plot()
+    #         self.update_progress(-1)
+    #         return result
+
+    #-----------------------------------------------------------------------
+    def killsim(self):
+    #-----------------------------------------------------------------------
+        if self.sim:
+            self.sim.cancel()
+
+    #-----------------------------------------------------------------------
+    def update(self, days):
+    #-----------------------------------------------------------------------
+        self.update_progress(days)
+        self.update_plot()
+
+    @Slot()
+    #-----------------------------------------------------------------------
+    def runnable(self):
+    #-----------------------------------------------------------------------
+        result, msg = self.sim.run_backward(pause=0.5, status_func=self.status_message, update_func=self.update)
+        self.update(-1)
+        self.status_message(msg)
+        self.show_message(msg)
+        print(msg)
+        #self.update_plot()
+        #self.update_progress(-1)
+        return result
 
 
 #===========================================================================
@@ -2799,9 +2797,12 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_view_area(self):
     #-----------------------------------------------------------------------
+        #A = datetime.now()
         if self.mode == 'backward':
             self.read_ior_data()
             self.read_ecl_data()
+        #B = datetime.now()
+        #print(B-A, ', ', end='')
 
         self.days = None
         #print('Mode: '+self.mode)
@@ -2826,6 +2827,7 @@ class main_window(QMainWindow):                                    # main_window
             self.update_all_plot_lines()
         elif view=='editor':
             self.update_log()
+        #print(datetime.now()-B)
 
     #-----------------------------------------------------------------------
     def input_OK(self):
@@ -2912,19 +2914,19 @@ class main_window(QMainWindow):                                    # main_window
         # create ior2ecl instance
         #nsteps = 12
         #print(N)
-        self.starttime = datetime.now()
-        sim = ior2ecl(root=i['root'], dt=s.get['dt'](), nsteps=N,
-                      iorsim=self.settings.get['iorsim'](),
-                      eclrun=self.settings.get['eclrun'](),
-                      check_unrst=self.settings.get['unrst'](),
-                      check_rft=self.settings.get['rft'](),
-                      to_screen=to_screen, quiet=quiet)
-        # sim = simulation(root=i['root'], N=N, T=T, dt=s.get['dt'](),
-        #                  iorsim=self.settings.get['iorsim'](),
-        #                  eclrun=self.settings.get['eclrun'](),
-        #                  check_unrst=self.settings.get['unrst'](),
-        #                  check_rft=self.settings.get['rft'](),
-        #                  to_screen=to_screen, echo=echo)
+        #self.starttime = datetime.now()
+        # sim = ior2ecl(root=i['root'], dt=s.get['dt'](), nsteps=N,
+        #               iorsim=self.settings.get['iorsim'](),
+        #               eclrun=self.settings.get['eclrun'](),
+        #               check_unrst=self.settings.get['unrst'](),
+        #               check_rft=self.settings.get['rft'](),
+        #               to_screen=to_screen, quiet=quiet)
+        sim = simulation(root=i['root'], N=N, T=T, dt=s.get['dt'](),
+                         iorsim=self.settings.get['iorsim'](),
+                         eclrun=self.settings.get['eclrun'](),
+                         check_unrst=self.settings.get['unrst'](),
+                         check_rft=self.settings.get['rft'](),
+                         to_screen=to_screen, echo=echo)
         # thread running the simulation
         self.worker = Backward(sim, N=T)
         self.worker.signals.status_message.connect(self.update_message)
@@ -2998,7 +3000,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def run_finished(self):
     #-----------------------------------------------------------------------
-        print(datetime.now()-self.starttime)
+        #print(datetime.now()-self.starttime)
         self.set_toolbar_enabled(True)
         if self.worker.success:
             self.convert_FUNRST()   

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from datetime import datetime
 from subprocess import Popen, PIPE, STDOUT, call
 import atexit
 #import signal
@@ -123,7 +124,7 @@ class runner:                                                               # ru
                  verbose=3, timer=None, runlog=None, ext_iface=None, ext_OK=None,
                  keep_files=False, **kwargs):           # runner
     #--------------------------------------------------------------------------------
-        print('runner.__init__: ',N,T,name,case,exe,cmd,ext_iface,ext_OK)
+        #print('runner.__init__: ',N,T,name,case,exe,cmd,ext_iface,ext_OK)
         self.name = name
         self.case = case
         self.exe = exe
@@ -151,6 +152,7 @@ class runner:                                                               # ru
         self.n = 0
         self.T = T   # Max time
         self.N = N   # Max number of steps
+        self.starttime = None
         #if T>0 and N>0:
         #    raise SystemError('The run-limit for ' + self.name + 'must be given in time or steps, not both')
         #self.step_unit = None    # Used in stop_if_canceled() to output step/time for cancellation
@@ -195,6 +197,7 @@ class runner:                                                               # ru
     def start(self, check=None):                                            # runner
     #--------------------------------------------------------------------------------
         pid = None
+        self.starttime = datetime.now()
         if self.pipe:
             self._print('starting in PIPE-mode', v=1)
             P = Popen(self.cmd, stdin=PIPE, stdout=self.log, stderr=STDOUT)
@@ -298,7 +301,7 @@ class runner:                                                               # ru
             return '\'{:s}\' ({:d})'.format(proc.name(), proc.pid)
         def terminate(proc):
             try:
-                self._print('Terminating {:s}'.format(name_pid(proc)), v=v)
+                self._print('Killing {:s}'.format(name_pid(proc)), v=v)
                 if proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE:
                     proc.kill()
                 else:
@@ -390,9 +393,20 @@ class runner:                                                               # ru
     #     return self.n
 
     #--------------------------------------------------------------------------------
-    def stop_if_limit_reached(self, limit='time', value=None, error='INFO Simulation complete'): 
+    def run_time(self):
     #--------------------------------------------------------------------------------
-        
+        return datetime.now()-self.starttime
+
+    #--------------------------------------------------------------------------------
+    def complete_msg(self, run_time=None):
+    #--------------------------------------------------------------------------------
+        if not run_time:
+            run_time = self.run_time()
+        return 'INFO Simulation complete, run-time was ' + str(run_time).split('.')[0]
+
+    #--------------------------------------------------------------------------------
+    def stop_if_limit_reached(self, limit='time', value=None): 
+    #--------------------------------------------------------------------------------
         if not value:
             t, n = self.time_and_step()
         if limit in ('step','steps'):
@@ -404,13 +418,13 @@ class runner:                                                               # ru
         #print(n, self.N)
         if value > lim:
             #print('Step limit reached')
-            raise SystemError(error)
+            raise SystemError(self.complete_msg())
         return value
 
     #--------------------------------------------------------------------------------
-    def wait_for(self, func, *args, error=None, limit=None, pause=None, log=None, loop_func=None, v=3, **kwargs):
+    def wait_for(self, func, *args, error=None, limit=100000, pause=0.01, log=None, loop_func=0, v=3, **kwargs):
     #--------------------------------------------------------------------------------
-        if not loop_func:
+        if loop_func==0:
             # Default checks during loop
             loop_func = self.assert_running_and_stop_if_canceled
         self._print('calling wait_for( {}, limit={} )...'.format(func.__qualname__, limit), v=v, end='')
@@ -436,14 +450,8 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def wait_for_process_to_finish_2(self, v=1, limit=None, error=None, pause=None, loop_func=None):      # runner
     #--------------------------------------------------------------------------------
-        #self._print('waiting for process to finish', v=v)
-        #if not error:
-        #    error = '{} did not quit'.format(self.parent.name())
-        #print(error, pause, limit)
-        #n = loop_until_3( self.parent_is_not_running, error=error, pause=pause, limit=limit, loop_func=loop_func)
+        self._print('waiting for process to finish', v=v)
         success = self.wait_for(self.parent_is_not_running, error=error, pause=pause, limit=limit, loop_func=loop_func)
-        #print('wait: ',n)
-        #if n<0:
         if not success:
              self._print('process did not finish within reasonable time and was killed', v=v)
              self.kill()
@@ -454,7 +462,7 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
         self._print('quitting process', v=v)
         self.resume()
-        self.wait_for_process_to_finish_2(limit=1000, pause=0.01)
+        self.wait_for_process_to_finish_2(limit=1000, pause=0.01, loop_func=None)
         self.log.close()
 
 
@@ -470,22 +478,22 @@ class runner:                                                               # ru
     #         update(days)
     #         status('{}/{} days'.format(days, self.N))
 
-    #--------------------------------------------------------------------------------
-    def wait_for_process_to_finish(self, v=1, limit=None, pause=None, loop_func=None):      # runner
-    #--------------------------------------------------------------------------------
-        self._print('waiting for process to finish', v=v)
-        self.resume()
-        try:
-            loop_until_2( self.parent_is_not_running, error='RUNNING', pause=pause, limit=limit, loop_func=loop_func)
-        except SystemError as e:
-            if str(e).startswith('RUNNING'):
-                self._print('process did not finish within reasonable time (10 sec) and was killed')
-                self.kill()
-            else:   
-                raise SystemError('ERROR '+str(e))
-        finally:    
-            self.parent = None
-            self.log.close()
+    # #--------------------------------------------------------------------------------
+    # def wait_for_process_to_finish(self, v=1, limit=None, pause=None, loop_func=None):      # runner
+    # #--------------------------------------------------------------------------------
+    #     self._print('waiting for process to finish', v=v)
+    #     self.resume()
+    #     try:
+    #         loop_until_2( self.parent_is_not_running, error='RUNNING', pause=pause, limit=limit, loop_func=loop_func)
+    #     except SystemError as e:
+    #         if str(e).startswith('RUNNING'):
+    #             self._print('process did not finish within reasonable time (10 sec) and was killed')
+    #             self.kill()
+    #         else:   
+    #             raise SystemError('ERROR '+str(e))
+    #     finally:    
+    #         self.parent = None
+    #         self.log.close()
         
     # #--------------------------------------------------------------------------------
     # def wait_for_process_to_finish_2(self, v=1, limit=None, error=None, pause=None, loop_func=None):      # runner

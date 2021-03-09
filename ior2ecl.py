@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 from argparse import ArgumentParser
 from shutil import which
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import sleep
 from types import GeneratorType
 from psutil import NoSuchProcess
@@ -130,7 +130,7 @@ class eclipse(runner):                                                      # ec
             if block.key()=='MINISTEP':
                 n = block.data()[0]
                 break
-        print('{}: time = {}, step = {}'.format(self.name, t, n))
+        #print('{}: time = {}, step = {}'.format(self.name, t, n))
         return int(t), int(n)        
 
     #--------------------------------------------------------------------------------
@@ -181,11 +181,9 @@ class forward_mixin:
         #print(self.loop_count)
         if self.loop_count == self.count:
             self.loop_count = 0
-            t, _ = self.time_and_step()
-            self.stop_if_limit_reached(limit='time', value=t)
-            #n = self.update_step_count(time=time)
-            self.update_func(t)
-            self.status_func('{}/{} days'.format(t, self.T))
+            self.t = self.stop_if_limit_reached(limit='time')
+            self.update_func(self.t)
+            self.status_func('{}/{} days'.format(self.t, self.T))
 
 
     #--------------------------------------------------------------------------------
@@ -199,8 +197,8 @@ class forward_mixin:
         self.status_func(self.name + ' running')
         self.wait_for_process_to_finish_2(pause=0.2, loop_func=self.loop_func)
         #days = 10
-        t, _ = self.time_and_step()
-        print(t, self.T)
+        t = self.time_and_step()[0]
+        #print(t, self.T)
         if t < self.T:
             #if 10<run.N:
             raise SystemError('ERROR ' + self.name + ' stopped unexpectedly, check the log')
@@ -406,7 +404,7 @@ class iorsim(runner):                                                        # i
         #print('line: |'+line+'|')
         if line:
             t = float(line.split()[0])
-        print('{}: time = {}, step = {}'.format(self.name, t, n))
+        #print('{}: time = {}, step = {}'.format(self.name, t, n))
         return int(t), int(n)
 
     #--------------------------------------------------------------------------------
@@ -502,7 +500,8 @@ class ior_backward(iorsim):                                            # ior_bac
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ior_backward
     #--------------------------------------------------------------------------------
-        self.interface_file(self.n+2).append('Quit')
+        #self.interface_file(self.n+2).append('Quit')
+        self.interface_file(self.n+1).append('Quit')
         self.OK_file().create_empty()
         super().quit()
         #self.wait_for_process_to_finish_2()
@@ -570,34 +569,43 @@ class simulation:
     #         return ior_forward(self.root, exe=self.exe[name], runlog=self.runlog, **self.kwargs)
 
     #-----------------------------------------------------------------------
+    #def forward(self, run_names, **kwargs):
+    #-----------------------------------------------------------------------
+
+
+    #-----------------------------------------------------------------------
     def run_forward(self, run_names, **kwargs):
     #-----------------------------------------------------------------------
         msg = ''
         self.runs = []
         result = False
         run = None
+        run_time = timedelta()
+        #start = datetime.now()
         try:
             for name in run_names:
                 run = self.run['forward'][name](exe=self.exe[name], runlog=self.runlog, **self.kwargs)
                 self.runs.append(run)
                 self.current_run = name
                 run.execute(**kwargs)
-            msg = 'INFO Simulation complete'
+                run_time += run.run_time()
+            msg = run.complete_msg(run_time=run_time)
             result = True
         except (SystemError, ProcessLookupError, NoSuchProcess) as e:
             msg = str(e)
             #print('except:',msg)
-            if msg.startswith('INFO Simulation complete'):
+            if ('simulation complete') in msg.lower():
                 result = True
             else:
                 result = False
         finally:
             # Set number of steps for convert_FUNRST progress 
-            self.N = min([r.n for r in self.runs])    
+            self.N = min([run.time_and_step()[1] for run in self.runs])  
+            #print(self.N)  
             # kill possible remaining processes
             for run in self.runs:
-                print(run.name,': ',run.n)
-                self.N = run.n
+                #print(run.name,': ',run.n)
+                #self.N = run.n
                 run.kill_and_clean()
             self.print2log('\n======  ' + msg + '  ======')
             self.runlog.close()
@@ -609,8 +617,8 @@ class simulation:
     #-----------------------------------------------------------------------
         msg = ''
         self.runs = []
+        start = datetime.now()
         try:
-            starttime = datetime.now()
             for name in ('eclipse', 'iorsim'):
                 run = self.run['backward'][name](exe=self.exe[name], runlog=self.runlog, **self.kwargs)
                 self.runs.append(run)
@@ -619,27 +627,25 @@ class simulation:
                 run.start()
             ecl, ior = self.runs
             # Start timestep loop
-            #n = 0
-            #while n < ecl.N:
             for n in range(1, ecl.N+1):
-                #n += 1
                 self.print2log('\nReport step {}'.format(n))
                 ecl.run_one_step(n, ior.satnum)
-                # Need a short stop after Eclipse has finished, otherwise IORSim can stop 
+                # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
                 sleep(pause)
                 # Run IORSim to prepare satnum input for the next Eclipse run
                 ior.run_one_step(n+1)
-                t, _ = ecl.time_and_step()
+                t = ior.time_and_step()[0]
                 print(n,t,', ecl: ',ecl.n,ecl.N,ecl.t,ecl.T,', ior: ',ior.n,ior.N,ior.t,ior.T)
                 update_func(t)
                 status_func('{}/{} days'.format(t, ecl.T))
-                if t > ecl.T:
-                    raise SystemError('INFO Simulation complete')
+                if t > ior.T:
+                    #raise SystemError(self.complete_msg(start))
+                    raise SystemError(ecl.complete_msg())
             # Timestep loop finished
             ecl.quit()
             ior.quit()
-            runtime = str(datetime.now()-starttime).split('.')[0]
-            msg = 'Simulation complete, run-time was {}'.format(runtime)
+            #msg = self.complete_msg(start)
+            msg = ecl.complete_msg()
             result = True
         except (SystemError, NoSuchProcess) as e:
             msg = str(e)
@@ -651,12 +657,16 @@ class simulation:
             self.N = min([r.n for r in self.runs])    
             for run in self.runs:
                 run.kill_and_clean()
-            #ior.kill_and_clean()
-            #status_func(msg)
             self.print2log('\n======  ' + msg + ' ======')
             self.runlog.close() 
             return result, msg
                         
+
+    # #--------------------------------------------------------------------------------
+    # def complete_msg(self, start):
+    # #--------------------------------------------------------------------------------
+    #     return 'INFO Simulation complete, run-time was '+ str(datetime.now()-start).split('.')[0]
+
 
     # #--------------------------------------------------------------------------------
     # def loop_all(self):
