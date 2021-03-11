@@ -126,7 +126,7 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
         #print('runner.__init__: ',N,T,name,case,exe,cmd,ext_iface,ext_OK)
         self.name = name
-        self.case = case
+        self.case = Path(case)
         self.exe = exe
         self.cmd = cmd
         self.log = safeopen( Path(case).parent / Path(name.lower()+'.log'), 'w' )
