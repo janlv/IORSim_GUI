@@ -1464,7 +1464,8 @@ class main_window(QMainWindow):                                    # main_window
 
         
     #-----------------------------------------------------------------------
-    def set_mode(self, mode, box=False, tip=None, days=None, func=None, run=None):  # main_window
+    #def set_mode(self, mode, box=False, tip=None, days=None, func=None, run=None):  # main_window
+    def set_mode(self, mode, box=False, tip=None, days=None, run=None):  # main_window
     #-----------------------------------------------------------------------
         if not self.case:
             self.sender().setChecked(False)
@@ -1476,7 +1477,7 @@ class main_window(QMainWindow):                                    # main_window
         if tip:
             self.days_box.setStatusTip(tip)
         self.days_box.setEnabled(box)
-        self.run_func = func
+        #self.run_func = func
         if not isinstance(run, tuple):
             run = (run,)
         self.run = run
@@ -1498,11 +1499,11 @@ class main_window(QMainWindow):                                    # main_window
         back_tip = 'Set total time interval'
         if mode=='forward':
             # need to run Eclipse before IORSim
-            self.set_mode(mode, days=self.input['ecl_days'], tip=fwd_tip, box=False, func=self.run_forward, run=('eclipse','iorsim'))
+            self.set_mode(mode, days=self.input['ecl_days'], tip=fwd_tip, box=False, run=('eclipse','iorsim'))
         elif mode=='backward':
-            self.set_mode(mode, box=True, tip=back_tip, func=self.run_backward)
+            self.set_mode(mode, box=True, tip=back_tip)
         elif mode=='eclipse':
-            self.set_mode(mode, days=self.input['ecl_days'], box=False, tip=fwd_tip, func=self.run_forward, run=mode)
+            self.set_mode(mode, days=self.input['ecl_days'], box=False, tip=fwd_tip, run=mode)
             self.update_menu_boxes('ecl')
             self.create_plot()
         elif mode=='iorsim':
@@ -1510,7 +1511,7 @@ class main_window(QMainWindow):                                    # main_window
             if self.read_ecl_data():
                 days = self.data['ecl'].get('days') or [1,]
             self.max_days = int(days[-1])
-            self.set_mode(mode, days=self.max_days, box=True, tip='Set total time interval, maximun is '+str(self.max_days), func=self.run_forward, run=mode)
+            self.set_mode(mode, days=self.max_days, box=True, tip='Set total time interval, maximun is '+str(self.max_days), run=mode)
             self.update_menu_boxes('ior')
             self.create_plot()
         else:
@@ -2906,13 +2907,13 @@ class main_window(QMainWindow):                                    # main_window
         return True
     
         
-    #-----------------------------------------------------------------------
-    def run_sim(self):                                    # main_window
-    #-----------------------------------------------------------------------
-        self.run_mode()
-        #self.run_func()
-        #runmode = {'forward':self.run_forward, 'backward':self.run_backward}
-        #runmode[self.mode]()
+    # #-----------------------------------------------------------------------
+    # def run_sim(self):                                    # main_window
+    # #-----------------------------------------------------------------------
+    #     self.run_mode()
+    #     #self.run_func()
+    #     #runmode = {'forward':self.run_forward, 'backward':self.run_backward}
+    #     #runmode[self.mode]()
 
         
     #-----------------------------------------------------------------------
@@ -2925,7 +2926,7 @@ class main_window(QMainWindow):                                    # main_window
         #self.sim_cb.setEnabled(value)
 
     #-----------------------------------------------------------------------
-    def run_mode(self):                                    # main_window
+    def run_sim(self):                                    # main_window
     #-----------------------------------------------------------------------
         print('run_mode:',self.mode, self.run)
         if not self.input_OK():
@@ -2958,63 +2959,63 @@ class main_window(QMainWindow):                                    # main_window
         self.worker.signals.finished.connect(self.run_finished)
         self.threadpool.start(self.worker)
         
-    #-----------------------------------------------------------------------
-    def run_backward(self):                                    # main_window
-    #-----------------------------------------------------------------------
-        if not self.input_OK():
-            return
-        i = self.input
-        s = self.settings
-        # Clear data
-        self.data = {}
-        self.unsmry = None
-        # Clear messages and progress
-        self.reset_progress_and_message()
-        N = int(i['days']/(i['dtecl']))+2
-        T = i['days']+i['ecl_days']+int(s.get['dt']())
-        self.update_progress(-T)
-        #self.reset_progressbar(N=T)#(N=N)
-        #self.progress = Progress(N=T)#(N=N)
-        # Disable Start button
-        self.set_toolbar_enabled(False)
-        # thread running the simulation
-        self.worker = sim_worker(mode='backward', root=i['root'], N=N, T=T, dt=s.get['dt'](),
-                                 iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](),
-                                 check_unrst=s.get['unrst'](), check_rft=s.get['rft']())
+    # #-----------------------------------------------------------------------
+    # def run_backward(self):                                    # main_window
+    # #-----------------------------------------------------------------------
+    #     if not self.input_OK():
+    #         return
+    #     i = self.input
+    #     s = self.settings
+    #     # Clear data
+    #     self.data = {}
+    #     self.unsmry = None
+    #     # Clear messages and progress
+    #     self.reset_progress_and_message()
+    #     N = int(i['days']/(i['dtecl']))+2
+    #     T = i['days']+i['ecl_days']+int(s.get['dt']())
+    #     self.update_progress(-T)
+    #     #self.reset_progressbar(N=T)#(N=N)
+    #     #self.progress = Progress(N=T)#(N=N)
+    #     # Disable Start button
+    #     self.set_toolbar_enabled(False)
+    #     # thread running the simulation
+    #     self.worker = sim_worker(mode='backward', root=i['root'], N=N, T=T, dt=s.get['dt'](),
+    #                              iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](),
+    #                              check_unrst=s.get['unrst'](), check_rft=s.get['rft']())
 
-        self.worker.signals.status_message.connect(self.update_message)
-        self.worker.signals.show_message.connect(self.show_message_text)
-        self.worker.signals.progress.connect(self.update_progress)
-        self.worker.signals.plot.connect(self.update_view_area)
-        self.worker.signals.finished.connect(self.run_finished)
-        self.threadpool.start(self.worker)
+    #     self.worker.signals.status_message.connect(self.update_message)
+    #     self.worker.signals.show_message.connect(self.show_message_text)
+    #     self.worker.signals.progress.connect(self.update_progress)
+    #     self.worker.signals.plot.connect(self.update_view_area)
+    #     self.worker.signals.finished.connect(self.run_finished)
+    #     self.threadpool.start(self.worker)
 
-    #-----------------------------------------------------------------------
-    def run_forward(self):                          # main_window
-    #-----------------------------------------------------------------------
-        if not self.input_OK():
-            return
-        i = self.input
-        # clear messages and progress
-        self.reset_progress_and_message()
-        T = i['days']
-        self.update_progress(-T)
-        # self.reset_progressbar(N=T)
-        # self.progress = Progress(N=T)
-        # disable start button
-        self.set_toolbar_enabled(False)
-        s = self.settings
-        # reset data
-        self.data = {}
-        self.unsmry = None  # Signals to re-read Eclipse data
-        self.worker = sim_worker(mode='forward', runs=self.run, root=i['root'], T=T, 
-                                 iorexe=s.get['iorsim'](), eclexe=s.get['eclrun']())
-        self.worker.signals.status_message.connect(self.update_message)
-        self.worker.signals.show_message.connect(self.show_message_text)
-        self.worker.signals.plot.connect(self.update_view_area)
-        self.worker.signals.progress.connect(self.update_progress)
-        self.worker.signals.finished.connect(self.run_finished)
-        self.threadpool.start(self.worker)
+    # #-----------------------------------------------------------------------
+    # def run_forward(self):                          # main_window
+    # #-----------------------------------------------------------------------
+    #     if not self.input_OK():
+    #         return
+    #     i = self.input
+    #     # clear messages and progress
+    #     self.reset_progress_and_message()
+    #     T = i['days']
+    #     self.update_progress(-T)
+    #     # self.reset_progressbar(N=T)
+    #     # self.progress = Progress(N=T)
+    #     # disable start button
+    #     self.set_toolbar_enabled(False)
+    #     s = self.settings
+    #     # reset data
+    #     self.data = {}
+    #     self.unsmry = None  # Signals to re-read Eclipse data
+    #     self.worker = sim_worker(mode='forward', runs=self.run, root=i['root'], T=T, 
+    #                              iorexe=s.get['iorsim'](), eclexe=s.get['eclrun']())
+    #     self.worker.signals.status_message.connect(self.update_message)
+    #     self.worker.signals.show_message.connect(self.show_message_text)
+    #     self.worker.signals.plot.connect(self.update_view_area)
+    #     self.worker.signals.progress.connect(self.update_progress)
+    #     self.worker.signals.finished.connect(self.run_finished)
+    #     self.threadpool.start(self.worker)
 
 
     #-----------------------------------------------------------------------
