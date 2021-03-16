@@ -12,7 +12,7 @@ import sys, traceback
 #import os
 #import psutil
 from time import sleep
-from datetime import datetime
+#from datetime import datetime
 from pathlib import Path
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
@@ -23,10 +23,22 @@ import shutil
 import warnings
 import copy
 
-from ior2ecl import simulation
+from ior2ecl import simulation, dtecl, main as ior2ecl_main
 from IORlib.utils import Progress, exit_without_atexit, assert_python_version, get_substrings, return_matching_string, delete_all, file_contains
-from IORlib.ECL import unfmt_file
+from IORlib.ECL import unfmt_file, input_days_and_steps as ECL_input_days_and_steps
 import GUI_icons
+
+gui_dir = Path('GUI')
+case_dir = gui_dir/'cases'
+input_file = gui_dir/'input.txt'
+settings_file = gui_dir/'settings.txt'
+
+default_font = 'default'
+default_size = 10
+default_weight = 50
+to_screen = False
+quiet = True
+echo = False
 
 blue   = QColor(31,119,180)  #1f77b4 
 orange = QColor(255,127,14)  #ff7f0e  
@@ -38,13 +50,6 @@ pink   = QColor(227,119,194) #e377c2
 gray   = QColor(127,127,127) #7f7f7f
 yellow = QColor(188,189,34)  #bcbd22
 turq   = QColor(23,190,207)  #17becf
-default_font = 'default'
-default_size = 10
-default_weight = 50
-to_screen = False
-quiet = True
-echo = False
-
 
 #-----------------------------------------------------------------------
 def open_file_dialog(win, text, filetype):
@@ -52,7 +57,6 @@ def open_file_dialog(win, text, filetype):
     options = QFileDialog.Options() | QFileDialog.DontUseNativeDialog
     fileName, _ = QFileDialog.getOpenFileName(win, text, "", filetype, options=options)
     return fileName
-
 
 
 #-----------------------------------------------------------------------
@@ -133,10 +137,10 @@ def get_eclipse_well_yaxis_fluid(root):
         for line in f:
             if line.lstrip().startswith('--') or line.isspace():
                 continue
-            if line.lstrip().startswith('SUMMARY'):
+            if line.lstrip().upper().startswith('SUMMARY'):
                 summary = True
                 continue
-            if line.lstrip().startswith('RUNSUM'):
+            if line.lstrip().upper().startswith('RUNSUM'):
                 break
             if summary:
                 kw = line.strip()
@@ -167,6 +171,7 @@ def get_eclipse_well_yaxis_fluid(root):
         raise SystemError('No variables in SUMMARY section.'+
                           '\n\nEclipse plotting disabled.')
     wells = list(set(wells))
+    wells = [w.replace("'","") for w in wells]
     #print(wells)
     F = {'O':'Oil', 'W':'Water', 'G':'Gas'}
     P = {'P':'prod', 'R':'rate'}
@@ -176,81 +181,7 @@ def get_eclipse_well_yaxis_fluid(root):
         wells.insert(0, 'Field')
     #fluids.insert(-1, 'Temp')
     return wells, yaxis, fluids 
-        
-
-#-----------------------------------------------------------------------
-def get_timestep_iorsim(root):
-#-----------------------------------------------------------------------
-#
-#  Extract dtecl from IORSim input file .trcinp
-#  Assumed format:    
-#    
-#  *INTEGRATION
-#  # tstart  tstop
-#    0.0  1.e99
-#  # dtmin dtmax 
-#    0.0  1.e99
-#  # dtecl dteclmax 
-#    5      20 
-#  # metnum
-#    0
-#
-    read = False
-    dt = ()
-    with open(str(root)+'.trcinp') as f:
-        for line in f:
-            line = line.lstrip()
-            if line.startswith('#'):
-                continue
-            if line.startswith('*INTEGRATION'):
-                read = True
-                continue
-            if read:
-                dt += tuple(line.split())
-                if len(dt) > 5:
-                    #print(dt)
-                    return int(float(dt[4])) 
-                
-
-#-----------------------------------------------------------------------
-def get_timestep_eclipse(root):
-#-----------------------------------------------------------------------
-    #print('get_timestep_eclipse: '+root)
-    read = False
-    dt = []
-    step = 1
-    with open(str(root)+'.DATA', encoding='latin-1') as f:
-        for line in f:
-            line = line.lstrip()
-            if line.startswith('--'):
-                continue
-            if line.startswith('TSTEP'):
-                read = True
-                continue
-            if line.startswith('END'):
-                break
-            if read:
-                if '/' in line:
-                    read = False
-                    line = line.split('/')[0]
-                words = line.split()
-                for w in words:
-                    if '*' in w:
-                        d = [float(n) for n in w.split('*')]
-                        dt.append(d[0]*d[1])
-                        step = int(d[1])
-                    else:
-                        dt.append(float(w))
-                #if len(dt)>2:
-                #        raise Warning('More than one TSTEP read in DATA-file: {}'.format(dt))
-                #    if '*' in dt[0]:
-                #        n = dt[0].split('*')
-                #        return int(n[0])*int(n[1])
-    #print(dt)
-    #print(sum(dt))
-    return int(sum(dt)), step
             
-    
     
 #-----------------------------------------------------------------------
 def show_message(window, kind, text='', extra='', detail=None):
@@ -387,13 +318,12 @@ class base_worker(QRunnable):
         finally:
             self.signals.finished.emit()
 
+
 #===========================================================================
 class sim_worker(base_worker):                                              
 #===========================================================================
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        #self.finished = False
-        #self.success = None
         self.sim = None
         self.signals.stop.connect(self.stop_sim)
 
@@ -409,299 +339,35 @@ class sim_worker(base_worker):
         if self.sim:
             self.sim.cancel()
 
+
     @Slot()
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
-        self.sim = simulation(status=self.status_message, progress=self.update_progress, plot=self.update_plot, **self.kwargs)
+        #------------------------------------
+        def progress(run=None, value=None):
+        #------------------------------------
+            if run and not value:
+                value = run.t
+            self.update_progress(value)
+        #------------------------------------
+        def status(run=None, value=None, mode='forward'):
+        #------------------------------------
+            if run and not value:
+                value = '{}/{} days'.format(run.t, run.T)
+                if mode=='forward':
+                    value = run.name + ' ' + value
+            self.status_message(value)
+        #------------------------------------
+        def plot(run=None, value=None):
+        #------------------------------------
+            self.update_plot()
+            
+        self.sim = simulation(status=status, progress=progress, plot=plot, **self.kwargs)
         result, msg = self.sim.run()
-        #self.success = result
-        #self.update_progress(0)
-        #self.update_plot()
-        #self.status_message(msg)
         self.show_message(msg)
-        #print(msg)
-        #self.update_plot()
-        #self.update_progress(-1)
         return result
 
-
-# #===========================================================================
-# class convert_worker(base_worker):                                              
-# #===========================================================================
-#     def __init__(self, **kwargs):
-#         super().__init__(**kwargs)
-
-#     @Slot()
-#     #-----------------------------------------------------------------------
-#     def runnable(self):
-#     #-----------------------------------------------------------------------
-#         sim = simulation(status=self.status_message, progress=self.update_progress, plot=self.update_plot, **self.kwargs)
-#         sim.convert_restart_file(N=24, **self.kwargs)
-
-
-
-# #===========================================================================
-# class Backward(Base_worker):                                              
-# #===========================================================================
-#     #def __init__(self, sim, *args, N=1, dt=1, **kwargs):
-#     def __init__(self, sim, N=1): #, **kwargs):
-#         #super(Backward, self).__init__(N=N)
-#         super().__init__(N=N)
-#         self.sim = sim
-#         #self.dt = dt
-        
-#     # @Slot()
-#     # #-----------------------------------------------------------------------
-#     # def runnable(self):
-#     # #-----------------------------------------------------------------------
-#     #     sim = self.sim
-#     #     msg = ''
-#     #     try:
-#     #         self.status_message('Starting Eclipse...')
-#     #         sim.init_eclipse_run()
-#     #         sim.start_eclipse()
-#     #         self.status_message('Starting IORSim...')
-#     #         sim.init_iorsim_run()
-#     #         sim.start_iorsim()
-#     #         # Start timestep loop
-#     #         while sim.n < sim.nsteps:
-#     #             days = sim.run_one_step()
-#     #             self.update_progress(days)
-#     #             self.update_plot()
-#     #             self.status_message('{}/{} days'.format(days, self.N))
-#     #             if days>self.N:
-#     #                 raise SystemError('INFO Simulation complete')
-#     #         # Timestep loop finished
-#     #         sim.terminate_runs()
-#     #         runtime = str(datetime.now()-sim.starttime).split('.')[0]
-#     #         msg = 'Simulation complete, run-time was {}'.format(runtime)
-#     #         result = True
-#     #     except (SystemError, psutil.NoSuchProcess) as e:
-#     #         msg = str(e)
-#     #         self.show_message(msg)
-#     #         if msg.startswith('INFO Simulation complete'):
-#     #             result = True
-#     #         else:
-#     #             result = False
-#     #     finally:
-#     #         sim.kill_and_clean(sim.runs())
-#     #         self.status_message(msg)
-#     #         sim.print2log('\n======  ' + msg + ' ======')
-#     #         sim.runlog.close() 
-#     #         self.update_plot()
-#     #         self.update_progress(-1)
-#     #         return result
-
-#     #-----------------------------------------------------------------------
-#     def killsim(self):
-#     #-----------------------------------------------------------------------
-#         if self.sim:
-#             self.sim.cancel()
-
-#     #-----------------------------------------------------------------------
-#     def update(self, days):
-#     #-----------------------------------------------------------------------
-#         self.update_progress(days)
-#         self.update_plot()
-
-#     @Slot()
-#     #-----------------------------------------------------------------------
-#     def runnable(self):
-#     #-----------------------------------------------------------------------
-#         #result, msg = self.sim.run_backward(pause=0.5, status_func=self.status_message, update_func=self.update)
-#         result, msg = self.sim.run(pause=0.5, status_func=self.status_message, update_func=self.update)
-#         self.update(-1)
-#         self.status_message(msg)
-#         self.show_message(msg)
-#         print(msg)
-#         #self.update_plot()
-#         #self.update_progress(-1)
-#         return result
-
-
-# #===========================================================================
-# class Forward(Base_worker):                                              
-# #===========================================================================
-#     def __init__(self, sim, N=1, run=None, *args, **kwargs):
-#         #super(Forward, self).__init__(N=N)
-#         super().__init__(N=N)
-#         self.sim = sim
-#         self.current = None
-#         if not run: 
-#             raise SystemError('Forward-class: Missing run-argument')
-#         if not isinstance(run, tuple):
-#             run = (run,)
-#         self.run_names = run
-#         self.run = None
-#         self.loop_count = 0
-
-
-#     #-----------------------------------------------------------------------
-#     def loop_func(self):
-#     #-----------------------------------------------------------------------
-#         if self.sim.is_killed:
-#             raise SystemError('INFO ' + self.run.name + ' stopped after ' + str(self.t) + ' days')
-#         self.loop_count += 1
-#         if self.loop_count == 5:
-#             self.loop_count = 0
-#             days = self.sim.days(self.run.name)
-#             if days > self.N:
-#                 raise SystemError('INFO Simulation complete')
-#             # Increment number of steps if days has increased. 
-#             # NB! Possible to miss a step if refresh is slow            
-#             if days > self.t:
-#                 self.sim.n += 1
-#             self.sim.t = self.t = days
-#             self.update_progress(self.t)
-#             self.status_message('{}/{} days'.format(self.t, self.N))
-#             self.update_plot()
-
-
-#     @Slot()
-#     #-----------------------------------------------------------------------
-#     def runnable(self):
-#     #-----------------------------------------------------------------------
-#         sim = self.sim
-#         msg = ''
-#         runs = []
-#         result = False
-#         try:
-#             for run_name in self.run_names:
-#                 sim.n = 0
-#                 # start run
-#                 self.run = run = sim.init_run(run=run_name)
-#                 runs.append(run)
-#                 self.status_message('Starting ' + run.name)
-#                 self.update_progress(0)
-#                 run.start()
-#                 self.current = run_name 
-#                 self.status_message(run.name + ' running')
-#                 run.wait_for_process_to_finish_2(pause=0.2, loop_func=self.loop_func)
-#                 #run.wait_for( run.parent_is_not_running, pause=0.2, loop_func=self.loop_func )
-#                 days = self.sim.days(self.run.name)
-#                 if days<self.N:
-#                     raise SystemError('ERROR ' + run.name + ' stopped unexpectedly, check the log')
-#             msg = 'Simulation complete'
-#             result = True
-#         except (SystemError, ProcessLookupError, psutil.NoSuchProcess) as e:
-#             msg = str(e)
-#             self.show_message(msg)
-#             if msg.startswith('INFO Simulation complete'):
-#                 result = True
-#             else:
-#                 result = False
-#         finally:
-#             # kill possible remaining processes
-#             sim.kill_and_clean(runs)
-#             sim.print2log('\n======  ' + msg + '  ======')
-#             sim.runlog.close()
-#             self.update_plot()
-#             self.update_progress(-1)
-#             self.status_message(msg)
-#             self.current = None
-#             return result
-                        
-
-
-# #===========================================================================
-# class Forward_2(Base_worker):                                              
-# #===========================================================================
-#     def __init__(self, sim, N=1, run=None): #, *args, **kwargs):
-#         #super(Forward, self).__init__(N=N)
-#         super().__init__(N=N)
-#         self.sim = sim
-#         if not run: 
-#             raise SystemError('Forward-class: Missing run-argument')
-#         if not isinstance(run, tuple):
-#             run = (run,)
-#         self.run_names = run
-#         #self.loop_count = 0
-
-#     #-----------------------------------------------------------------------
-#     def killsim(self):
-#     #-----------------------------------------------------------------------
-#         if self.sim:
-#             self.sim.cancel()
-
-#     #-----------------------------------------------------------------------
-#     def update(self, days):
-#     #-----------------------------------------------------------------------
-#         self.update_progress(days)
-#         self.update_plot()
-
-#     # #-----------------------------------------------------------------------
-#     # def status(self, text):
-#     # #-----------------------------------------------------------------------
-#     #     self.status_message(text)
-
-#     #-----------------------------------------------------------------------
-#     def current_run(self):
-#     #-----------------------------------------------------------------------
-#         if self.sim:
-#             return self.sim.current_run 
-
-#     @Slot()
-#     #-----------------------------------------------------------------------
-#     def runnable(self):
-#     #-----------------------------------------------------------------------
-#         #result, msg = self.sim.run_forward(self.run_names, status_func=self.status_message, update_func=self.update, 
-#         #                                   pause=0.01, count=5)
-#         result, msg = self.sim.run(runs=self.run_names, status_func=self.status_message, update_func=self.update, 
-#                                    pause=0.01, count=5)
-#         #print(msg)
-#         self.update(-1)
-#         self.status_message(msg)
-#         self.show_message(msg)
-#         #print(self.sim.n)
-#         return result
-
-
-# #===========================================================================
-# class Convert(Base_worker):                                              
-# #===========================================================================
-#     def __init__(self, root, *args, **kwargs):
-#         super(Convert, self).__init__()
-#         self.root = str(root)
-#         # convert file
-#         ior = self.root+'_IORSim_PLOT'  
-#         self.funrst = ior+'.FUNRST'
-#         #self.unrst = ior+'.UNRST'
-      
-#     @Slot()
-#     #-----------------------------------------------------------------------
-#     def runnable(self):
-#     #-----------------------------------------------------------------------
-#         self.status_message('Converting restart file...')
-#         ior_unrst = fmt_file(self.funrst).convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
-#                                                   progress=self.update_progress) 
-#         #print(ior_unrst)
-#         #self.status_message('Convert finished')        
-#         # Backup original Eclipse UNRST-file
-#         root_unrst = Path(self.root+'.UNRST')
-#         if root_unrst.is_file():
-#             shutil.copy(root_unrst, self.root+'_ECLIPSE.UNRST')
-#         # Merge Eclipse and IORSim UNRST-files
-#         if not root_unrst.is_file() or not ior_unrst.is_file():
-#             self.status_message('')
-#             return
-#             #raise SystemError('WARNING Unable to merge restart files, {} or {} does not exist'.format(root_unrst, ior_unrst))
-#         ecl_sec = Section(root_unrst, start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
-#         ior_sec = Section(ior_unrst,  start_after='DOUBHEAD', end_before='SEQNUM')
-#         self.status_message('Merging Eclipse and IORSim restart files...')
-#         ior = Path(ior_unrst)
-#         merged = ior.parent/(ior.stem+'_MERGED.UNRST')
-#         merged = unfmt_file(merged).create(ecl_sec, ior_sec)
-#         #print(merged)
-#         # Rename merged UNRST-file to the case name
-#         if not merged:
-#             raise SystemError('WARNING Unable to merge {} and {}'.format(root_unrst, ior_unrst))
-#         if merged.is_file():
-#             merged.replace(self.root+'.UNRST')
-#         # reset progressbar
-#         self.status_message('Simulation complete, restart file ready')
-#         self.update_progress(-1)
-        
 
 #===========================================================================
 class Mpl_canvas(FigureCanvasQTAgg):                                              
@@ -991,15 +657,16 @@ class main_window(QMainWindow):                                    # main_window
         self.view = False
         self.plot_ref = None
         #self.modes = ('forward', 'backward', 'eclipse', 'iorsim')
-        guidir = Path('GUI')
-        guidir.mkdir(exist_ok=True)
-        self.settings = Settings(self, file=str(guidir/'settings.txt'))
+        #guidir = Path('GUI')
+        gui_dir.mkdir(exist_ok=True)
+        self.settings = Settings(self, file=str(settings_file))
+        #self.settings = Settings(self, file=str(guidir/'settings.txt'))
         #font = QFont(default_font, pointSize=default_size, weight=default_weight)
         #print(self.settings.get['fontsize']())
         #self.setFont(font)
-        self.casedir = guidir/'cases'
-        self.input_file = guidir/'input.txt'
-        self.input = {'root':None, 'ecl_days':None, 'ecl_step':None, 'dtecl':None, 'days':None, 'step':None, 'species':[], 'mode':None} #, 'case':None}
+        self.casedir = case_dir #gui_dir/'cases'
+        self.input_file = input_file #gui_dir/'input.txt'
+        self.input = {'root':None, 'ecl_days':None, 'dtecl':None, 'days':None, 'step':None, 'species':[], 'mode':None} #, 'case':None}
         self.input_to_save = ['root','days','mode']
         self.load_input()
         self.initUI()
@@ -1296,10 +963,10 @@ class main_window(QMainWindow):                                    # main_window
     def set_variables_from_casefiles(self):                # main_window
     #-----------------------------------------------------------------------
         inp = self.input
-        inp['dtecl'] = inp['ecl_days'] = inp['ecl_step'] = inp['species'] = None
+        inp['dtecl'] = inp['ecl_days'] = inp['species'] = None
         if inp['root']:
-            inp['dtecl']   = get_timestep_iorsim(inp['root'])
-            inp['ecl_days'], inp['ecl_step'] = get_timestep_eclipse(inp['root'])
+            inp['dtecl']   = dtecl(inp['root'])
+            inp['ecl_days'] = ECL_input_days_and_steps(inp['root'])[0]
             inp['species'] = get_species(inp['root'])
 
 
@@ -2901,20 +2568,11 @@ class main_window(QMainWindow):                                    # main_window
             show_message(self, 'warning', text='IORSim program missing in Settings')
             self.settings.open()
             return False
-        if self.mode != 'eclipse' and i['dtecl'] == 0:
-            show_message(self, 'warning', text='IORSim timestep is zero')
-            return False
+        # if self.mode != 'eclipse' and i['dtecl'] == 0:
+        #     show_message(self, 'warning', text='IORSim timestep is zero')
+        #     return False
         return True
     
-        
-    # #-----------------------------------------------------------------------
-    # def run_sim(self):                                    # main_window
-    # #-----------------------------------------------------------------------
-    #     self.run_mode()
-    #     #self.run_func()
-    #     #runmode = {'forward':self.run_forward, 'backward':self.run_backward}
-    #     #runmode[self.mode]()
-
         
     #-----------------------------------------------------------------------
     def set_toolbar_enabled(self, value):                                  # main_window
@@ -2928,7 +2586,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def run_sim(self):                                    # main_window
     #-----------------------------------------------------------------------
-        print('run_mode:',self.mode, self.run)
+        #print('run_mode:',self.mode, self.run)
         if not self.input_OK():
             return
         # Clear data
@@ -2936,21 +2594,17 @@ class main_window(QMainWindow):                                    # main_window
         self.unsmry = None
         # Clear messages and progress
         self.reset_progress_and_message()
-        # Disable Start button
+        # Disable toolbar
         self.set_toolbar_enabled(False)
         i = self.input
         s = self.settings
         if self.mode=='backward':
-            N = int(i['days']/(i['dtecl']))+2
-            T = i['days']+i['ecl_days']+int(s.get['dt']())
-            self.update_progress(-T)
-            self.worker = sim_worker(mode='backward', root=i['root'], N=N, T=T, dt=s.get['dt'](),
-                                 iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](),
-                                 check_unrst=s.get['unrst'](), check_rft=s.get['rft']())
+             self.worker = sim_worker(mode='backward', root=i['root'], time=i['days'], 
+                                     dt_init=s.get['dt'](), dt_ecl=i['dtecl'], time_ecl=i['ecl_days'],
+                                     iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](),
+                                     check_unrst=s.get['unrst'](), check_rft=s.get['rft']())
         elif self.mode in ('forward','eclipse','iorsim'):
-            T = i['days']
-            self.update_progress(-T)
-            self.worker = sim_worker(mode='forward', runs=self.run, root=i['root'], T=T, 
+             self.worker = sim_worker(mode='forward', runs=self.run, root=i['root'], time=i['days'], 
                                  iorexe=s.get['iorsim'](), eclexe=s.get['eclrun']())
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
@@ -2959,64 +2613,6 @@ class main_window(QMainWindow):                                    # main_window
         self.worker.signals.finished.connect(self.run_finished)
         self.threadpool.start(self.worker)
         
-    # #-----------------------------------------------------------------------
-    # def run_backward(self):                                    # main_window
-    # #-----------------------------------------------------------------------
-    #     if not self.input_OK():
-    #         return
-    #     i = self.input
-    #     s = self.settings
-    #     # Clear data
-    #     self.data = {}
-    #     self.unsmry = None
-    #     # Clear messages and progress
-    #     self.reset_progress_and_message()
-    #     N = int(i['days']/(i['dtecl']))+2
-    #     T = i['days']+i['ecl_days']+int(s.get['dt']())
-    #     self.update_progress(-T)
-    #     #self.reset_progressbar(N=T)#(N=N)
-    #     #self.progress = Progress(N=T)#(N=N)
-    #     # Disable Start button
-    #     self.set_toolbar_enabled(False)
-    #     # thread running the simulation
-    #     self.worker = sim_worker(mode='backward', root=i['root'], N=N, T=T, dt=s.get['dt'](),
-    #                              iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](),
-    #                              check_unrst=s.get['unrst'](), check_rft=s.get['rft']())
-
-    #     self.worker.signals.status_message.connect(self.update_message)
-    #     self.worker.signals.show_message.connect(self.show_message_text)
-    #     self.worker.signals.progress.connect(self.update_progress)
-    #     self.worker.signals.plot.connect(self.update_view_area)
-    #     self.worker.signals.finished.connect(self.run_finished)
-    #     self.threadpool.start(self.worker)
-
-    # #-----------------------------------------------------------------------
-    # def run_forward(self):                          # main_window
-    # #-----------------------------------------------------------------------
-    #     if not self.input_OK():
-    #         return
-    #     i = self.input
-    #     # clear messages and progress
-    #     self.reset_progress_and_message()
-    #     T = i['days']
-    #     self.update_progress(-T)
-    #     # self.reset_progressbar(N=T)
-    #     # self.progress = Progress(N=T)
-    #     # disable start button
-    #     self.set_toolbar_enabled(False)
-    #     s = self.settings
-    #     # reset data
-    #     self.data = {}
-    #     self.unsmry = None  # Signals to re-read Eclipse data
-    #     self.worker = sim_worker(mode='forward', runs=self.run, root=i['root'], T=T, 
-    #                              iorexe=s.get['iorsim'](), eclexe=s.get['eclrun']())
-    #     self.worker.signals.status_message.connect(self.update_message)
-    #     self.worker.signals.show_message.connect(self.show_message_text)
-    #     self.worker.signals.plot.connect(self.update_view_area)
-    #     self.worker.signals.progress.connect(self.update_progress)
-    #     self.worker.signals.finished.connect(self.run_finished)
-    #     self.threadpool.start(self.worker)
-
 
     #-----------------------------------------------------------------------
     def show_message_text(self, text):
@@ -3045,35 +2641,19 @@ class main_window(QMainWindow):                                    # main_window
         #    self.convert_FUNRST()   
         self.worker = None
 
-    # #-----------------------------------------------------------------------
-    # def convert_FUNRST(self):
-    # #-----------------------------------------------------------------------
-    #     # convert FUNRST to UNRST
-    #     self.convert = convert_worker(root=self.input['root'])
-    #     if not Path(self.convert.funrst).is_file():# or self.progressbar.value() < 1:
-    #         return
-    #     self.convert.signals.progress.connect(self.update_progressbar)
-    #     #self.convert.signals.finished.connect(self.convert_finished)
-    #     self.convert.signals.status_message.connect(self.update_message)
-    #     self.convert.signals.show_message.connect(self.show_message)
-    #     self.reset_progressbar(N=self.worker.sim.N)
-    #     self.threadpool.start(self.convert)
-
-        
-    # #-----------------------------------------------------------------------
-    # def convert_finished(self):
-    # #-----------------------------------------------------------------------
-    #     self.convert = None
 
     #-----------------------------------------------------------------------
     def killsim(self):                                          # main_window
     #-----------------------------------------------------------------------
         if self.worker:
             self.worker.signals.stop.emit()
-            #while not self.worker.finished:
-            while self.worker:
-                #print('sleep')
-                sleep(0.1)
+            # If quit while running simulation, we wait for up to 5 seconds
+            # to allow the simulation to kill processes. 
+            n = 0
+            while self.worker.sim and self.worker.sim.runs and n<500:
+                n += 1
+                #print(n)
+                sleep(0.01)
             
         
     #-----------------------------------------------------------------------
@@ -3146,12 +2726,17 @@ class Highlighter(QSyntaxHighlighter):
 
 if __name__ == '__main__':
     assert_python_version(major=3, minor=6)
-    app = QApplication(sys.argv) 
-    #app.setFont(QFont(default_font, pointSize=default_size, weight=default_weight))
-    #app.setWindowIcon(QIcon('ior2ecl_logo.png'))
-    window = main_window()
-    app.exec_()
-        
-    exit_without_atexit()
+    if len(sys.argv) > 1:
+        print()
+        print('   This is the terminal-version of IORSim_GUI')
+        print('   Start IORSim_GUI without arguments to open the GUI')
+        print()
+        ior2ecl_main(case_dir=case_dir, settings_file=settings_file)
+    else:
+        app = QApplication(sys.argv) 
+        #app.setFont(QFont(default_font, pointSize=default_size, weight=default_weight))
+        window = main_window()
+        app.exec_()
+        exit_without_atexit()
 
     

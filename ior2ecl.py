@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import atexit
+from collections import namedtuple
 from pathlib import Path
 import sys
 from argparse import ArgumentParser
@@ -13,97 +14,11 @@ from psutil import NoSuchProcess
 import shutil
 import traceback
 
-from IORlib.utils import safeopen, Progress, check_endtag, warn_empty_file, loop_until_2, silentdelete, assert_python_version, exit_without_atexit, delete_files_matching, file_contains
+from IORlib.utils import safeopen, Progress, check_endtag, warn_empty_file, silentdelete, exit_without_atexit, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks, unfmt_file, fmt_file, Section
+from IORlib.ECL import check_blocks, unfmt_file, fmt_file, Section, input_days_and_steps as ECL_input_days_and_steps
 
 
-#--------------------------------------------------------------------------------
-def main():
-#--------------------------------------------------------------------------------
-    try:
-        assert sys.version_info >= (3,6)
-    except AssertionError:
-        raise SystemExit('\nThe minimal python version for this script is 3.6, you are running {}.{}\n'.
-                         format(*sys.version_info))
-        #assert_python_version(major=3, minor=6)
-    
-    try:
-        print()
-        args = parse_input()
-        sim = ior2ecl(root=args['root'], dt=args['dt'], nsteps=args['n'], eclrun=args['eclrun'], iorsim=args['iorsim'],
-                      iorargs=args['iorargs'], v=args['v'], timer=args['timer'], keep_files=args['keep_files'],
-                      to_screen=args['to_screen']) 
-        sim.check_input()
-        sim.init_eclipse_run()
-        sim.init_iorsim_run()
-        
-        print()
-        sim.start_eclipse()
-        sim.start_iorsim()
-
-        print()
-        for t in range(1, sim.nsteps+1):
-            if sim.progress:
-                sim.progress.print(sim.t) 
-            sim.run_one_step()
-        print()
-            
-        sim.terminate_runs()
-        sim.close_logfiles()
-        exit_without_atexit()  # do not call functions registered with atexit 
-        
-    except KeyboardInterrupt:
-        print()
-        print()
-        print('  Interrupted by user, aborting....')
-        print()
-    except SystemError as e:
-        raise SystemExit('\n'+str(e)+'\nExiting...')
-        
-
-#--------------------------------------------------------------------------------
-def parse_input():
-#--------------------------------------------------------------------------------
-    parser = ArgumentParser()
-    parser.add_argument('-root',       help='Eclipse case name without .DATA', required=True)
-    parser.add_argument('-dt',         help='Timestep length', type=float, required=True)
-    parser.add_argument('-n',          help='Number of timesteps', type=int, required=True)
-    parser.add_argument('-eclrun',     help="Name of excecutable, default is 'eclrun'", default='eclrun')
-    parser.add_argument('-iorsim',     help="Name of IORSim executable, default is 'IORSimX'", default='IORSimX')
-    parser.add_argument('-iorargs',    help='Additional arguments passed to IORSim, should be quoted', default='')
-    parser.add_argument('-v',          help='Verbosity level, higher number increase verbosity, default is 3', type=int, default=3)
-    parser.add_argument('-timer',      help='Record execution times, default is FALSE', action='store_true')
-    parser.add_argument('-keep_files', help='Interface-files are not deleted after completion', action='store_true')
-    parser.add_argument('-to_screen',  help='Logging output is sent to the terminal', action='store_true')
-    args = vars(parser.parse_args())
-    return args
-
-
-
-# #--------------------------------------------------------------------------------
-# def wait_for(runner, func, *args, log=False, assert_running=True, error=None, raise_error=True,
-#              limit=100000, sleep_sec=0.01, kill_func=None, kill_msg=None, **kwargs):
-# #--------------------------------------------------------------------------------
-#     runner._print('calling wait_for( ' + func.__qualname__ + ' )...', v=3, end='')
-#     if assert_running:
-#         assert_running = runner.assert_running
-#     try:
-#         n = loop_until(func, *args, **kwargs, limit=limit, assert_running=assert_running,
-#                        error=error, sleep_sec=sleep_sec, kill_func=kill_func, kill_msg=kill_msg)
-#         runner._print(' {:d} loops'.format(n), v=3, tag='')
-#         if callable(log):
-#             runner._print(log())
-#     except SystemError as e:
-#         msg = str(e)
-#         if raise_error or msg.startswith('ERROR'):
-#             raise e
-#         else:
-#             n = msg.split('>')[-1].split()[0]
-#             runner._print(n + '  loops', v=3, tag='')            
-#             return False
-#     else:
-#         return True
 
 #====================================================================================
 class eclipse(runner):                                                      # eclipse
@@ -120,6 +35,7 @@ class eclipse(runner):                                                      # ec
         self.unrst = Path(root+'.UNRST')
         self.unsmry = unfmt_file(root+'.UNSMRY')
         self.rft = Path(root+'.RFT')
+        self.inputfile = Path(root+'.DATA')
 
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                # eclipse
@@ -141,6 +57,7 @@ class eclipse(runner):                                                      # ec
         silentdelete( [self.unrst, self.rft] +
                       [str(self.case)+ext for ext in ('.SMSPEC','.UNSMRY','.RTELOG','.RTEMSG','_ECLIPSE.UNRST')] )
     
+
     #--------------------------------------------------------------------------------
     def check_input(self):                                                  # eclipse
     #--------------------------------------------------------------------------------
@@ -166,12 +83,9 @@ class eclipse(runner):                                                      # ec
 class forward_mixin:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def init_control_func(self, status=lambda *x:None, progress=lambda *x:None, plot=lambda:None, 
-                              pause=0.01, count=5, **kwargs):
+    def init_control_func(self, update=(), pause=0.01, count=5, **kwargs):
     #--------------------------------------------------------------------------------
-        self.status = status
-        self.progress = progress
-        self.plot = plot
+        self.update = update
         self.loop_count = 0
         self.pause = pause
         self.count = count
@@ -181,14 +95,11 @@ class forward_mixin:
     #--------------------------------------------------------------------------------
         self.stop_if_canceled()
         self.loop_count += 1
-        #print(self.loop_count)
         if self.loop_count == self.count:
             self.loop_count = 0
             self.t = self.stop_if_limit_reached(limit='time')
-            #print(self.t, self.T, self.n, self.N)
-            self.progress(self.t)
-            self.status('{}/{} days'.format(self.t, self.T))
-            self.plot()
+            for func in self.update:
+                func(run=self)
 
 
 #====================================================================================
@@ -204,7 +115,7 @@ class ecl_forward(forward_mixin, eclipse):                              # ecl_fo
     #--------------------------------------------------------------------------------
         super().check_input()
         ### Check root.DATA exists and that READDATA keyword is NOT present
-        if file_contains(str(self.case)+'.DATA', text='READDATA', comment='--'):
+        if file_contains(str(self.root)+'.DATA', text='READDATA', comment='--'):
             raise SystemError('WARNING The current case cannot be used in forward-mode: '+
                               'Eclipse input contains the READDATA keyword.')
 
@@ -344,6 +255,7 @@ class iorsim(runner):                                                        # i
         super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, **kwargs)
         self.trcconc = None
         self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
+        self.inputfile = Path(abs_root+'.trcinp')
 
 
     #--------------------------------------------------------------------------------
@@ -476,43 +388,73 @@ class ior_backward(iorsim):                                            # ior_bac
 class simulation:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, mode, root=None, pause=0.5, runs=None, iorexe=None, eclexe=None, to_screen=False, echo=False, 
-                 status=lambda *x:None, progress=lambda *x:None, plot=lambda:None, **kwargs):
+    # def __init__(self, mode=None, root=None, pause=0.5, runs=[], iorexe=None, eclexe=None, 
+    #              to_screen=False, echo=False, status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None, 
+    #              time=0, time_ecl=None, dt_ecl=None, dt_init=0, **kwargs):
+    def __init__(self, mode=None, root=None, pause=0.5, runs=[], to_screen=False, header=None,
+                 status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None, **kwargs):
     #--------------------------------------------------------------------------------
         self.name = 'ior2ecl'
-        # Functions 
-        self.status = status
-        self.progress = progress
-        self.plot = plot
-        #
+        self.root = root
+        self.update = namedtuple('update',['status','progress','plot'])(status, progress, plot)
         self.pause = pause
-        #if echo:
-        #    print('  Welcome to ' + self.name + '!' )
-        #    print('  This script runs IORSim together with Eclipse')
+        self.header = header
         self.runlog = None
         if not to_screen:
             self.runlog = safeopen(Path(root).parent/(self.name+'.log'), 'w')
-            if echo:
-                print('  Log-file is ' + self.runlog.name )
             atexit.register(self.runlog.close)
         self.print2log = lambda txt: print(txt, file=self.runlog, flush=True)
         self.current_run = None
-        self.runs = []
+        self.runs = runs
+        self.run_sim = None
         self.ior = self.ecl = None
-        kwargs['root'] = root
-        kwargs['runlog'] = self.runlog
+        self.T = 0
+        self.mode = mode
+        kwargs.update({'root':str(root), 'runlog':self.runlog})
+        self.prepare_mode(**kwargs)
+
+
+    #-----------------------------------------------------------------------
+    def prepare_mode(self, iorexe=None, eclexe=None, time=0, time_ecl=None, dt_ecl=None, dt_init=0, **kwargs):
+    #-----------------------------------------------------------------------
+        if not self.mode:
+            mode = self.mode_from_case()
+        self.mode = mode
+        # Backward simulation
         if mode=='backward':
+            if not dt_ecl:
+                dt_ecl = dtecl(self.root)
+            if not time_ecl:
+                time_ecl = ECL_input_days_and_steps(self.root)[0]
+            N = int(time/dt_ecl)+2
+            self.T = int(time)+int(time_ecl)+int(dt_init)
+            kwargs.update({'N':N, 'T':self.T})
             self.run_sim = self.backward
             self.runs = [ecl_backward(exe=eclexe, **kwargs), ior_backward(exe=iorexe, **kwargs)]
             self.ecl, self.ior = self.runs
+        # Forward simulation
         if mode=='forward':
+            self.T = time
+            kwargs.update({'T':self.T})
             self.run_sim = self.forward
-            for name in runs:
+            for name in self.runs:
                 if name=='eclipse':
                     self.ecl = ecl_forward(exe=eclexe, **kwargs)
                 if name=='iorsim':
                     self.ior = ior_forward(exe=iorexe, **kwargs)
             self.runs = [run for run in (self.ecl, self.ior) if run]
+
+    #-----------------------------------------------------------------------
+    def mode_from_case(self):
+    #-----------------------------------------------------------------------
+        data = str(self.root)+'.DATA'
+        if Path(data).is_file():
+            if file_contains(data, text='READDATA', comment='--'):
+                return 'backward'
+            else:
+                return 'forward'
+        else:
+            return None
 
 
     #-----------------------------------------------------------------------
@@ -530,12 +472,12 @@ class simulation:
             self.current_run = run.name.lower()
             run.check_input()
             run.delete_output_files()
-            self.status('Starting ' + run.name)
-            self.progress(0)
+            self.update.status(value='Starting '+run.name)
+            self.update.progress(value=-run.T)
             run.start()
-            self.status(run.name + ' running')
-            run.init_control_func(status=self.status, progress=self.progress, plot=self.plot)
-            run.wait_for_process_to_finish_2(pause=0.2, loop_func=run.control_func)
+            self.update.status(value=run.name+' running')
+            run.init_control_func(update=self.update) 
+            run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             t = run.time_and_step()[0]
             if t < run.T:
                 raise SystemError('ERROR ' + run.name + ' stopped unexpectedly, check the log')
@@ -546,11 +488,11 @@ class simulation:
     #-----------------------------------------------------------------------
     def backward(self): 
     #-----------------------------------------------------------------------
-        #print('Backward run')
+        self.update.progress(value=-self.runs[0].T)
         for run in self.runs:
             run.check_input()
             run.delete_output_files()
-            self.status('Starting ' + run.name + '...')
+            self.update.status(value='Starting ' + run.name + '...')
             run.start()
         ecl, ior = self.runs
         # Start timestep loop
@@ -561,12 +503,11 @@ class simulation:
             sleep(self.pause)
             # Run IORSim to prepare satnum input for the next Eclipse run
             ior.run_one_step(n+1)
-            t = ior.time_and_step()[0]
-            #print(n,t,', ecl: ',ecl.n,ecl.N,ecl.t,ecl.T,', ior: ',ior.n,ior.N,ior.t,ior.T)
-            self.progress(t)
-            self.status('{}/{} days'.format(t, ecl.T))
-            self.plot()
-            if t > ior.T:
+            ior.t = ior.time_and_step()[0]
+            self.update.progress(value=ior.t)
+            self.update.status(run=ior, mode='backward')
+            self.update.plot()
+            if ior.t > ior.T:
                 raise SystemError(ecl.complete_msg())
         # Timestep loop finished
         ecl.quit()
@@ -585,21 +526,29 @@ class simulation:
         except (SystemError, ProcessLookupError, NoSuchProcess) as e:
             msg = str(e)
             success = 'simulation complete' in msg.lower()
+        except KeyboardInterrupt:
+            self.cancel()
+            msg = 'Simulation cancelled' 
         except:  # Catch all other exceptions 
+            traceback.print_exc()
             msg = traceback.format_exc()
         finally:
             # Kill possible remaining processes
             [run.kill_and_clean() for run in self.runs]
             self.print2log('\n======  ' + msg + '  ======')
-            self.runlog.close()
             self.current_run = None
-            self.progress(0)   # Reset progress time
-            self.plot()
-            self.status(msg)
+            self.update.progress(value=0)   # Reset progress time
+            self.update.plot()
+            self.update.status(value=msg)
             if success:
+                start = datetime.now()
                 N = min([run.time_and_step()[1] for run in self.runs])  # Steps for the convert progress 
                 sleep(0.05)  # Need a short break to make sure the progressbar is responsive
                 self.convert_restart_file(N=N, case=self.runs[0].case)
+                self.print2log('\n==  convert + merge complete: '+str(datetime.now()-start).split('.')[0])
+            self.runs = []
+            if self.runlog:
+                self.runlog.close()
             return success, msg
 
 
@@ -609,13 +558,14 @@ class simulation:
         if not self.ior:
             return
         ecl = self.ecl or eclipse(root=case)   
-        ior = self.ior or iorsim(root=case)    
-        self.progress(-N)
-        self.status('Converting restart file...')
+        ior = self.ior or iorsim(root=case)   
+        #self.update(progress=-N, status='Converting restart file...') 
+        self.update.progress(value=-N)
+        self.update.status(value='Converting restart file...')
         # Convert from formatted to unformatted restart file
         #print(ior.funrst)
         ior_unrst = fmt_file(ior.funrst).convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
-                                                 progress=self.progress) 
+                                                 progress=lambda n: self.update.progress(value=n)) 
         # Merge unformatted Eclipse and IORSim files
         #print(ecl.unrst)
         if ecl.unrst.is_file() and ior_unrst.is_file():
@@ -627,12 +577,12 @@ class simulation:
                 # No backup exists; create backup copy
                 shutil.copy(ecl.unrst, backup)
         else:
-            self.status('Convert finished, unable to merge Eclipse and IORSim files')
+            self.update.status(value='Convert finished, unable to merge Eclipse and IORSim files')
             return
         # Define sections in the restart files where merging 
         ecl_sec = Section(ecl.unrst, start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
         ior_sec = Section(ior_unrst, start_after='DOUBHEAD', end_before='SEQNUM')
-        self.status('Merging Eclipse and IORSim restart files...')
+        self.update.status(value='Merging Eclipse and IORSim restart files...')
         #ior = Path(ior_unrst)
         merged_file = Path(str(ior.case)+'_MERGED.UNRST')
         merged_file = unfmt_file(merged_file).create(ecl_sec, ior_sec)
@@ -642,15 +592,154 @@ class simulation:
             raise SystemError('WARNING Unable to merge {} and {}'.format(ecl.unrst, ior_unrst))
         if merged_file.is_file():
             merged_file.replace(ecl.unrst)
-        self.status('Simulation complete, restart file ready')
-        self.progress(N)
+        self.update.status(value='Simulation complete, restart file ready')
+        #self.progress(N)
 
+#############################################################################
+
+#-----------------------------------------------------------------------
+def dtecl(root, ext='.trcinp'):                             # 
+#-----------------------------------------------------------------------
+#
+#  Get dtecl from IORSim input file .trcinp
+#  Assumed format:    
+#    
+#  *INTEGRATION
+#  # tstart  tstop
+#    0.0  1.e99
+#  # dtmin dtmax 
+#    0.0  1.e99
+#  # dtecl dteclmax 
+#    5      20 
+#  # metnum
+#    0
+#
+    read = False
+    dt = ()
+    with open(str(root)+ext) as f:
+        for line in f:
+            line = line.lstrip()
+            if line.startswith('#'):
+                continue
+            if line.startswith('*INTEGRATION'):
+                read = True
+                continue
+            if read:
+                dt += tuple(line.split())
+                if len(dt) > 5:
+                    break
+    val = int(float(dt[4]))
+    if val==0:
+        raise SystemError('WARNING IORSim timestep (dtecl) is zero')
+    return val
+            
 
         
+#--------------------------------------------------------------------------------
+def parse_input(description):
+#--------------------------------------------------------------------------------
+    parser = ArgumentParser(description=description)
+    #parser.add_argument('-mode',         help='Simulation mode', choices=['backward', 'forward', 'iorsim', 'eclipse'], required=True)
+    parser.add_argument('-root',         help='Eclipse case name without .DATA', required=True)
+    parser.add_argument('-days',         help='Time interval of the simulation', type=int, required=True)
+    parser.add_argument('-dt_init',      help='Initial timestep, default is 1 day', type=int, default=1)
+    #parser.add_argument('-dt_ecl',       help='IORSim timestep from ', type=int, default=1)
+    #parser.add_argument('-time_ecl',     help='Initial timestep', type=int, default=1)
+    parser.add_argument('-eclexe',       help="Name of excecutable, default is 'eclrun'", default='eclrun')
+    parser.add_argument('-iorexe',       help="Name of IORSim executable, default is 'IORSimX'")
+    parser.add_argument('-iorargs',      help='Additional arguments passed to IORSim, should be quoted', default='')
+    parser.add_argument('-check_unrst',  help='Backward mode: check flushed Eclipse UNRST-file', action='store_true')
+    parser.add_argument('-check_rft',    help='Backward mode: check flushed Eclipse RFT-file', action='store_true')
+    parser.add_argument('-pause',      help='Backward mode: pause between Eclipse and IORSim runs', type=int, default=0.5)
+    parser.add_argument('-v',            help='Verbosity level, higher number increase verbosity, default is 3', type=int, default=3)
+    #parser.add_argument('-timer',       help='Record execution times, default is FALSE', action='store_true')
+    parser.add_argument('-keep_files',   help='Interface-files are not deleted after completion', action='store_true')
+    #parser.add_argument('-echo',         help='Logging output is sent to the terminal', action='store_true')
+    args = vars(parser.parse_args())
+    return args
+
+#----------------------------------------
+def iorexe_from_settings(settings_file, iorexe):
+#----------------------------------------
+    # Find iorexe in settings.txt if missing
+    #if not kwargs['iorexe']:
+    #settings = kwargs['gui_dir']/settings
+    if settings_file.is_file():
+        with open(settings_file) as f:
+            for line in f:
+                if line.strip().startswith('#'):
+                    continue
+                try: var, val = line.split()
+                except ValueError: break
+                if var=='iorsim':
+                    break 
+        return val
+    print('\n   Missing IORSim executable: '+str(iorexe)+'\n')
+    raise SystemExit
+
+#----------------------------------------
+def case_from_casedir(case_dir, root):
+#----------------------------------------
+    # Find case in casedir if given DATA-file is missing
+    #print(kwargs)
+    #root = kwargs['root']
+    #casedir = kwargs['gui_dir']/'cases'
+    if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
+        return case_dir/root/root
+    print('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
+    raise SystemExit
+    #print(kwargs['root'])
+
+
+#--------------------------------------------------------------------------------
+def main(case_dir=None, settings_file=None):
+#--------------------------------------------------------------------------------
+    description = 'Script for running IORSim and Eclipse in backward and forward mode'
+
+    prog = Progress(format='40#')
+    #----------------------------------------
+    def progress(run=None, value=None):
+    #----------------------------------------
+        if value and value<0:
+            prog.N = abs(value)
+            return
+        if run:# and not value:
+            value = run.t
+        prog.print(value)
+
+    #----------------------------------------
+    def status(value=None, **x):
+    #----------------------------------------
+        value and print('\r   '+value+50*' ', end='')
+
+    cliargs = parse_input(description)
+    #cliargs.update({'gui_dir':gui_dir})
+    if not Path(cliargs['root']+'.DATA').is_file() and case_dir:
+        cliargs['root'] = case_from_casedir(case_dir, cliargs['root'])
+    if not cliargs['iorexe'] and settings_file:
+        cliargs['iorexe'] = iorexe_from_settings(settings_file, cliargs['iorexe'])
+
+    sim = simulation(time=cliargs['days'], progress=progress, status=status, **cliargs)
+    logfiles = [sim.runlog.name,]+[run.log.name for run in sim.runs]
+    case = Path(sim.root).name
+    print()
+    print('   {:10s}: {}'.format('Case', case))
+    print('   {:10s}: {}'.format('Mode', sim.mode.capitalize())) 
+    print('   {:10s}: {}'.format('Days', sim.T), end='')
+    if sim.mode=='forward':
+        print('(update TSTEP in '+case+'.DATA to change days)')
+    else:
+        print()
+    print('   {:10s}: {}'.format('Folder', Path(sim.root).parent))
+    print('   {:10s}: {}'.format('Log-files', ', '.join([Path(file).name for file in logfiles])))
+    print()
+    result, msg = sim.run()
+    print('\r   '+msg.replace('INFO','').strip()+'              \n')
+    exit_without_atexit()
+
+
 ######################################################################################
 
 if __name__ == '__main__':
-    
-    main()
 
-    
+    main()
