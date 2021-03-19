@@ -431,12 +431,12 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         super(Settings, self).__init__(parent)
         self.setWindowTitle('Settings')
-        self.setMinimumSize(500,300)
+        self.setMinimumSize(500,350)
         self.get = {}
         self.set = {}
         self.required = []
         #self.default = {'eclrun':'eclrun', 'unrst':True, 'rft':True, 'fontsize':'10'}
-        self.default = {'eclrun':'eclrun', 'unrst':True, 'rft':True, 'dt':'1'}
+        self.default = {'eclrun':'eclrun', 'unrst':True, 'rft':True, 'dt':'1', 'convert':True, 'pause':'0.01'}
         self.abs_path = False
         self.initUI()
         self.file = Path(file) 
@@ -449,16 +449,16 @@ class Settings(QDialog):
         self.layout = QGridLayout()
         self.setLayout(self.layout)
         #self.layout.setColumnStretch(0,20)
-        #self.layout.setColumnStretch(1,33)
-        #self.layout.setColumnStretch(2,33)
-        #self.layout.setColumnStretch(3,15)
-        #self.layout.setColumnStretch(4,15)
+        #self.layout.setColumnStretch(1,65)
+        #self.layout.setColumnStretch(2,15)
         tool_tip = {'iorsim':'Set path to the IORSim executable',
                     'iorarg':'Additional arguments passed to IORSim',
                     'eclrun':"Eclipse command, default is 'eclrun'",
-                    'unrst':'Only for backward mode:\nCheck complete Eclipse UNRST-file before IORSim takes over',
-                    'rft':'Only for backward mode:\nCheck complete Eclipse RFT-file before IORSim takes over',
-                    'dt':'Only backward mode:\nInitial timestep for IORSim run'}
+                    'unrst':'Check flushed Eclipse UNRST-file',
+                    'rft':'Check flushed Eclipse RFT-file',
+                    'dt':'Initial timestep for IORSim run',
+                    'convert':'Convert IORSim FUNRST to UNRST and merge with Eclipse',
+                    'pause':'Add a pause in seconds between Eclipse and IORSim run'}
 
         ### IORSim executable
         n = 0
@@ -467,8 +467,8 @@ class Settings(QDialog):
         widget = self.new_line(var=var, text=text, required=True, open_func=self.open_ior_prog)
         self.layout.addWidget(widget[0] , n, 0)
         # layout given as (row, col, rowspan, colspan)
-        self.layout.addWidget(widget[1] , n, 1, 1, 2)
-        self.layout.addWidget(widget[2] , n, 3)
+        self.layout.addWidget(widget[1] , n, 1)
+        self.layout.addWidget(widget[2] , n, 2)
         #for w in widget[1:]:
         widget[1].setToolTip(tool_tip[var])
         self.iorsim = widget[1]
@@ -478,7 +478,7 @@ class Settings(QDialog):
         var, text = 'iorarg', 'IORSim arguments'
         widget = self.new_line(var=var, text=text, required=False)
         self.layout.addWidget(widget[0] , n, 0)
-        self.layout.addWidget(widget[1] , n, 1, 1, 2)
+        self.layout.addWidget(widget[1] , n, 1)
         #for w in widget[1:]:
         widget[1].setToolTip(tool_tip[var])
         self.iorarg = widget[1]
@@ -488,34 +488,60 @@ class Settings(QDialog):
         var, text = 'eclrun', 'Eclipse program'
         widget = self.new_line(var=var, text=text, required=True, open_func=self.open_ecl_prog)
         self.layout.addWidget(widget[0] , n, 0)
-        self.layout.addWidget(widget[1] , n, 1, 1, 2)
-        self.layout.addWidget(widget[2] , n, 3)
+        self.layout.addWidget(widget[1] , n, 1)
+        self.layout.addWidget(widget[2] , n, 2)
         #for w in widget[1:]:
         widget[1].setToolTip(tool_tip[var])
         self.eclrun = widget[1]
         
-        ### Eclipse file checks
+        ### Convert
         n += 1
         label = QLabel()
-        label.setText('Output checks')
-        var, text = 'unrst', 'UNRST-file'
+        label.setText('Output')
+        var, text = 'convert', 'Convert FUNRST'
+        self.convert = self.new_box(var=var, text=text)
+        self.convert.setToolTip(tool_tip[var])
+        self.layout.addWidget(label       , n, 0)
+        self.layout.addWidget(self.convert, n, 1)
+        # self.layout.addWidget(self.fontsize , 4, 1, 1, 1)
+
+        ### Backward options
+        n += 1
+        label = QLabel()
+        label.setText('Backward options')
+        self.layout.addWidget(label   , n, 0)
+        options = QHBoxLayout()
+        options.setSpacing(25)
+        self.layout.addLayout(options , n, 1)
+        # initial timestep
+        var, text = 'dt', 'Initial timestep'
+        l_dt, self.dt = self.new_line(var=var, text=text, required=True)
+        self.dt.setFixedWidth(50)
+        self.dt.setToolTip(tool_tip[var])
+        dt = QHBoxLayout()
+        dt.setSpacing(5)
+        options.addLayout(dt)
+        dt.addWidget(self.dt)
+        dt.addWidget(l_dt)
+        # pause between runs
+        var, text = 'pause', 'Pause'
+        label2, self.pause = self.new_line(var=var, text=text)
+        self.pause.setToolTip(tool_tip[var])
+        self.pause.setFixedWidth(50)
+        pause = QHBoxLayout()
+        pause.setSpacing(5)
+        options.addLayout(pause)
+        pause.addWidget(self.pause)
+        pause.addWidget(label2)
+        # file checks
+        var, text = 'unrst', 'UNRST-check'
         self.unrst = self.new_box(var=var, text=text)
         self.unrst.setToolTip(tool_tip[var])
-        var, text = 'rft', 'RFT-file'
+        var, text = 'rft', 'RFT-check'
         self.rft = self.new_box(var=var, text=text)
         self.rft.setToolTip(tool_tip[var])
-        self.layout.addWidget(label,      n, 0)
-        self.layout.addWidget(self.unrst, n, 1)
-        self.layout.addWidget(self.rft,   n, 2)
-        
-        ### Timestep
-        n += 1
-        var, text = 'dt', 'Initial timestep'
-        label, self.dt = self.new_line(var=var, text=text, required=True)
-        self.dt.setToolTip(tool_tip[var])
-        self.layout.addWidget(label       , n, 0)
-        self.layout.addWidget(self.dt , n, 1)
-        # self.layout.addWidget(self.fontsize , 4, 1, 1, 1)
+        options.addWidget(self.unrst)
+        options.addWidget(self.rft)
 
         ### OK / Cancel buttons
         n += 1
@@ -523,7 +549,7 @@ class Settings(QDialog):
         self.yes_no_btns = QDialogButtonBox(yes_no)
         self.yes_no_btns.accepted.connect(self.on_OK_click)
         self.yes_no_btns.rejected.connect(self.reject)
-        self.layout.addWidget(self.yes_no_btns, n, 0, 1, 5)
+        self.layout.addWidget(self.yes_no_btns, n, 0, 1, 3)
         #self.layout.addWidget(self.yes_no_btns, 4, 0, 1, 4)
         
     #-----------------------------------------------------------------------
@@ -2598,14 +2624,16 @@ class main_window(QMainWindow):                                    # main_window
         self.set_toolbar_enabled(False)
         i = self.input
         s = self.settings
+        # backward mode
         if self.mode=='backward':
-             self.worker = sim_worker(mode='backward', root=i['root'], time=i['days'], 
-                                     dt_init=s.get['dt'](), dt_ecl=i['dtecl'], time_ecl=i['ecl_days'],
-                                     iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](),
-                                     check_unrst=s.get['unrst'](), check_rft=s.get['rft']())
+            kwargs = {'mode':'backward', 'dt_init':s.get['dt'](), 
+                      'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft']()}
+        # forward mode
         elif self.mode in ('forward','eclipse','iorsim'):
-             self.worker = sim_worker(mode='forward', runs=self.run, root=i['root'], time=i['days'], 
-                                 iorexe=s.get['iorsim'](), eclexe=s.get['eclrun']())
+            kwargs = {'mode':'forward', 'runs':self.run}
+        # start simulation
+        self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 
+                                 convert=s.get['convert'](), pause=float(s.get['pause']()), **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)
