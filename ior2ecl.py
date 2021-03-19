@@ -501,6 +501,7 @@ class simulation:
             self.print2log('\nReport step {}'.format(n))
             ecl.run_one_step(n, ior.satnum)
             # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
+            #print(self.pause)
             sleep(self.pause)
             # Run IORSim to prepare satnum input for the next Eclipse run
             ior.run_one_step(n+1)

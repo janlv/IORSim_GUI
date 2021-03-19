@@ -431,12 +431,12 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         super(Settings, self).__init__(parent)
         self.setWindowTitle('Settings')
-        self.setMinimumSize(500,350)
+        self.setMinimumSize(400,300)
         self.get = {}
         self.set = {}
         self.required = []
         #self.default = {'eclrun':'eclrun', 'unrst':True, 'rft':True, 'fontsize':'10'}
-        self.default = {'eclrun':'eclrun', 'unrst':True, 'rft':True, 'dt':'1', 'convert':True, 'pause':'0.01'}
+        self.default = {'eclrun':'eclrun', 'unrst':True, 'rft':True, 'dt':'1', 'convert':True, 'pause':'0.5'}
         self.abs_path = False
         self.initUI()
         self.file = Path(file) 
@@ -474,14 +474,16 @@ class Settings(QDialog):
         self.iorsim = widget[1]
             
         ### IORSim args
-        n += 1
+        show = False
         var, text = 'iorarg', 'IORSim arguments'
         widget = self.new_line(var=var, text=text, required=False)
-        self.layout.addWidget(widget[0] , n, 0)
-        self.layout.addWidget(widget[1] , n, 1)
         #for w in widget[1:]:
         widget[1].setToolTip(tool_tip[var])
         self.iorarg = widget[1]
+        if show:
+            n += 1
+            self.layout.addWidget(widget[0] , n, 0)
+            self.layout.addWidget(widget[1] , n, 1)
         
         ### Eclipse executable
         n += 1
@@ -511,28 +513,28 @@ class Settings(QDialog):
         label.setText('Backward options')
         self.layout.addWidget(label   , n, 0)
         options = QHBoxLayout()
-        options.setSpacing(25)
+        options.setSpacing(20)
         self.layout.addLayout(options , n, 1)
-        # initial timestep
-        var, text = 'dt', 'Initial timestep'
-        l_dt, self.dt = self.new_line(var=var, text=text, required=True)
-        self.dt.setFixedWidth(50)
-        self.dt.setToolTip(tool_tip[var])
-        dt = QHBoxLayout()
-        dt.setSpacing(5)
-        options.addLayout(dt)
-        dt.addWidget(self.dt)
-        dt.addWidget(l_dt)
         # pause between runs
         var, text = 'pause', 'Pause'
         label2, self.pause = self.new_line(var=var, text=text)
         self.pause.setToolTip(tool_tip[var])
-        self.pause.setFixedWidth(50)
+        self.pause.setFixedWidth(40)
         pause = QHBoxLayout()
         pause.setSpacing(5)
         options.addLayout(pause)
         pause.addWidget(self.pause)
         pause.addWidget(label2)
+        # initial timestep
+        var, text = 'dt', 'Initial timestep'
+        l_dt, self.dt = self.new_line(var=var, text=text, required=True)
+        self.dt.setFixedWidth(40)
+        self.dt.setToolTip(tool_tip[var])
+        dt = QHBoxLayout()
+        dt.setSpacing(5)
+        #options.addLayout(dt)
+        dt.addWidget(self.dt)
+        dt.addWidget(l_dt)
         # file checks
         var, text = 'unrst', 'UNRST-check'
         self.unrst = self.new_box(var=var, text=text)
@@ -540,6 +542,10 @@ class Settings(QDialog):
         var, text = 'rft', 'RFT-check'
         self.rft = self.new_box(var=var, text=text)
         self.rft.setToolTip(tool_tip[var])
+        #checks = QHBoxLayout()
+        #checks.addWidget(self.unrst)
+        #checks.addWidget(self.rft)
+        #options.addLayout(checks)
         options.addWidget(self.unrst)
         options.addWidget(self.rft)
 
