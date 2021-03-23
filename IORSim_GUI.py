@@ -1765,7 +1765,9 @@ class main_window(QMainWindow):                                    # main_window
         layout, box = self.new_box_with_line_layout('Temp', boxname='Temp_ecl', linestyle='dotted',
                                                     color='#707070', func=self.on_ecl_var_click)
         self.ecl_boxes['var']['Temp_ecl'] = box
-        self.ecl_menu_col[int((i+1)/7+1)].addLayout(layout)
+        #print(len(wells))
+        if len(wells)>0:
+            self.ecl_menu_col[int(len(wells)/7+1)].addLayout(layout)
 
         
     #-----------------------------------------------------------------------
