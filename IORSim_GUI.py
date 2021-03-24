@@ -140,7 +140,7 @@ def get_eclipse_well_yaxis_fluid(root):
             if line.lstrip().upper().startswith('SUMMARY'):
                 summary = True
                 continue
-            if line.lstrip().upper().startswith('RUNSUM'):
+            if line.lstrip().upper().startswith('SCHEDULE'):
                 break
             if summary:
                 kw = line.strip()
@@ -167,6 +167,7 @@ def get_eclipse_well_yaxis_fluid(root):
                     for k in kw:
                         wells.append(k.strip())                  
     vars = list(set(vars))
+    #print('vars',vars)
     if len(vars)==0:
         raise SystemError('No variables in SUMMARY section.'+
                           '\n\nEclipse plotting disabled.')
@@ -1107,7 +1108,7 @@ class main_window(QMainWindow):                                    # main_window
             if Path(from_fil).is_file():
                 to_fil = str(to_root)+ext
                 shutil.copy(from_fil, to_fil)
-        for ext in ('INC','DAT','GRDECL'):
+        for ext in ('INC','DAT','GRDECL','EGRID'):
             for fil in Path(from_root).parent.glob('*.'+ext):
                 shutil.copy(str(fil), str(Path(to_root).parent/fil.name))
             
@@ -2635,7 +2636,7 @@ class main_window(QMainWindow):                                    # main_window
         # backward mode
         if self.mode=='backward':
             kwargs = {'mode':'backward', 'dt_init':s.get['dt'](), 
-                      'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft']()}
+                      'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':True}
         # forward mode
         elif self.mode in ('forward','eclipse','iorsim'):
             kwargs = {'mode':'forward', 'runs':self.run}
@@ -2684,7 +2685,7 @@ class main_window(QMainWindow):                                    # main_window
         if self.worker:
             self.worker.signals.stop.emit()
             # If quit while running simulation, we wait for up to 5 seconds
-            # to allow the simulation to kill processes. 
+            # to allow the processes to quit before we kill them
             n = 0
             while self.worker.sim and self.worker.sim.runs and n<500:
                 n += 1

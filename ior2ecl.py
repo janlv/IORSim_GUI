@@ -9,10 +9,11 @@ from argparse import ArgumentParser
 from shutil import which
 from datetime import datetime, timedelta
 from time import sleep
-from types import GeneratorType
+#from types import GeneratorType
 from psutil import NoSuchProcess
 import shutil
 import traceback
+from numpy import ceil
 
 from IORlib.utils import number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, exit_without_atexit, delete_files_matching, file_contains
 from IORlib.runner import runner
@@ -125,11 +126,12 @@ class ecl_forward(forward_mixin, eclipse):                              # ecl_fo
 class ecl_backward(eclipse):                                           # ecl_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, check_unrst=True, check_rft=True, **kwargs):
+    def __init__(self, check_unrst=True, check_rft=True, rft_size=True, **kwargs):
     #--------------------------------------------------------------------------------
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', **kwargs)
         self.check_unrst = check_unrst
         self.check_rft = check_rft
+        self.rft_size = rft_size
         self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
 
@@ -162,9 +164,9 @@ class ecl_backward(eclipse):                                           # ecl_bac
         if self.echo:
             print('\r  Eclipse started, log file is ' + self.get_logfile(), flush=True)
             print('  ' + self.timer.info) if self.timer else None
-        self.rft_size = None
+        #self.rft_size = None
         # only check RFT-file by size if all wells are initially written to the RFT-file 
-        if rft_wells == 2*self.nwell:
+        if self.rft_size and rft_wells == 2*self.nwell:
             # get size of RFT file
             self.rft_size = int(0.5*self.rft.stat().st_size)
             if 2*self.rft_size != self.rft.stat().st_size:
@@ -426,8 +428,10 @@ class simulation:
                 dt_ecl = dtecl(self.root)
             if not time_ecl:
                 time_ecl = ECL_input_days_and_steps(self.root)[0]
-            N = int(time/dt_ecl)+2
-            self.T = int(time)+int(time_ecl)+int(dt_init)
+            dt_init = int(dt_init)
+            self.T = int(time)+int(time_ecl)+dt_init
+            N = int(ceil((time+dt_init)/dt_ecl))
+            #print('dt_ecl', dt_ecl, 'N' ,N, 'self.T', self.T, 'time', time, 'time_ecl', time_ecl, 'dt_init', dt_init)
             kwargs.update({'N':N, 'T':self.T})
             self.run_sim = self.backward
             self.runs = [ecl_backward(exe=eclexe, **kwargs), ior_backward(exe=iorexe, **kwargs)]
@@ -509,8 +513,11 @@ class simulation:
             self.update.progress(value=ior.t)
             self.update.status(run=ior, mode='backward')
             self.update.plot()
+            #print('ecl',ecl.t, ecl.T, ecl.n, ecl.N)
+            #print('ior',ior.t, ior.T, ior.n, ior.N)
             if ior.t > ior.T:
-                raise SystemError(ecl.complete_msg())
+                #print('t>T')
+                raise SystemError(ior.complete_msg())
         # Timestep loop finished
         ecl.quit()
         ior.quit()
@@ -661,10 +668,11 @@ def parse_input(description):
     parser.add_argument('-iorargs',     help='Additional arguments passed to IORSim, should be quoted', default='')
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
+    parser.add_argument('-full_rft_check',   help='Backward mode: Full check of RFT-file, default is to only check size', action='store_true')
     parser.add_argument('-pause',       help='Backward mode: pause between Eclipse and IORSim runs', type=float, default=0.5)
     parser.add_argument('-v',           help='Verbosity level, higher number increase verbosity, default is 3', type=int, default=3)
     parser.add_argument('-keep_files',  help='Interface-files are not deleted after completion', action='store_true')
-    parser.add_argument('-convert',     help='Only convert FUNRST to UNRST', action='store_true')
+    parser.add_argument('-only_convert',     help='Only convert FUNRST to UNRST', action='store_true')
     args = vars(parser.parse_args())
     return args
 
@@ -727,7 +735,7 @@ def main(case_dir=None, settings_file=None):
     if not Path(cliargs['root']+'.DATA').is_file() and case_dir:
         cliargs['root'] = case_from_casedir(case_dir, cliargs['root'])
 
-    if cliargs['convert']:
+    if cliargs['only_convert']:
         sim = simulation(progress=progress, status=status)
         complete, msg = sim.convert_restart_file(case=cliargs['root'])
         print('\r   '+msg+50*' '+'\n')
@@ -738,7 +746,9 @@ def main(case_dir=None, settings_file=None):
 
     check_unrst = not cliargs['no_unrst_check']
     check_rft = not cliargs['no_rft_check']
-    sim = simulation(time=cliargs['days'], check_unrst=check_unrst, check_rft=check_rft, progress=progress, status=status, **cliargs)
+    rft_size = not cliargs['full_rft_check']
+    print(cliargs)
+    sim = simulation(time=cliargs['days'], check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, progress=progress, status=status, **cliargs)
     logfiles = [sim.runlog.name,]+[run.log.name for run in sim.runs]
     case = Path(sim.root).name
     print()
