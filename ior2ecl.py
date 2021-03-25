@@ -563,21 +563,26 @@ class simulation:
 
 
     #-----------------------------------------------------------------------
-    def convert_restart_file(self, case=None):
+    def convert_restart_file(self, case=None, fast=True):
     #-----------------------------------------------------------------------
         msg = ''
         complete = False
         ecl = self.ecl or eclipse(root=case)   
         ior = self.ior or iorsim(root=case)   
-        N = number_of_blocks(file=ior.funrst, blockstart='SEQNUM')
-        self.update.progress(value=-(N-1))
         self.update.status(value='Converting restart file...')
         # Convert from formatted to unformatted restart file
         start = datetime.now()
         try:
-            ior_unrst = fmt_file(ior.funrst).convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
-                                                     progress=lambda n: self.update.progress(value=n), 
-                                                     cancel=ior.stop_if_canceled)
+            infile = fmt_file(ior.funrst)
+            if fast:
+                convert = infile.fast_convert
+            else:
+                N = number_of_blocks(file=ior.funrst, blockstart='SEQNUM')
+                self.update.progress(value=-(N-1))
+                convert = infile.convert 
+            ior_unrst = convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
+                                progress=lambda n: self.update.progress(value=n), 
+                                cancel=ior.stop_if_canceled)
         except SystemError as e:
             msg = str(e)
             if 'run stopped' in msg.lower():
@@ -747,7 +752,7 @@ def main(case_dir=None, settings_file=None):
     check_unrst = not cliargs['no_unrst_check']
     check_rft = not cliargs['no_rft_check']
     rft_size = not cliargs['full_rft_check']
-    print(cliargs)
+    #print(cliargs)
     sim = simulation(time=cliargs['days'], check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, progress=progress, status=status, **cliargs)
     logfiles = [sim.runlog.name,]+[run.log.name for run in sim.runs]
     case = Path(sim.root).name

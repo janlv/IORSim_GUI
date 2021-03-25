@@ -1361,8 +1361,10 @@ class main_window(QMainWindow):                                    # main_window
     def delete_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
+        #print(self.case)
         if not self.case:
             self.missing_case_error(tag='delete: ')
+            #print('return')
             return False
         self.delete_case(self.case)
         self.input['root'] = self.case = None
@@ -1429,7 +1431,8 @@ class main_window(QMainWindow):                                    # main_window
             self.out_wells, self.in_wells = get_wells_iorsim(root)
             self.set_variables_from_casefiles()
             #print('prepare_case: '+str(ind))
-            self.on_mode_select(self.mode_cb.currentIndex())
+            if root:
+                self.on_mode_select(self.mode_cb.currentIndex())
             self.set_plot_properties()
             self.update_ior_menu()
         except SystemError as e:
@@ -1501,7 +1504,7 @@ class main_window(QMainWindow):                                    # main_window
         #box.setStyleSheet('padding-left: 15px ')
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        if not color:
+        if not color and self.plot_prop:
             color = to_rgb(self.plot_prop['color'][name])
         line.setStyleSheet('border: 3px '+linestyle+' '+color)
         label = QLabel(name)
