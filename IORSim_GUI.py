@@ -1506,7 +1506,8 @@ class main_window(QMainWindow):                                    # main_window
         line.setFrameShape(QFrame.HLine)
         if not color and self.plot_prop:
             color = to_rgb(self.plot_prop['color'][name])
-        line.setStyleSheet('border: 3px '+linestyle+' '+color)
+        if color:
+            line.setStyleSheet('border: 3px '+linestyle+' '+color)
         label = QLabel(name)
         #font = QFont()
         label.setFont(QFont(self.font, self.menu_fontsize))
@@ -1769,9 +1770,7 @@ class main_window(QMainWindow):                                    # main_window
         layout, box = self.new_box_with_line_layout('Temp', boxname='Temp_ecl', linestyle='dotted',
                                                     color='#707070', func=self.on_ecl_var_click)
         self.ecl_boxes['var']['Temp_ecl'] = box
-        #print(len(wells))
-        if len(wells)>0:
-            self.ecl_menu_col[int(len(wells)/7+1)].addLayout(layout)
+        self.ecl_menu_col[1].addLayout(layout)
 
         
     #-----------------------------------------------------------------------
