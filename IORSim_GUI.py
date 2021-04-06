@@ -1952,10 +1952,13 @@ class main_window(QMainWindow):                                    # main_window
     def view_file(self, file, title=''):                                # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
+        # Clear search field
+        self.search_field.setText('')
         # Avoid re-opening file after it is saved
         if str(file) == self.editor.objectName():
             return
         #print('view_file')
+        self.editor.setObjectName('')
         self.highlight = None
         self.search_field.setPlaceholderText('Search text')
         text = ''
@@ -2094,6 +2097,7 @@ class main_window(QMainWindow):                                    # main_window
         #    #self.sender().setChecked(False)
         #    self.missing_case_error('plot: ')
         #    return False
+        self.editor.setObjectName('')
         if self.current_view:
             self.current_view.setParent(None)
         self.layout.addWidget(self.plot_group, *self.position['plot'])

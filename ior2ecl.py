@@ -150,11 +150,13 @@ class ecl_backward(eclipse):                                           # ecl_bac
     def start(self):                                                   # ecl_backward
     #--------------------------------------------------------------------------------
         # Start Eclipse in backward mode
+        self.n = self.init_tsteps
         if self.echo:
             print('  Starting Eclipse...', end='', flush=True)
         self.interface_file('all').delete()
         # Need to create all interface files in advance to avoid Eclipse termination
-        [self.interface_file(i).create_empty() for i in range(1, self.N+1)] 
+        #[self.interface_file(i).create_empty() for i in range(1, self.N+1)] 
+        [self.interface_file(i).create_empty() for i in range(self.n, self.N+self.n)] 
         self.OK_file().delete()
         super().start()  # eclipse.start()
         self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
@@ -176,11 +178,12 @@ class ecl_backward(eclipse):                                           # ecl_bac
                 self.print2log('\nWARNING! Initial size of RFT size not even!\n')
 
     #--------------------------------------------------------------------------------
-    def run_one_step(self, n, satnum_file):                            # ecl_backward
+    def run_one_step(self, satnum_file):                            # ecl_backward
     #--------------------------------------------------------------------------------
         self.rft_start_size = self.rft.stat().st_size
         ### run Eclipse
-        self.n = n + self.init_tsteps - 1
+        #self.n = n + self.init_tsteps - 1
+        #print('ecl, n: ',self.n)
         self.interface_file(self.n).copy(satnum_file, delete=True)
         self.OK_file().create_empty()
         self.resume(check=True)
@@ -193,6 +196,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
             else:
                 self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=200)
         self.suspend()
+        self.n += 1
 
     #--------------------------------------------------------------------------------
     def check_UNRST_file(self, nblocks=1):                                             # eclipse
@@ -342,10 +346,12 @@ class ior_backward(iorsim):                                            # ior_bac
     def start(self):                                                   # ior_backward
     #--------------------------------------------------------------------------------
         # Start IORSim backward run
+        self.n = 1
         if self.echo:
             print('\n  Starting IORSim...', end='', flush=True)
         self.interface_file('all').delete()
-        self.interface_file(1).create_empty()
+        self.interface_file(self.n).create_empty()
+        #[self.interface_file(i).create_empty() for i in range(self.n, 10+self.n)]
         self.OK_file().create_empty()
         super().start() # iorsim.start()   
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
@@ -356,17 +362,33 @@ class ior_backward(iorsim):                                            # ior_bac
             print('  ' + self.timer.info) if self.timer else None
     
     #--------------------------------------------------------------------------------
-    def run_one_step(self, n):                                         # ior_backward
+    def run_one_step(self):                                         # ior_backward
     #--------------------------------------------------------------------------------
         ### run IORSim
-        self.n = n
-        self.interface_file(n).create_empty()
+        #self.n = n
+        self.n += 1
+        #print('ior, n: ',self.n)
+        self.interface_file(self.n).create_empty()
         self.OK_file().create_empty()
         self.resume(check=True)
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
         self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
         warn_empty_file(self.satnum, comment='--')
         self.suspend()
+
+    # #--------------------------------------------------------------------------------
+    # def run_steps(self, n):                                         # ior_backward
+    # #--------------------------------------------------------------------------------
+    #     ### run IORSim
+    #     for i in range(n):
+    #         self.n += 1
+    #         self.interface_file(self.n).create_empty()
+    #         self.OK_file().create_empty()
+    #         self.resume(check=True)
+    #         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
+    #         self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
+    #         warn_empty_file(self.satnum, comment='--')
+    #         self.suspend()
 
 
     # #--------------------------------------------------------------------------------
@@ -386,6 +408,7 @@ class ior_backward(iorsim):                                            # ior_bac
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ior_backward
     #--------------------------------------------------------------------------------
+        #print('Quit: ',self.n+1)
         self.interface_file(self.n+1).append('Quit')
         self.OK_file().create_empty()
         super().quit()
@@ -523,14 +546,14 @@ class simulation:
         ecl, ior = self.runs
         # Start timestep loop
         #for n in range(self.N_start, ecl.N+self.N_start):
-        for n in range(1, ecl.N+1):
-            self.print2log('\nReport step {}'.format(n))
-            ecl.run_one_step(n, ior.satnum)
+        for n in range(ecl.N):
+            self.print2log('\nLoop step {}'.format(n))
+            ecl.run_one_step(ior.satnum)
             # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
             #print(self.pause)
             sleep(self.pause)
             # Run IORSim to prepare satnum input for the next Eclipse run
-            ior.run_one_step(n+1)
+            ior.run_one_step() #n+ecl.init_tsteps)
             ior.t = ior.time_and_step()[0]
             self.update.progress(value=ior.t)
             self.update.status(run=ior, mode='backward')
