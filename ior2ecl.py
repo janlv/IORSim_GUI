@@ -129,6 +129,8 @@ class ecl_backward(eclipse):                                           # ecl_bac
     def __init__(self, check_unrst=True, check_rft=True, rft_size=True, **kwargs):
     #--------------------------------------------------------------------------------
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', **kwargs)
+        self.init_tsteps = kwargs.get('init_tsteps') or 1
+        #print(self.init_tsteps)
         self.check_unrst = check_unrst
         self.check_rft = check_rft
         self.rft_size = rft_size
@@ -157,14 +159,15 @@ class ecl_backward(eclipse):                                           # ecl_bac
         super().start()  # eclipse.start()
         self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
-        self.check_UNRST_file()
+        self.check_UNRST_file(nblocks=self.init_tsteps)
         self.nwell = self.unrst_check.var('nwell')
-        rft_wells = self.check_RFT_file(nwell_max=2*self.nwell, nwell_min=self.nwell, limit=100)
+        rft_wells = self.check_RFT_file(nwell_max=(self.init_tsteps+1)*self.nwell, nwell_min=self.nwell, limit=200)
         self.suspend()
         if self.echo:
             print('\r  Eclipse started, log file is ' + self.get_logfile(), flush=True)
             print('  ' + self.timer.info) if self.timer else None
-        #self.rft_size = None
+        if self.init_tsteps > 1:
+            self.rft_size = None
         # only check RFT-file by size if all wells are initially written to the RFT-file 
         if self.rft_size and rft_wells == 2*self.nwell:
             # get size of RFT file
@@ -177,8 +180,8 @@ class ecl_backward(eclipse):                                           # ecl_bac
     #--------------------------------------------------------------------------------
         self.rft_start_size = self.rft.stat().st_size
         ### run Eclipse
-        self.n = n
-        self.interface_file(n).copy(satnum_file, delete=True)
+        self.n = n + self.init_tsteps - 1
+        self.interface_file(self.n).copy(satnum_file, delete=True)
         self.OK_file().create_empty()
         self.resume(check=True)
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
@@ -188,13 +191,13 @@ class ecl_backward(eclipse):                                           # ecl_bac
             if self.rft_size:
                 self.wait_for( self.check_RFT_size )
             else:
-                self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=100)
+                self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=200)
         self.suspend()
 
     #--------------------------------------------------------------------------------
-    def check_UNRST_file(self):                                             # eclipse
+    def check_UNRST_file(self, nblocks=1):                                             # eclipse
     #--------------------------------------------------------------------------------
-        self.wait_for( self.unrst_check.blocks_complete, nblocks=1, log=self.unrst_check.info,
+        self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info,
                        error=self.unrst_check.file.name()+' not complete' )
         
     #--------------------------------------------------------------------------------
@@ -286,7 +289,9 @@ class iorsim(runner):                                                        # i
             for outfile in self.case.parent.glob(self.case.stem+'*.trcconc'):
                 if outfile.is_file():
                     self.trcconc = outfile
-                break
+                    break
+        if not self.trcconc:
+            return 0, 0
         ### Get time and step from IORSim output
         t, n = 0, 0
         with open(self.trcconc) as out:
@@ -411,6 +416,7 @@ class simulation:
         self.run_sim = None
         self.ior = self.ecl = None
         self.T = 0
+        #self.N_start = 1
         self.mode = mode
         if root:
             kwargs.update({'root':str(root), 'runlog':self.runlog})
@@ -426,13 +432,16 @@ class simulation:
         if self.mode=='backward':
             if not dt_ecl:
                 dt_ecl = dtecl(self.root)
+            sum_tstep, len_tstep, tsteps = ECL_input_days_and_steps(self.root)
             if not time_ecl:
-                time_ecl = ECL_input_days_and_steps(self.root)[0]
+                time_ecl = sum_tstep
             dt_init = int(dt_init)
             self.T = int(time)+int(time_ecl)+dt_init
             N = int(ceil((time+dt_init)/dt_ecl))
+            #self.N_start = len_tstep
+            #print(self.N_start)
             #print('dt_ecl', dt_ecl, 'N' ,N, 'self.T', self.T, 'time', time, 'time_ecl', time_ecl, 'dt_init', dt_init)
-            kwargs.update({'N':N, 'T':self.T})
+            kwargs.update({'N':N, 'T':self.T, 'init_tsteps':len_tstep})
             self.run_sim = self.backward
             self.runs = [ecl_backward(exe=eclexe, **kwargs), ior_backward(exe=iorexe, **kwargs)]
             self.ecl, self.ior = self.runs
@@ -441,12 +450,22 @@ class simulation:
             self.T = time
             kwargs.update({'T':self.T})
             self.run_sim = self.forward
+            if not self.runs:
+                self.runs = ('eclipse','iorsim')
             for name in self.runs:
                 if name=='eclipse':
                     self.ecl = ecl_forward(exe=eclexe, **kwargs)
                 if name=='iorsim':
                     self.ior = ior_forward(exe=iorexe, **kwargs)
+            #print(self.T, self.runs)
             self.runs = [run for run in (self.ecl, self.ior) if run]
+
+    #-----------------------------------------------------------------------
+    def set_time(self, time):
+    #-----------------------------------------------------------------------
+        self.T = time
+        for run in self.runs:
+            run.set_time(time)
 
     #-----------------------------------------------------------------------
     def mode_from_case(self):
@@ -473,6 +492,7 @@ class simulation:
     #-----------------------------------------------------------------------
         #print('Forward run')
         run_time = timedelta()
+        ret = ''
         for run in self.runs:
             self.current_run = run.name.lower()
             run.check_input()
@@ -487,7 +507,8 @@ class simulation:
             if t < run.T:
                 raise SystemError('ERROR ' + run.name + ' stopped unexpectedly, check the log')
             run_time += run.run_time()
-        return run.complete_msg(run_time=run_time)
+            ret = run.complete_msg(run_time=run_time)
+        return ret
 
 
     #-----------------------------------------------------------------------
@@ -501,6 +522,7 @@ class simulation:
             run.start()
         ecl, ior = self.runs
         # Start timestep loop
+        #for n in range(self.N_start, ecl.N+self.N_start):
         for n in range(1, ecl.N+1):
             self.print2log('\nReport step {}'.format(n))
             ecl.run_one_step(n, ior.satnum)
@@ -569,6 +591,8 @@ class simulation:
         complete = False
         ecl = self.ecl or eclipse(root=case)   
         ior = self.ior or iorsim(root=case)   
+        if not ior.funrst.is_file():
+            return complete, '' #str(ior.funrst) + ' does not exist'
         self.update.status(value='Converting restart file...')
         # Convert from formatted to unformatted restart file
         start = datetime.now()
@@ -763,6 +787,8 @@ def main(case_dir=None, settings_file=None):
     rft_size = not cliargs['full_rft_check']
     #print(cliargs)
     sim = simulation(time=cliargs['days'], check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, progress=progress, status=status, **cliargs)
+    if sim.mode=='forward':
+        sim.set_time(ECL_input_days_and_steps(cliargs['root'])[0])
     logfiles = [sim.runlog.name,]+[run.log.name for run in sim.runs]
     case = Path(sim.root).name
     print()
@@ -770,7 +796,7 @@ def main(case_dir=None, settings_file=None):
     print('   {:10s}: {}'.format('Mode', sim.mode.capitalize())) 
     print('   {:10s}: {}'.format('Days', sim.T), end='')
     if sim.mode=='forward':
-        print('(update TSTEP in '+case+'.DATA to change days)')
+        print(' (update TSTEP in '+case+'.DATA to change number of days)')
     else:
         print()
     print('   {:10s}: {}'.format('Folder', Path(sim.root).parent))

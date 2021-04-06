@@ -2080,6 +2080,7 @@ class main_window(QMainWindow):                                    # main_window
     def update_log(self):                                # main_window
     #-----------------------------------------------------------------------
         if self.log_file:
+            #print('update_log:',self.log_file)
             self.editor.setPlainText(open(self.log_file).read())
             #self.editor.setCenterOnScroll(True)
             #self.editor.ensureCursorVisible()
@@ -2571,7 +2572,7 @@ class main_window(QMainWindow):                                    # main_window
                 #print(self.days[-1])
 
         view = self.current_view.objectName()
-        #print(view)
+        #print('view:', view)
         if view=='plot':
             self.update_all_plot_lines()
         elif view=='editor':
