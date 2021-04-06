@@ -665,8 +665,10 @@ def parse_input(description):
 #--------------------------------------------------------------------------------
     parser = ArgumentParser(description=description)
     #parser.add_argument('-mode',         help='Simulation mode', choices=['backward', 'forward', 'iorsim', 'eclipse'], required=True)
-    parser.add_argument('-root',        help='Eclipse case name without .DATA', required=True)
-    parser.add_argument('-days',        help='Time interval of the simulation', type=int, required=False)
+    #parser.add_argument('-root',        help='Eclipse case name without .DATA', required=True)
+    parser.add_argument('root',        help='Eclipse case name without .DATA')
+    #parser.add_argument('-days',        help='Time interval of the simulation', type=int, required=False)
+    parser.add_argument('days',        help='Time interval of the simulation, if 0 only convert is performed', type=int)
     parser.add_argument('-dt_init',     help='Initial timestep, default is 1 day', type=int, default=1)
     parser.add_argument('-eclexe',      help="Name of excecutable, default is 'eclrun'", default='eclrun')
     parser.add_argument('-iorexe',      help="Name of IORSim executable, default is 'IORSimX'")
@@ -677,9 +679,9 @@ def parse_input(description):
     parser.add_argument('-pause',       help='Backward mode: pause between Eclipse and IORSim runs', type=float, default=0.5)
     parser.add_argument('-v',           help='Verbosity level, higher number increase verbosity, default is 3', type=int, default=3)
     parser.add_argument('-keep_files',  help='Interface-files are not deleted after completion', action='store_true')
-    parser.add_argument('-only_convert',     help='Only convert FUNRST to UNRST', action='store_true')
+    #parser.add_argument('-only_convert',     help='Only convert FUNRST to UNRST', action='store_true')
     args = vars(parser.parse_args())
-    return args
+    return args, parser
 
 #--------------------------------------------------------------------------------
 def iorexe_from_settings(settings_file, iorexe):
@@ -735,13 +737,20 @@ def main(case_dir=None, settings_file=None):
     #----------------------------------------
         value and print('\r   '+value+50*' ', end='')
 
-    cliargs = parse_input(description)
-
+    cliargs, parser = parse_input(description)
+    #print(cliargs)
+    # if not cliargs['days'] and not cliargs['only_convert']:
+    #     #parser.print_help()
+    #     #print('   Missing arguments:\n      -days <number> or -only_convert is required in addition to -root '+cliargs['root']+'\n')
+    #     parser.error('   -days DAYS or -only_convert is required in addition to '+cliargs['root']+'\n')
+    #     return
+        
     if not Path(cliargs['root']+'.DATA').is_file() and case_dir:
         cliargs['root'] = case_from_casedir(case_dir, cliargs['root'])
 
-    if cliargs['only_convert']:
+    if cliargs['days'] < 1:
         sim = simulation(progress=progress, status=status)
+        print('   Convert FUNRST-file from IORSim and merge with UNRST-file from Eclipse\n')
         complete, msg = sim.convert_restart_file(case=cliargs['root'])
         print('\r   '+msg+50*' '+'\n')
         return 
