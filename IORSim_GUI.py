@@ -2515,9 +2515,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def reset_progress_and_message(self):
     #-----------------------------------------------------------------------
-        self.reset_progressbar()
-        self.update_remaining_time()
-        self.update_message()
+        if not self.worker:
+            self.reset_progressbar()
+            self.update_remaining_time()
+            self.update_message()
 
     #-----------------------------------------------------------------------
     def reset_progressbar(self, N=None):
