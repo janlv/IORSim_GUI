@@ -23,8 +23,8 @@ import shutil
 import warnings
 import copy
 
-from ior2ecl import simulation, dtecl, main as ior2ecl_main
-from IORlib.utils import Progress, exit_without_atexit, assert_python_version, get_substrings, return_matching_string, delete_all, file_contains
+from ior2ecl import simulation, Schedule, dtecl, main as ior2ecl_main
+from IORlib.utils import Progress, exit_without_atexit, assert_python_version, get_substrings, return_matching_string, delete_all, file_contains, upper_and_lower
 from IORlib.ECL import unfmt_file, input_days_and_steps as ECL_input_days_and_steps
 import GUI_icons
 
@@ -689,6 +689,7 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_prop = {}
         self.view = False
         self.plot_ref = None
+        self.vscroll = {}
         #self.modes = ('forward', 'backward', 'eclipse', 'iorsim')
         #guidir = Path('GUI')
         gui_dir.mkdir(exist_ok=True)
@@ -748,6 +749,8 @@ class main_window(QMainWindow):                                    # main_window
                                          func=self.view_iorsim_input, checkable=True)
         self.chem_inp_act = create_action(self, text='IORSim geochem file', icon='document-g',
                                           func=self.view_geochem_input, checkable=True)
+        self.schedule_file_act = create_action(self, text='IORSim schedule file', icon='document-i',
+                                          func=self.view_schedule_file, checkable=True)
         self.ecl_log_act = create_action(self, text='Eclipse log file', icon='terminal',
                                          func=self.view_eclipse_log, checkable=True)
         self.ior_log_act = create_action(self, text='IORSim log file', icon='terminal',
@@ -787,7 +790,7 @@ class main_window(QMainWindow):                                    # main_window
         #     self.mode_ag.addAction(act)
         edit_menu = menu.addMenu('&Edit')
         self.view_ag = QActionGroup(self)
-        for act in (self.ecl_inp_act, self.ior_inp_act, self.chem_inp_act):
+        for act in (self.ecl_inp_act, self.ior_inp_act, self.chem_inp_act, self.schedule_file_act):
             edit_menu.addAction(act)
             self.view_ag.addAction(act)
         edit_menu.addSeparator()
@@ -1068,6 +1071,11 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         show_message(self, 'warning', text='No case selected!\nAdd a case from the File-menu')
 
+    #-----------------------------------------------------------------------
+    def missing_file_error(self, tag=''):
+    #-----------------------------------------------------------------------
+        show_message(self, 'warning', text=f'{tag}-file is missing')
+
         
     #-----------------------------------------------------------------------
     def add_case(self, case, rename=False, choose_new=True):   # main_window
@@ -1104,14 +1112,23 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         #print('COPY: {} -> {}'.format(from_root, to_root))
         for ext in ('.DATA','.trcinp','.geocheminp'):
-            from_fil = str(from_root)+ext
-            if Path(from_fil).is_file():
-                to_fil = str(to_root)+ext
-                shutil.copy(from_fil, to_fil)
-        for ext in ('INC','DAT','GRDECL','EGRID'):
+            #from_fil = str(from_root)+ext
+            #if Path(from_fil).is_file():
+            from_fil = from_root.with_suffix(ext)
+            if from_fil.is_file():
+                #to_fil = str(to_root)+ext
+                #shutil.copy(from_fil, to_fil)
+                shutil.copy(from_fil, to_root.with_suffix(ext))
+        for ext in upper_and_lower(('INC','DAT','GRDECL','EGRID')):
             for fil in Path(from_root).parent.glob('*.'+ext):
                 shutil.copy(str(fil), str(Path(to_root).parent/fil.name))
-            
+        ext = '.schedule'
+        from_fil = from_root.with_suffix(ext)
+        if from_fil.is_file():
+            shutil.copy(from_fil, to_root.with_suffix(ext))
+        else:
+            schedule = Schedule(to_root)
+
         
     #-----------------------------------------------------------------------
     def read_case_dir(self):
@@ -1951,6 +1968,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                                # main_window
     #-----------------------------------------------------------------------
+        curr_file = self.editor.objectName()
+        if curr_file:
+            self.vscroll[curr_file] = self.editor.verticalScrollBar().value()
         self.reset_progress_and_message()
         # Clear search field
         self.search_field.setText('')
@@ -1966,6 +1986,8 @@ class main_window(QMainWindow):                                    # main_window
             text = open(file).read()
             self.editor.setObjectName(str(file))
         self.editor.setPlainText(text)
+        vscroll = self.vscroll.get(str(file)) or 0
+        self.editor.verticalScrollBar().setValue(vscroll)
         #self.editor_text = text
         self.editor_group.setTitle(title)
         self.current_view.setParent(None)
@@ -1978,6 +2000,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_input_file(self, ext=None, title=None, comment='#', keywords=[]):                                # main_window
     #-----------------------------------------------------------------------
+        # Avoid re-opening file after it is saved
+        self.log_file = None
+        if self.this_file_is_open_in_editor(ext):
+            return
         if self.input['root']:
             fil = Path(self.input['root']+'.'+ext)
             if fil.is_file():
@@ -1986,6 +2012,11 @@ class main_window(QMainWindow):                                    # main_window
                 self.save_btn.setEnabled(False)
                 self.undo_btn.setEnabled(True)
                 self.redo_btn.setEnabled(True)
+            else:
+                self.sender().setChecked(False)
+                self.sender().parent().missing_file_error(tag=ext)
+                return False
+        
         else:
             self.sender().setChecked(False)
             self.sender().parent().missing_case_error(tag='input: ')
@@ -2052,6 +2083,11 @@ class main_window(QMainWindow):                                    # main_window
         self.view_input_file(ext='geocheminp', title='IORSim geochem file', comment='#')
         
     #-----------------------------------------------------------------------
+    def view_schedule_file(self):                                # main_window
+    #-----------------------------------------------------------------------
+        self.view_input_file(ext='schedule', title='Schedule file for backward runs', comment='#')
+        
+    #-----------------------------------------------------------------------
     def view_log(self, logfile, title=None):                                # main_window
     #-----------------------------------------------------------------------
         if not self.case:
@@ -2097,6 +2133,7 @@ class main_window(QMainWindow):                                    # main_window
         #    #self.sender().setChecked(False)
         #    self.missing_case_error('plot: ')
         #    return False
+        self.log_file = None
         self.editor.setObjectName('')
         if self.current_view:
             self.current_view.setParent(None)
@@ -2643,8 +2680,8 @@ class main_window(QMainWindow):                                    # main_window
         s = self.settings
         # backward mode
         if self.mode=='backward':
-            kwargs = {'mode':'backward', 'dt_init':s.get['dt'](), 
-                      'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':True}
+            #kwargs = {'mode':'backward', 'dt_init':s.get['dt'](), 'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':True}
+            kwargs = {'mode':'backward', 'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':True}
         # forward mode
         elif self.mode in ('forward','eclipse','iorsim'):
             kwargs = {'mode':'forward', 'runs':self.run}

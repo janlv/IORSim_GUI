@@ -6,7 +6,7 @@ from collections import namedtuple
 from pathlib import Path
 import sys
 from argparse import ArgumentParser
-from shutil import which
+#from shutil import which
 from datetime import datetime, timedelta
 from time import sleep
 #from types import GeneratorType
@@ -15,9 +15,9 @@ import shutil
 import traceback
 from numpy import ceil
 
-from IORlib.utils import number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, exit_without_atexit, delete_files_matching, file_contains
+from IORlib.utils import flatten_list, number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, exit_without_atexit, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks, unfmt_file, fmt_file, Section, input_days_and_steps as ECL_input_days_and_steps
+from IORlib.ECL import check_blocks, get_tsteps, unfmt_file, fmt_file, Section, input_days_and_steps as ECL_input_days_and_steps, get_TSTEP
 
 
 
@@ -328,13 +328,42 @@ class ior_forward(forward_mixin, iorsim):                               # ior_fo
 class ior_backward(iorsim):                                            # ior_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, dt=1, **kwargs):
+    #def __init__(self, dt=1, **kwargs):
+    def __init__(self, **kwargs):
     #--------------------------------------------------------------------------------
         # Call iorsim.__init__()
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', **kwargs)
-        self.dt = dt   # Timestep in the first satnum-file prepared for the first Eclipse step (do we need this?)
+        #self.dt = dt   # Timestep in the first satnum-file prepared for the first Eclipse step (do we need this?)
         self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
-        self.satnum_check = check_endtag(file=self.satnum, endtag='-- IORSimX done.')  # Check if satnum-file is flushed
+        self.endtag = '-- IORSimX done.'
+        self.satnum_check = check_endtag(file=self.satnum, endtag=self.endtag)  # Check if satnum-file is flushed
+        #self.schedule = self.read_schedule()
+
+    #--------------------------------------------------------------------------------
+    def satnum_tstep(self):                                     # ior_backward
+    #--------------------------------------------------------------------------------
+        return get_tsteps(self.satnum)[0]
+
+    #--------------------------------------------------------------------------------
+    def append_to_satnum(self, text):                                     # ior_backward
+    #--------------------------------------------------------------------------------
+        if not text:
+            return
+        with open(self.satnum, 'r') as f:
+            lines = f.readlines()
+        #n = safeindex(lines, self.endtag)
+        n = len(lines)-4
+        #print('append_to_satnum:',n, text)
+        if n:
+            lines.insert(n, text+'\n')
+            with open(self.satnum, 'w') as f:
+                f.write(''.join(lines))
+        # checks
+        with open(self.satnum, 'r') as f:
+            lines = f.readlines()
+        #print('satnum.dat:',lines[-5:])
+
+
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                     # ior_backward
@@ -351,16 +380,17 @@ class ior_backward(iorsim):                                            # ior_bac
             print('\n  Starting IORSim...', end='', flush=True)
         self.interface_file('all').delete()
         self.interface_file(self.n).create_empty()
-        #[self.interface_file(i).create_empty() for i in range(self.n, 10+self.n)]
         self.OK_file().create_empty()
         super().start() # iorsim.start()   
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
         self.suspend()
-        self.satnum.write_text('\nTSTEP\n' + str(self.dt) + '  / \n')
+        #self.write_schedule(self.satnum)
+        #print(self.satnum.read_text())
+        #self.satnum.write_text('\nTSTEP\n' + str(self.dt) + '  / \n')
         if self.echo:
             print('\r  IORSim started, log file is ' + self.get_logfile(), flush=True)
             print('  ' + self.timer.info) if self.timer else None
-    
+
     #--------------------------------------------------------------------------------
     def run_one_step(self):                                         # ior_backward
     #--------------------------------------------------------------------------------
@@ -412,7 +442,108 @@ class ior_backward(iorsim):                                            # ior_bac
         self.interface_file(self.n+1).append('Quit')
         self.OK_file().create_empty()
         super().quit()
-        
+
+#====================================================================================
+class Schedule:
+#====================================================================================
+    #--------------------------------------------------------------------------------
+    def __init__(self, case, ext='.schedule', comment='#', end='/', tag='TSTEP', days='1'):
+    #--------------------------------------------------------------------------------
+        self.file = Path(case).with_suffix(ext)
+        self.comment = comment
+        self.tag = tag
+        self.end = end
+        if not self.file.is_file():
+            header = f'# IORSim schedule file\n# Do not edit or remove the TSTEP below' 
+            footer = f'# Start schedule here' 
+            self.file.write_text('\n'.join([header, self.write_tstep(days), footer,'']))
+            #print(f'  Created {self.file}')
+        self._schedule = self.read()
+        #print(self._schedule)
+        self.count = 0
+        self.length = len(self._schedule)
+
+    #--------------------------------------------------------------------------------
+    def read(self):                                                        # schedule
+    #--------------------------------------------------------------------------------
+        if self.file.is_file():
+            with open(self.file) as f:
+                lines = f.readlines()
+            # Remove whitespace
+            lines = [line.strip() for line in lines if len(line)>0]
+            # Remove empty lines
+            lines = [line for line in lines if len(line)>0]
+            # Remove commented lines
+            lines = [line for line in lines if not line.startswith(self.comment)]
+            dt, gap = get_TSTEP(lines)
+            kw = flatten_list([ [ lines[gap[n][0]:gap[n][1]] or '' ] for n in range(len(gap)) ])
+            schedule = flatten_list([[t, kw[n]] for n,t in enumerate(dt)])
+        return schedule
+
+    #--------------------------------------------------------------------------------
+    def write_tstep(self, dt):                                                        # schedule
+    #--------------------------------------------------------------------------------
+        if type(dt) in (int, float):
+            tstep = self.tag+'\n'+str(dt)+' '+self.end
+            #print('tstep:',tstep)
+            return tstep
+        return False
+
+    #--------------------------------------------------------------------------------
+    def next_actions(self):                                                        # schedule
+    #--------------------------------------------------------------------------------
+        return self.actions(inc=True)
+
+    #--------------------------------------------------------------------------------
+    def next_tstep(self):                                                        # schedule
+    #--------------------------------------------------------------------------------
+        return self.write_tstep(self.tstep(inc=True))
+
+    #--------------------------------------------------------------------------------
+    def _get(self, n, inc=False):                                               # schedule
+    #--------------------------------------------------------------------------------
+        if self.count<self.length and self.count%2==n:
+            val = self._schedule[self.count]
+            if inc:
+                self.count += 1
+            return val
+        return False
+
+    #--------------------------------------------------------------------------------
+    def _set(self, n, val):                                               # schedule
+    #--------------------------------------------------------------------------------
+        if self.count<self.length and self.count%2==n:
+            self._schedule[self.count] = val
+            return self._schedule[self.count]
+        return False
+
+    #--------------------------------------------------------------------------------
+    def tstep(self, **kwargs):                                               # schedule
+    #--------------------------------------------------------------------------------
+        return self._get(0, **kwargs)
+
+    #--------------------------------------------------------------------------------
+    def set_tstep(self, val):                                               # schedule
+    #--------------------------------------------------------------------------------
+        return self._set(0, val)
+
+    #--------------------------------------------------------------------------------
+    def actions(self, **kwargs):                                               # schedule
+    #--------------------------------------------------------------------------------
+        return '\n'.join(self._get(1, **kwargs) or '')
+
+    #--------------------------------------------------------------------------------
+    def update(self, tstep):                                               # schedule
+    #--------------------------------------------------------------------------------
+        if self.tstep()==0:
+            self.count += 1
+            act = self.actions(inc=True)
+            #print('actions:',act, 'count:', self.count, 'length:',self.length)
+            return act            
+        new_tstep = self.set_tstep( max(self.tstep()-int(tstep), 0) )
+        #print('new_tstep:', new_tstep)
+        return None
+
 
 #====================================================================================
 class simulation:
@@ -439,15 +570,16 @@ class simulation:
         self.run_sim = None
         self.ior = self.ecl = None
         self.T = 0
-        #self.N_start = 1
         self.mode = mode
+        self.schedule = Schedule(root)
         if root:
             kwargs.update({'root':str(root), 'runlog':self.runlog})
             self.prepare_mode(**kwargs)
 
 
     #-----------------------------------------------------------------------
-    def prepare_mode(self, iorexe=None, eclexe=None, time=0, time_ecl=None, dt_ecl=None, dt_init=0, **kwargs):
+    #def prepare_mode(self, iorexe=None, eclexe=None, time=0, time_ecl=None, dt_ecl=None, dt_init=0, **kwargs):
+    def prepare_mode(self, iorexe=None, eclexe=None, time=0, time_ecl=None, dt_ecl=None, **kwargs):
     #-----------------------------------------------------------------------
         if not self.mode:
             self.mode = self.mode_from_case()
@@ -458,7 +590,8 @@ class simulation:
             sum_tstep, len_tstep, tsteps = ECL_input_days_and_steps(self.root)
             if not time_ecl:
                 time_ecl = sum_tstep
-            dt_init = int(dt_init)
+            #dt_init = int(dt_init)
+            dt_init = int( self.schedule.tstep() )
             self.T = int(time)+int(time_ecl)+dt_init
             N = int(ceil((time+dt_init)/dt_ecl))
             #self.N_start = len_tstep
@@ -535,7 +668,7 @@ class simulation:
 
 
     #-----------------------------------------------------------------------
-    def backward(self): 
+    def backward(self, schedule=True): 
     #-----------------------------------------------------------------------
         self.update.progress(value=-self.runs[0].T)
         for run in self.runs:
@@ -544,16 +677,20 @@ class simulation:
             self.update.status(value='Starting ' + run.name + '...')
             run.start()
         ecl, ior = self.runs
+        ior.satnum.write_text(self.schedule.next_tstep())
         # Start timestep loop
         #for n in range(self.N_start, ecl.N+self.N_start):
         for n in range(ecl.N):
             self.print2log('\nLoop step {}'.format(n))
             ecl.run_one_step(ior.satnum)
             # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
-            #print(self.pause)
             sleep(self.pause)
             # Run IORSim to prepare satnum input for the next Eclipse run
             ior.run_one_step() #n+ecl.init_tsteps)
+            if schedule:
+                actions = self.schedule.update(ior.satnum_tstep())
+                #print('ACT',actions)
+                ior.append_to_satnum(actions)
             ior.t = ior.time_and_step()[0]
             self.update.progress(value=ior.t)
             self.update.status(run=ior, mode='backward')
@@ -716,7 +853,7 @@ def parse_input(description):
     parser.add_argument('root',        help='Eclipse case name without .DATA')
     #parser.add_argument('-days',        help='Time interval of the simulation', type=int, required=False)
     parser.add_argument('days',        help='Time interval of the simulation, if 0 only convert is performed', type=int)
-    parser.add_argument('-dt_init',     help='Initial timestep, default is 1 day', type=int, default=1)
+    #parser.add_argument('-dt_init',     help='Initial timestep, default is 1 day', type=int, default=1)
     parser.add_argument('-eclexe',      help="Name of excecutable, default is 'eclrun'", default='eclrun')
     parser.add_argument('-iorexe',      help="Name of IORSim executable, default is 'IORSimX'")
     parser.add_argument('-iorargs',     help='Additional arguments passed to IORSim, should be quoted', default='')
