@@ -447,7 +447,7 @@ class ior_backward(iorsim):                                            # ior_bac
 class Schedule:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, case, ext='.schedule', comment='#', end='/', tag='TSTEP', days='1'):
+    def __init__(self, case, ext='.schedule', comment='#', end='/', tag='TSTEP', days=1):
     #--------------------------------------------------------------------------------
         self.file = Path(case).with_suffix(ext)
         self.comment = comment
@@ -571,7 +571,6 @@ class simulation:
         self.ior = self.ecl = None
         self.T = 0
         self.mode = mode
-        self.schedule = Schedule(root)
         if root:
             kwargs.update({'root':str(root), 'runlog':self.runlog})
             self.prepare_mode(**kwargs)
@@ -585,6 +584,7 @@ class simulation:
             self.mode = self.mode_from_case()
         # Backward simulation
         if self.mode=='backward':
+            self.schedule = Schedule(self.root)
             if not dt_ecl:
                 dt_ecl = dtecl(self.root)
             sum_tstep, len_tstep, tsteps = ECL_input_days_and_steps(self.root)
