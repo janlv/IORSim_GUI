@@ -314,16 +314,13 @@ class runner:                                                               # ru
     def assert_running(self):                                                # runner
     #--------------------------------------------------------------------------------
         try:
-            #if all([p.is_running() and p.status()!=psutil.STATUS_ZOMBIE for p in self.procs]):
             if self.parent.is_running() and self.parent.status()!=psutil.STATUS_ZOMBIE: 
                 return True
+            self._print('', tag='')
             raise SystemError('ERROR ' + self.name + ' is not running, status is ' + self.parent.status())
-            #raise SystemError('assert_running: Process ' + self.name + ' is not running, status is ' + self.parent.status())
         except psutil.NoSuchProcess:
-            raise SystemError('ERROR ' + self.name + ' stopped unexpectedly, check the log')
-            #raise SystemError('assert_running: Process ' + self.name + ' has disappeared, log-file says:\n'
-            #                  + (tail_file(self.log.name, nchars=300) or 'Log-file is missing') )
-        
+            self._print('', tag='')
+            raise SystemError('ERROR ' + self.name + ' stopped unexpectedly, check the log')        
         
     #--------------------------------------------------------------------------------
     def wait_until_sleeping(self, v=1):                                      # runner
@@ -351,6 +348,7 @@ class runner:                                                               # ru
                 c = int(self.n)
                 if c == 0:
                     c = self.time_and_step()[1]
+            self._print('', tag='')
             raise SystemError('INFO Run stopped after ' + str(c) + ' ' + step)    
 
     #--------------------------------------------------------------------------------

@@ -337,29 +337,29 @@ class ior_backward(iorsim):                                            # ior_bac
         self.satnum_check = check_endtag(file=self.satnum, endtag=self.endtag)  # Check if satnum-file is flushed
         #self.schedule = self.read_schedule()
 
-    #--------------------------------------------------------------------------------
-    def satnum_tstep(self):                                     # ior_backward
-    #--------------------------------------------------------------------------------
-        return get_tsteps(self.satnum)[0]
+    # #--------------------------------------------------------------------------------
+    # def satnum_tstep(self):                                     # ior_backward
+    # #--------------------------------------------------------------------------------
+    #     return get_tsteps(self.satnum)[0]
 
-    #--------------------------------------------------------------------------------
-    def append_to_satnum(self, text):                                     # ior_backward
-    #--------------------------------------------------------------------------------
-        if not text:
-            return
-        with open(self.satnum, 'r') as f:
-            lines = f.readlines()
-        #n = safeindex(lines, self.endtag)
-        n = len(lines)-4
-        #print('append_to_satnum:',n, text)
-        if n:
-            lines.insert(n, text+'\n')
-            with open(self.satnum, 'w') as f:
-                f.write(''.join(lines))
-        # checks
-        with open(self.satnum, 'r') as f:
-            lines = f.readlines()
-        #print('satnum.dat:',lines[-5:])
+    # #--------------------------------------------------------------------------------
+    # def append_to_satnum(self, text):                                  # ior_backward
+    # #--------------------------------------------------------------------------------
+    #     if not text:
+    #         return
+    #     with open(self.satnum, 'r') as f:
+    #         lines = f.readlines()
+    #     #n = safeindex(lines, self.endtag)
+    #     n = len(lines)-4
+    #     #print('append_to_satnum:',n, text)
+    #     if n:
+    #         lines.insert(n, text+'\n')
+    #         with open(self.satnum, 'w') as f:
+    #             f.write(''.join(lines))
+    #     # checks
+    #     with open(self.satnum, 'r') as f:
+    #         lines = f.readlines()
+    #     print('satnum.dat: ',lines[-5:])
 
 
 
@@ -448,12 +448,13 @@ class Schedule:
     def __init__(self, case, ext='.schedule', comment='#', end='/', tag='TSTEP', days=1):
     #--------------------------------------------------------------------------------
         self.file = Path(case).with_suffix(ext)
+        self.outfile = None
         self.comment = comment
         self.tag = tag
         self.end = end
         if not self.file.is_file():
-            header = f'# IORSim schedule file\n# Do not edit or remove the TSTEP below' 
-            footer = f'# Start schedule here' 
+            header = '# IORSim schedule file\n# Do not edit or remove the TSTEP below' 
+            footer = '# Start schedule here' 
             self.file.write_text('\n'.join([header, self.write_tstep(days), footer,'']))
             #print(f'  Created {self.file}')
         self._schedule = self.read()
@@ -479,13 +480,20 @@ class Schedule:
         return schedule
 
     #--------------------------------------------------------------------------------
-    def write_tstep(self, dt):                                                        # schedule
+    def set_outfile(self, filename, filepos=4):                            # schedule
+    #--------------------------------------------------------------------------------
+        self.outfile = filename
+        self.filepos = filepos
+
+    #--------------------------------------------------------------------------------
+    def write_tstep(self, dt):                                             # schedule
     #--------------------------------------------------------------------------------
         if type(dt) in (int, float):
             tstep = self.tag+'\n'+str(dt)+' '+self.end
             #print('tstep:',tstep)
             return tstep
         return False
+
 
     #--------------------------------------------------------------------------------
     def next_actions(self):                                                        # schedule
@@ -531,16 +539,38 @@ class Schedule:
         return '\n'.join(self._get(1, **kwargs) or '')
 
     #--------------------------------------------------------------------------------
-    def update(self, tstep):                                               # schedule
+    def append(self, text):                               # schedule
     #--------------------------------------------------------------------------------
+        if not text:
+            return
+        with open(self.outfile, 'r') as f:
+            lines = f.readlines()
+        #n = safeindex(lines, self.endtag)
+        n = len(lines) - self.filepos
+        #print('append_to_satnum:',n, text)
+        if n:
+            lines.insert(n, text+'\n')
+            with open(self.outfile, 'w') as f:
+                f.write(''.join(lines))
+        # checks
+        # with open(self.outfile, 'r') as f:
+        #     lines = f.readlines()
+        # print(self.outfile, ': ', lines[-10:])
+
+    #--------------------------------------------------------------------------------
+    def update(self):                                               # schedule
+    #--------------------------------------------------------------------------------
+        # Append next keywords to outfile if tstep==0 
         if self.tstep()==0:
             self.count += 1
-            act = self.actions(inc=True)
-            #print('actions:',act, 'count:', self.count, 'length:',self.length)
-            return act            
-        new_tstep = self.set_tstep( max(self.tstep()-int(tstep), 0) )
-        #print('new_tstep:', new_tstep)
-        return None
+            self.append(self.actions(inc=True))
+            #print('actions:',self.actions(), 'count:', self.count, 'length:',self.length)
+            return
+        # Update schedule tstep by reading TSTEP from outfile
+        tstep = get_tsteps(self.outfile)[0]
+        #old_tstep = self.tstep()
+        self.set_tstep( max(self.tstep()-int(tstep), 0) )
+        #print(f'tstep: {tstep}, old_tstep: {old_tstep}, new_tstep: {self.tstep()}')
 
 
 #====================================================================================
@@ -588,17 +618,18 @@ class simulation:
             sum_tstep, len_tstep, tsteps = ECL_input_days_and_steps(self.root)
             if not time_ecl:
                 time_ecl = sum_tstep
-            #dt_init = int(dt_init)
+            # Need to calculate number of steps based on duration of 
+            # simulation, initial TSTEP from .schedule-file, and TSTEP 
+            # preceding READDATA in .DATA-file
             dt_init = int( self.schedule.tstep() )
             self.T = int(time)+int(time_ecl)+dt_init
             N = int(ceil((time+dt_init)/dt_ecl))
-            #self.N_start = len_tstep
-            #print(self.N_start)
-            #print('dt_ecl', dt_ecl, 'N' ,N, 'self.T', self.T, 'time', time, 'time_ecl', time_ecl, 'dt_init', dt_init)
             kwargs.update({'N':N, 'T':self.T, 'init_tsteps':len_tstep})
             self.run_sim = self.backward
             self.runs = [ecl_backward(exe=eclexe, **kwargs), ior_backward(exe=iorexe, **kwargs)]
             self.ecl, self.ior = self.runs
+            # Add satnum-file to schedule, filepos is position of TSTEP 
+            self.schedule.set_outfile(self.ior.satnum, filepos=4)
         # Forward simulation
         if self.mode=='forward':
             self.T = time
@@ -686,9 +717,10 @@ class simulation:
             # Run IORSim to prepare satnum input for the next Eclipse run
             ior.run_one_step() #n+ecl.init_tsteps)
             if schedule:
-                actions = self.schedule.update(ior.satnum_tstep())
-                #print('ACT',actions)
-                ior.append_to_satnum(actions)
+                self.schedule.update()
+                #actions = self.schedule.update(ior.satnum_tstep())
+                #print('ACT: ',actions)
+                #ior.append_to_satnum(actions)
             ior.t = ior.time_and_step()[0]
             self.update.progress(value=ior.t)
             self.update.status(run=ior, mode='backward')
@@ -903,6 +935,9 @@ def main(case_dir=None, settings_file=None):
 #--------------------------------------------------------------------------------
     description = 'Script for running IORSim and Eclipse in backward and forward mode'
 
+    cliargs, parser = parse_input(description)
+    to_screen = cliargs['to_screen']
+
     prog = Progress(format='40#')
     #----------------------------------------
     def progress(run=None, value=None):
@@ -913,9 +948,6 @@ def main(case_dir=None, settings_file=None):
         if run:# and not value:
             value = run.t
         prog.print(value)
-
-    cliargs, parser = parse_input(description)
-    to_screen = cliargs['to_screen']
 
     #----------------------------------------
     def status(value=None, **x):
@@ -945,7 +977,7 @@ def main(case_dir=None, settings_file=None):
     check_unrst = not cliargs['no_unrst_check']
     check_rft = not cliargs['no_rft_check']
     rft_size = not cliargs['full_rft_check']
-    #print(cliargs)
+
     sim = simulation(time=cliargs['days'], check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, progress=progress, status=status, **cliargs)
     if sim.mode=='forward':
         sim.set_time(ECL_input_days_and_steps(cliargs['root'])[0])
