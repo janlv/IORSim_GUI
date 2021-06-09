@@ -1861,12 +1861,12 @@ class main_window(QMainWindow):                                    # main_window
         self.search_field.setPlaceholderText('Search text')
         self.search_field.textChanged.connect(self.search_text)
         buttons.addWidget(self.search_field)
-        ### Next button
-        self.next_btn = new_button('Next', self.search_next)
-        buttons.addWidget(self.next_btn)
         ### Prev button
         self.prev_btn = new_button('Prev', self.search_prev)
         buttons.addWidget(self.prev_btn)
+        ### Next button
+        self.next_btn = new_button('Next', self.search_next)
+        buttons.addWidget(self.next_btn)
 
     #-----------------------------------------------------------------------
     def goto_end(self):
