@@ -163,7 +163,15 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
         self.check_UNRST_file(nblocks=self.init_tsteps)
         self.nwell = self.unrst_check.var('nwell')
-        rft_wells = self.check_RFT_file(nwell_max=(self.init_tsteps+1)*self.nwell, nwell_min=self.nwell, limit=200)
+        nwell_max = (self.init_tsteps+1)*self.nwell
+        rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell, limit=200)
+        # If some wells are missing in the RFT-file we need to 
+        # do the full RFT-check, not only the file-size check
+        if rft_wells != nwell_max:
+            self.rft_size = False
+            info = 'Turned on full RFT-check (default is file-size check)' 
+            self._print(info)
+        #print(f'self.nwell: {self.nwell}, nwell_max: {(self.init_tsteps+1)*self.nwell}, rft_wells: {rft_wells}')
         self.suspend()
         if self.echo:
             print('\r  Eclipse started, log file is ' + self.get_logfile(), flush=True)
@@ -218,7 +226,8 @@ class ecl_backward(eclipse):                                           # ecl_bac
             if passed:
                 break
             if nblocks==nwell_min:
-                raise SystemError('ERROR Check of ' + self.rft_check.file.name() + ' failed! No new TIME-blocks written to file')
+                #self._print('', tag='')
+                raise SystemError('ERROR No TIME blocks found in the RFT-file. Check for closed wells in the Eclipse log.')
         return nblocks
 
     #--------------------------------------------------------------------------------
@@ -233,17 +242,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
         else:
             return False
 
-    # #--------------------------------------------------------------------------------
-    # def status_message(self):
-    # #--------------------------------------------------------------------------------
-    #     message = ''
-    #     if self.check_unrst:
-    #         unrst = self.unrst_check.start_values()
-    #         message += ':  {} : {}'.format(unrst['start'].rstrip(), unrst['values'][0])
-    #     if self.check_rft:
-    #         rft = self.rft_check.start_values()
-    #         message += ', {} : {:.2f}'.format(rft['start'].rstrip(), rft['values'][0]) 
-    #     return message
 
 
 #====================================================================================
@@ -571,13 +569,13 @@ class simulation:
         self.ior = self.ecl = None
         self.T = 0
         self.mode = mode
+        self.schedule = None
         if root:
             kwargs.update({'root':str(root), 'runlog':self.runlog})
             self.prepare_mode(**kwargs)
 
 
     #-----------------------------------------------------------------------
-    #def prepare_mode(self, iorexe=None, eclexe=None, time=0, time_ecl=None, dt_ecl=None, dt_init=0, **kwargs):
     def prepare_mode(self, iorexe=None, eclexe=None, time=0, time_ecl=None, dt_ecl=None, **kwargs):
     #-----------------------------------------------------------------------
         if not self.mode:
@@ -863,7 +861,7 @@ def parse_input(description):
     parser.add_argument('-pause',       help='Backward mode: pause between Eclipse and IORSim runs', type=float, default=0.5)
     parser.add_argument('-v',           help='Verbosity level, higher number increase verbosity, default is 3', type=int, default=3)
     parser.add_argument('-keep_files',  help='Interface-files are not deleted after completion', action='store_true')
-    #parser.add_argument('-only_convert',     help='Only convert FUNRST to UNRST', action='store_true')
+    parser.add_argument('-to_screen',   help='Print program log to screen', action='store_true')
     args = vars(parser.parse_args())
     return args, parser
 
@@ -916,12 +914,14 @@ def main(case_dir=None, settings_file=None):
             value = run.t
         prog.print(value)
 
+    cliargs, parser = parse_input(description)
+    to_screen = cliargs['to_screen']
+
     #----------------------------------------
     def status(value=None, **x):
     #----------------------------------------
-        value and print('\r   '+value+50*' ', end='')
+        not to_screen and value and print('\r   '+value+50*' ', end='')
 
-    cliargs, parser = parse_input(description)
     #print(cliargs)
     # if not cliargs['days'] and not cliargs['only_convert']:
     #     #parser.print_help()
@@ -949,7 +949,7 @@ def main(case_dir=None, settings_file=None):
     sim = simulation(time=cliargs['days'], check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, progress=progress, status=status, **cliargs)
     if sim.mode=='forward':
         sim.set_time(ECL_input_days_and_steps(cliargs['root'])[0])
-    logfiles = [sim.runlog.name,]+[run.log.name for run in sim.runs]
+    logfiles = [run.log.name for run in sim.runs]+[log.name for log in (sim.runlog,) if log]
     case = Path(sim.root).name
     print()
     print('   {:10s}: {}'.format('Case', case))
@@ -963,7 +963,7 @@ def main(case_dir=None, settings_file=None):
     print('   {:10s}: {}'.format('Log-files', ', '.join([Path(file).name for file in logfiles])))
     print()
     result, msg = sim.run()
-    print('\r   '+msg.replace('INFO','').strip()+'              \n')
+    not to_screen and print('\r   '+msg.replace('INFO','').strip()+'              \n')
     exit_without_atexit()
 
 

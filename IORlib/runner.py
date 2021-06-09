@@ -400,9 +400,11 @@ class runner:                                                               # ru
         if loop_func==0:
             # Default checks during loop
             loop_func = self.assert_running_and_stop_if_canceled
-        self._print('calling wait_for( {}, limit={} )...'.format(func.__qualname__, limit), v=v, end='')
+        passed_args = ','.join([f'{k}={v}' for k,v in kwargs.items()])
+        self._print(f'calling wait_for( {func.__qualname__}({passed_args}), limit={limit} )...', v=v, end='')
         n = loop_until(func, *args, **kwargs, error=error, pause=pause, limit=limit, loop_func=loop_func)
         if n<0:
+            self._print('', tag='')    
             return False    
         self._print(str(n) + ' loops', v=3, tag='')
         if callable(log):

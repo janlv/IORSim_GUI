@@ -201,7 +201,7 @@ def show_message(window, kind, text='', extra='', detail=None):
         title = 'Error'
         icon = QMessageBox.Critical
     else:
-        raise SystemError('Unrecognized kind-option in show_message()')
+        raise SystemError(f'Unrecognized kind-option in show_message(): {kind}')
     msg = QMessageBox(window)
     msg.setWindowTitle(title)
     msg.setIcon(icon)
