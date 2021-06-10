@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # importing libraries 
+import os
 from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PyQt5.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
 from PyQt5.QtCore import QObject, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QRect, QThreadPool, Qt, QRegExp
@@ -24,7 +25,7 @@ import warnings
 import copy
 
 from ior2ecl import simulation, Schedule, dtecl, main as ior2ecl_main
-from IORlib.utils import Progress, exit_without_atexit, assert_python_version, get_substrings, return_matching_string, delete_all, file_contains, upper_and_lower
+from IORlib.utils import Progress, assert_python_version, get_substrings, return_matching_string, delete_all, file_contains, upper_and_lower
 from IORlib.ECL import unfmt_file, input_days_and_steps as ECL_input_days_and_steps
 import GUI_icons
 
@@ -2819,6 +2820,7 @@ if __name__ == '__main__':
         #app.setFont(QFont(default_font, pointSize=default_size, weight=default_weight))
         window = main_window()
         app.exec_()
-        exit_without_atexit()
+        os._exit(0)
+        #exit_without_atexit()
 
     

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import atexit
+#import atexit
 from collections import namedtuple
+import os
 from pathlib import Path
 import sys
 from argparse import ArgumentParser
@@ -15,7 +16,7 @@ import shutil
 import traceback
 from numpy import ceil
 
-from IORlib.utils import flatten_list, matches, number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, exit_without_atexit, delete_files_matching, file_contains
+from IORlib.utils import flatten_list, matches, number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks, get_tsteps, unfmt_file, fmt_file, Section, input_days_and_steps as ECL_input_days_and_steps, get_TSTEP
 
@@ -591,7 +592,7 @@ class simulation:
         self.runlog = None
         if root and not to_screen:
             self.runlog = safeopen(Path(root).parent/(self.name+'.log'), 'w')
-            atexit.register(self.runlog.close)
+            #atexit.register(self.runlog.close)
         self.print2log = lambda txt: print(txt, file=self.runlog, flush=True)
         self.current_run = None
         self.runs = runs
@@ -735,6 +736,22 @@ class simulation:
         ior.quit()
         return ecl.complete_msg()
 
+    #-----------------------------------------------------------------------
+    def info_header(self):
+    #-----------------------------------------------------------------------
+        logfiles = [run.log.name for run in self.runs]+[log.name for log in (self.runlog,) if log]
+        case = Path(self.root).name
+        print()
+        print('   {:10s}: {}'.format('Case', case))
+        print('   {:10s}: {}'.format('Mode', self.mode.capitalize())) 
+        print('   {:10s}: {}'.format('Days', self.T), end='')
+        if self.mode=='forward':
+            print(' (update TSTEP in '+case+'.DATA to change number of days)')
+        else:
+            print()
+        print('   {:10s}: {}'.format('Folder', Path(self.root).parent))
+        print('   {:10s}: {}'.format('Log-files', ', '.join([Path(file).name for file in logfiles])))
+        print()
 
     #-----------------------------------------------------------------------
     def run(self):
@@ -918,14 +935,13 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-keep_files',  help='Interface-files are not deleted after completion', action='store_true')
     parser.add_argument('-to_screen',   help='Print program log to screen', action='store_true')
     args = vars(parser.parse_args())
-
+    # Look for case in case_dir if root is not a file
     if case_dir and not Path(args['root']+'.DATA').is_file():
         args['root'] = case_from_casedir(case_dir, args['root'])
-    
+    # Read iorexe from settings if argument is missing
     if settings_file and not args['iorexe']:
         args['iorexe'] = iorexe_from_settings(settings_file, args['iorexe'])
-
-    return args, parser
+    return args
 
 
 #--------------------------------------------------------------------------------
@@ -939,7 +955,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
         if value and value<0:
             prog.reset(N=abs(value))
             return
-        if run:# and not value:
+        if run:
             value = run.t
         prog.print(value)
 
@@ -953,86 +969,19 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
                      keep_files=keep_files, progress=progress, status=status, to_screen=to_screen)
     if sim.mode=='forward':
         sim.set_time(ECL_input_days_and_steps(root)[0])
-    logfiles = [run.log.name for run in sim.runs]+[log.name for log in (sim.runlog,) if log]
-    case = Path(sim.root).name
-    print()
-    print('   {:10s}: {}'.format('Case', case))
-    print('   {:10s}: {}'.format('Mode', sim.mode.capitalize())) 
-    print('   {:10s}: {}'.format('Days', sim.T), end='')
-    if sim.mode=='forward':
-        print(' (update TSTEP in '+case+'.DATA to change number of days)')
-    else:
-        print()
-    print('   {:10s}: {}'.format('Folder', Path(sim.root).parent))
-    print('   {:10s}: {}'.format('Log-files', ', '.join([Path(file).name for file in logfiles])))
-    print()
+    sim.info_header()
     result, msg = sim.run()
     not to_screen and print('\r   '+msg.replace('INFO','').strip()+'              \n')
-    exit_without_atexit()
 
 
 #--------------------------------------------------------------------------------
 def main(case_dir=None, settings_file=None):
 #--------------------------------------------------------------------------------
-    args, parser = parse_input(case_dir=case_dir, settings_file=settings_file)
-    #to_screen = cliargs['to_screen']
-
-    # prog = Progress(format='40#')
-    # #----------------------------------------
-    # def progress(run=None, value=None):
-    # #----------------------------------------
-    #     if value and value<0:
-    #         prog.reset(N=abs(value))
-    #         return
-    #     if run:# and not value:
-    #         value = run.t
-    #     prog.print(value)
-
-    # #----------------------------------------
-    # def status(value=None, **x):
-    # #----------------------------------------
-    #     not to_screen and value and print('\r   '+value+50*' ', end='')
-        
-    #if case_dir and not Path(cliargs['root']+'.DATA').is_file():
-    #    cliargs['root'] = case_from_casedir(case_dir, cliargs['root'])
-
-    # if cliargs['days'] < 1:
-    #     sim = simulation(progress=progress, status=status)
-    #     print('   Convert FUNRST-file from IORSim and merge with UNRST-file from Eclipse\n')
-    #     complete, msg = sim.convert_restart_file(case=cliargs['root'])
-    #     print('\r   '+msg+50*' '+'\n')
-    #     return 
-
-    #if settings_file and not cliargs['iorexe']:
-    #    cliargs['iorexe'] = iorexe_from_settings(settings_file, cliargs['iorexe'])
-
-    #check_unrst = not cliargs['no_unrst_check']
-    #check_rft = not cliargs['no_rft_check']
-    #rft_size = not cliargs['full_rft_check']
-    
-
+    args = parse_input(case_dir=case_dir, settings_file=settings_file)
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=(not args['full_rft_check']), 
            to_screen=args['to_screen'], pause=args['pause'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            keep_files=args['keep_files'])
-    # sim = simulation(time=cliargs['days'], check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, progress=progress, status=status, **cliargs)
-    # if sim.mode=='forward':
-    #     sim.set_time(ECL_input_days_and_steps(cliargs['root'])[0])
-    # logfiles = [run.log.name for run in sim.runs]+[log.name for log in (sim.runlog,) if log]
-    # case = Path(sim.root).name
-    # print()
-    # print('   {:10s}: {}'.format('Case', case))
-    # print('   {:10s}: {}'.format('Mode', sim.mode.capitalize())) 
-    # print('   {:10s}: {}'.format('Days', sim.T), end='')
-    # if sim.mode=='forward':
-    #     print(' (update TSTEP in '+case+'.DATA to change number of days)')
-    # else:
-    #     print()
-    # print('   {:10s}: {}'.format('Folder', Path(sim.root).parent))
-    # print('   {:10s}: {}'.format('Log-files', ', '.join([Path(file).name for file in logfiles])))
-    # print()
-    # result, msg = sim.run()
-    # not to_screen and print('\r   '+msg.replace('INFO','').strip()+'              \n')
-    # exit_without_atexit()
+    os._exit(0)
 
 
 ######################################################################################

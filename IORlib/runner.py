@@ -3,7 +3,7 @@
 
 from datetime import datetime
 from subprocess import Popen, PIPE, STDOUT, call
-import atexit
+#import atexit
 #import signal
 #import os
 #import sys
@@ -130,7 +130,7 @@ class runner:                                                               # ru
         self.exe = exe
         self.cmd = cmd
         self.log = safeopen( Path(case).parent / Path(name.lower()+'.log'), 'w' )
-        atexit.register(self.log.close)
+        #atexit.register(self.log.close)
         self.runlog = runlog
         self.ext_iface = ext_iface
         self.ext_OK = ext_OK
@@ -212,7 +212,7 @@ class runner:                                                               # ru
         #self.procs = self.children + [self.parent,]
         self.assert_running()
         self.cmdline = '\'' + ' '.join(self.parent.cmdline()) + '\''
-        atexit.register(self.kill)
+        #atexit.register(self.kill)
         self._print(self.process_info())
         
         
