@@ -15,7 +15,7 @@ import shutil
 import traceback
 from numpy import ceil
 
-from IORlib.utils import flatten_list, number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, exit_without_atexit, delete_files_matching, file_contains
+from IORlib.utils import flatten_list, matches, number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, exit_without_atexit, delete_files_matching, file_contains
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks, get_tsteps, unfmt_file, fmt_file, Section, input_days_and_steps as ECL_input_days_and_steps, get_TSTEP
 
@@ -836,6 +836,7 @@ class simulation:
 
 #############################################################################
 
+
 #-----------------------------------------------------------------------
 def dtecl(root, ext='.trcinp'):                             # 
 #-----------------------------------------------------------------------
@@ -871,38 +872,12 @@ def dtecl(root, ext='.trcinp'):                             #
     if val==0:
         raise SystemError('WARNING IORSim timestep (dtecl) is zero')
     return val
-            
 
-        
-#--------------------------------------------------------------------------------
-def parse_input(description):
-#--------------------------------------------------------------------------------
-    parser = ArgumentParser(description=description)
-    #parser.add_argument('-mode',         help='Simulation mode', choices=['backward', 'forward', 'iorsim', 'eclipse'], required=True)
-    #parser.add_argument('-root',        help='Eclipse case name without .DATA', required=True)
-    parser.add_argument('root',        help='Eclipse case name without .DATA')
-    #parser.add_argument('-days',        help='Time interval of the simulation', type=int, required=False)
-    parser.add_argument('days',        help='Time interval of the simulation, if 0 only convert is performed', type=int)
-    #parser.add_argument('-dt_init',     help='Initial timestep, default is 1 day', type=int, default=1)
-    parser.add_argument('-eclexe',      help="Name of excecutable, default is 'eclrun'", default='eclrun')
-    parser.add_argument('-iorexe',      help="Name of IORSim executable, default is 'IORSimX'")
-    parser.add_argument('-iorargs',     help='Additional arguments passed to IORSim, should be quoted', default='')
-    parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
-    parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
-    parser.add_argument('-full_rft_check',   help='Backward mode: Full check of RFT-file, default is to only check size', action='store_true')
-    parser.add_argument('-pause',       help='Backward mode: pause between Eclipse and IORSim runs', type=float, default=0.5)
-    parser.add_argument('-v',           help='Verbosity level, higher number increase verbosity, default is 3', type=int, default=3)
-    parser.add_argument('-keep_files',  help='Interface-files are not deleted after completion', action='store_true')
-    parser.add_argument('-to_screen',   help='Print program log to screen', action='store_true')
-    args = vars(parser.parse_args())
-    return args, parser
 
 #--------------------------------------------------------------------------------
 def iorexe_from_settings(settings_file, iorexe):
 #--------------------------------------------------------------------------------
     # Find iorexe in settings.txt if missing
-    #if not kwargs['iorexe']:
-    #settings = kwargs['gui_dir']/settings
     if settings_file.is_file():
         with open(settings_file) as f:
             for line in f:
@@ -920,24 +895,43 @@ def iorexe_from_settings(settings_file, iorexe):
 def case_from_casedir(case_dir, root):
 #--------------------------------------------------------------------------------
     # Find case in casedir if given DATA-file is missing
-    #print(kwargs)
-    #root = kwargs['root']
-    #casedir = kwargs['gui_dir']/'cases'
     if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
         return case_dir/root/root
     print('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
     raise SystemExit
-    #print(kwargs['root'])
-
 
 #--------------------------------------------------------------------------------
-def main(case_dir=None, settings_file=None):
+def parse_input(case_dir=None, settings_file=None):
 #--------------------------------------------------------------------------------
     description = 'Script for running IORSim and Eclipse in backward and forward mode'
+    parser = ArgumentParser(description=description)
+    parser.add_argument('root',        help='Eclipse case name without .DATA')
+    parser.add_argument('days',        help='Time interval of the simulation, if 0 only convert is performed', type=int)
+    parser.add_argument('-eclexe',      help="Name of excecutable, default is 'eclrun'", default='eclrun')
+    parser.add_argument('-iorexe',      help="Name of IORSim executable, default is 'IORSimX'")
+    #parser.add_argument('-iorargs',     help='Additional arguments passed to IORSim, should be quoted', default='')
+    parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
+    parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
+    parser.add_argument('-full_rft_check',   help='Backward mode: Full check of RFT-file, default is to only check size', action='store_true')
+    parser.add_argument('-pause',       help='Backward mode: pause between Eclipse and IORSim runs', type=float, default=0.5)
+    parser.add_argument('-v',           help='Verbosity level, higher number increase verbosity, default is 3', type=int, default=3)
+    parser.add_argument('-keep_files',  help='Interface-files are not deleted after completion', action='store_true')
+    parser.add_argument('-to_screen',   help='Print program log to screen', action='store_true')
+    args = vars(parser.parse_args())
 
-    cliargs, parser = parse_input(description)
-    to_screen = cliargs['to_screen']
+    if case_dir and not Path(args['root']+'.DATA').is_file():
+        args['root'] = case_from_casedir(case_dir, args['root'])
+    
+    if settings_file and not args['iorexe']:
+        args['iorexe'] = iorexe_from_settings(settings_file, args['iorexe'])
 
+    return args, parser
+
+
+#--------------------------------------------------------------------------------
+def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
+           check_unrst=True, check_rft=True, rft_size=True, keep_files=False):
+#--------------------------------------------------------------------------------
     prog = Progress(format='40#')
     #----------------------------------------
     def progress(run=None, value=None):
@@ -954,33 +948,11 @@ def main(case_dir=None, settings_file=None):
     #----------------------------------------
         not to_screen and value and print('\r   '+value+50*' ', end='')
 
-    #print(cliargs)
-    # if not cliargs['days'] and not cliargs['only_convert']:
-    #     #parser.print_help()
-    #     #print('   Missing arguments:\n      -days <number> or -only_convert is required in addition to -root '+cliargs['root']+'\n')
-    #     parser.error('   -days DAYS or -only_convert is required in addition to '+cliargs['root']+'\n')
-    #     return
-        
-    if not Path(cliargs['root']+'.DATA').is_file() and case_dir:
-        cliargs['root'] = case_from_casedir(case_dir, cliargs['root'])
-
-    if cliargs['days'] < 1:
-        sim = simulation(progress=progress, status=status)
-        print('   Convert FUNRST-file from IORSim and merge with UNRST-file from Eclipse\n')
-        complete, msg = sim.convert_restart_file(case=cliargs['root'])
-        print('\r   '+msg+50*' '+'\n')
-        return 
-
-    if not cliargs['iorexe'] and settings_file:
-        cliargs['iorexe'] = iorexe_from_settings(settings_file, cliargs['iorexe'])
-
-    check_unrst = not cliargs['no_unrst_check']
-    check_rft = not cliargs['no_rft_check']
-    rft_size = not cliargs['full_rft_check']
-
-    sim = simulation(time=cliargs['days'], check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, progress=progress, status=status, **cliargs)
+    sim = simulation(root=root, time=time, pause=pause, iorexe=iorexe, eclexe=eclexe, 
+                     check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, 
+                     keep_files=keep_files, progress=progress, status=status, to_screen=to_screen)
     if sim.mode=='forward':
-        sim.set_time(ECL_input_days_and_steps(cliargs['root'])[0])
+        sim.set_time(ECL_input_days_and_steps(root)[0])
     logfiles = [run.log.name for run in sim.runs]+[log.name for log in (sim.runlog,) if log]
     case = Path(sim.root).name
     print()
@@ -997,6 +969,70 @@ def main(case_dir=None, settings_file=None):
     result, msg = sim.run()
     not to_screen and print('\r   '+msg.replace('INFO','').strip()+'              \n')
     exit_without_atexit()
+
+
+#--------------------------------------------------------------------------------
+def main(case_dir=None, settings_file=None):
+#--------------------------------------------------------------------------------
+    args, parser = parse_input(case_dir=case_dir, settings_file=settings_file)
+    #to_screen = cliargs['to_screen']
+
+    # prog = Progress(format='40#')
+    # #----------------------------------------
+    # def progress(run=None, value=None):
+    # #----------------------------------------
+    #     if value and value<0:
+    #         prog.reset(N=abs(value))
+    #         return
+    #     if run:# and not value:
+    #         value = run.t
+    #     prog.print(value)
+
+    # #----------------------------------------
+    # def status(value=None, **x):
+    # #----------------------------------------
+    #     not to_screen and value and print('\r   '+value+50*' ', end='')
+        
+    #if case_dir and not Path(cliargs['root']+'.DATA').is_file():
+    #    cliargs['root'] = case_from_casedir(case_dir, cliargs['root'])
+
+    # if cliargs['days'] < 1:
+    #     sim = simulation(progress=progress, status=status)
+    #     print('   Convert FUNRST-file from IORSim and merge with UNRST-file from Eclipse\n')
+    #     complete, msg = sim.convert_restart_file(case=cliargs['root'])
+    #     print('\r   '+msg+50*' '+'\n')
+    #     return 
+
+    #if settings_file and not cliargs['iorexe']:
+    #    cliargs['iorexe'] = iorexe_from_settings(settings_file, cliargs['iorexe'])
+
+    #check_unrst = not cliargs['no_unrst_check']
+    #check_rft = not cliargs['no_rft_check']
+    #rft_size = not cliargs['full_rft_check']
+    
+
+    runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=(not args['full_rft_check']), 
+           to_screen=args['to_screen'], pause=args['pause'], eclexe=args['eclexe'], iorexe=args['iorexe'],
+           keep_files=args['keep_files'])
+    # sim = simulation(time=cliargs['days'], check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, progress=progress, status=status, **cliargs)
+    # if sim.mode=='forward':
+    #     sim.set_time(ECL_input_days_and_steps(cliargs['root'])[0])
+    # logfiles = [run.log.name for run in sim.runs]+[log.name for log in (sim.runlog,) if log]
+    # case = Path(sim.root).name
+    # print()
+    # print('   {:10s}: {}'.format('Case', case))
+    # print('   {:10s}: {}'.format('Mode', sim.mode.capitalize())) 
+    # print('   {:10s}: {}'.format('Days', sim.T), end='')
+    # if sim.mode=='forward':
+    #     print(' (update TSTEP in '+case+'.DATA to change number of days)')
+    # else:
+    #     print()
+    # print('   {:10s}: {}'.format('Folder', Path(sim.root).parent))
+    # print('   {:10s}: {}'.format('Log-files', ', '.join([Path(file).name for file in logfiles])))
+    # print()
+    # result, msg = sim.run()
+    # not to_screen and print('\r   '+msg.replace('INFO','').strip()+'              \n')
+    # exit_without_atexit()
 
 
 ######################################################################################
