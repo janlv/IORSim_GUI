@@ -1842,6 +1842,9 @@ class main_window(QMainWindow):                                    # main_window
         self.editor_group = QGroupBox()
         self.editor_group.setObjectName('editor')
         self.editor_group.setLayout(layout)
+        ### Refresh button
+        self.refresh_btn = new_button('Refresh', self.editor_refresh)
+        buttons.addWidget(self.refresh_btn)
         ### Save button
         self.save_btn = new_button('Save', self.save_text)
         buttons.addWidget(self.save_btn)
@@ -1998,6 +2001,18 @@ class main_window(QMainWindow):                                    # main_window
         #    self.editor.verticalScrollBar().setValue(self.vscroll_pos)
             #print(self.cursor_pos)
  
+    #-----------------------------------------------------------------------
+    def editor_refresh(self):
+    #-----------------------------------------------------------------------
+        file = self.editor.objectName()
+        self.vscroll[file] = self.editor.verticalScrollBar().value()
+        if file and Path(file).is_file():
+            text = open(file).read()
+            self.editor.setObjectName(str(file))
+        self.editor.setPlainText(text)
+        vscroll = self.vscroll.get(str(file)) or 0
+        self.editor.verticalScrollBar().setValue(vscroll)
+
     #-----------------------------------------------------------------------
     def view_input_file(self, ext=None, title=None, comment='#', keywords=[]):                                # main_window
     #-----------------------------------------------------------------------

@@ -933,6 +933,7 @@ def ior_input(var=None, root=None):
 def iorexe_from_settings(settings_file, iorexe):
 #--------------------------------------------------------------------------------
     # Find iorexe in settings.txt if missing
+    settings_file = Path(settings_file)
     if settings_file.is_file():
         with open(settings_file) as f:
             for line in f:
@@ -950,6 +951,7 @@ def iorexe_from_settings(settings_file, iorexe):
 def case_from_casedir(case_dir, root):
 #--------------------------------------------------------------------------------
     # Find case in casedir if given DATA-file is missing
+    case_dir = Path(case_dir)
     if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
         return case_dir/root/root
     print('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
@@ -972,6 +974,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-v',           help='Verbosity level, higher number increase verbosity, default is 3', type=int, default=3)
     parser.add_argument('-keep_files',  help='Interface-files are not deleted after completion', action='store_true')
     parser.add_argument('-to_screen',   help='Print program log to screen', action='store_true')
+    parser.add_argument('-only_convert',   help='Only convert and exit', action='store_true')
     args = vars(parser.parse_args())
     # Look for case in case_dir if root is not a file
     if case_dir and not Path(args['root']+'.DATA').is_file():
@@ -984,7 +987,7 @@ def parse_input(case_dir=None, settings_file=None):
 
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
-           check_unrst=True, check_rft=True, rft_size=True, keep_files=False):
+           check_unrst=True, check_rft=True, rft_size=True, keep_files=False, only_convert=False):
 #--------------------------------------------------------------------------------
     prog = Progress(format='40#')
     #----------------------------------------
@@ -1005,6 +1008,11 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     sim = simulation(root=root, time=time, pause=pause, iorexe=iorexe, eclexe=eclexe, 
                      check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, 
                      keep_files=keep_files, progress=progress, status=status, to_screen=to_screen)
+
+    if only_convert:
+        complete, conv_msg = sim.convert_restart_file(case=sim.root)
+        return
+
     if sim.mode=='forward':
         sim.set_time(ECL_input_days_and_steps(root)[0])
     sim.info_header()
@@ -1013,12 +1021,12 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
 
 
 #--------------------------------------------------------------------------------
-def main(case_dir=None, settings_file=None):
+def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
 #--------------------------------------------------------------------------------
     args = parse_input(case_dir=case_dir, settings_file=settings_file)
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=(not args['full_rft_check']), 
            to_screen=args['to_screen'], pause=args['pause'], eclexe=args['eclexe'], iorexe=args['iorexe'],
-           keep_files=args['keep_files'])
+           keep_files=args['keep_files'], only_convert=args['only_convert'])
     os._exit(0)
 
 
