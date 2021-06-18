@@ -615,7 +615,8 @@ class simulation:
         if self.mode=='backward':
             self.schedule = Schedule(self.root)
             if not dt_ecl:
-                dt_ecl = dtecl(self.root)
+                #dt_ecl = dtecl(self.root)
+                dt_ecl = ior_input(var='dtecl', root=self.root)
             sum_tstep, len_tstep, tsteps = ECL_input_days_and_steps(self.root)
             if not time_ecl:
                 time_ecl = sum_tstep
@@ -851,11 +852,13 @@ class simulation:
         return complete, msg
         #self.progress(N)
 
+
+
 #############################################################################
 
 
 #-----------------------------------------------------------------------
-def dtecl(root, ext='.trcinp'):                             # 
+def ior_input(var=None, root=None):
 #-----------------------------------------------------------------------
 #
 #  Get dtecl from IORSim input file .trcinp
@@ -871,24 +874,59 @@ def dtecl(root, ext='.trcinp'):                             #
 #  # metnum
 #    0
 #
-    read = False
-    dt = ()
-    with open(str(root)+ext) as f:
-        for line in f:
-            line = line.lstrip()
-            if line.startswith('#'):
-                continue
-            if line.startswith('*INTEGRATION'):
-                read = True
-                continue
-            if read:
-                dt += tuple(line.split())
-                if len(dt) > 5:
-                    break
-    val = int(float(dt[4]))
-    if val==0:
+    file=f'{root}.trcinp'
+    pos = var_group = None
+    if var == 'dtecl':
+        var_group = '\*INTEGRATION'
+        pos = 4
+    # Find position after var_group name 
+    end = [m.span()[1] for m in matches(file=file, pattern=fr'{var_group}\s*\n+')]
+    num = '\d+\.?e?E?\d*'
+    # Find uncommented lines with two numbers
+    val = [float(s.decode()) for m in matches(file=file, pattern=fr'\n+\s*{num}\s*{num}', pos=end[0]) for s in m.group(0).split()]
+    # Find commented lines with variable names
+    #if name:
+    #    name = [s.decode() for m in matches(file=file, pattern=fr'(?<=#)\s*\D+\s*\D*', pos=end[0]) for s in m.group(0).split()]
+    if val[pos]==0:
         raise SystemError('WARNING IORSim timestep (dtecl) is zero')
-    return val
+    return val[pos]
+
+
+# #-----------------------------------------------------------------------
+# def dtecl(root, ext='.trcinp'):                             # 
+# #-----------------------------------------------------------------------
+# #
+# #  Get dtecl from IORSim input file .trcinp
+# #  Assumed format:    
+# #    
+# #  *INTEGRATION
+# #  # tstart  tstop
+# #    0.0  1.e99
+# #  # dtmin dtmax 
+# #    0.0  1.e99
+# #  # dtecl dteclmax 
+# #    5      20 
+# #  # metnum
+# #    0
+# #
+#     read = False
+#     dt = ()
+#     with open(str(root)+ext) as f:
+#         for line in f:
+#             line = line.lstrip()
+#             if line.startswith('#'):
+#                 continue
+#             if line.startswith('*INTEGRATION'):
+#                 read = True
+#                 continue
+#             if read:
+#                 dt += tuple(line.split())
+#                 if len(dt) > 5:
+#                     break
+#     val = int(float(dt[4]))
+#     if val==0:
+#         raise SystemError('WARNING IORSim timestep (dtecl) is zero')
+#     return val
 
 
 #--------------------------------------------------------------------------------

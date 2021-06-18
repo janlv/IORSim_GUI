@@ -5,7 +5,7 @@ import re
 from IORlib.utils import matches
 
 #-----------------------------------------------------------------------
-def read_dtecl_ior(root):
+def dtecl_ior(root, name=False):
 #-----------------------------------------------------------------------
 #
 #  Get dtecl from IORSim input file .trcinp
@@ -22,23 +22,17 @@ def read_dtecl_ior(root):
 #    0
 #
     file=f'{root}.trcinp'
-    comm = '\s*#*.*\n+'
-    num = '(?<!#)\s*\d+\.?e?E?\d*'
-    two_num = f'{num}\s+{num}\s*\n+'
-    #pattern = r'(\*INTEGRATION\s*\n+)((#+.*\s\n+)+)'
-    #pattern = rf'(\*INTEGRATION\s*\n+)({comm})({two_num})({comm})({two_num})'
-    #pattern = rf'(\*INTEGRATION\s*\n+)({comm})({nums})({comm})({nums})({comm})({nums})({comm})({nums})'
-    pattern = r'\*INTEGRATION\s*\n+'
-    m = [m for m in matches(file=file, pattern=pattern)]
-    #print(m[0].group(0))
-    end = m[0].span()[1]
-    pattern = r'(?<!\s*#\s*)\s*\d+\.?e?E?\d*'
-    m = [m.group(0) for m in matches(file=file, pattern=pattern, pos=end)]
-    print(m)
-    #with open(file) as f:
-    #    with mmap(f.fileno(), length=0, access=ACCESS_READ) as data:
-    #        m = re.match(pattern.encode(), data)
-    #        print(m)
+    # Find end-position of *INTEGRATION 
+    end = [m.span()[1] for m in matches(file=file, pattern=r'\*INTEGRATION\s*\n+')]
+    num = '\d+\.?e?E?\d*'
+    # Find uncommented lines with two numbers
+    val = [float(s.decode()) for m in matches(file=file, pattern=fr'\n+\s*{num}\s*{num}', pos=end[0]) for s in m.group(0).split()]
+    # Find commented lines with variable names
+    if name:
+        name = [s.decode() for m in matches(file=file, pattern=fr'(?<=#)\s*\D+\s*\D*', pos=end[0]) for s in m.group(0).split()]
+    #print(val[:5])
+    #print(name[:5])
+    return val[4]
 
 root = 'GUI/cases/SNURRE1/SNURRE1'
-read_dtecl_ior(root)
+print(dtecl_ior(root))

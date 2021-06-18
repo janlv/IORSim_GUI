@@ -24,7 +24,7 @@ import shutil
 import warnings
 import copy
 
-from ior2ecl import simulation, Schedule, dtecl, main as ior2ecl_main
+from ior2ecl import simulation, Schedule, ior_input, main as ior2ecl_main
 from IORlib.utils import Progress, assert_python_version, get_substrings, return_matching_string, delete_all, file_contains, upper_and_lower
 from IORlib.ECL import unfmt_file, input_days_and_steps as ECL_input_days_and_steps
 import GUI_icons
@@ -1002,7 +1002,7 @@ class main_window(QMainWindow):                                    # main_window
         inp = self.input
         inp['dtecl'] = inp['ecl_days'] = inp['species'] = None
         if inp['root']:
-            inp['dtecl']   = dtecl(inp['root'])
+            inp['dtecl']   = ior_input(var='dtecl', root=inp['root'])
             inp['ecl_days'] = ECL_input_days_and_steps(inp['root'])[0]
             inp['species'] = get_species(inp['root'])
 
