@@ -448,117 +448,136 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
     def initUI(self):                                             # settings
     #-----------------------------------------------------------------------
-        self.layout = QGridLayout()
-        self.setLayout(self.layout)
-        #self.layout.setColumnStretch(0,20)
-        #self.layout.setColumnStretch(1,65)
-        #self.layout.setColumnStretch(2,15)
+        grid = QGridLayout()
+        self.setLayout(grid)
+        grid.setColumnStretch(0,15) 
+        grid.setColumnStretch(1,70) 
+        grid.setColumnStretch(2,15) 
+
         tool_tip = {'iorsim':'Set path to the IORSim executable',
                     'iorarg':'Additional arguments passed to IORSim',
                     'eclrun':"Eclipse command, default is 'eclrun'",
-                    'unrst':'Check flushed Eclipse UNRST-file',
-                    'rft':'Check flushed Eclipse RFT-file',
-                    'dt':'Initial timestep for IORSim run',
-                    'convert':'Convert IORSim FUNRST to UNRST and merge with Eclipse',
-                    'pause':'Add a pause in seconds between Eclipse and IORSim run'}
+                    'unrst':'Check that the UNRST-file is properly flushed before suspending Eclipse',
+                    'rft':'Check that the RFT-file is properly flushed before suspending Eclipse',
+                    'dt':'First TSTEP for Eclipse run after READDATA',
+                    'convert':'Convert IORSim formatted output to unformatted format (readable by ResInsight), and also add output from the Eclipse run',
+                    'pause':'A short break (in seconds) between Eclipse and IORSim runs might be necessary to improve the stability of backward runs'}
 
         ### IORSim executable
         n = 0
         var, text = 'iorsim', 'IORSim program'
         # label, setting, button = self.new_line()
         widget = self.new_line(var=var, text=text, required=True, open_func=self.open_ior_prog)
-        self.layout.addWidget(widget[0] , n, 0)
+        grid.addWidget(widget[0] , n, 0)
         # layout given as (row, col, rowspan, colspan)
-        self.layout.addWidget(widget[1] , n, 1)
-        self.layout.addWidget(widget[2] , n, 2)
+        grid.addWidget(widget[1] , n, 1)
+        grid.addWidget(widget[2] , n, 2)
         #for w in widget[1:]:
         widget[1].setToolTip(tool_tip[var])
         self.iorsim = widget[1]
             
-        ### IORSim args
-        show = False
-        var, text = 'iorarg', 'IORSim arguments'
-        widget = self.new_line(var=var, text=text, required=False)
-        #for w in widget[1:]:
-        widget[1].setToolTip(tool_tip[var])
-        self.iorarg = widget[1]
-        if show:
-            n += 1
-            self.layout.addWidget(widget[0] , n, 0)
-            self.layout.addWidget(widget[1] , n, 1)
+        # ### IORSim args
+        # show = False
+        # var, text = 'iorarg', 'IORSim arguments'
+        # widget = self.new_line(var=var, text=text, required=False)
+        # #for w in widget[1:]:
+        # widget[1].setToolTip(tool_tip[var])
+        # self.iorarg = widget[1]
+        # if show:
+        #     n += 1
+        #     self.layout.addWidget(widget[0] , n, 0)
+        #     self.layout.addWidget(widget[1] , n, 1)
         
         ### Eclipse executable
-        n += 1
+        n = 1
         var, text = 'eclrun', 'Eclipse program'
         widget = self.new_line(var=var, text=text, required=True, open_func=self.open_ecl_prog)
-        self.layout.addWidget(widget[0] , n, 0)
-        self.layout.addWidget(widget[1] , n, 1)
-        self.layout.addWidget(widget[2] , n, 2)
+        grid.addWidget(widget[0] , n, 0)
+        grid.addWidget(widget[1] , n, 1)
+        grid.addWidget(widget[2] , n, 2)
         #for w in widget[1:]:
         widget[1].setToolTip(tool_tip[var])
         self.eclrun = widget[1]
         
         ### Convert
-        n += 1
+        n = 2
         label = QLabel()
         label.setText('Output')
-        var, text = 'convert', 'Convert FUNRST'
+        var, text = 'convert', 'Convert to unformatted output'
         self.convert = self.new_box(var=var, text=text)
         self.convert.setToolTip(tool_tip[var])
-        self.layout.addWidget(label       , n, 0)
-        self.layout.addWidget(self.convert, n, 1)
+        grid.addWidget(label       , n, 0)
+        grid.addWidget(self.convert, n, 1)
         # self.layout.addWidget(self.fontsize , 4, 1, 1, 1)
 
+        n = 3
+        grid.addWidget(QLabel(), n, 0)
+
         ### Backward options
-        n += 1
+        n = 4
         label = QLabel()
         label.setText('Backward options')
-        self.layout.addWidget(label   , n, 0)
-        options = QHBoxLayout()
-        options.setSpacing(20)
-        self.layout.addLayout(options , n, 1)
-        # pause between runs
-        var, text = 'pause', 'Pause'
-        label2, self.pause = self.new_line(var=var, text=text)
-        self.pause.setToolTip(tool_tip[var])
-        self.pause.setFixedWidth(40)
-        pause = QHBoxLayout()
-        pause.setSpacing(5)
-        options.addLayout(pause)
-        pause.addWidget(self.pause)
-        pause.addWidget(label2)
+        grid.addWidget(label, n, 0)
+
+        n = 5
         # initial timestep
-        var, text = 'dt', 'Initial timestep'
-        l_dt, self.dt = self.new_line(var=var, text=text, required=True)
+        dt = QHBoxLayout()
+        grid.addLayout(dt, n, 1) # (layout, row, col, rowspan, colspan)
+        var, text = 'dt', 'Initial timestep passed to Eclipse: '
+        lbl_dt, self.dt = self.new_line(var=var, text=text, required=True)
         self.dt.setFixedWidth(40)
         self.dt.setToolTip(tool_tip[var])
-        dt = QHBoxLayout()
-        dt.setSpacing(5)
-        #options.addLayout(dt)
+        lbl_dt.setToolTip(tool_tip[var])
+        dt.addWidget(lbl_dt)
         dt.addWidget(self.dt)
-        dt.addWidget(l_dt)
-        # file checks
-        var, text = 'unrst', 'UNRST-check'
+        txt = QLabel()
+        txt.setText('TSTEP')
+        dt.addWidget(txt)
+
+        n = 6
+        # pause between runs
+        pause = QHBoxLayout()
+        grid.addLayout(pause, n, 1) # (layout, row, col, rowspan, colspan)
+        var, text = 'pause', 'Pause before IORSim resumes: '
+        lbl_pause, self.pause = self.new_line(var=var, text=text)
+        self.pause.setToolTip(tool_tip[var])
+        lbl_pause.setToolTip(tool_tip[var])
+        self.pause.setFixedWidth(40)
+        pause.addWidget(lbl_pause)
+        pause.addWidget(self.pause)
+        sec = QLabel()
+        sec.setText('seconds')
+        pause.addWidget(sec)
+        pause.addWidget(QLabel())
+
+        n = 7
+        # unrst file check
+        unrst = QHBoxLayout()
+        grid.addLayout(unrst, n, 1)
+        var, text = 'unrst', 'Check that UNRST-file is flushed'
         self.unrst = self.new_box(var=var, text=text)
         self.unrst.setToolTip(tool_tip[var])
-        var, text = 'rft', 'RFT-check'
+        unrst.addWidget(self.unrst)
+
+        n = 8
+        # rft file check
+        rft = QHBoxLayout()
+        grid.addLayout(rft, n, 1)
+        var, text = 'rft', 'Check that RFT-file is flushed'
         self.rft = self.new_box(var=var, text=text)
         self.rft.setToolTip(tool_tip[var])
-        #checks = QHBoxLayout()
-        #checks.addWidget(self.unrst)
-        #checks.addWidget(self.rft)
-        #options.addLayout(checks)
-        options.addWidget(self.unrst)
-        options.addWidget(self.rft)
+        rft.addWidget(self.rft)
+
+        n = 9
+        grid.addWidget(QLabel(), n, 0)
 
         ### OK / Cancel buttons
-        n += 1
+        n = 10
         yes_no = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         self.yes_no_btns = QDialogButtonBox(yes_no)
+        grid.addWidget(self.yes_no_btns, n, 0, 1, 3)
         self.yes_no_btns.accepted.connect(self.on_OK_click)
         self.yes_no_btns.rejected.connect(self.reject)
-        self.layout.addWidget(self.yes_no_btns, n, 0, 1, 3)
-        #self.layout.addWidget(self.yes_no_btns, 4, 0, 1, 4)
         
     #-----------------------------------------------------------------------
     def new_box(self, var=None, text='', required=False):
@@ -1120,7 +1139,7 @@ class main_window(QMainWindow):                                    # main_window
                 #to_fil = str(to_root)+ext
                 #shutil.copy(from_fil, to_fil)
                 shutil.copy(from_fil, to_root.with_suffix(ext))
-        for ext in upper_and_lower(('INC','DAT','GRDECL','EGRID')):
+        for ext in upper_and_lower(('INC','DAT','GRDECL','EGRID','SCH')):
             for fil in Path(from_root).parent.glob('*.'+ext):
                 shutil.copy(str(fil), str(Path(to_root).parent/fil.name))
         ext = '.schedule'
@@ -1469,6 +1488,11 @@ class main_window(QMainWindow):                                    # main_window
             self.chem_inp_act.setEnabled(True)
         else:
             self.chem_inp_act.setEnabled(False)
+        # enable/disable schedule edit action
+        if self.input['root'] and Path(self.input['root']+'.SCH').is_file():
+            self.schedule_file_act.setEnabled(True)
+        else:
+            self.schedule_file_act.setEnabled(False)
 
             
     #-----------------------------------------------------------------------
@@ -2101,7 +2125,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_input_file(ext='schedule', title='Schedule file for backward runs', comment='#')
+        self.view_input_file(ext='SCH', title='Schedule file for backward runs', comment='--')
         
     #-----------------------------------------------------------------------
     def view_log(self, logfile, title=None):                                # main_window
@@ -2703,7 +2727,8 @@ class main_window(QMainWindow):                                    # main_window
             kwargs = {'mode':'forward', 'runs':self.run}
         # start simulation
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 
-                                 convert=s.get['convert'](), pause=float(s.get['pause']()), **kwargs)
+                                 convert=s.get['convert'](), pause=float(s.get['pause']()), init_tstep=float(s.get['dt']()), 
+                                 **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)

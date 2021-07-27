@@ -446,22 +446,25 @@ class ior_backward(iorsim):                                            # ior_bac
 class Schedule:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, case, ext='.schedule', comment='#', end='/', tag='TSTEP', days=1):
+    def __init__(self, case, ext='.SCH', comment='--', end='/', tag='TSTEP'):
     #--------------------------------------------------------------------------------
         self.file = Path(case).with_suffix(ext)
-        self.outfile = None
+        self.ifacefile = None
         self.comment = comment
         self.tag = tag
         self.end = end
-        if not self.file.is_file():
-            header = '# IORSim schedule file\n# Do not edit or remove the TSTEP below' 
-            footer = '# Start schedule here' 
-            self.file.write_text('\n'.join([header, self.write_tstep(days), footer,'']))
-            #print(f'  Created {self.file}')
-        self._schedule = self.read()
-        #print(self._schedule)
         self.count = 0
-        self.length = len(self._schedule)
+        self.length = 0
+        self.exists = self.file.is_file()
+        # if not self.file.is_file():
+        #     header = '# IORSim schedule file\n# Do not edit or remove the TSTEP below' 
+        #     footer = '# Start schedule here' 
+        #     self.file.write_text('\n'.join([header, self.write_tstep(days), footer,'']))
+        #     #print(f'  Created {self.file}')
+        if self.exists:
+            self._schedule = self.read()
+            #print(self._schedule)
+            self.length = len(self._schedule)
 
     #--------------------------------------------------------------------------------
     def read(self):                                                        # schedule
@@ -481,19 +484,19 @@ class Schedule:
         return schedule
 
     #--------------------------------------------------------------------------------
-    def set_outfile(self, filename, filepos=4):                            # schedule
+    def set_interface_file(self, filename, filepos=4):                            # schedule
     #--------------------------------------------------------------------------------
-        self.outfile = filename
+        self.ifacefile = filename
         self.filepos = filepos
 
-    #--------------------------------------------------------------------------------
-    def write_tstep(self, dt):                                             # schedule
-    #--------------------------------------------------------------------------------
-        if type(dt) in (int, float):
-            tstep = self.tag+'\n'+str(dt)+' '+self.end
-            #print('tstep:',tstep)
-            return tstep
-        return False
+    # #--------------------------------------------------------------------------------
+    # def write_tstep(self, dt):                                             # schedule
+    # #--------------------------------------------------------------------------------
+    #     if type(dt) in (int, float):
+    #         tstep = self.tag+'\n'+str(dt)+' '+self.end
+    #         #print('tstep:',tstep)
+    #         return tstep
+    #     return False
 
 
     #--------------------------------------------------------------------------------
@@ -501,10 +504,10 @@ class Schedule:
     #--------------------------------------------------------------------------------
         return self.actions(inc=True)
 
-    #--------------------------------------------------------------------------------
-    def next_tstep(self):                                                        # schedule
-    #--------------------------------------------------------------------------------
-        return self.write_tstep(self.tstep(inc=True))
+    # #--------------------------------------------------------------------------------
+    # def next_tstep(self):                                                        # schedule
+    # #--------------------------------------------------------------------------------
+    #     return self.write_tstep(self.tstep(inc=True))
 
     #--------------------------------------------------------------------------------
     def _get(self, n, inc=False):                                               # schedule
@@ -544,14 +547,14 @@ class Schedule:
     #--------------------------------------------------------------------------------
         if not text:
             return
-        with open(self.outfile, 'r') as f:
+        with open(self.ifacefile, 'r') as f:
             lines = f.readlines()
         #n = safeindex(lines, self.endtag)
         n = len(lines) - self.filepos
         #print('append_to_satnum:',n, text)
         if n:
             lines.insert(n, text+'\n')
-            with open(self.outfile, 'w') as f:
+            with open(self.ifacefile, 'w') as f:
                 f.write(''.join(lines))
         # checks
         # with open(self.outfile, 'r') as f:
@@ -567,8 +570,8 @@ class Schedule:
             self.append(self.actions(inc=True))
             #print('actions:',self.actions(), 'count:', self.count, 'length:',self.length)
             return
-        # Update schedule tstep by reading TSTEP from outfile
-        tstep = get_tsteps(self.outfile)[0]
+        # Update schedule tstep by reading TSTEP from the interface-file
+        tstep = get_tsteps(self.ifacefile)[0]
         #old_tstep = self.tstep()
         self.set_tstep( max(self.tstep()-int(tstep), 0) )
         #print(f'tstep: {tstep}, old_tstep: {old_tstep}, new_tstep: {self.tstep()}')
@@ -578,7 +581,7 @@ class Schedule:
 class simulation:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, mode=None, root=None, pause=0, runs=[], to_screen=False, convert=True,
+    def __init__(self, mode=None, root=None, pause=0, init_tstep=1, runs=[], to_screen=False, convert=True,
                  status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None, **kwargs):
     #--------------------------------------------------------------------------------
         #print('mode',mode,'root',root,'pause',pause,'runs',runs,'to_screen',to_screen,'convert',convert,
@@ -588,6 +591,7 @@ class simulation:
         self.root = root
         self.update = namedtuple('update',['status','progress','plot'])(status, progress, plot)
         self.pause = pause
+        self.init_tstep = init_tstep # backward mode: initial Eclipse TSTEP after READDATA
         self.convert = convert
         self.runlog = None
         if root and not to_screen:
@@ -613,7 +617,7 @@ class simulation:
             self.mode = self.mode_from_case()
         # Backward simulation
         if self.mode=='backward':
-            self.schedule = Schedule(self.root)
+            #self.schedule = Schedule(self.root)
             if not dt_ecl:
                 #dt_ecl = dtecl(self.root)
                 dt_ecl = ior_input(var='dtecl', root=self.root)
@@ -623,7 +627,8 @@ class simulation:
             # Need to calculate number of steps based on duration of 
             # simulation, initial TSTEP from .schedule-file, and TSTEP 
             # preceding READDATA in .DATA-file
-            dt_init = int( self.schedule.tstep() )
+            #dt_init = int( self.schedule.tstep() )
+            dt_init = int( self.init_tstep )
             self.T = int(time)+int(time_ecl)+dt_init
             N = int(ceil((time+dt_init)/dt_ecl))
             kwargs.update({'N':N, 'T':self.T, 'init_tsteps':len_tstep})
@@ -631,7 +636,8 @@ class simulation:
             self.runs = [ecl_backward(exe=eclexe, **kwargs), ior_backward(exe=iorexe, **kwargs)]
             self.ecl, self.ior = self.runs
             # Add satnum-file to schedule, filepos is position of TSTEP 
-            self.schedule.set_outfile(self.ior.satnum, filepos=4)
+            self.schedule = Schedule(self.root)            
+            self.schedule.set_interface_file(self.ior.satnum, filepos=4)
         # Forward simulation
         if self.mode=='forward':
             self.T = time
@@ -699,7 +705,7 @@ class simulation:
 
 
     #-----------------------------------------------------------------------
-    def backward(self, schedule=True): 
+    def backward(self): 
     #-----------------------------------------------------------------------
         self.update.progress(value=-self.runs[0].T)
         for run in self.runs:
@@ -708,7 +714,9 @@ class simulation:
             self.update.status(value='Starting ' + run.name + '...')
             run.start()
         ecl, ior = self.runs
-        ior.satnum.write_text(self.schedule.next_tstep())
+        #ior.satnum.write_text(self.schedule.next_tstep())
+        ior.satnum.write_text(f'TSTEP\n{self.init_tstep} /') 
+
         # Start timestep loop
         #for n in range(self.N_start, ecl.N+self.N_start):
         for n in range(ecl.N):
@@ -718,7 +726,7 @@ class simulation:
             sleep(self.pause)
             # Run IORSim to prepare satnum input for the next Eclipse run
             ior.run_one_step() #n+ecl.init_tsteps)
-            if schedule:
+            if self.schedule.exists:
                 self.schedule.update()
                 #actions = self.schedule.update(ior.satnum_tstep())
                 #print('ACT: ',actions)
@@ -780,7 +788,7 @@ class simulation:
             self.update.plot()
             self.update.status(value=msg)
             if self.convert and success:
-                sleep(0.05)  # Need a short break to make the GUI progressbar responsive
+                sleep(0.05)  # Need a short break here to make the GUI progressbar responsive
                 complete, conv_msg = self.convert_restart_file(case=self.root)
                 self.print2log('\n===== '+conv_msg+' ======')
                 if not complete:
@@ -962,18 +970,18 @@ def parse_input(case_dir=None, settings_file=None):
 #--------------------------------------------------------------------------------
     description = 'Script for running IORSim and Eclipse in backward and forward mode'
     parser = ArgumentParser(description=description)
-    parser.add_argument('root',        help='Eclipse case name without .DATA')
-    parser.add_argument('days',        help='Time interval of the simulation, if 0 only convert is performed', type=int)
-    parser.add_argument('-eclexe',      help="Name of excecutable, default is 'eclrun'", default='eclrun')
-    parser.add_argument('-iorexe',      help="Name of IORSim executable, default is 'IORSimX'")
-    #parser.add_argument('-iorargs',     help='Additional arguments passed to IORSim, should be quoted', default='')
+    parser.add_argument('root',            help='Eclipse case name without .DATA')
+    parser.add_argument('days',            help='Time interval of the simulation, if 0 only convert is performed', type=int)
+    parser.add_argument('-eclexe',         default='eclrun', help="Name of excecutable, default is 'eclrun'")
+    parser.add_argument('-iorexe',         help="Name of IORSim executable, default is 'IORSimX'"                  )
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
-    parser.add_argument('-full_rft_check',   help='Backward mode: Full check of RFT-file, default is to only check size', action='store_true')
-    parser.add_argument('-pause',       help='Backward mode: pause between Eclipse and IORSim runs', type=float, default=0.5)
-    parser.add_argument('-v',           help='Verbosity level, higher number increase verbosity, default is 3', type=int, default=3)
-    parser.add_argument('-keep_files',  help='Interface-files are not deleted after completion', action='store_true')
-    parser.add_argument('-to_screen',   help='Print program log to screen', action='store_true')
+    parser.add_argument('-full_rft_check', help='Backward mode: Full check of RFT-file, default is to only check size', action='store_true')
+    parser.add_argument('-pause',          default=0.5, help='Backward mode: pause between Eclipse and IORSim runs', type=float)
+    parser.add_argument('-init_tstep',     default=1.0, help='Backward mode: initial Eclipse TSTEP', type=float)
+    parser.add_argument('-v',              default=3, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
+    parser.add_argument('-keep_files',     help='Interface-files are not deleted after completion', action='store_true')
+    parser.add_argument('-to_screen',      help='Print program log to screen', action='store_true')
     parser.add_argument('-only_convert',   help='Only convert and exit', action='store_true')
     args = vars(parser.parse_args())
     # Look for case in case_dir if root is not a file
@@ -987,7 +995,7 @@ def parse_input(case_dir=None, settings_file=None):
 
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
-           check_unrst=True, check_rft=True, rft_size=True, keep_files=False, only_convert=False):
+           init_tstep=1.0, check_unrst=True, check_rft=True, rft_size=True, keep_files=False, only_convert=False):
 #--------------------------------------------------------------------------------
     prog = Progress(format='40#')
     #----------------------------------------
@@ -1005,7 +1013,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     #----------------------------------------
         not to_screen and value and print('\r   '+value+50*' ', end='')
 
-    sim = simulation(root=root, time=time, pause=pause, iorexe=iorexe, eclexe=eclexe, 
+    sim = simulation(root=root, time=time, pause=pause, init_tstep=init_tstep, iorexe=iorexe, eclexe=eclexe, 
                      check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, 
                      keep_files=keep_files, progress=progress, status=status, to_screen=to_screen)
 
@@ -1025,7 +1033,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
 #--------------------------------------------------------------------------------
     args = parse_input(case_dir=case_dir, settings_file=settings_file)
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=(not args['full_rft_check']), 
-           to_screen=args['to_screen'], pause=args['pause'], eclexe=args['eclexe'], iorexe=args['iorexe'],
+           to_screen=args['to_screen'], pause=args['pause'], init_tstep=args['init_tstep'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            keep_files=args['keep_files'], only_convert=args['only_convert'])
     os._exit(0)
 
