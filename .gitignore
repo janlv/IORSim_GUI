@@ -171,3 +171,7 @@ dist/IORSim_GUI.exe
 IORSim_GUI.exe
 schedule.txt
 test_TSTEP.py
+ECL.CFG
+FloGrid.CMDLOG
+FloGrid.WORKSPACESTART
+FloViz.CMDLOG

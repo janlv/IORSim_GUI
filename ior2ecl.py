@@ -18,7 +18,7 @@ from numpy import ceil
 
 from IORlib.utils import flatten_list, matches, number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks, get_tsteps, unfmt_file, fmt_file, Section, input_days_and_steps as ECL_input_days_and_steps, get_TSTEP
+from IORlib.ECL import check_blocks, get_schedule_time_and_filepos, get_tsteps, unfmt_file, fmt_file, Section, input_days_and_steps as ECL_input_days_and_steps
 
 
 
@@ -467,8 +467,13 @@ class Schedule:
             self.length = len(self._schedule)
 
     #--------------------------------------------------------------------------------
-    def read(self):                                                        # schedule
+    def read(self):                                                        # schedule     
     #--------------------------------------------------------------------------------
+        ''' 
+        Returns a list with tsteps at even positions followed by a list of schedule
+        statements at odd positions:
+        schedule = [10.0 ['WELSPECS', "P1"], 34.0, ['END']]
+        '''
         if self.file.is_file():
             with open(self.file) as f:
                 lines = f.readlines()
@@ -478,9 +483,12 @@ class Schedule:
             lines = [line for line in lines if len(line)>0]
             # Remove commented lines
             lines = [line for line in lines if not line.startswith(self.comment)]
-            dt, gap = get_TSTEP(lines)
-            kw = flatten_list([ [ lines[gap[n][0]:gap[n][1]] or '' ] for n in range(len(gap)) ])
-            schedule = flatten_list([[t, kw[n]] for n,t in enumerate(dt)])
+            dt, pos = get_schedule_time_and_filepos(lines)
+            #print(dt, pos)
+            kw = flatten_list([ [ lines[pos[n][0]:pos[n][1]] or '' ] for n in range(len(pos)) ])
+            schedule = flatten_list([[sum(t), kw[n]] for n,t in enumerate(dt)])
+            #print(schedule[:4])
+            #print(schedule[-4:])
         return schedule
 
     #--------------------------------------------------------------------------------
@@ -568,13 +576,13 @@ class Schedule:
         if self.tstep()==0:
             self.count += 1
             self.append(self.actions(inc=True))
-            #print('actions:',self.actions(), 'count:', self.count, 'length:',self.length)
+            print('actions:',self.actions(), 'count:', self.count, 'length:',self.length)
             return
         # Update schedule tstep by reading TSTEP from the interface-file
         tstep = get_tsteps(self.ifacefile)[0]
-        #old_tstep = self.tstep()
+        old_tstep = self.tstep()
         self.set_tstep( max(self.tstep()-int(tstep), 0) )
-        #print(f'tstep: {tstep}, old_tstep: {old_tstep}, new_tstep: {self.tstep()}')
+        print(f'tstep: {tstep}, old_tstep: {old_tstep}, new_tstep: {self.tstep()}')
 
 
 #====================================================================================

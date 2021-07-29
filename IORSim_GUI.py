@@ -3,7 +3,7 @@
 
 # importing libraries 
 import os
-from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QStatusBar, QDialog, QTextEdit, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PyQt5.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
 from PyQt5.QtCore import QObject, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QRect, QThreadPool, Qt, QRegExp
 #from PySide2.QtWidgets import QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
@@ -385,7 +385,7 @@ class Mpl_canvas(FigureCanvasQTAgg):
 class User_input(QDialog):                                              
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, parent=None, title=None, label=None, text=None, delete_src=False):
+    def __init__(self, parent=None, title=None, head=None, label=None, text=None, delete_src=False):
     #-----------------------------------------------------------------------
         #super(User_input, self).__init__(*args, **kwargs)
         super(User_input, self).__init__(parent)
@@ -393,6 +393,10 @@ class User_input(QDialog):
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
         self.func = None
+        intro = QLabel()
+        intro.setText(head)
+        intro.setWordWrap(True)
+        self.layout.addWidget(intro)
         ### input
         self.inp_layout = QHBoxLayout()
         self.layout.addLayout(self.inp_layout)
@@ -459,9 +463,9 @@ class Settings(QDialog):
                     'eclrun':"Eclipse command, default is 'eclrun'",
                     'unrst':'Check that the UNRST-file is properly flushed before suspending Eclipse',
                     'rft':'Check that the RFT-file is properly flushed before suspending Eclipse',
-                    'dt':'First TSTEP for Eclipse run after READDATA',
+                    'dt':'Eclipse starts before IORSim and the first Eclipse TSTEP is given here. Subsequent TSTEPs are provided by IORSim via the interface-file.',
                     'convert':'Convert IORSim formatted output to unformatted format (readable by ResInsight), and also add output from the Eclipse run',
-                    'pause':'A short break (in seconds) between Eclipse and IORSim runs might be necessary to improve the stability of backward runs'}
+                    'pause':'A short break between Eclipse and IORSim runs might be necessary to improve the stability of backward runs'}
 
         ### IORSim executable
         n = 0
@@ -554,7 +558,7 @@ class Settings(QDialog):
         # unrst file check
         unrst = QHBoxLayout()
         grid.addLayout(unrst, n, 1)
-        var, text = 'unrst', 'Check that UNRST-file is flushed'
+        var, text = 'unrst', 'Confirm flushed UNRST-file'
         self.unrst = self.new_box(var=var, text=text)
         self.unrst.setToolTip(tool_tip[var])
         unrst.addWidget(self.unrst)
@@ -563,7 +567,7 @@ class Settings(QDialog):
         # rft file check
         rft = QHBoxLayout()
         grid.addLayout(rft, n, 1)
-        var, text = 'rft', 'Check that RFT-file is flushed'
+        var, text = 'rft', 'Confirm flushed RFT-file'
         self.rft = self.new_box(var=var, text=text)
         self.rft.setToolTip(tool_tip[var])
         rft.addWidget(self.rft)
@@ -1118,10 +1122,19 @@ class main_window(QMainWindow):                                    # main_window
         if rename:
             name = Path(rename).stem
             to_root = self.casedir/name/name
+        if to_root.parent.is_dir():
+            head = f'A case named {to_root.stem} already exists, please choose another name'
+            rename = User_input(self, title='Choose new case name', head=head, label='New case name', text=str(to_root.stem))
+            def func():
+                newname = Path(rename.var.text()).stem
+                self.copy_case(case, rename=newname)
+            rename.set_func(func)
+            rename.open()
+            return None
         try:
             to_root.parent.mkdir(parents=True, exist_ok=False)
         except FileExistsError:
-            show_message(self, 'warning', text='A case named {} already exists, please choose another name'.format(to_root.name))
+            show_message(self, 'warning', text=f'A case named {to_root.name} already exists, case not added.')
             return None
         self.copy_case_files(from_root, to_root) 
         return str(to_root)
@@ -1131,7 +1144,7 @@ class main_window(QMainWindow):                                    # main_window
     def copy_case_files(self, from_root, to_root):             # main_window
     #-----------------------------------------------------------------------
         #print('COPY: {} -> {}'.format(from_root, to_root))
-        for ext in ('.DATA','.trcinp','.geocheminp'):
+        for ext in ('.DATA','.trcinp','.geocheminp','.sch','.SCH'):
             #from_fil = str(from_root)+ext
             #if Path(from_fil).is_file():
             from_fil = from_root.with_suffix(ext)
@@ -1139,7 +1152,7 @@ class main_window(QMainWindow):                                    # main_window
                 #to_fil = str(to_root)+ext
                 #shutil.copy(from_fil, to_fil)
                 shutil.copy(from_fil, to_root.with_suffix(ext))
-        for ext in upper_and_lower(('INC','DAT','GRDECL','EGRID','SCH')):
+        for ext in upper_and_lower(('INC','DAT','GRDECL','EGRID')):
             for fil in Path(from_root).parent.glob('*.'+ext):
                 shutil.copy(str(fil), str(Path(to_root).parent/fil.name))
         ext = '.schedule'
