@@ -1118,7 +1118,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         case = Path(case)
         from_root = case.parent/case.stem
-        to_root = self.casedir/case.stem/case.stem
+        to_root = self.casedir/case.stem.upper()/case.stem.upper()
         if rename:
             name = Path(rename).stem
             to_root = self.casedir/name/name
@@ -1126,7 +1126,7 @@ class main_window(QMainWindow):                                    # main_window
             head = f'A case named {to_root.stem} already exists, please choose another name'
             rename = User_input(self, title='Choose new case name', head=head, label='New case name', text=str(to_root.stem))
             def func():
-                newname = Path(rename.var.text()).stem
+                newname = Path(rename.var.text().upper()).stem
                 self.copy_case(case, rename=newname)
             rename.set_func(func)
             rename.open()
