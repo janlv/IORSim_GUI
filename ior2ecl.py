@@ -333,36 +333,9 @@ class ior_backward(iorsim):                                            # ior_bac
     #--------------------------------------------------------------------------------
         # Call iorsim.__init__()
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', **kwargs)
-        #self.dt = dt   # Timestep in the first satnum-file prepared for the first Eclipse step (do we need this?)
         self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
         self.endtag = '-- IORSimX done.'
         self.satnum_check = check_endtag(file=self.satnum, endtag=self.endtag)  # Check if satnum-file is flushed
-        #self.schedule = self.read_schedule()
-
-    # #--------------------------------------------------------------------------------
-    # def satnum_tstep(self):                                     # ior_backward
-    # #--------------------------------------------------------------------------------
-    #     return get_tsteps(self.satnum)[0]
-
-    # #--------------------------------------------------------------------------------
-    # def append_to_satnum(self, text):                                  # ior_backward
-    # #--------------------------------------------------------------------------------
-    #     if not text:
-    #         return
-    #     with open(self.satnum, 'r') as f:
-    #         lines = f.readlines()
-    #     #n = safeindex(lines, self.endtag)
-    #     n = len(lines)-4
-    #     #print('append_to_satnum:',n, text)
-    #     if n:
-    #         lines.insert(n, text+'\n')
-    #         with open(self.satnum, 'w') as f:
-    #             f.write(''.join(lines))
-    #     # checks
-    #     with open(self.satnum, 'r') as f:
-    #         lines = f.readlines()
-    #     print('satnum.dat: ',lines[-5:])
-
 
 
     #--------------------------------------------------------------------------------
@@ -383,10 +356,7 @@ class ior_backward(iorsim):                                            # ior_bac
         self.OK_file().create_empty()
         super().start() # iorsim.start()   
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-        self.suspend()
-        #self.write_schedule(self.satnum)
-        #print(self.satnum.read_text())
-        #self.satnum.write_text('\nTSTEP\n' + str(self.dt) + '  / \n')
+        self.suspend(check=True)
         if self.echo:
             print('\r  IORSim started, log file is ' + self.get_logfile(), flush=True)
             print('  ' + self.timer.info) if self.timer else None
@@ -404,36 +374,7 @@ class ior_backward(iorsim):                                            # ior_bac
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
         self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
         warn_empty_file(self.satnum, comment='--')
-        self.suspend()
-
-    # #--------------------------------------------------------------------------------
-    # def run_steps(self, n):                                         # ior_backward
-    # #--------------------------------------------------------------------------------
-    #     ### run IORSim
-    #     for i in range(n):
-    #         self.n += 1
-    #         self.interface_file(self.n).create_empty()
-    #         self.OK_file().create_empty()
-    #         self.resume(check=True)
-    #         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-    #         self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
-    #         warn_empty_file(self.satnum, comment='--')
-    #         self.suspend()
-
-
-    # #--------------------------------------------------------------------------------
-    # def set_satnum_tstep(self, tstep):                                 # ior_backward
-    # #--------------------------------------------------------------------------------
-    #     data = []
-    #     with open(self.satnum) as file:
-    #         for line in file:
-    #             if line.strip().startswith('TSTEP'):
-    #                 next(file)
-    #                 line = 'TSTEP\n' + str(tstep) + '  / \n'
-    #                 print(line)
-    #             data.append(line)
-    #     with open(self.satnum, 'w') as file:
-    #         file.writelines(data)
+        self.suspend(check=True)
 
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ior_backward
@@ -459,7 +400,6 @@ class Schedule:
         self.exists = self.file.is_file()
         if self.exists:
             self._schedule = self.read()
-            #print(self._schedule)
             self.length = len(self._schedule)
 
     #--------------------------------------------------------------------------------
