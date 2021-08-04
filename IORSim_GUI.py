@@ -1107,14 +1107,14 @@ class main_window(QMainWindow):                                    # main_window
         self.case = self.copy_case(case, rename=rename)
         if not self.case:
             return None
-        choose = None
-        if choose_new:
-            choose = self.case
-        self.create_caselist(insert=self.case, choose=choose)
+        #choose = None
+        #if choose_new:
+        #    choose = self.case
+        #self.create_caselist(insert=self.case, choose=choose)
 
                 
     #-----------------------------------------------------------------------
-    def copy_case(self, case, rename=False): 
+    def copy_case(self, case, rename=False, choose_new=True): 
     #-----------------------------------------------------------------------
         case = Path(case)
         from_root = case.parent/case.stem
@@ -1137,7 +1137,12 @@ class main_window(QMainWindow):                                    # main_window
             show_message(self, 'warning', text=f'A case named {to_root.name} already exists, case not added.')
             return None
         self.copy_case_files(from_root, to_root) 
-        return str(to_root)
+        self.case = str(to_root)
+        choose = None
+        if choose_new:
+            choose = self.case
+        self.create_caselist(insert=self.case, choose=choose)
+        return self.case
 
     
     #-----------------------------------------------------------------------
@@ -1152,7 +1157,7 @@ class main_window(QMainWindow):                                    # main_window
                 #to_fil = str(to_root)+ext
                 #shutil.copy(from_fil, to_fil)
                 shutil.copy(from_fil, to_root.with_suffix(ext))
-        for ext in upper_and_lower(('INC','DAT','GRDECL','EGRID')):
+        for ext in upper_and_lower(('INC','DAT','GRDECL','EGRID','VFP')):
             for fil in Path(from_root).parent.glob('*.'+ext):
                 shutil.copy(str(fil), str(Path(to_root).parent/fil.name))
         ext = '.schedule'
@@ -1860,8 +1865,14 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         width = 60
         height = 25
-        def new_button(text, func):
-            btn = QPushButton(text)
+        def new_button(text=None, icon=None, func=None):
+            btn = None
+            if icon:
+                btn = QPushButton(icon=QIcon(':'+icon))
+            else:
+                btn = QPushButton(text=text)
+            #if icon:
+            #    btn.setIcon(QIcon(':'+icon))
             #btn.setStyleSheet('QPushButton {max-width}')
             btn.setFixedWidth(width)
             btn.setFixedHeight(height)
@@ -1880,19 +1891,19 @@ class main_window(QMainWindow):                                    # main_window
         self.editor_group.setObjectName('editor')
         self.editor_group.setLayout(layout)
         ### Refresh button
-        self.refresh_btn = new_button('Refresh', self.editor_refresh)
+        self.refresh_btn = new_button(text='Refresh', func=self.editor_refresh)
         buttons.addWidget(self.refresh_btn)
         ### Save button
-        self.save_btn = new_button('Save', self.save_text)
+        self.save_btn = new_button(text='Save', func=self.save_text)
         buttons.addWidget(self.save_btn)
         ### Undo button
-        self.undo_btn = new_button('Undo', self.editor_undo)
+        self.undo_btn = new_button(text='Undo', func=self.editor_undo)
         buttons.addWidget(self.undo_btn)
         ### Redo button
-        self.redo_btn = new_button('Redo', self.editor_redo)
+        self.redo_btn = new_button(text='Redo', func=self.editor_redo)
         buttons.addWidget(self.redo_btn)
         ### End button
-        self.end_btn = new_button('End', self.goto_end)
+        self.end_btn = new_button(text='End', func=self.goto_end)
         buttons.addWidget(self.end_btn)
         ### Search field
         self.search_pos = []
@@ -1903,10 +1914,10 @@ class main_window(QMainWindow):                                    # main_window
         self.search_field.textChanged.connect(self.search_text)
         buttons.addWidget(self.search_field)
         ### Prev button
-        self.prev_btn = new_button('Prev', self.search_prev)
+        self.prev_btn = new_button(text='Prev', func=self.search_prev)
         buttons.addWidget(self.prev_btn)
         ### Next button
-        self.next_btn = new_button('Next', self.search_next)
+        self.next_btn = new_button(text='Next', func=self.search_next)
         buttons.addWidget(self.next_btn)
 
     #-----------------------------------------------------------------------

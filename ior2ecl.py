@@ -173,7 +173,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
             info = 'Turned on full RFT-check (default is file-size check)' 
             self._print(info)
         #print(f'self.nwell: {self.nwell}, nwell_max: {(self.init_tsteps+1)*self.nwell}, rft_wells: {rft_wells}')
-        self.suspend()
+        self.suspend(check=True)
         if self.echo:
             print('\r  Eclipse started, log file is ' + self.get_logfile(), flush=True)
             print('  ' + self.timer.info) if self.timer else None
@@ -204,7 +204,8 @@ class ecl_backward(eclipse):                                           # ecl_bac
                 self.wait_for( self.check_RFT_size )
             else:
                 self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=200)
-        self.suspend()
+        #sleep(1)
+        self.suspend(check=True)
         self.n += 1
 
     #--------------------------------------------------------------------------------
@@ -456,11 +457,6 @@ class Schedule:
         self.count = 0
         self.length = 0
         self.exists = self.file.is_file()
-        # if not self.file.is_file():
-        #     header = '# IORSim schedule file\n# Do not edit or remove the TSTEP below' 
-        #     footer = '# Start schedule here' 
-        #     self.file.write_text('\n'.join([header, self.write_tstep(days), footer,'']))
-        #     #print(f'  Created {self.file}')
         if self.exists:
             self._schedule = self.read()
             #print(self._schedule)
@@ -497,25 +493,10 @@ class Schedule:
         self.ifacefile = filename
         self.filepos = filepos
 
-    # #--------------------------------------------------------------------------------
-    # def write_tstep(self, dt):                                             # schedule
-    # #--------------------------------------------------------------------------------
-    #     if type(dt) in (int, float):
-    #         tstep = self.tag+'\n'+str(dt)+' '+self.end
-    #         #print('tstep:',tstep)
-    #         return tstep
-    #     return False
-
-
     #--------------------------------------------------------------------------------
     def next_actions(self):                                                        # schedule
     #--------------------------------------------------------------------------------
         return self.actions(inc=True)
-
-    # #--------------------------------------------------------------------------------
-    # def next_tstep(self):                                                        # schedule
-    # #--------------------------------------------------------------------------------
-    #     return self.write_tstep(self.tstep(inc=True))
 
     #--------------------------------------------------------------------------------
     def _get(self, n, inc=False):                                               # schedule
@@ -524,6 +505,7 @@ class Schedule:
             val = self._schedule[self.count]
             if inc:
                 self.count += 1
+            #print(f'inc:{inc}, val:{val}')
             return val
         return False
 
@@ -564,10 +546,6 @@ class Schedule:
             lines.insert(n, text+'\n')
             with open(self.ifacefile, 'w') as f:
                 f.write(''.join(lines))
-        # checks
-        # with open(self.outfile, 'r') as f:
-        #     lines = f.readlines()
-        # print(self.outfile, ': ', lines[-10:])
 
     #--------------------------------------------------------------------------------
     def update(self):                                               # schedule
@@ -576,13 +554,21 @@ class Schedule:
         if self.tstep()==0:
             self.count += 1
             self.append(self.actions(inc=True))
-            print('actions:',self.actions(), 'count:', self.count, 'length:',self.length)
+            #print('actions:',self.actions(), 'count:', self.count, 'length:',self.length)
             return
         # Update schedule tstep by reading TSTEP from the interface-file
         tstep = get_tsteps(self.ifacefile)[0]
-        old_tstep = self.tstep()
+        #old_tstep = self.tstep()
         self.set_tstep( max(self.tstep()-int(tstep), 0) )
-        print(f'tstep: {tstep}, old_tstep: {old_tstep}, new_tstep: {self.tstep()}')
+        #print(f'tstep: {tstep}, old_tstep: {old_tstep}, new_tstep: {self.tstep()}, count: {self.count}')
+
+    #--------------------------------------------------------------------------------
+    def check(self):                                               # schedule
+    #--------------------------------------------------------------------------------
+        # just a check...
+        with open(self.ifacefile, 'r') as f:
+            lines = f.readlines()
+        print(self.ifacefile, ': ', lines[-10:])
 
 
 #====================================================================================
@@ -736,9 +722,7 @@ class simulation:
             ior.run_one_step() #n+ecl.init_tsteps)
             if self.schedule.exists:
                 self.schedule.update()
-                #actions = self.schedule.update(ior.satnum_tstep())
-                #print('ACT: ',actions)
-                #ior.append_to_satnum(actions)
+                #self.schedule.check()
             ior.t = ior.time_and_step()[0]
             self.update.progress(value=ior.t)
             self.update.status(run=ior, mode='backward')
