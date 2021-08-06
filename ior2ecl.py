@@ -264,6 +264,7 @@ class iorsim(runner):                                                        # i
         super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, **kwargs)
         self.trcconc = None
         self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
+        self.unrst = self.funrst.with_suffix('.UNRST')
         self.inputfile = Path(abs_root+'.trcinp')
 
 
@@ -328,7 +329,6 @@ class ior_forward(forward_mixin, iorsim):                               # ior_fo
 class ior_backward(iorsim):                                            # ior_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
-    #def __init__(self, dt=1, **kwargs):
     def __init__(self, **kwargs):
     #--------------------------------------------------------------------------------
         # Call iorsim.__init__()
@@ -719,30 +719,113 @@ class simulation:
             self.update.progress(value=0)   # Reset progress time
             self.update.plot()
             self.update.status(value=msg)
+            conv_msg = ''
             if self.convert and success:
                 sleep(0.05)  # Need a short break here to make the GUI progressbar responsive
-                complete, conv_msg = self.convert_restart_file(case=self.root)
-                self.print2log('\n===== '+conv_msg+' ======')
-                if not complete:
-                    self.update.status(value=conv_msg)
-                    msg += '\n'+conv_msg
+                conv_msg = self.convert_and_merge(case=self.root)
+                #complete, conv_msg = self.convert_restart_file(case=self.root)
+                #self.print2log('\n===== '+conv_msg+' ======')
+                #if not complete:
+                #    self.update.status(value=conv_msg)
+                #    msg += '\n'+conv_msg
             self.runs = []
             if self.runlog:
                 self.runlog.close()
-            return success, msg
+            self.update.status(value='Simulation complete'+conv_msg)
+            return success, msg+conv_msg
 
 
+    # #-----------------------------------------------------------------------
+    # def convert_restart_file(self, case=None, fast=True):
+    # #-----------------------------------------------------------------------
+    #     msg = ''
+    #     complete = False
+    #     ecl = self.ecl or eclipse(root=case)   
+    #     ior = self.ior or iorsim(root=case)   
+    #     if not ior.funrst.is_file():
+    #         return complete, '' 
+    #     # Convert from formatted to unformatted restart file
+    #     self.update.status(value='Converting restart file...')
+    #     start = datetime.now()
+    #     try:
+    #         infile = fmt_file(ior.funrst)
+    #         if fast:
+    #             convert = infile.fast_convert
+    #         else:
+    #             N = number_of_blocks(file=ior.funrst, blockstart='SEQNUM')
+    #             self.update.progress(value=-(N-1))
+    #             convert = infile.convert 
+    #         ior_unrst = convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
+    #                             progress=lambda n: self.update.progress(value=n), 
+    #                             cancel=ior.stop_if_canceled)
+    #     except SystemError as e:
+    #         msg = str(e)
+    #         if 'run stopped' in msg.lower():
+    #             msg = 'Convert cancelled'
+    #         return complete, msg
+    #     except KeyboardInterrupt:
+    #         return complete, 'Convert cancelled'
+
+    #     # Merge Eclipse and IORSim restart files
+    #     self.update.status(value='Merging Eclipse and IORSim restart files...')
+    #     self.update.progress(value=0)   # Reset progress time
+    #     if ecl.unrst.is_file() and ior_unrst.is_file():
+    #         backup = Path(str(ecl.case)+'_ECLIPSE.UNRST')
+    #         if backup.is_file():
+    #             # This is a pure IORSim run and backup already exists; restore backup
+    #             shutil.copy(backup, ecl.unrst)
+    #         else:
+    #             # No backup exists; create backup copy
+    #             shutil.copy(ecl.unrst, backup)
+    #     else:
+    #         self.update.status(value='Files missing, unable to merge Eclipse and IORSim files')
+    #         return
+    #     # Define the sections in the restart files where they are stitched together
+    #     ecl_sec = Section(ecl.unrst, start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
+    #     ior_sec = Section(ior_unrst, start_after='DOUBHEAD', end_before='SEQNUM')
+    #     merged_file = Path(str(ior.case)+'_MERGED.UNRST')
+    #     merged_file = unfmt_file(merged_file).create(ecl_sec, ior_sec)
+    #     # Rename merged UNRST-file to original restart file
+    #     if not merged_file:
+    #         raise SystemError('WARNING Unable to merge {} and {}'.format(ecl.unrst, ior_unrst))
+    #     if merged_file.is_file():
+    #         merged_file.replace(ecl.unrst)
+    #     self.update.status(value='Simulation complete, restart file ready')
+    #     msg = 'Convert and merge of restart file completed, process-time was '+str(datetime.now()-start).split('.')[0]
+    #     complete = True    
+    #     return complete, msg
+    #     #self.progress(N)
+
     #-----------------------------------------------------------------------
-    def convert_restart_file(self, case=None, fast=True):
+    def convert_and_merge(self, case=None, only_convert=False, only_merge=False):
     #-----------------------------------------------------------------------
-        msg = ''
-        complete = False
-        ecl = self.ecl or eclipse(root=case)   
+        func = (self.convert_restart, self.merge_restart)
+        if only_convert:
+            func = (self.convert_restart,)
+        if only_merge:
+            func = (self.merge_restart,)
+        for f in func:
+            success, msg = f(case=case)
+            self.print2log('\n===== '+msg+' ======')
+            if not success:
+                #self.update.status(value=f'WARNING {msg}')
+                return f' (WARNING {msg})'
+                #raise SystemError(f'WARNING {msg}')
+                #return False, msg
+        #self.update.status(value='Restart file ready')
+        return ''
+
+    #-----------------------------------------------------------------------
+    def convert_restart(self, case=None, fast=True, backup=True):
+    #-----------------------------------------------------------------------
+        # Convert from formatted (ascii) to unformatted (binary) restart file
+        self.update.status(value='Converting restart file...')
         ior = self.ior or iorsim(root=case)   
         if not ior.funrst.is_file():
-            return complete, '' #str(ior.funrst) + ' does not exist'
-        self.update.status(value='Converting restart file...')
-        # Convert from formatted to unformatted restart file
+            if ior.unrst.is_file():
+                return True, 'Convert completed'
+            else:
+                return False, f'IORSim output {ior.funrst.name} is missing'
         start = datetime.now()
         try:
             infile = fmt_file(ior.funrst)
@@ -752,45 +835,61 @@ class simulation:
                 N = number_of_blocks(file=ior.funrst, blockstart='SEQNUM')
                 self.update.progress(value=-(N-1))
                 convert = infile.convert 
-            ior_unrst = convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
-                                progress=lambda n: self.update.progress(value=n), 
-                                cancel=ior.stop_if_canceled)
+            convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
+                    progress=lambda n: self.update.progress(value=n), 
+                    cancel=ior.stop_if_canceled)
         except SystemError as e:
+            silentdelete(ior.unrst)
             msg = str(e)
             if 'run stopped' in msg.lower():
                 msg = 'Convert cancelled'
-            return complete, msg
+            return False, msg
         except KeyboardInterrupt:
-            return complete, 'Convert cancelled'
+            silentdelete(ior.unrst)
+            return False, 'Convert cancelled'
+        if not backup:
+            silentdelete(ior.funrst)
+        return True, 'Convert completed, process-time was '+str(datetime.now()-start).split('.')[0]
 
+    #-----------------------------------------------------------------------
+    def merge_restart(self, case=None, backup=True):
+    #-----------------------------------------------------------------------
         # Merge Eclipse and IORSim restart files
-        if ecl.unrst.is_file() and ior_unrst.is_file():
-            backup = Path(str(ecl.case)+'_ECLIPSE.UNRST')
-            if backup.is_file():
+        self.update.status(value='Merging Eclipse and IORSim restart files...')
+        self.update.progress(value=0)   # Reset progress time
+        ecl = self.ecl or eclipse(root=case)   
+        ior = self.ior or iorsim(root=case)   
+        #ior_unrst = ior.funrst.with_suffix('.UNRST')
+        if ecl.unrst.is_file() and ior.unrst.is_file():
+            backup_ecl = Path(str(ecl.case)+'_ECLIPSE.UNRST')
+            if backup_ecl.is_file():
                 # This is a pure IORSim run and backup already exists; restore backup
-                shutil.copy(backup, ecl.unrst)
+                shutil.copy(backup_ecl, ecl.unrst)
             else:
                 # No backup exists; create backup copy
-                shutil.copy(ecl.unrst, backup)
+                shutil.copy(ecl.unrst, backup_ecl)
         else:
-            self.update.status(value='Convert finished, unable to merge Eclipse and IORSim files')
-            return
-        # Define the sections in the restart files where they are stitched together
-        ecl_sec = Section(ecl.unrst, start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
-        ior_sec = Section(ior_unrst, start_after='DOUBHEAD', end_before='SEQNUM')
-        self.update.status(value='Merging Eclipse and IORSim restart files...')
-        merged_file = Path(str(ior.case)+'_MERGED.UNRST')
-        merged_file = unfmt_file(merged_file).create(ecl_sec, ior_sec)
-        # Rename merged UNRST-file to original restart file
-        if not merged_file:
-            raise SystemError('WARNING Unable to merge {} and {}'.format(ecl.unrst, ior_unrst))
-        if merged_file.is_file():
-            merged_file.replace(ecl.unrst)
-        self.update.status(value='Simulation complete, restart file ready')
-        msg = 'Convert and merge of restart file completed, process-time was '+str(datetime.now()-start).split('.')[0]
-        complete = True    
-        return complete, msg
-        #self.progress(N)
+            missing = [f.name for f in (ecl.unrst, ior.unrst) if not f.is_file()]
+            return False, f'Unable to merge restart files due to missing files: {", ".join(missing)}'
+        start = datetime.now()
+        try:
+            # Define the sections in the restart files where the stitching is done
+            ecl_sec = Section(ecl.unrst, start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
+            ior_sec = Section(ior.unrst, start_after='DOUBHEAD', end_before='SEQNUM')
+            fname =  Path(str(ecl.case)+'_MERGED.UNRST') 
+            merged_file = unfmt_file(fname).create(ecl_sec, ior_sec, 
+                                                   progress=lambda n: self.update.progress(value=n),
+                                                   cancel=ior.stop_if_canceled)
+            # Rename merged UNRST-file to original Eclipse restart file
+            if merged_file and merged_file.is_file():
+                merged_file.replace(ecl.unrst)
+            else:
+                return False, f'Unable to merge {ecl.unrst} and {ior.unrst}'
+        except OSError as e:
+            return False, str(e)
+        if not backup:
+            silentdelete((backup_ecl, ior.unrst))
+        return True, 'Merge complete, process-time was '+str(datetime.now()-start).split('.')[0]
 
 
 
@@ -914,7 +1013,8 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-v',              default=3, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
     parser.add_argument('-keep_files',     help='Interface-files are not deleted after completion', action='store_true')
     parser.add_argument('-to_screen',      help='Print program log to screen', action='store_true')
-    parser.add_argument('-only_convert',   help='Only convert and exit', action='store_true')
+    parser.add_argument('-only_convert',   help='Only convert+merge and exit', action='store_true')
+    parser.add_argument('-only_merge',     help='Only merge and exit', action='store_true')
     args = vars(parser.parse_args())
     # Look for case in case_dir if root is not a file
     if case_dir and not Path(args['root']+'.DATA').is_file():
@@ -927,8 +1027,14 @@ def parse_input(case_dir=None, settings_file=None):
 
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
-           init_tstep=1.0, check_unrst=True, check_rft=True, rft_size=True, keep_files=False, only_convert=False):
+           init_tstep=1.0, check_unrst=True, check_rft=True, rft_size=True, keep_files=False, 
+           only_convert=False, only_merge=False):
 #--------------------------------------------------------------------------------
+    #----------------------------------------
+    def status(value=None, **x):
+    #----------------------------------------
+        not to_screen and value and print('\r   '+value+50*' ', end='')
+
     prog = Progress(format='40#')
     #----------------------------------------
     def progress(run=None, value=None):
@@ -940,17 +1046,13 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
             value = run.t
         prog.print(value)
 
-    #----------------------------------------
-    def status(value=None, **x):
-    #----------------------------------------
-        not to_screen and value and print('\r   '+value+50*' ', end='')
 
     sim = simulation(root=root, time=time, pause=pause, init_tstep=init_tstep, iorexe=iorexe, eclexe=eclexe, 
                      check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, 
                      keep_files=keep_files, progress=progress, status=status, to_screen=to_screen)
 
-    if only_convert:
-        complete, conv_msg = sim.convert_restart_file(case=sim.root)
+    if only_convert or only_merge:
+        msg = sim.convert_and_merge(case=sim.root, only_merge=only_merge)
         return
 
     if sim.mode=='forward':
@@ -966,7 +1068,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
     args = parse_input(case_dir=case_dir, settings_file=settings_file)
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=(not args['full_rft_check']), 
            to_screen=args['to_screen'], pause=args['pause'], init_tstep=args['init_tstep'], eclexe=args['eclexe'], iorexe=args['iorexe'],
-           keep_files=args['keep_files'], only_convert=args['only_convert'])
+           keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'])
     os._exit(0)
 
 
