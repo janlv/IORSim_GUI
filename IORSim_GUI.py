@@ -441,8 +441,15 @@ class Settings(QDialog):
         self.get = {}
         self.set = {}
         self.required = []
-        #self.default = {'eclrun':'eclrun', 'unrst':True, 'rft':True, 'fontsize':'10'}
-        self.default = {'eclrun':'eclrun', 'unrst':True, 'rft':True, 'dt':'1', 'convert':True, 'pause':'0.5'}
+        self.default = {'eclrun'      : 'eclrun', 
+                        'unrst'       : True, 
+                        'rft'         : True, 
+                        'dt'          : '1', 
+                        'convert'     : True,
+                        'del_convert' : False,
+                        'merge'       : True,
+                        'del_merge'   : False,
+                        'pause'       : '0.5'}
         self.abs_path = False
         self.initUI()
         self.file = Path(file) 
@@ -458,14 +465,17 @@ class Settings(QDialog):
         grid.setColumnStretch(1,70) 
         grid.setColumnStretch(2,15) 
 
-        tool_tip = {'iorsim':'Set path to the IORSim executable',
-                    'iorarg':'Additional arguments passed to IORSim',
-                    'eclrun':"Eclipse command, default is 'eclrun'",
-                    'unrst':'Check that the UNRST-file is properly flushed before suspending Eclipse',
-                    'rft':'Check that the RFT-file is properly flushed before suspending Eclipse',
-                    'dt':'Eclipse starts before IORSim and the first Eclipse TSTEP is given here. Subsequent TSTEPs are provided by IORSim via the interface-file.',
-                    'convert':'Convert IORSim formatted output to unformatted format (readable by ResInsight), and also add output from the Eclipse run',
-                    'pause':'A short break between Eclipse and IORSim runs might be necessary to improve the stability of backward runs'}
+        tool_tip = {'iorsim'      : 'Path to the IORSim executable',
+                    'iorarg'      : 'Additional arguments passed to IORSim',
+                    'eclrun'      : "Eclipse command, default is 'eclrun'",
+                    'unrst'       : 'Check that the UNRST-file is properly flushed before suspending Eclipse',
+                    'rft'         : 'Check that the RFT-file is properly flushed before suspending Eclipse',
+                    'dt'          : 'Eclipse starts before IORSim and the first Eclipse TSTEP is given here. Subsequent TSTEPs are provided by IORSim via the interface-file.',
+                    'convert'     : 'Convert IORSim formatted output to unformatted format (readable by ResInsight), and also add output from the Eclipse run',
+                    'del_convert' : 'Delete the original formatted IORSim output if the convert is successful',
+                    'merge'       : 'Merge the unformatted output from Eclipse and IORSim into one file',
+                    'del_merge'   : 'Delete the separate output-files from Elipse and IORSim if the merge is successful',
+                    'pause'       : 'A short break between Eclipse and IORSim runs might be necessary to improve the stability of backward runs'}
 
         ### IORSim executable
         n = 0
@@ -493,7 +503,7 @@ class Settings(QDialog):
         #     self.layout.addWidget(widget[1] , n, 1)
         
         ### Eclipse executable
-        n = 1
+        n += 1
         var, text = 'eclrun', 'Eclipse program'
         widget = self.new_line(var=var, text=text, required=True, open_func=self.open_ecl_prog)
         grid.addWidget(widget[0] , n, 0)
@@ -503,80 +513,108 @@ class Settings(QDialog):
         widget[1].setToolTip(tool_tip[var])
         self.eclrun = widget[1]
         
-        ### Convert
-        n = 2
+        ### Space
+        n += 1
+        grid.addWidget(QLabel(), n, 0)
+
+        ### Output options
+        n += 1
         label = QLabel()
-        label.setText('Output')
+        label.setText('Output options')
+        grid.addWidget(label, n, 0)
+
+        ### Convert
+        n += 1
+        layout = QGridLayout()
+        grid.addLayout(layout, n, 1)
         var, text = 'convert', 'Convert to unformatted output'
         self.convert = self.new_box(var=var, text=text)
         self.convert.setToolTip(tool_tip[var])
-        grid.addWidget(label       , n, 0)
-        grid.addWidget(self.convert, n, 1)
-        # self.layout.addWidget(self.fontsize , 4, 1, 1, 1)
+        layout.addWidget(self.convert, 0, 0)
+        var, text = 'del_convert', 'Delete original after convert'
+        self.del_convert = self.new_box(var=var, text=text)
+        self.del_convert.setToolTip(tool_tip[var])
+        layout.addWidget(self.del_convert, 0, 1)
 
-        n = 3
+        ### Merge
+        n += 1
+        var, text = 'merge', 'Merge Eclipse and IORSim output'
+        self.merge = self.new_box(var=var, text=text)
+        self.merge.setToolTip(tool_tip[var])
+        layout.addWidget(self.merge, 1, 0)
+        var, text = 'del_merge', 'Delete originals after merge'
+        self.del_merge = self.new_box(var=var, text=text)
+        self.del_merge.setToolTip(tool_tip[var])
+        layout.addWidget(self.del_merge, 1, 1)
+
+        ### Space
+        n += 1
         grid.addWidget(QLabel(), n, 0)
 
         ### Backward options
-        n = 4
+        n += 1
         label = QLabel()
         label.setText('Backward options')
         grid.addWidget(label, n, 0)
 
-        n = 5
         # initial timestep
-        dt = QHBoxLayout()
-        grid.addLayout(dt, n, 1) # (layout, row, col, rowspan, colspan)
-        var, text = 'dt', 'Initial timestep passed to Eclipse: '
+        n += 1
+        layout = QGridLayout()
+        #dt = QHBoxLayout()
+        grid.addLayout(layout, n, 1) # (layout, row, col, rowspan, colspan)
+        var, text = 'dt', 'Initial timestep passed to Eclipse '
         lbl_dt, self.dt = self.new_line(var=var, text=text, required=True)
         self.dt.setFixedWidth(40)
         self.dt.setToolTip(tool_tip[var])
         lbl_dt.setToolTip(tool_tip[var])
-        dt.addWidget(lbl_dt)
-        dt.addWidget(self.dt)
+        layout.addWidget(lbl_dt, 0, 0)
+        box = QHBoxLayout()
+        layout.addLayout(box, 0, 1)
+        box.addWidget(self.dt)
         txt = QLabel()
         txt.setText('TSTEP')
-        dt.addWidget(txt)
+        box.addWidget(txt)
 
-        n = 6
+        n += 1
         # pause between runs
-        pause = QHBoxLayout()
-        grid.addLayout(pause, n, 1) # (layout, row, col, rowspan, colspan)
-        var, text = 'pause', 'Pause before IORSim resumes: '
+        #pause = QHBoxLayout()
+        #grid.addLayout(pause, n, 1) # (layout, row, col, rowspan, colspan)
+        var, text = 'pause', 'Pause before IORSim resumes '
         lbl_pause, self.pause = self.new_line(var=var, text=text)
         self.pause.setToolTip(tool_tip[var])
         lbl_pause.setToolTip(tool_tip[var])
         self.pause.setFixedWidth(40)
-        pause.addWidget(lbl_pause)
-        pause.addWidget(self.pause)
+        layout.addWidget(lbl_pause, 1, 0)
+        box = QHBoxLayout()
+        layout.addLayout(box, 1, 1)
+        box.addWidget(self.pause)
         sec = QLabel()
         sec.setText('seconds')
-        pause.addWidget(sec)
-        pause.addWidget(QLabel())
+        box.addWidget(sec)
+        #layout.addWidget(QLabel(), )
 
-        n = 7
+        n += 1
         # unrst file check
-        unrst = QHBoxLayout()
-        grid.addLayout(unrst, n, 1)
-        var, text = 'unrst', 'Confirm flushed UNRST-file'
+        lbl = QLabel()
+        lbl.setText('Eclipse outfile checks ')
+        layout.addWidget(lbl, 2, 0)    
+        var, text = 'unrst', 'UNRST-file'
         self.unrst = self.new_box(var=var, text=text)
         self.unrst.setToolTip(tool_tip[var])
-        unrst.addWidget(self.unrst)
-
-        n = 8
-        # rft file check
-        rft = QHBoxLayout()
-        grid.addLayout(rft, n, 1)
-        var, text = 'rft', 'Confirm flushed RFT-file'
+        box = QHBoxLayout()
+        layout.addLayout(box, 2, 1)
+        box.addWidget(self.unrst)
+        var, text = 'rft', 'RFT-file'
         self.rft = self.new_box(var=var, text=text)
         self.rft.setToolTip(tool_tip[var])
-        rft.addWidget(self.rft)
+        box.addWidget(self.rft)
 
-        n = 9
+        # Space
+        n += 1
         grid.addWidget(QLabel(), n, 0)
 
         ### OK / Cancel buttons
-        n = 10
+        n += 1
         yes_no = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         self.yes_no_btns = QDialogButtonBox(yes_no)
         grid.addWidget(self.yes_no_btns, n, 0, 1, 3)
@@ -2750,9 +2788,10 @@ class main_window(QMainWindow):                                    # main_window
         elif self.mode in ('forward','eclipse','iorsim'):
             kwargs = {'mode':'forward', 'runs':self.run}
         # start simulation
+        for opt in ('convert','del_convert','merge','del_merge'):
+            kwargs[opt] = s.get[opt]()
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 
-                                 convert=s.get['convert'](), pause=float(s.get['pause']()), init_tstep=float(s.get['dt']()), 
-                                 **kwargs)
+                                 pause=float(s.get['pause']()), init_tstep=float(s.get['dt']()), **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)

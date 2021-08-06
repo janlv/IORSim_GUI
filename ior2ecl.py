@@ -515,7 +515,8 @@ class Schedule:
 class simulation:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, mode=None, root=None, pause=0, init_tstep=1, runs=[], to_screen=False, convert=True,
+    def __init__(self, mode=None, root=None, pause=0, init_tstep=1, runs=[], to_screen=False, 
+                 convert=True, merge=True, del_convert=False, del_merge=False, delete=False,
                  status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None, **kwargs):
     #--------------------------------------------------------------------------------
         #print('mode',mode,'root',root,'pause',pause,'runs',runs,'to_screen',to_screen,'convert',convert,
@@ -526,7 +527,9 @@ class simulation:
         self.update = namedtuple('update',['status','progress','plot'])(status, progress, plot)
         self.pause = pause
         self.init_tstep = init_tstep # backward mode: initial Eclipse TSTEP after READDATA
-        self.convert = convert
+        if delete:
+            del_convert = del_merge = True
+        self.output = namedtuple('output',['convert','merge','del_convert','del_merge'])(convert, merge, del_convert, del_merge)
         self.runlog = None
         if root and not to_screen:
             self.runlog = safeopen(Path(root).parent/(self.name+'.log'), 'w')
@@ -720,7 +723,7 @@ class simulation:
             self.update.plot()
             self.update.status(value=msg)
             conv_msg = ''
-            if self.convert and success:
+            if self.output.convert and success:
                 sleep(0.05)  # Need a short break here to make the GUI progressbar responsive
                 conv_msg = self.convert_and_merge(case=self.root)
                 #complete, conv_msg = self.convert_restart_file(case=self.root)
@@ -768,7 +771,7 @@ class simulation:
 
     #     # Merge Eclipse and IORSim restart files
     #     self.update.status(value='Merging Eclipse and IORSim restart files...')
-    #     self.update.progress(value=0)   # Reset progress time
+    #     self.update.progress(value=0)   # Reset rprogress time
     #     if ecl.unrst.is_file() and ior_unrst.is_file():
     #         backup = Path(str(ecl.case)+'_ECLIPSE.UNRST')
     #         if backup.is_file():
@@ -816,7 +819,7 @@ class simulation:
         return ''
 
     #-----------------------------------------------------------------------
-    def convert_restart(self, case=None, fast=True, backup=True):
+    def convert_restart(self, case=None, fast=True):
     #-----------------------------------------------------------------------
         # Convert from formatted (ascii) to unformatted (binary) restart file
         self.update.status(value='Converting restart file...')
@@ -847,12 +850,12 @@ class simulation:
         except KeyboardInterrupt:
             silentdelete(ior.unrst)
             return False, 'Convert cancelled'
-        if not backup:
+        if self.output.del_convert:
             silentdelete(ior.funrst)
         return True, 'Convert completed, process-time was '+str(datetime.now()-start).split('.')[0]
 
     #-----------------------------------------------------------------------
-    def merge_restart(self, case=None, backup=True):
+    def merge_restart(self, case=None):
     #-----------------------------------------------------------------------
         # Merge Eclipse and IORSim restart files
         self.update.status(value='Merging Eclipse and IORSim restart files...')
@@ -887,7 +890,7 @@ class simulation:
                 return False, f'Unable to merge {ecl.unrst} and {ior.unrst}'
         except OSError as e:
             return False, str(e)
-        if not backup:
+        if self.output.del_merge:
             silentdelete((backup_ecl, ior.unrst))
         return True, 'Merge complete, process-time was '+str(datetime.now()-start).split('.')[0]
 
@@ -1015,6 +1018,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-to_screen',      help='Print program log to screen', action='store_true')
     parser.add_argument('-only_convert',   help='Only convert+merge and exit', action='store_true')
     parser.add_argument('-only_merge',     help='Only merge and exit', action='store_true')
+    parser.add_argument('-delete',         help='Delete obsolete output files after convert and merge has finished', action='store_true')
     args = vars(parser.parse_args())
     # Look for case in case_dir if root is not a file
     if case_dir and not Path(args['root']+'.DATA').is_file():
@@ -1028,7 +1032,7 @@ def parse_input(case_dir=None, settings_file=None):
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
            init_tstep=1.0, check_unrst=True, check_rft=True, rft_size=True, keep_files=False, 
-           only_convert=False, only_merge=False):
+           only_convert=False, only_merge=False, convert=True, merge=True, delete=False):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1048,8 +1052,9 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
 
 
     sim = simulation(root=root, time=time, pause=pause, init_tstep=init_tstep, iorexe=iorexe, eclexe=eclexe, 
-                     check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size, 
-                     keep_files=keep_files, progress=progress, status=status, to_screen=to_screen)
+                     check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size,  
+                     keep_files=keep_files, progress=progress, status=status, to_screen=to_screen,
+                     convert=convert, merge=merge, delete=delete)
 
     if only_convert or only_merge:
         msg = sim.convert_and_merge(case=sim.root, only_merge=only_merge)
@@ -1068,7 +1073,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
     args = parse_input(case_dir=case_dir, settings_file=settings_file)
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=(not args['full_rft_check']), 
            to_screen=args['to_screen'], pause=args['pause'], init_tstep=args['init_tstep'], eclexe=args['eclexe'], iorexe=args['iorexe'],
-           keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'])
+           delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'])
     os._exit(0)
 
 
