@@ -353,7 +353,7 @@ class sim_worker(base_worker):
                 value = run.t
             self.update_progress(value)
         #------------------------------------
-        def status(run=None, value=None, mode='forward'):
+        def status(run=None, value=None, mode='forward', **x):
         #------------------------------------
             if run and not value:
                 value = '{}/{} days'.format(run.t, run.T)

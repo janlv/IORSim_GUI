@@ -162,7 +162,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         super().start()  # eclipse.start()
         self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
-        self.check_UNRST_file(nblocks=self.init_tsteps)
+        self.check_UNRST_file(nblocks=self.init_tsteps+1) # +1 for 0'th SEQNUM
         self.nwell = self.unrst_check.var('nwell')
         nwell_max = (self.init_tsteps+1)*self.nwell
         rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell, limit=200)
@@ -173,7 +173,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
             info = 'Turned on full RFT-check (default is file-size check)' 
             self._print(info)
         #print(f'self.nwell: {self.nwell}, nwell_max: {(self.init_tsteps+1)*self.nwell}, rft_wells: {rft_wells}')
-        self.suspend(check=True)
+        self.suspend(check=False, children=True)
         if self.echo:
             print('\r  Eclipse started, log file is ' + self.get_logfile(), flush=True)
             print('  ' + self.timer.info) if self.timer else None
@@ -195,7 +195,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         #print('ecl, n: ',self.n)
         self.interface_file(self.n).copy(satnum_file, delete=True)
         self.OK_file().create_empty()
-        self.resume(check=True)
+        self.resume(check=False, children=True)
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
         if self.check_unrst:
             self.check_UNRST_file()
@@ -205,15 +205,24 @@ class ecl_backward(eclipse):                                           # ecl_bac
             else:
                 self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=200)
         #sleep(1)
-        self.suspend(check=True)
+        self.suspend(check=False, children=True)
         self.n += 1
 
     #--------------------------------------------------------------------------------
-    def check_UNRST_file(self, nblocks=1):                                             # eclipse
+    def check_file(self, file, print_block=False):                          # eclipse
+    #--------------------------------------------------------------------------------
+        print(f'{file} size: {file.stat().st_size}')
+        for block in unfmt_file(file).blocks(only_new=True):
+            if block.key() in ('SEQNUM','TIME'):
+                print(f'{block.key()} : {block.data()}')
+            print_block and block.print()
+
+    #--------------------------------------------------------------------------------
+    def check_UNRST_file(self, nblocks=1):                                  # eclipse
     #--------------------------------------------------------------------------------
         self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info,
                        error=self.unrst_check.file.name()+' not complete' )
-        
+
     #--------------------------------------------------------------------------------
     def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=10000):        # eclipse
     #--------------------------------------------------------------------------------
@@ -356,7 +365,7 @@ class ior_backward(iorsim):                                            # ior_bac
         self.OK_file().create_empty()
         super().start() # iorsim.start()   
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-        self.suspend(check=True)
+        self.suspend(check=False, children=True)
         if self.echo:
             print('\r  IORSim started, log file is ' + self.get_logfile(), flush=True)
             print('  ' + self.timer.info) if self.timer else None
@@ -370,11 +379,11 @@ class ior_backward(iorsim):                                            # ior_bac
         #print('ior, n: ',self.n)
         self.interface_file(self.n).create_empty()
         self.OK_file().create_empty()
-        self.resume(check=True)
+        self.resume(check=False, children=True)
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
         self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
         warn_empty_file(self.satnum, comment='--')
-        self.suspend(check=True)
+        self.suspend(check=False, children=True)
 
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ior_backward
@@ -388,13 +397,13 @@ class ior_backward(iorsim):                                            # ior_bac
 class Schedule:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, case, ext='.SCH', comment='--', end='/', tag='TSTEP'):
+    def __init__(self, case, ext='.SCH', comment='--'): #, end='/', tag='TSTEP'):
     #--------------------------------------------------------------------------------
         self.file = Path(case).with_suffix(ext)
         self.ifacefile = None
         self.comment = comment
-        self.tag = tag
-        self.end = end
+        #self.tag = tag
+        #self.end = end
         self.count = 0
         self.length = 0
         self.exists = self.file.is_file()
@@ -645,13 +654,15 @@ class simulation:
     def backward(self): 
     #-----------------------------------------------------------------------
         self.update.progress(value=-self.runs[0].T)
+        ecl, ior = self.runs
         for run in self.runs:
             run.check_input()
             run.delete_output_files()
             self.update.status(value='Starting ' + run.name + '...')
+            #if run==ior:
+            #    ecl.check_file(ecl.unrst, print_block=True)
+            #    ecl.check_file(ecl.rft)
             run.start()
-        ecl, ior = self.runs
-        #ior.satnum.write_text(self.schedule.next_tstep())
         ior.satnum.write_text(f'TSTEP\n{self.init_tstep} /') 
 
         # Start timestep loop
@@ -721,7 +732,7 @@ class simulation:
             self.current_run = None
             self.update.progress(value=0)   # Reset progress time
             self.update.plot()
-            self.update.status(value=msg)
+            self.update.status(value=msg, newline=True)
             conv_msg = ''
             if self.output.convert and success:
                 sleep(0.05)  # Need a short break here to make the GUI progressbar responsive
@@ -734,7 +745,8 @@ class simulation:
             self.runs = []
             if self.runlog:
                 self.runlog.close()
-            self.update.status(value='Simulation complete'+conv_msg)
+            #self.update.status(value='Simulation complete'+conv_msg)
+            self.update.status(value=msg+conv_msg)
             return success, msg+conv_msg
 
 
@@ -810,9 +822,10 @@ class simulation:
         for f in func:
             success, msg = f(case=case)
             self.print2log('\n===== '+msg+' ======')
+            self.update.status(value=msg, newline=True)
             if not success:
                 #self.update.status(value=f'WARNING {msg}')
-                return f' (WARNING {msg})'
+                return msg
                 #raise SystemError(f'WARNING {msg}')
                 #return False, msg
         #self.update.status(value='Restart file ready')
@@ -826,7 +839,7 @@ class simulation:
         ior = self.ior or iorsim(root=case)   
         if not ior.funrst.is_file():
             if ior.unrst.is_file():
-                return True, 'Convert completed'
+                return True, f'{ior.unrst} already exists'
             else:
                 return False, f'IORSim output {ior.funrst.name} is missing'
         start = datetime.now()
@@ -852,7 +865,7 @@ class simulation:
             return False, 'Convert cancelled'
         if self.output.del_convert:
             silentdelete(ior.funrst)
-        return True, 'Convert completed, process-time was '+str(datetime.now()-start).split('.')[0]
+        return True, 'Convert complete, process-time was '+str(datetime.now()-start).split('.')[0]
 
     #-----------------------------------------------------------------------
     def merge_restart(self, case=None):
@@ -1037,7 +1050,12 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     #----------------------------------------
     def status(value=None, **x):
     #----------------------------------------
-        not to_screen and value and print('\r   '+value+50*' ', end='')
+        if not to_screen and value:
+            value = value.replace('INFO','').strip()
+            nl = '\n'
+            if x.get('newline'):
+                nl += '\n'
+            print('\r   '+value+50*' ', end=nl)
 
     prog = Progress(format='40#')
     #----------------------------------------
@@ -1057,14 +1075,14 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
                      convert=convert, merge=merge, delete=delete)
 
     if only_convert or only_merge:
-        msg = sim.convert_and_merge(case=sim.root, only_merge=only_merge)
+        sim.convert_and_merge(case=sim.root, only_merge=only_merge)
         return
 
     if sim.mode=='forward':
         sim.set_time(ECL_input_days_and_steps(root)[0])
     sim.info_header()
     result, msg = sim.run()
-    not to_screen and print('\r   '+msg.replace('INFO','').strip()+'              \n')
+    #not to_screen and print('\r   '+msg.replace('INFO','').strip()+'              \n')
 
 
 #--------------------------------------------------------------------------------
