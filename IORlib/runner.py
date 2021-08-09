@@ -122,7 +122,7 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def __init__(self, N=0, T=0, name=None, case=None, exe=None, cmd=None, pipe=False, echo=False,
                  verbose=3, timer=None, runlog=None, ext_iface=None, ext_OK=None,
-                 keep_files=False, **kwargs):           # runner
+                 keep_files=False, stop_children=False, **kwargs):           # runner
     #--------------------------------------------------------------------------------
         #print('runner.__init__: ',N,T,name,case,exe,cmd,ext_iface,ext_OK)
         self.name = name
@@ -136,6 +136,8 @@ class runner:                                                               # ru
         self.ext_OK = ext_OK
         self.parent = None
         self.children = []
+        self.stop_children = stop_children
+        #print(f'stop_children: {stop_children}')
         self.pipe = pipe
         self.verbose = verbose
         self.echo = echo
@@ -234,11 +236,11 @@ class runner:                                                               # ru
         return header
         
     #--------------------------------------------------------------------------------
-    def suspend(self, check=False, children=False, print=True, v=1):          # runner
+    def suspend(self, check=False, print=True, v=1):          # runner
     #--------------------------------------------------------------------------------
         self._print(f'suspending {self.name} ({self.parent.pid})', v=v)
         procs = [self.parent,]
-        if children:
+        if self.stop_children:
             procs = self.children + procs
         # Suspend processes
         [p.suspend() for p in procs]
@@ -250,11 +252,11 @@ class runner:                                                               # ru
         self.timer and self.timer.stop()
         
     #--------------------------------------------------------------------------------
-    def resume(self, check=False, children=False, print=True, v=1):                       # runner
+    def resume(self, check=False, print=True, v=1):                       # runner
     #--------------------------------------------------------------------------------
         self._print(f'resuming {self.name} ({self.parent.pid})', v=v)
         procs = [self.parent,]
-        if children:
+        if self.stop_children:
             procs = procs + self.children
         # Resume processes
         [p.resume() for p in procs]

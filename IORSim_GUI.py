@@ -449,6 +449,7 @@ class Settings(QDialog):
                         'del_convert' : False,
                         'merge'       : True,
                         'del_merge'   : False,
+                        'stop_child'  : True,
                         'pause'       : '0.5'}
         self.abs_path = False
         self.initUI()
@@ -475,6 +476,7 @@ class Settings(QDialog):
                     'del_convert' : 'Delete the original formatted IORSim output if the convert is successful',
                     'merge'       : 'Merge the unformatted output from Eclipse and IORSim into one file',
                     'del_merge'   : 'Delete the separate output-files from Elipse and IORSim if the merge is successful',
+                    'stop_child'  : 'Stop both Eclipse parent and child process to increase stability (~5% performance drop)',
                     'pause'       : 'A short break between Eclipse and IORSim runs might be necessary to improve the stability of backward runs'}
 
         ### IORSim executable
@@ -560,7 +562,6 @@ class Settings(QDialog):
         # initial timestep
         n += 1
         layout = QGridLayout()
-        #dt = QHBoxLayout()
         grid.addLayout(layout, n, 1) # (layout, row, col, rowspan, colspan)
         var, text = 'dt', 'Initial timestep passed to Eclipse '
         lbl_dt, self.dt = self.new_line(var=var, text=text, required=True)
@@ -577,8 +578,6 @@ class Settings(QDialog):
 
         n += 1
         # pause between runs
-        #pause = QHBoxLayout()
-        #grid.addLayout(pause, n, 1) # (layout, row, col, rowspan, colspan)
         var, text = 'pause', 'Pause before IORSim resumes '
         lbl_pause, self.pause = self.new_line(var=var, text=text)
         self.pause.setToolTip(tool_tip[var])
@@ -591,7 +590,6 @@ class Settings(QDialog):
         sec = QLabel()
         sec.setText('seconds')
         box.addWidget(sec)
-        #layout.addWidget(QLabel(), )
 
         n += 1
         # unrst file check
@@ -608,6 +606,17 @@ class Settings(QDialog):
         self.rft = self.new_box(var=var, text=text)
         self.rft.setToolTip(tool_tip[var])
         box.addWidget(self.rft)
+
+        n += 1
+        # stop child process
+        lbl = QLabel()
+        lbl.setText('Suspend Eclipse child-process')
+        layout.addWidget(lbl, 3, 0)    
+        var, text = 'stop_child', ''
+        self.stop_child = self.new_box(var=var, text=text)
+        [a.setToolTip(tool_tip[var]) for a in (lbl, self.stop_child)]
+        self.stop_child.setEnabled(False)
+        layout.addWidget(self.stop_child, 3, 1)
 
         # Space
         n += 1
@@ -2791,7 +2800,8 @@ class main_window(QMainWindow):                                    # main_window
         for opt in ('convert','del_convert','merge','del_merge'):
             kwargs[opt] = s.get[opt]()
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 
-                                 pause=float(s.get['pause']()), init_tstep=float(s.get['dt']()), **kwargs)
+                                 pause=float(s.get['pause']()), init_tstep=float(s.get['dt']()), 
+                                 stop_children=s.get['stop_child'](), **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)

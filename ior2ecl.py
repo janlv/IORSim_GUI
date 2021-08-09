@@ -173,7 +173,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
             info = 'Turned on full RFT-check (default is file-size check)' 
             self._print(info)
         #print(f'self.nwell: {self.nwell}, nwell_max: {(self.init_tsteps+1)*self.nwell}, rft_wells: {rft_wells}')
-        self.suspend(check=False, children=True)
+        self.suspend(check=False)
         if self.echo:
             print('\r  Eclipse started, log file is ' + self.get_logfile(), flush=True)
             print('  ' + self.timer.info) if self.timer else None
@@ -195,8 +195,8 @@ class ecl_backward(eclipse):                                           # ecl_bac
         #print('ecl, n: ',self.n)
         self.interface_file(self.n).copy(satnum_file, delete=True)
         self.OK_file().create_empty()
-        self.resume(check=False, children=True)
-        self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
+        self.resume(check=False)
+        self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
         if self.check_unrst:
             self.check_UNRST_file()
         if self.check_rft:
@@ -205,7 +205,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
             else:
                 self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=200)
         #sleep(1)
-        self.suspend(check=False, children=True)
+        self.suspend(check=False)
         self.n += 1
 
     #--------------------------------------------------------------------------------
@@ -365,7 +365,7 @@ class ior_backward(iorsim):                                            # ior_bac
         self.OK_file().create_empty()
         super().start() # iorsim.start()   
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-        self.suspend(check=False, children=True)
+        self.suspend(check=False)
         if self.echo:
             print('\r  IORSim started, log file is ' + self.get_logfile(), flush=True)
             print('  ' + self.timer.info) if self.timer else None
@@ -379,11 +379,11 @@ class ior_backward(iorsim):                                            # ior_bac
         #print('ior, n: ',self.n)
         self.interface_file(self.n).create_empty()
         self.OK_file().create_empty()
-        self.resume(check=False, children=True)
+        self.resume(check=False)
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
         self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
         warn_empty_file(self.satnum, comment='--')
-        self.suspend(check=False, children=True)
+        self.suspend(check=False)
 
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ior_backward
@@ -1032,6 +1032,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-only_convert',   help='Only convert+merge and exit', action='store_true')
     parser.add_argument('-only_merge',     help='Only merge and exit', action='store_true')
     parser.add_argument('-delete',         help='Delete obsolete output files after convert and merge has finished', action='store_true')
+    parser.add_argument('-alive_children', help='Only stop parent-processes (approx. 5% faster, but might be more unstable)', action='store_true')
     args = vars(parser.parse_args())
     # Look for case in case_dir if root is not a file
     if case_dir and not Path(args['root']+'.DATA').is_file():
@@ -1045,7 +1046,8 @@ def parse_input(case_dir=None, settings_file=None):
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
            init_tstep=1.0, check_unrst=True, check_rft=True, rft_size=True, keep_files=False, 
-           only_convert=False, only_merge=False, convert=True, merge=True, delete=False):
+           only_convert=False, only_merge=False, convert=True, merge=True, delete=False,
+           stop_children=False):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1072,7 +1074,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     sim = simulation(root=root, time=time, pause=pause, init_tstep=init_tstep, iorexe=iorexe, eclexe=eclexe, 
                      check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size,  
                      keep_files=keep_files, progress=progress, status=status, to_screen=to_screen,
-                     convert=convert, merge=merge, delete=delete)
+                     convert=convert, merge=merge, delete=delete, stop_children=stop_children)
 
     if only_convert or only_merge:
         sim.convert_and_merge(case=sim.root, only_merge=only_merge)
@@ -1091,7 +1093,8 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
     args = parse_input(case_dir=case_dir, settings_file=settings_file)
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=(not args['full_rft_check']), 
            to_screen=args['to_screen'], pause=args['pause'], init_tstep=args['init_tstep'], eclexe=args['eclexe'], iorexe=args['iorexe'],
-           delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'])
+           delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
+           stop_children=(not args['alive_children']))
     os._exit(0)
 
 
