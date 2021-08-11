@@ -3,6 +3,7 @@
 
 #import atexit
 from collections import namedtuple
+from mmap import ACCESS_READ, mmap
 import os
 from pathlib import Path
 import sys
@@ -10,15 +11,16 @@ from argparse import ArgumentParser
 #from shutil import which
 from datetime import datetime, timedelta
 from time import sleep
+from itertools import accumulate
 #from types import GeneratorType
 from psutil import NoSuchProcess
 import shutil
 import traceback
 from numpy import ceil
 
-from IORlib.utils import flatten_list, matches, number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import matches, number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks, get_schedule_time_and_filepos, get_tsteps, unfmt_file, fmt_file, Section, input_days_and_steps as ECL_input_days_and_steps
+from IORlib.ECL import check_blocks, get_tsteps, unfmt_file, fmt_file, Section, input_days_and_steps as ECL_input_days_and_steps
 
 
 
@@ -209,7 +211,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.n += 1
 
     #--------------------------------------------------------------------------------
-    def check_file(self, file, print_block=False):                          # eclipse
+    def check_unformatted_file(self, file, print_block=False):                          # eclipse
     #--------------------------------------------------------------------------------
         print(f'{file} size: {file.stat().st_size}')
         for block in unfmt_file(file).blocks(only_new=True):
@@ -397,119 +399,80 @@ class ior_backward(iorsim):                                            # ior_bac
 class Schedule:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, case, ext='.SCH', comment='--'): #, end='/', tag='TSTEP'):
+    def __init__(self, case, init_tstep=0, ext='.SCH', comment='--', interface_file=None): #, end='/', tag='TSTEP'):
     #--------------------------------------------------------------------------------
-        self.file = Path(case).with_suffix(ext)
+        self.case = Path(case)
+        self.file = self.case.with_suffix(ext)
         self.ifacefile = None
         self.comment = comment
-        #self.tag = tag
-        #self.end = end
-        self.count = 0
-        self.length = 0
+        self.ifacefile = interface_file
+        self.days = init_tstep + sum(get_tsteps(self.case.with_suffix('.DATA')))
+        #print('Schedule.days: ',self.days)
         self.exists = self.file.is_file()
         if self.exists:
-            self._schedule = self.read()
-            self.length = len(self._schedule)
+            self._schedule = self.days_and_actions()
 
-    #--------------------------------------------------------------------------------
-    def read(self):                                                        # schedule     
-    #--------------------------------------------------------------------------------
+    #-----------------------------------------------------------------------
+    def days_and_actions(self):
+    #-----------------------------------------------------------------------
         ''' 
-        Returns a list with tsteps at even positions followed by a list of schedule
-        statements at odd positions:
-        schedule = [10.0 ['WELSPECS', "P1"], 34.0, ['END']]
+        Returns a list of lists with days at index 0 and actions at index 1:
+        schedule = [[2, "WCONHIST \r\n    'P-15P'      'OPEN' "], [9, "WCONHIST"]]
         '''
-        if self.file.is_file():
-            with open(self.file) as f:
-                lines = f.readlines()
-            # Remove whitespace
-            lines = [line.strip() for line in lines if len(line)>0]
-            # Remove empty lines
-            lines = [line for line in lines if len(line)>0]
-            # Remove commented lines
-            lines = [line for line in lines if not line.startswith(self.comment)]
-            dt, pos = get_schedule_time_and_filepos(lines)
-            #print(dt, pos)
-            kw = flatten_list([ [ lines[pos[n][0]:pos[n][1]] or '' ] for n in range(len(pos)) ])
-            schedule = flatten_list([[sum(t), kw[n]] for n,t in enumerate(dt)])
-            #print(schedule[:4])
-            #print(schedule[-4:])
-        return schedule
+        date_format = '%d %b %Y'
+        # Read start date from Eclipse DATA-file
+        datafile = self.case.with_suffix('.DATA')
+        start = [b' '.join(m.group(1,2,3)).decode() for m in matches(file=datafile, pattern=r'\bSTART\b\s+(\d+)\s+\'*(\w+)\'*\s+(\d+)')]
+        start = datetime.strptime(start[0], date_format).date()
+        # Process schedule-file
+        schfile = self.case.with_suffix('.SCH')
+        # Determine if schedule file contains DATES or TSTEP
+        pattern = r'(^\s*\bDATES\b)|(^\s*\bTSTEP\b)|(\n+\s*\bDATES\b)|(\n+\s*\bTSTEP\b)'
+        tstep_or_dates = [g.decode().strip() for m in matches(file=schfile, pattern=pattern) for g in m.groups() if g]
+        #print(tstep_or_dates)
+        N = len(tstep_or_dates)
+        if tstep_or_dates.count('TSTEP') == N:
+            dates = False
+            pattern = r'\n\s*\bTSTEP\b\s+(\d+)\s*/\s+'
+        elif tstep_or_dates.count('DATES') == N:
+            dates = True
+            pattern = r'\n\s*\bDATES\b\s+(\d+)\s+\'*(\w+)\'*\s+(\d+)\s*/\s+/\s+'
+        else:
+            raise SystemError('WARNING Schedule-file contains a mix of TSTEP and DATES')
+        date_span = [(b' '.join(m.groups()).decode(), m.span()) for m in matches(file=schfile, pattern=pattern)]
+        #print(date_span)
+        pos = [s for d,s in date_span] + [(schfile.stat().st_size, 0)]
+        with open(schfile) as f:
+            with mmap(f.fileno(), length=0, access=ACCESS_READ) as data:
+                actions = [data[pos[i][1]:pos[i+1][0]].decode() for i in range(len(pos)-1)]
+        if dates:
+            days = [(datetime.strptime(d, date_format).date()-start).days for d,s in date_span]
+        else:   
+            days = list(accumulate([int(d) for d,s in date_span]))
+        return [[float(d),a] for (d,a) in zip(days, actions)]
 
     #--------------------------------------------------------------------------------
-    def set_interface_file(self, filename, filepos=4):                            # schedule
+    def append(self, action=None, tstep=None, append_line=-4):                               # schedule
     #--------------------------------------------------------------------------------
-        self.ifacefile = filename
-        self.filepos = filepos
-
-    #--------------------------------------------------------------------------------
-    def next_actions(self):                                                        # schedule
-    #--------------------------------------------------------------------------------
-        return self.actions(inc=True)
-
-    #--------------------------------------------------------------------------------
-    def _get(self, n, inc=False):                                               # schedule
-    #--------------------------------------------------------------------------------
-        if self.count<self.length and self.count%2==n:
-            val = self._schedule[self.count]
-            if inc:
-                self.count += 1
-            #print(f'inc:{inc}, val:{val}')
-            return val
-        return False
-
-    #--------------------------------------------------------------------------------
-    def _set(self, n, val):                                               # schedule
-    #--------------------------------------------------------------------------------
-        if self.count<self.length and self.count%2==n:
-            self._schedule[self.count] = val
-            return self._schedule[self.count]
-        return False
-
-    #--------------------------------------------------------------------------------
-    def tstep(self, **kwargs):                                               # schedule
-    #--------------------------------------------------------------------------------
-        return self._get(0, **kwargs)
-
-    #--------------------------------------------------------------------------------
-    def set_tstep(self, val):                                               # schedule
-    #--------------------------------------------------------------------------------
-        return self._set(0, val)
-
-    #--------------------------------------------------------------------------------
-    def actions(self, **kwargs):                                               # schedule
-    #--------------------------------------------------------------------------------
-        return '\n'.join(self._get(1, **kwargs) or '')
-
-    #--------------------------------------------------------------------------------
-    def append(self, text):                               # schedule
-    #--------------------------------------------------------------------------------
-        if not text:
+        '''
+        line : line number of TSTEP
+        '''
+        if not action and not tstep:
             return
         with open(self.ifacefile, 'r') as f:
             lines = f.readlines()
-        #n = safeindex(lines, self.endtag)
-        n = len(lines) - self.filepos
+        n = len(lines) + append_line
         #print('append_to_satnum:',n, text)
-        if n:
-            lines.insert(n, text+'\n')
+        if n > 0:
+            # Replace TSTEP
+            if tstep:
+                # +1 because value is on the next line
+                lines[n+1] = f'{tstep} /\n'
+            # Append action
+            if action:
+                lines.insert(n, action+'\n')
             with open(self.ifacefile, 'w') as f:
                 f.write(''.join(lines))
-
-    #--------------------------------------------------------------------------------
-    def update(self):                                               # schedule
-    #--------------------------------------------------------------------------------
-        # Append next keywords to outfile if tstep==0 
-        if self.tstep()==0:
-            self.count += 1
-            self.append(self.actions(inc=True))
-            #print('actions:',self.actions(), 'count:', self.count, 'length:',self.length)
-            return
-        # Update schedule tstep by reading TSTEP from the interface-file
-        tstep = get_tsteps(self.ifacefile)[0]
-        #old_tstep = self.tstep()
-        self.set_tstep( max(self.tstep()-int(tstep), 0) )
-        #print(f'tstep: {tstep}, old_tstep: {old_tstep}, new_tstep: {self.tstep()}, count: {self.count}')
 
     #--------------------------------------------------------------------------------
     def check(self):                                               # schedule
@@ -517,7 +480,26 @@ class Schedule:
         # just a check...
         with open(self.ifacefile, 'r') as f:
             lines = f.readlines()
-        print(self.ifacefile, ': ', lines[-10:])
+        print(self.ifacefile, ': ', ''.join(lines[-30:]))
+
+    #--------------------------------------------------------------------------------
+    def update(self):                                               # schedule
+    #--------------------------------------------------------------------------------        
+        # Get tstep from IORSim
+        tstep = get_tsteps(self.ifacefile)[0]
+        new_tstep = None
+        action = None
+        # Check arrival of next event (if it exists) and adjust tstep if neccessary
+        if (len(self._schedule) > 1) and (self.days + tstep > self._schedule[1][0]):
+            tstep = new_tstep = self._schedule[1][0] - self.days
+        # Append action if time is right
+        if self._schedule and self.days >= self._schedule[0][0]:
+            action = self._schedule.pop(0)[1]
+        self.append(action=action, tstep=new_tstep)
+        #print('Schedule.days: ',self.days, end='')
+        self.days += tstep
+        #print(', ', self.days)
+        #self.check()
 
 
 #====================================================================================
@@ -581,9 +563,9 @@ class simulation:
             self.run_sim = self.backward
             self.runs = [ecl_backward(exe=eclexe, **kwargs), ior_backward(exe=iorexe, **kwargs)]
             self.ecl, self.ior = self.runs
-            # Add satnum-file to schedule, filepos is position of TSTEP 
-            self.schedule = Schedule(self.root)            
-            self.schedule.set_interface_file(self.ior.satnum, filepos=4)
+            # Add satnum-file to schedule, line is position of TSTEP  
+            self.schedule = Schedule(self.root, init_tstep=self.init_tstep, interface_file=self.ior.satnum)            
+            #self.schedule.set_interface_file(self.ior.satnum, append_line=-4)
         # Forward simulation
         if self.mode=='forward':
             self.T = time
@@ -676,7 +658,6 @@ class simulation:
             ior.run_one_step() #n+ecl.init_tsteps)
             if self.schedule.exists:
                 self.schedule.update()
-                #self.schedule.check()
             ior.t = ior.time_and_step()[0]
             self.update.progress(value=ior.t)
             self.update.status(run=ior, mode='backward')
@@ -936,7 +917,7 @@ def ior_input(var=None, root=None):
         pos = 4
     # Find position after var_group name 
     end = [m.span()[1] for m in matches(file=file, pattern=fr'{var_group}\s*\n+')]
-    num = '\d+\.?e?E?\d*'
+    num = '\d+\.?e?E?\d*' # 1, 1.0, 1.e99, 1.E99
     # Find uncommented lines with two numbers
     val = [float(s.decode()) for m in matches(file=file, pattern=fr'\n+\s*{num}\s*{num}', pos=end[0]) for s in m.group(0).split()]
     # Find commented lines with variable names

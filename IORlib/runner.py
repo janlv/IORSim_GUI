@@ -191,11 +191,12 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
         pid = None
         self.starttime = datetime.now()
+        #cmd_str = ' '.join(self.cmd)
         if self.pipe:
-            self._print('starting in PIPE-mode', v=1)
+            self._print(f"starting {self.name} in PIPE-mode", v=1)
             P = Popen(self.cmd, stdin=PIPE, stdout=self.log, stderr=STDOUT)
         else:
-            self._print('trying to start {}'.format(self.cmd), v=1)
+            self._print(f'starting {self.name}', v=1)
             P = Popen(self.cmd, stdout=self.log, stderr=STDOUT)      
         self.P = P
         pid = P.pid
