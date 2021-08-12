@@ -165,6 +165,8 @@ class ecl_backward(eclipse):                                           # ecl_bac
         super().start()  # eclipse.start()
         self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
+        #if self.echo:
+        #    print('  Eclipse running...', end='', flush=True)
         self.check_UNRST_file(nblocks=self.init_tsteps+1) # +1 for 0'th SEQNUM
         self.nwell = self.unrst_check.var('nwell')
         nwell_max = (self.init_tsteps+1)*self.nwell
@@ -362,11 +364,13 @@ class ior_backward(iorsim):                                            # ior_bac
         # Start IORSim backward run
         self.n = 1
         if self.echo:
-            print('\n  Starting IORSim...', end='', flush=True)
+            print('  Starting IORSim...', end='', flush=True)
         self.interface_file('all').delete()
         self.interface_file(self.n).create_empty()
         self.OK_file().create_empty()
         super().start() # iorsim.start()   
+        #if self.echo:
+        #    print('  IORSim running...', end='', flush=True)
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
         self.suspend(check=False)
         if self.echo:
@@ -533,9 +537,7 @@ class Schedule:
         if self._schedule and self.days >= self._schedule[0][0]:
             action = self._schedule.pop(0)[1]
         self.append(action=action, tstep=new_tstep)
-        #print(f'Schedule.days: {self.days} ({self.start+timedelta(days=self.days)})', end='')
         self.days += tstep
-        #print(f', {self.days} ({self.start+timedelta(days=self.days)})')
         #self.check()
 
 
@@ -1064,8 +1066,8 @@ def parse_input(case_dir=None, settings_file=None):
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
            init_tstep=1.0, check_unrst=True, check_rft=True, rft_size=True, keep_files=False, 
-           only_convert=False, only_merge=False, convert=True, merge=True, delete=False,
-           stop_children=False):
+           only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
+           stop_children=True):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
