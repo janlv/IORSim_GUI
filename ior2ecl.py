@@ -17,6 +17,7 @@ from psutil import NoSuchProcess
 import shutil
 import traceback
 from numpy import ceil
+from re import match, search, compile
 
 from IORlib.utils import matches, number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
@@ -411,45 +412,82 @@ class Schedule:
         self.exists = self.file.is_file()
         if self.exists:
             self._schedule = self.days_and_actions()
+            #print(self._schedule)
 
     #-----------------------------------------------------------------------
-    def days_and_actions(self):
+    def get_start(self):
     #-----------------------------------------------------------------------
-        ''' 
-        Returns a list of lists with days at index 0 and actions at index 1:
-        schedule = [[2, "WCONHIST \r\n    'P-15P'      'OPEN' "], [9, "WCONHIST"]]
-        '''
-        date_format = '%d %b %Y'
         # Read start date from Eclipse DATA-file
         datafile = self.case.with_suffix('.DATA')
-        start = [b' '.join(m.group(1,2,3)).decode() for m in matches(file=datafile, pattern=r'\bSTART\b\s+(\d+)\s+\'*(\w+)\'*\s+(\d+)')]
-        start = datetime.strptime(start[0], date_format).date()
-        # Process schedule-file
-        schfile = self.case.with_suffix('.SCH')
+        pattern = r'\bSTART\b\s+(\d+)\s+\'*(\w+)\'*\s+(\d+)'
+        start = [b' '.join(m.group(1,2,3)).decode() for m in matches(file=datafile, pattern=pattern)]
+        return datetime.strptime(start[0], '%d %b %Y').date()
+
+    #-----------------------------------------------------------------------
+    def get_type(self, string):
+    #-----------------------------------------------------------------------
         # Determine if schedule file contains DATES or TSTEP
-        pattern = r'(^\s*\bDATES\b)|(^\s*\bTSTEP\b)|(\n+\s*\bDATES\b)|(\n+\s*\bTSTEP\b)'
-        tstep_or_dates = [g.decode().strip() for m in matches(file=schfile, pattern=pattern) for g in m.groups() if g]
+        regex = compile(r'\n?\s*(\bDATES|TSTEP\b)')
+        tstep_or_dates = [m.group(1) for m in regex.finditer(string)]
         #print(tstep_or_dates)
         N = len(tstep_or_dates)
         if tstep_or_dates.count('TSTEP') == N:
-            dates = False
-            pattern = r'\n\s*\bTSTEP\b\s+(\d+)\s*/\s+'
+            use_dates = False
         elif tstep_or_dates.count('DATES') == N:
-            dates = True
-            pattern = r'\n\s*\bDATES\b\s+(\d+)\s+\'*(\w+)\'*\s+(\d+)\s*/\s+/\s+'
+            use_dates = True
         else:
             raise SystemError('WARNING Schedule-file contains a mix of TSTEP and DATES')
-        date_span = [(b' '.join(m.groups()).decode(), m.span()) for m in matches(file=schfile, pattern=pattern)]
-        #print(date_span)
-        pos = [s for d,s in date_span] + [(schfile.stat().st_size, 0)]
-        with open(schfile) as f:
-            with mmap(f.fileno(), length=0, access=ACCESS_READ) as data:
-                actions = [data[pos[i][1]:pos[i+1][0]].decode() for i in range(len(pos)-1)]
-        if dates:
-            days = [(datetime.strptime(d, date_format).date()-start).days for d,s in date_span]
+        return use_dates
+
+    #-----------------------------------------------------------------------
+    def days_and_actions(self, remove_end=True):
+    #-----------------------------------------------------------------------
+        '''
+        Use regexp to extract DATES or TSTEP values from the .SCH-file together
+        with the file-positions (span) of these keywords. The file-positions are used
+        to extract the scheduling commands contained between the DATES/TSTEP commands
+
+        Returns: 
+            A list of lists with days at index 0 and actions at index 1, such as:
+            schedule = [[2.0, "WCONHIST \r\n    'P-15P'      'OPEN' "], [9.0, "WCONHIST"]]
+        '''
+        # Short Python regexp guide:
+        #   \s : whitespace, [ \t\n\r\f\v]
+        #   \w : alphanumeric, [a-zA-Z0-9_]
+        #   \d : decimal digit, [0-9]
+        #   \b : word-delimiter
+        #    ? : 0 or 1 repetitions
+        #    + : 1 or more rep.
+        #    * : 0 or more rep.
+
+        # Remove comments
+        with open(self.file) as f:
+            lines = f.readlines()
+        schfile = ''.join([l for l in lines if not l.lstrip().startswith('--')])
+        # Remove entries after END 
+        if remove_end:
+            found = search(r'\bEND\b', schfile)
+            if found:
+                schfile = schfile[0:found.start()]
+        # Determine type, DATES or TSTEP
+        use_dates = self.get_type(schfile)
+        if use_dates:
+            regex = compile(r'\n?\s*\bDATES\b\s+(\d+)\s+\'?(\w+)\'?\s+(\d+)\s*/\s+/')
+        else:
+            regex = compile(r'\n?\s*\bTSTEP\b\s+([0-9 ]+)\s*/\s+')
+        # Create list of (time, (start, end))-tuple
+        date_span = [(' '.join(m.groups()), m.span()) for m in regex.finditer(schfile)]
+        pos = [s for d,s in date_span] + [(len(schfile), 0)]
+        # Extract actions
+        actions = [schfile[pos[i][1]:pos[i+1][0]].rstrip() for i in range(len(pos)-1)]
+        # Calculate number of days from the simulation start (given by START in .DATA-file)
+        self.start = self.get_start()
+        if use_dates:
+            days = [(datetime.strptime(d, '%d %b %Y').date()-self.start).days for d,s in date_span]
         else:   
-            days = list(accumulate([int(d) for d,s in date_span]))
-        return [[float(d),a] for (d,a) in zip(days, actions)]
+            days = list(accumulate([sum([float(i) for i in d.split()]) for d,s in date_span]))
+        # Return only non-empty [day, action] pairs
+        return [[d, a+'\n'] for (d,a) in zip(days, actions) if a]
 
     #--------------------------------------------------------------------------------
     def append(self, action=None, tstep=None, append_line=-4):                               # schedule
@@ -462,15 +500,14 @@ class Schedule:
         with open(self.ifacefile, 'r') as f:
             lines = f.readlines()
         n = len(lines) + append_line
-        #print('append_to_satnum:',n, text)
         if n > 0:
             # Replace TSTEP
             if tstep:
-                # +1 because value is on the next line
+                # +1 because we edit the value on the line after TSTEP
                 lines[n+1] = f'{tstep} /\n'
             # Append action
             if action:
-                lines.insert(n, action+'\n')
+                lines.insert(n, action)
             with open(self.ifacefile, 'w') as f:
                 f.write(''.join(lines))
 
@@ -496,9 +533,9 @@ class Schedule:
         if self._schedule and self.days >= self._schedule[0][0]:
             action = self._schedule.pop(0)[1]
         self.append(action=action, tstep=new_tstep)
-        #print('Schedule.days: ',self.days, end='')
+        #print(f'Schedule.days: {self.days} ({self.start+timedelta(days=self.days)})', end='')
         self.days += tstep
-        #print(', ', self.days)
+        #print(f', {self.days} ({self.start+timedelta(days=self.days)})')
         #self.check()
 
 
