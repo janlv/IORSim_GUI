@@ -26,7 +26,7 @@ import copy
 
 from ior2ecl import simulation, Schedule, ior_input, main as ior2ecl_main
 from IORlib.utils import Progress, assert_python_version, get_substrings, return_matching_string, delete_all, file_contains, upper_and_lower
-from IORlib.ECL import unfmt_file, input_days_and_steps as ECL_input_days_and_steps
+from IORlib.ECL import get_tsteps, unfmt_file #, input_days_and_steps as ECL_input_days_and_steps
 import GUI_icons
 
 gui_dir = Path('GUI')
@@ -1073,7 +1073,8 @@ class main_window(QMainWindow):                                    # main_window
         inp['dtecl'] = inp['ecl_days'] = inp['species'] = None
         if inp['root']:
             inp['dtecl']   = ior_input(var='dtecl', root=inp['root'])
-            inp['ecl_days'] = ECL_input_days_and_steps(inp['root'])[0]
+            #inp['ecl_days'] = ECL_input_days_and_steps(inp['root'])[0]
+            inp['ecl_days'] = int(sum(get_tsteps(inp['root']+'.DATA')))
             inp['species'] = get_species(inp['root'])
 
 
@@ -1970,6 +1971,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def goto_end(self):
     #-----------------------------------------------------------------------
+        self.editor_refresh()
         self.editor.moveCursor(QTextCursor.End)
         
     #-----------------------------------------------------------------------

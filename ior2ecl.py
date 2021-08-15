@@ -19,9 +19,9 @@ import traceback
 from numpy import ceil
 from re import match, search, compile
 
-from IORlib.utils import matches, number_of_blocks, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import matches, number_of_blocks, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks, get_tsteps, unfmt_file, fmt_file, Section, input_days_and_steps as ECL_input_days_and_steps
+from IORlib.ECL import check_blocks, get_tsteps, unfmt_file, fmt_file, Section #, input_days_and_steps as ECL_input_days_and_steps
 
 
 
@@ -140,6 +140,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.rft_size = rft_size
         self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
+        self.tsteps = get_tsteps(self.case.with_suffix('.DATA'))
 
     #--------------------------------------------------------------------------------
     def check_input(self):                                             # ecl_backward
@@ -151,12 +152,21 @@ class ecl_backward(eclipse):                                           # ecl_bac
                               'Eclipse input is missing the READDATA keyword.')
 
     #--------------------------------------------------------------------------------
-    def start(self):                                                   # ecl_backward
+    def start(self, update=None):                                      # ecl_backward
     #--------------------------------------------------------------------------------
+        def loop_func(update=update):
+            self.assert_running_and_stop_if_canceled()
+            if update:
+                self.t, self.n = self.time_and_step()
+                update.status(run=self, mode='backward')
+                update.progress(value=self.t)
+            #update and update.progress(run=self)
+
         # Start Eclipse in backward mode
+        update and update.status(value=f'Starting {self.name}...')
         self.n = self.init_tsteps
-        if self.echo:
-            print('  Starting Eclipse...', end='', flush=True)
+        #if self.echo:
+        #    print('  Starting Eclipse...', end='', flush=True)
         self.interface_file('all').delete()
         # Need to create all interface files in advance to avoid Eclipse termination
         #[self.interface_file(i).create_empty() for i in range(1, self.N+1)] 
@@ -165,9 +175,13 @@ class ecl_backward(eclipse):                                           # ecl_bac
         super().start()  # eclipse.start()
         self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
-        #if self.echo:
-        #    print('  Eclipse running...', end='', flush=True)
-        self.check_UNRST_file(nblocks=self.init_tsteps+1) # +1 for 0'th SEQNUM
+        update and update.status(value=f'{self.name} running...')
+        # Check if restart-file (UNRST) is flushed   
+        nblocks = len(self.tsteps) + 1 # +1 for 0'th SEQNUM
+        if sum(self.tsteps) > 10: 
+            self.check_UNRST_file(nblocks=nblocks, loop_func=loop_func, pause=0.5, limit=None) 
+        else:
+            self.check_UNRST_file(nblocks=nblocks) 
         self.nwell = self.unrst_check.var('nwell')
         nwell_max = (self.init_tsteps+1)*self.nwell
         rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell, limit=200)
@@ -196,8 +210,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
     #--------------------------------------------------------------------------------
         self.rft_start_size = self.rft.stat().st_size
         ### run Eclipse
-        #self.n = n + self.init_tsteps - 1
-        #print('ecl, n: ',self.n)
         self.interface_file(self.n).copy(satnum_file, delete=True)
         self.OK_file().create_empty()
         self.resume(check=False)
@@ -214,7 +226,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.n += 1
 
     #--------------------------------------------------------------------------------
-    def check_unformatted_file(self, file, print_block=False):                          # eclipse
+    def check_unformatted_file(self, file, print_block=False):             # ecl_backward
     #--------------------------------------------------------------------------------
         print(f'{file} size: {file.stat().st_size}')
         for block in unfmt_file(file).blocks(only_new=True):
@@ -222,14 +234,16 @@ class ecl_backward(eclipse):                                           # ecl_bac
                 print(f'{block.key()} : {block.data()}')
             print_block and block.print()
 
-    #--------------------------------------------------------------------------------
-    def check_UNRST_file(self, nblocks=1):                                  # eclipse
-    #--------------------------------------------------------------------------------
-        self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info,
-                       error=self.unrst_check.file.name()+' not complete' )
 
     #--------------------------------------------------------------------------------
-    def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=10000):        # eclipse
+    def check_UNRST_file(self, nblocks=1, loop_func=None, pause=0.01, limit=100000):   # ecl_backward
+    #--------------------------------------------------------------------------------
+        self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info,
+                       error=self.unrst_check.file.name()+' not complete', loop_func=loop_func,
+                       pause=pause, limit=limit )
+
+    #--------------------------------------------------------------------------------
+    def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=10000):        # ecl_backward
     #--------------------------------------------------------------------------------
         ###
         ###  cannot always require nblocks=2*nwell in the initial RFT-check. In some situations
@@ -247,7 +261,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         return nblocks
 
     #--------------------------------------------------------------------------------
-    def check_RFT_size(self):                                               # eclipse
+    def check_RFT_size(self):                                               # ecl_backward
     #--------------------------------------------------------------------------------
         diff = self.rft.stat().st_size-self.rft_start_size
         if diff==self.rft_size:
@@ -257,6 +271,15 @@ class ecl_backward(eclipse):                                           # ecl_bac
             #    return False
         else:
             return False
+
+    #--------------------------------------------------------------------------------
+    def quit(self):                                                    # ecl_backward
+    #--------------------------------------------------------------------------------
+        self._print(f'appending END to {self.interface_file(self.n).name()}')
+        #self.interface_file(self.n+1).append('END')
+        self.interface_file(self.n).create_from_string('END')
+        self.OK_file().create_empty()
+        super().quit(loop_func=lambda : None)
 
 
 
@@ -359,18 +382,20 @@ class ior_backward(iorsim):                                            # ior_bac
         silentdelete(self.satnum)
 
     #--------------------------------------------------------------------------------
-    def start(self):                                                   # ior_backward
+    def start(self, update=None):                                                   # ior_backward
     #--------------------------------------------------------------------------------
         # Start IORSim backward run
         self.n = 1
-        if self.echo:
-            print('  Starting IORSim...', end='', flush=True)
+        update and update.status(value=f'Starting {self.name}...')
+        #if self.echo:
+        #    print('  Starting IORSim...', end='', flush=True)
         self.interface_file('all').delete()
         self.interface_file(self.n).create_empty()
         self.OK_file().create_empty()
         super().start() # iorsim.start()   
         #if self.echo:
         #    print('  IORSim running...', end='', flush=True)
+        update and update.status(value=f'{self.name} running...')
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
         self.suspend(check=False)
         if self.echo:
@@ -419,12 +444,23 @@ class Schedule:
             #print(self._schedule)
 
     #-----------------------------------------------------------------------
+    def insert(self, days, action):
+    #-----------------------------------------------------------------------
+        index = [i for i,(d,a) in enumerate(self._schedule) if d>=days][0]
+        self._schedule = self._schedule[0:index]
+        self._schedule.append([days, action+'\n'])
+
+    #-----------------------------------------------------------------------
     def get_start(self):
     #-----------------------------------------------------------------------
         # Read start date from Eclipse DATA-file
-        datafile = self.case.with_suffix('.DATA')
-        pattern = r'\bSTART\b\s+(\d+)\s+\'*(\w+)\'*\s+(\d+)'
-        start = [b' '.join(m.group(1,2,3)).decode() for m in matches(file=datafile, pattern=pattern)]
+        file = self.case.with_suffix('.DATA')
+        # Remove comments
+        data = remove_comments(file)
+        regex = compile(r'\bSTART\b\s+(\d+)\s+\'*(\w+)\'*\s+(\d+)')
+        start = [' '.join(m.group(1,2,3)) for m in regex.finditer(data)]
+        if not start:
+            raise SystemError(f'WARNING START not found in {file}')
         return datetime.strptime(start[0], '%d %b %Y').date()
 
     #-----------------------------------------------------------------------
@@ -464,10 +500,7 @@ class Schedule:
         #    + : 1 or more rep.
         #    * : 0 or more rep.
 
-        # Remove comments
-        with open(self.file) as f:
-            lines = f.readlines()
-        schfile = ''.join([l for l in lines if not l.lstrip().startswith('--')])
+        schfile = remove_comments(self.file)
         # Remove entries after END 
         if remove_end:
             found = search(r'\bEND\b', schfile)
@@ -494,7 +527,7 @@ class Schedule:
         return [[d, a+'\n'] for (d,a) in zip(days, actions) if a]
 
     #--------------------------------------------------------------------------------
-    def append(self, action=None, tstep=None, append_line=-4):                               # schedule
+    def append(self, action=None, tstep=None, append_line=-4):             # schedule
     #--------------------------------------------------------------------------------
         '''
         line : line number of TSTEP
@@ -505,10 +538,13 @@ class Schedule:
             lines = f.readlines()
         n = len(lines) + append_line
         if n > 0:
-            # Replace TSTEP
             if tstep:
+                # Replace TSTEP
                 # +1 because we edit the value on the line after TSTEP
                 lines[n+1] = f'{tstep} /\n'
+            #else:
+            #    # Remove TSTEP
+            #    lines[n] = lines[n+1] = '\n'
             # Append action
             if action:
                 lines.insert(n, action)
@@ -519,6 +555,7 @@ class Schedule:
     def check(self):                                               # schedule
     #--------------------------------------------------------------------------------
         # just a check...
+        print(f'{self.days}, {self.start+timedelta(days=self.days)}')
         with open(self.ifacefile, 'r') as f:
             lines = f.readlines()
         print(self.ifacefile, ': ', ''.join(lines[-30:]))
@@ -530,16 +567,19 @@ class Schedule:
         tstep = get_tsteps(self.ifacefile)[0]
         new_tstep = None
         action = None
+        n = len(self._schedule)
         # Check arrival of next event (if it exists) and adjust tstep if neccessary
-        if (len(self._schedule) > 1) and (self.days + tstep > self._schedule[1][0]):
+        if (n > 1) and (self.days + tstep > self._schedule[1][0]):
             tstep = new_tstep = self._schedule[1][0] - self.days
+        if n == 0:
+            new_tstep = None
         # Append action if time is right
         if self._schedule and self.days >= self._schedule[0][0]:
             action = self._schedule.pop(0)[1]
         self.append(action=action, tstep=new_tstep)
-        self.days += tstep
         #self.check()
-
+        self.days += tstep
+        #return tstep
 
 #====================================================================================
 class simulation:
@@ -588,23 +628,30 @@ class simulation:
             if not dt_ecl:
                 #dt_ecl = dtecl(self.root)
                 dt_ecl = ior_input(var='dtecl', root=self.root)
-            sum_tstep, len_tstep, tsteps = ECL_input_days_and_steps(self.root)
+            tsteps = get_tsteps(str(self.root)+'.DATA')
+            #sum_tstep, len_tstep = sum(tsteps), len(tsteps) 
+            #sum_tstep, len_tstep, tsteps = ECL_input_days_and_steps(self.root)
             if not time_ecl:
-                time_ecl = sum_tstep
+                time_ecl = sum(tsteps)
             # Need to calculate number of steps based on duration of 
-            # simulation, initial TSTEP from .schedule-file, and TSTEP 
+            # simulation, initial TSTEP from settings, and TSTEP 
             # preceding READDATA in .DATA-file
-            #dt_init = int( self.schedule.tstep() )
-            dt_init = int( self.init_tstep )
-            self.T = int(time)+int(time_ecl)+dt_init
-            N = int(ceil((time+dt_init)/dt_ecl))
-            kwargs.update({'N':N, 'T':self.T, 'init_tsteps':len_tstep})
+            #dt_init = int( self.init_tstep )
+            #self.T = int(time)+int(time_ecl)+dt_init
+            self.T = time #+time_ecl+self.init_tstep
+            #N = int(ceil((time+dt_init)/dt_ecl))
+            #N = int(ceil((time+self.init_tstep)/dt_ecl))
+            N = int(time+self.init_tstep)
+            kwargs.update({'N':N, 'T':self.T, 'init_tsteps':len(tsteps)})
+            #print(kwargs)
+            # Init runs
             self.run_sim = self.backward
             self.runs = [ecl_backward(exe=eclexe, **kwargs), ior_backward(exe=iorexe, **kwargs)]
             self.ecl, self.ior = self.runs
-            # Add satnum-file to schedule, line is position of TSTEP  
+            # Set up schedule of commands to pass to satnum-file
             self.schedule = Schedule(self.root, init_tstep=self.init_tstep, interface_file=self.ior.satnum)            
-            #self.schedule.set_interface_file(self.ior.satnum, append_line=-4)
+            self.schedule.insert(self.T, '--END')
+            #print(self.schedule._schedule)
         # Forward simulation
         if self.mode=='forward':
             self.T = time
@@ -679,33 +726,37 @@ class simulation:
         for run in self.runs:
             run.check_input()
             run.delete_output_files()
-            self.update.status(value='Starting ' + run.name + '...')
-            #if run==ior:
-            #    ecl.check_file(ecl.unrst, print_block=True)
-            #    ecl.check_file(ecl.rft)
-            run.start()
+            run.start(update=self.update)
         ior.satnum.write_text(f'TSTEP\n{self.init_tstep} /') 
 
         # Start timestep loop
         #for n in range(self.N_start, ecl.N+self.N_start):
         for n in range(ecl.N):
-            self.print2log('\nLoop step {}'.format(n))
-            ecl.run_one_step(ior.satnum)
-            # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
-            sleep(self.pause)
+            self.print2log(f'\nLoop step {n}/{ecl.N}')
+            if ecl.t < ecl.T:
+                ecl.run_one_step(ior.satnum)
+                # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
+                sleep(self.pause)
             # Run IORSim to prepare satnum input for the next Eclipse run
             ior.run_one_step() #n+ecl.init_tsteps)
-            if self.schedule.exists:
-                self.schedule.update()
+            # Get tstep from IORSim
+            #tstep = get_tsteps(ior.satnum)[0]
+            #if self.schedule.exists:
+            self.schedule.update()
             ior.t = ior.time_and_step()[0]
+            ecl.t = ecl.time_and_step()[0]
+            #print(f'ior: {ior.t}, schedule: {self.schedule.days}')
             self.update.progress(value=ior.t)
             self.update.status(run=ior, mode='backward')
             self.update.plot()
-            #print('ecl',ecl.t, ecl.T, ecl.n, ecl.N)
-            #print('ior',ior.t, ior.T, ior.n, ior.N)
+            #print(f'ecl: t={ecl.t}/{ecl.T}')
+            #print(f'ior: t={ior.t}/{ior.T}')
+            if ior.t == ior.T:
+                break
             if ior.t > ior.T:
                 #print('t>T')
-                raise SystemError(ior.complete_msg())
+                #raise SystemError(ior.complete_msg())
+                raise SystemError(f'ERROR Simulation time exceeded: {ior.t}>{ior.T}')
         # Timestep loop finished
         ecl.quit()
         ior.quit()
@@ -1101,7 +1152,8 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
         return
 
     if sim.mode=='forward':
-        sim.set_time(ECL_input_days_and_steps(root)[0])
+        #sim.set_time(ECL_input_days_and_steps(root)[0])
+        sim.set_time(int(sum(get_tsteps(str(root)+'.DATA'))))
     sim.info_header()
     result, msg = sim.run()
     #not to_screen and print('\r   '+msg.replace('INFO','').strip()+'              \n')

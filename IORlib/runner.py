@@ -41,6 +41,11 @@ class Control_file:
         return self._name.name
         
     #--------------------------------------------------------------------------------
+    def path(self):
+    #--------------------------------------------------------------------------------
+        return self._name
+
+    #--------------------------------------------------------------------------------
     def print(self):
     #--------------------------------------------------------------------------------
         print(self._name)
@@ -72,7 +77,7 @@ class Control_file:
     def append(self, _ascii):
     #--------------------------------------------------------------------------------
         with open(self._name, 'a') as f:
-            f.write('{}\n'.format(_ascii))
+            f.write(f'{_ascii}\n')
 
     @permission_error
     #--------------------------------------------------------------------------------
@@ -422,13 +427,13 @@ class runner:                                                               # ru
         return value
 
     #--------------------------------------------------------------------------------
-    def wait_for(self, func, *args, error=None, limit=100000, pause=0.01, log=None, loop_func=0, v=3, **kwargs):
+    def wait_for(self, func, *args, error=None, limit=100000, pause=0.01, log=None, loop_func=None, v=3, **kwargs):
     #--------------------------------------------------------------------------------
-        if loop_func==0:
+        if not loop_func:
             # Default checks during loop
             loop_func = self.assert_running_and_stop_if_canceled
         passed_args = ','.join([f'{k}={v}' for k,v in kwargs.items()])
-        self._print(f'calling wait_for( {func.__qualname__}({passed_args}), limit={limit} )...', v=v, end='')
+        self._print(f'calling wait_for( {func.__qualname__}({passed_args}), limit={limit}, pause={pause} )...', v=v, end='')
         n = loop_until(func, *args, **kwargs, error=error, pause=pause, limit=limit, loop_func=loop_func)
         if n<0:
             self._print('', tag='')    
@@ -450,11 +455,11 @@ class runner:                                                               # ru
         self.parent = None
         
     #--------------------------------------------------------------------------------
-    def quit(self, v=1):
+    def quit(self, v=1, loop_func=lambda:None):
     #--------------------------------------------------------------------------------
         self._print('quitting process', v=v)
         self.resume()
-        self.wait_for_process_to_finish(limit=1000, pause=0.01, loop_func=None)
+        self.wait_for_process_to_finish(limit=10000, pause=0.01, loop_func=loop_func)
         self.log.close()
 
 
