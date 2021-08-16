@@ -643,10 +643,11 @@ class simulation:
             tsteps = get_tsteps(str(self.root)+'.DATA')
             if not time_ecl:
                 time_ecl = sum(tsteps)
-            # Need to calculate number of steps based on duration of 
-            # simulation, initial TSTEP from settings, and TSTEP 
-            # preceding READDATA in .DATA-file
-            self.T = time #+time_ecl+self.init_tstep
+            if time < time_ecl:
+                #raise SystemError(f'ERROR Simulation time ({time} days) must at least match the Eclipse initial TSTEP of {time_ecl} days')
+                print(f'Simulation time increased to match the initial TSTEP in .DATA: {time_ecl} days')
+                time = time_ecl + self.init_tstep + 1
+            self.T = time 
             N = int(time+self.init_tstep)
             kwargs.update({'N':N, 'T':self.T, 'init_tsteps':len(tsteps)})
             # Init runs
