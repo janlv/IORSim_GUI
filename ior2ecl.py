@@ -591,7 +591,7 @@ class Schedule:
                 # Remove first element
                 self._schedule.pop(0)
         self.append(action=action, tstep=new_tstep)
-        self.check()
+        #self.check()
         self.days += tstep
         #return tstep
 
