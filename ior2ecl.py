@@ -21,7 +21,7 @@ from re import match, search, compile
 
 from IORlib.utils import matches, number_of_blocks, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks, get_tsteps, unfmt_file, fmt_file, Section #, input_days_and_steps as ECL_input_days_and_steps
+from IORlib.ECL import check_blocks, get_start, get_tsteps, unfmt_file, fmt_file, Section #, input_days_and_steps as ECL_input_days_and_steps
 
 
 
@@ -157,7 +157,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         def loop_func(update=update):
             self.assert_running_and_stop_if_canceled()
             if update:
-                self.t, self.n = self.time_and_step()
+                self.t = self.time_and_step()[0]
                 update.status(run=self, mode='backward')
                 update.progress(value=self.t)
             #update and update.progress(run=self)
@@ -211,6 +211,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.rft_start_size = self.rft.stat().st_size
         ### run Eclipse
         self.interface_file(self.n).copy(satnum_file, delete=True)
+        #self.interface_file(self.n).print()
         self.OK_file().create_empty()
         self.resume(check=False)
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
@@ -429,39 +430,38 @@ class ior_backward(iorsim):                                            # ior_bac
 class Schedule:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, case, init_tstep=0, ext='.SCH', comment='--', interface_file=None): #, end='/', tag='TSTEP'):
+    def __init__(self, case, init_tstep=0, T=0, ext='.SCH', comment='--', interface_file=None): #, end='/', tag='TSTEP'):
     #--------------------------------------------------------------------------------
         self.case = Path(case)
         self.file = self.case.with_suffix(ext)
         self.ifacefile = None
         self.comment = comment
         self.ifacefile = interface_file
-        self.days = init_tstep + sum(get_tsteps(self.case.with_suffix('.DATA')))
-        #print('Schedule.days: ',self.days)
-        self.exists = self.file.is_file()
-        if self.exists:
+        DATA_file = self.case.with_suffix('.DATA')
+        self.days = sum(get_tsteps(DATA_file))
+        self.start = get_start(DATA_file)
+        self._schedule = []
+        if self.file.is_file():
             self._schedule = self.days_and_actions()
-            #print(self._schedule)
+        # Add start time
+        self.insert(days=self.days+init_tstep)
+        # Add end time 
+        self.insert(days=T, remove=True)
+        #print(self._schedule)
 
     #-----------------------------------------------------------------------
-    def insert(self, days, action):
+    def insert(self, index=None, days=None, action='', remove=False):
     #-----------------------------------------------------------------------
-        index = [i for i,(d,a) in enumerate(self._schedule) if d>=days][0]
-        self._schedule = self._schedule[0:index]
-        self._schedule.append([days, action+'\n'])
-
-    #-----------------------------------------------------------------------
-    def get_start(self):
-    #-----------------------------------------------------------------------
-        # Read start date from Eclipse DATA-file
-        file = self.case.with_suffix('.DATA')
-        # Remove comments
-        data = remove_comments(file)
-        regex = compile(r'\bSTART\b\s+(\d+)\s+\'*(\w+)\'*\s+(\d+)')
-        start = [' '.join(m.group(1,2,3)) for m in regex.finditer(data)]
-        if not start:
-            raise SystemError(f'WARNING START not found in {file}')
-        return datetime.strptime(start[0], '%d %b %Y').date()
+        if action:
+            # Add newline
+            action += '\n'
+        index = [i for i,(d,a) in enumerate(self._schedule) if d>=days]
+        if index:
+            self._schedule.insert(index[0], [days, action])
+            if remove:
+                self._schedule = self._schedule[0:index[0]+1]
+        else:
+            self._schedule.append([days, action])
 
     #-----------------------------------------------------------------------
     def get_type(self, string):
@@ -518,7 +518,6 @@ class Schedule:
         # Extract actions
         actions = [schfile[pos[i][1]:pos[i+1][0]].rstrip() for i in range(len(pos)-1)]
         # Calculate number of days from the simulation start (given by START in .DATA-file)
-        self.start = self.get_start()
         if use_dates:
             days = [(datetime.strptime(d, '%d %b %Y').date()-self.start).days for d,s in date_span]
         else:   
@@ -565,13 +564,14 @@ class Schedule:
     #--------------------------------------------------------------------------------        
         # Get tstep from IORSim
         tstep = get_tsteps(self.ifacefile)[0]
+        #print(f'tstep:{tstep}, days:{self.days}, schedule:{self._schedule[1][0]}')
         new_tstep = None
         action = None
-        n = len(self._schedule)
+        N = len(self._schedule)
         # Check arrival of next event (if it exists) and adjust tstep if neccessary
-        if (n > 1) and (self.days + tstep > self._schedule[1][0]):
+        if (N > 1) and (self.days + tstep > self._schedule[1][0]):
             tstep = new_tstep = self._schedule[1][0] - self.days
-        if n == 0:
+        if N == 0:
             new_tstep = None
         # Append action if time is right
         if self._schedule and self.days >= self._schedule[0][0]:
@@ -624,33 +624,23 @@ class simulation:
             self.mode = self.mode_from_case()
         # Backward simulation
         if self.mode=='backward':
-            #self.schedule = Schedule(self.root)
             if not dt_ecl:
-                #dt_ecl = dtecl(self.root)
-                dt_ecl = ior_input(var='dtecl', root=self.root)
+                 dt_ecl = ior_input(var='dtecl', root=self.root)
             tsteps = get_tsteps(str(self.root)+'.DATA')
-            #sum_tstep, len_tstep = sum(tsteps), len(tsteps) 
-            #sum_tstep, len_tstep, tsteps = ECL_input_days_and_steps(self.root)
             if not time_ecl:
                 time_ecl = sum(tsteps)
             # Need to calculate number of steps based on duration of 
             # simulation, initial TSTEP from settings, and TSTEP 
             # preceding READDATA in .DATA-file
-            #dt_init = int( self.init_tstep )
-            #self.T = int(time)+int(time_ecl)+dt_init
             self.T = time #+time_ecl+self.init_tstep
-            #N = int(ceil((time+dt_init)/dt_ecl))
-            #N = int(ceil((time+self.init_tstep)/dt_ecl))
             N = int(time+self.init_tstep)
             kwargs.update({'N':N, 'T':self.T, 'init_tsteps':len(tsteps)})
-            #print(kwargs)
             # Init runs
             self.run_sim = self.backward
             self.runs = [ecl_backward(exe=eclexe, **kwargs), ior_backward(exe=iorexe, **kwargs)]
             self.ecl, self.ior = self.runs
             # Set up schedule of commands to pass to satnum-file
-            self.schedule = Schedule(self.root, init_tstep=self.init_tstep, interface_file=self.ior.satnum)            
-            self.schedule.insert(self.T, '--END')
+            self.schedule = Schedule(self.root, init_tstep=self.init_tstep, T=self.T, interface_file=self.ior.satnum)            
             #print(self.schedule._schedule)
         # Forward simulation
         if self.mode=='forward':
@@ -727,7 +717,9 @@ class simulation:
             run.check_input()
             run.delete_output_files()
             run.start(update=self.update)
+
         ior.satnum.write_text(f'TSTEP\n{self.init_tstep} /') 
+        self.schedule.update()
 
         # Start timestep loop
         #for n in range(self.N_start, ecl.N+self.N_start):
@@ -740,8 +732,6 @@ class simulation:
             # Run IORSim to prepare satnum input for the next Eclipse run
             ior.run_one_step() #n+ecl.init_tsteps)
             # Get tstep from IORSim
-            #tstep = get_tsteps(ior.satnum)[0]
-            #if self.schedule.exists:
             self.schedule.update()
             ior.t = ior.time_and_step()[0]
             ecl.t = ecl.time_and_step()[0]
