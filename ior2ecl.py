@@ -432,6 +432,15 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def __init__(self, case, init_tstep=0, T=0, ext='.SCH', comment='--', interface_file=None): #, end='/', tag='TSTEP'):
     #--------------------------------------------------------------------------------
+        '''
+        Create schedule from a .SCH-file if it exists. 
+        The TSTEP in the satnum-file (created by IORSim) is modified to 
+        ensure the timesteps coincide with the schedule-events.  
+        The first entry in the schedule is the start-time.  
+        The last entry in the schedule is the total number of simulated days
+
+        The schedule is a list of lists: [[start-time, ''],[days, 'KEYWORD'],[end-time, '']]
+        '''
         self.case = Path(case)
         self.file = self.case.with_suffix(ext)
         self.ifacefile = None
@@ -440,9 +449,11 @@ class Schedule:
         DATA_file = self.case.with_suffix('.DATA')
         self.days = sum(get_tsteps(DATA_file))
         self.start = get_start(DATA_file)
+        self.pop = False  # Only remove schedule elements if a file is read
         self._schedule = []
         if self.file.is_file():
             self._schedule = self.days_and_actions()
+            self.pop = True
         # Add start time
         self.insert(days=self.days+init_tstep)
         # Add end time 
@@ -575,9 +586,12 @@ class Schedule:
             new_tstep = None
         # Append action if time is right
         if self._schedule and self.days >= self._schedule[0][0]:
-            action = self._schedule.pop(0)[1]
+            action = self._schedule[0][1]
+            if self.pop:
+                # Remove first element
+                self._schedule.pop(0)
         self.append(action=action, tstep=new_tstep)
-        #self.check()
+        self.check()
         self.days += tstep
         #return tstep
 
@@ -722,15 +736,15 @@ class simulation:
         self.schedule.update()
 
         # Start timestep loop
-        #for n in range(self.N_start, ecl.N+self.N_start):
         for n in range(ecl.N):
             self.print2log(f'\nLoop step {n}/{ecl.N}')
             if ecl.t < ecl.T:
                 ecl.run_one_step(ior.satnum)
                 # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
                 sleep(self.pause)
+                #print(f'sleep {self.pause} seconds')
             # Run IORSim to prepare satnum input for the next Eclipse run
-            ior.run_one_step() #n+ecl.init_tsteps)
+            ior.run_one_step()
             # Get tstep from IORSim
             self.schedule.update()
             ior.t = ior.time_and_step()[0]
