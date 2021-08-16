@@ -644,8 +644,7 @@ class simulation:
             if not time_ecl:
                 time_ecl = sum(tsteps)
             if time < time_ecl:
-                #raise SystemError(f'ERROR Simulation time ({time} days) must at least match the Eclipse initial TSTEP of {time_ecl} days')
-                print(f'Simulation time increased to match the initial TSTEP in .DATA: {time_ecl} days')
+                print(f'   INFO Simulation time increased to match the initial TSTEP in .DATA: {time_ecl} days')
                 time = time_ecl + self.init_tstep + 1
             self.T = time 
             N = int(time+self.init_tstep)

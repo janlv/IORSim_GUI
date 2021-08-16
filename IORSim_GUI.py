@@ -211,7 +211,8 @@ def show_message(window, kind, text='', extra='', detail=None):
     if detail:
         msg.setdetailedText(detail)
     msg.setStandardButtons(QMessageBox.Ok)  # | QMessageBox.Cancel)
-    msg.exec_()
+    #msg.exec_()
+    msg.show()
 
 
 #-----------------------------------------------------------------------
@@ -2801,6 +2802,11 @@ class main_window(QMainWindow):                                    # main_window
         # start simulation
         for opt in ('convert','del_convert','merge','del_merge'):
             kwargs[opt] = s.get[opt]()
+        sum_tsteps = sum(get_tsteps(i['root']+'.DATA'))
+        if i['days'] < sum_tsteps:
+            self.days_box.setText(str(int(sum_tsteps)+int(s.get['dt']())+1))
+            show_message(self, 'info', text='Simulation time increased to match TSTEP in Eclipse input')
+        #print(f'days: {i["days"]}')
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 
                                  pause=float(s.get['pause']()), init_tstep=float(s.get['dt']()), 
                                  stop_children=s.get['stop_child'](), **kwargs)
