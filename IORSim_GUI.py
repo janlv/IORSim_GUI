@@ -2420,7 +2420,7 @@ class main_window(QMainWindow):                                    # main_window
                 if 'conc' in yaxis:
                     ior[well]['conc']['Temp'] = data[1:,-1]
                     ior[well]['prod']['Temp'] = data[1:,-1]
-            except (KeyError, IndexError) as e:
+            except (KeyError, IndexError, TypeError) as e:
                 return False
         self.data['ior'] = ior
         return True

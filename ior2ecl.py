@@ -456,11 +456,13 @@ class Schedule:
         self._schedule = []
         if self.file.is_file():
             self._schedule = self.days_and_actions()
-            #self.pop = True
             # Add start time
-            start = self.days #+init_tstep
+            start = self.days
             if start < self._schedule[0][0]:
-                self.insert(days=start)
+                self.insert(days=start)        
+        ### TEST
+        ###self._schedule.append([self.days, 'TSTEP\n1 /\n'])
+        ### TEST
         # Add end time 
         self.insert(days=T, remove=True)
         self.insert(days=T)
@@ -777,8 +779,11 @@ class simulation:
                 #raise SystemError(ior.complete_msg())
             #    raise SystemError(f'ERROR Simulation time exceeded: {ior.t}>{ior.T}')
         # Timestep loop finished
-        ecl.quit()
-        ior.quit()
+        #self.update.status(run=ior, mode=self.mode)
+        for run in self.runs:
+            self.update.status(value=f'Stopping {run.name}...')
+            run.quit()
+            #ior.quit()
         return ecl.complete_msg()
 
     #-----------------------------------------------------------------------
