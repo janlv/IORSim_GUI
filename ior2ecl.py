@@ -449,15 +449,18 @@ class Schedule:
         DATA_file = self.case.with_suffix('.DATA')
         self.days = sum(get_tsteps(DATA_file))
         self.start = get_start(DATA_file)
-        self.pop = False  # Only remove schedule elements if a file is read
+        #self.pop = False  # Only remove schedule elements if a file is read
         self._schedule = []
         if self.file.is_file():
             self._schedule = self.days_and_actions()
-            self.pop = True
-        # Add start time
-        self.insert(days=self.days+init_tstep)
+            #self.pop = True
+            # Add start time
+            start = self.days+init_tstep
+            if start < self._schedule[0][0]:
+                self.insert(days=start)
         # Add end time 
         self.insert(days=T, remove=True)
+        self.insert(days=T)
         #print(self._schedule)
 
     #-----------------------------------------------------------------------
@@ -568,31 +571,29 @@ class Schedule:
         print(f'{self.days}, {self.start+timedelta(days=self.days)}')
         with open(self.ifacefile, 'r') as f:
             lines = f.readlines()
-        print(self.ifacefile, ': ', ''.join(lines[-30:]))
+        print(self.ifacefile, ': ', ''.join(lines[-10:]))
+        #print('Schedule:')
+        #print(self._schedule)
 
     #--------------------------------------------------------------------------------
     def update(self):                                               # schedule
     #--------------------------------------------------------------------------------        
         # Get tstep from IORSim
         tstep = get_tsteps(self.ifacefile)[0]
-        #print(f'tstep:{tstep}, days:{self.days}, schedule:{self._schedule[1][0]}')
+        #print(f'START: tstep:{tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         new_tstep = None
         action = None
         N = len(self._schedule)
         # Check arrival of next event (if it exists) and adjust tstep if neccessary
         if (N > 1) and (self.days + tstep > self._schedule[1][0]):
             tstep = new_tstep = self._schedule[1][0] - self.days
-        if N == 0:
-            new_tstep = None
         # Append action if time is right
-        if self._schedule and self.days >= self._schedule[0][0]:
-            action = self._schedule[0][1]
-            if self.pop:
-                # Remove first element
-                self._schedule.pop(0)
+        if self.days >= self._schedule[0][0]:
+            action = self._schedule.pop(0)[1]
         self.append(action=action, tstep=new_tstep)
         #self.check()
         self.days += tstep
+        #print(f'END: tstep:{tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         #return tstep
 
 #====================================================================================
