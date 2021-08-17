@@ -130,7 +130,7 @@ class ecl_forward(forward_mixin, eclipse):                              # ecl_fo
 class ecl_backward(eclipse):                                           # ecl_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, check_unrst=True, check_rft=True, rft_size=True, **kwargs):
+    def __init__(self, check_unrst=True, check_rft=True, rft_size=False, **kwargs):
     #--------------------------------------------------------------------------------
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', **kwargs)
         self.init_tsteps = kwargs.get('init_tsteps') or 1
@@ -158,7 +158,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
             self.assert_running_and_stop_if_canceled()
             if update:
                 self.t = self.time_and_step()[0]
-                update.status(run=self, mode='backward')
+                update.status(run=self)
                 update.progress(value=self.t)
             #update and update.progress(run=self)
 
@@ -210,8 +210,8 @@ class ecl_backward(eclipse):                                           # ecl_bac
     #--------------------------------------------------------------------------------
         self.rft_start_size = self.rft.stat().st_size
         ### run Eclipse
-        self.interface_file(self.n).copy(satnum_file, delete=True)
-        #self.interface_file(self.n).print()
+        self.interface_file(self.n).copy(satnum_file, delete=False)
+        #self._print(self.interface_file(self.n).name())
         self.OK_file().create_empty()
         self.resume(check=False)
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
@@ -371,6 +371,7 @@ class ior_backward(iorsim):                                            # ior_bac
     #--------------------------------------------------------------------------------
         # Call iorsim.__init__()
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', **kwargs)
+        self.init_tsteps = kwargs.get('init_tsteps') or 1
         self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
         self.endtag = '-- IORSimX done.'
         self.satnum_check = check_endtag(file=self.satnum, endtag=self.endtag)  # Check if satnum-file is flushed
@@ -383,40 +384,42 @@ class ior_backward(iorsim):                                            # ior_bac
         silentdelete(self.satnum)
 
     #--------------------------------------------------------------------------------
-    def start(self, update=None):                                                   # ior_backward
+    def start(self, update=None):                         # ior_backward
     #--------------------------------------------------------------------------------
         # Start IORSim backward run
         self.n = 1
         update and update.status(value=f'Starting {self.name}...')
-        #if self.echo:
-        #    print('  Starting IORSim...', end='', flush=True)
         self.interface_file('all').delete()
         self.interface_file(self.n).create_empty()
         self.OK_file().create_empty()
-        super().start() # iorsim.start()   
-        #if self.echo:
-        #    print('  IORSim running...', end='', flush=True)
+        super().start()
         update and update.status(value=f'{self.name} running...')
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
+        self.run_steps(self.init_tsteps, update=update)
         self.suspend(check=False)
-        if self.echo:
-            print('\r  IORSim started, log file is ' + self.get_logfile(), flush=True)
-            print('  ' + self.timer.info) if self.timer else None
 
     #--------------------------------------------------------------------------------
     def run_one_step(self):                                         # ior_backward
     #--------------------------------------------------------------------------------
         ### run IORSim
-        #self.n = n
-        self.n += 1
-        #print('ior, n: ',self.n)
-        self.interface_file(self.n).create_empty()
-        self.OK_file().create_empty()
         self.resume(check=False)
-        self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-        self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
-        warn_empty_file(self.satnum, comment='--')
+        self.run_steps(1)
         self.suspend(check=False)
+
+    #--------------------------------------------------------------------------------
+    def run_steps(self, N, update=None):                                         # ior_backward
+    #--------------------------------------------------------------------------------
+        ### run IORSim
+        for n in range(N):
+            self.n += 1
+            self.interface_file(self.n).create_empty()
+            self.OK_file().create_empty()
+            self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
+            self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
+            warn_empty_file(self.satnum, comment='--')
+            if update:
+                self.t = self.time_and_step()[0]
+                update.progress(value=self.t)
 
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ior_backward
@@ -430,7 +433,7 @@ class ior_backward(iorsim):                                            # ior_bac
 class Schedule:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, case, init_tstep=0, T=0, ext='.SCH', comment='--', interface_file=None): #, end='/', tag='TSTEP'):
+    def __init__(self, case, T=0, ext='.SCH', comment='--', interface_file=None): #, end='/', tag='TSTEP'):
     #--------------------------------------------------------------------------------
         '''
         Create schedule from a .SCH-file if it exists. 
@@ -449,13 +452,13 @@ class Schedule:
         DATA_file = self.case.with_suffix('.DATA')
         self.days = sum(get_tsteps(DATA_file))
         self.start = get_start(DATA_file)
-        #self.pop = False  # Only remove schedule elements if a file is read
+        self.tstep = 0
         self._schedule = []
         if self.file.is_file():
             self._schedule = self.days_and_actions()
             #self.pop = True
             # Add start time
-            start = self.days+init_tstep
+            start = self.days #+init_tstep
             if start < self._schedule[0][0]:
                 self.insert(days=start)
         # Add end time 
@@ -545,13 +548,13 @@ class Schedule:
         '''
         line : line number of TSTEP
         '''
-        if not action and not tstep:
+        if action is None and tstep is None:
             return
         with open(self.ifacefile, 'r') as f:
             lines = f.readlines()
         n = len(lines) + append_line
         if n > 0:
-            if tstep:
+            if tstep is not None:
                 # Replace TSTEP
                 # +1 because we edit the value on the line after TSTEP
                 lines[n+1] = f'{tstep} /\n'
@@ -578,23 +581,24 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def update(self):                                               # schedule
     #--------------------------------------------------------------------------------        
+        self.days += self.tstep
         # Get tstep from IORSim
-        tstep = get_tsteps(self.ifacefile)[0]
-        #print(f'START: tstep:{tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
+        self.tstep = get_tsteps(self.ifacefile)[0]
+        #print(f'START: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         new_tstep = None
         action = None
         N = len(self._schedule)
         # Check arrival of next event (if it exists) and adjust tstep if neccessary
-        if (N > 1) and (self.days + tstep > self._schedule[1][0]):
-            tstep = new_tstep = self._schedule[1][0] - self.days
+        if (N > 1) and (self.days + self.tstep > self._schedule[1][0]):
+            self.tstep = new_tstep = self._schedule[1][0] - self.days
         # Append action if time is right
         if self.days >= self._schedule[0][0]:
             action = self._schedule.pop(0)[1]
         self.append(action=action, tstep=new_tstep)
         #self.check()
-        self.days += tstep
-        #print(f'END: tstep:{tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
-        #return tstep
+        #self.days += self.tstep
+        #print(f'END: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
+        return self.days
 
 #====================================================================================
 class simulation:
@@ -611,7 +615,7 @@ class simulation:
         self.root = root
         self.update = namedtuple('update',['status','progress','plot'])(status, progress, plot)
         self.pause = pause
-        self.init_tstep = init_tstep # backward mode: initial Eclipse TSTEP after READDATA
+        #self.init_tstep = init_tstep # backward mode: initial Eclipse TSTEP after READDATA
         if delete:
             del_convert = del_merge = True
         self.output = namedtuple('output',['convert','merge','del_convert','del_merge'])(convert, merge, del_convert, del_merge)
@@ -646,16 +650,18 @@ class simulation:
                 time_ecl = sum(tsteps)
             if time < time_ecl:
                 print(f'   INFO Simulation time increased to match the initial TSTEP in .DATA: {time_ecl} days')
-                time = time_ecl + self.init_tstep + 1
+                #time = time_ecl + self.init_tstep + 1
+                time = time_ecl + 1
             self.T = time 
-            N = int(time+self.init_tstep)
+            #N = int(time+self.init_tstep)
+            N = int(time)
             kwargs.update({'N':N, 'T':self.T, 'init_tsteps':len(tsteps)})
             # Init runs
             self.run_sim = self.backward
             self.runs = [ecl_backward(exe=eclexe, **kwargs), ior_backward(exe=iorexe, **kwargs)]
             self.ecl, self.ior = self.runs
             # Set up schedule of commands to pass to satnum-file
-            self.schedule = Schedule(self.root, init_tstep=self.init_tstep, T=self.T, interface_file=self.ior.satnum)            
+            self.schedule = Schedule(self.root, T=self.T, interface_file=self.ior.satnum)            
             #print(self.schedule._schedule)
         # Forward simulation
         if self.mode=='forward':
@@ -709,10 +715,10 @@ class simulation:
             self.current_run = run.name.lower()
             run.check_input()
             run.delete_output_files()
-            self.update.status(value='Starting '+run.name)
+            self.update.status(value='Starting '+run.name, mode=self.mode)
             self.update.progress(value=-run.T)
             run.start()
-            self.update.status(value=run.name+' running')
+            self.update.status(value=run.name+' running', mode=self.mode)
             run.init_control_func(update=self.update) 
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             t = run.time_and_step()[0]
@@ -733,35 +739,43 @@ class simulation:
             run.delete_output_files()
             run.start(update=self.update)
 
-        ior.satnum.write_text(f'TSTEP\n{self.init_tstep} /') 
-        self.schedule.update()
+        ecl.t = ior.t = self.schedule.update()
 
         # Start timestep loop
-        for n in range(ecl.N):
-            self.print2log(f'\nLoop step {n}/{ecl.N}')
-            if ecl.t < ecl.T:
-                ecl.run_one_step(ior.satnum)
-                # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
-                sleep(self.pause)
-                #print(f'sleep {self.pause} seconds')
+        #for n in range(ecl.N):
+        #while self.schedule.days < ior.T:
+        while ior.t < ior.T:
+            self.print2log(f'\nLoop step {ecl.n}/{ecl.N}')
+            self.update.status(run=ecl, mode=self.mode)
+            ecl.run_one_step(ior.satnum)
+            #self.update.progress(value=ecl.t+self.schedule.tstep)
+            #self.update.status(run=ecl, mode=self.mode)
+            # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
+            #sleep(self.pause)
+            #print(f'sleep {self.pause} seconds')
             # Run IORSim to prepare satnum input for the next Eclipse run
+            self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
             # Get tstep from IORSim
-            self.schedule.update()
-            ior.t = ior.time_and_step()[0]
-            ecl.t = ecl.time_and_step()[0]
+            ecl.t = ior.t = self.schedule.update()
+            #ior.t = ior.time_and_step()[0]
+            #ecl.t = ecl.time_and_step()[0]
             #print(f'ior: {ior.t}, schedule: {self.schedule.days}')
+            #self.update.progress(value=ior.t)
+            #ior.t = self.schedule.days
+            ior._print(f'days = {ior.t}/{ior.T}')
             self.update.progress(value=ior.t)
-            self.update.status(run=ior, mode='backward')
+            #self.update.status(run=ior, mode=self.mode)
             self.update.plot()
+            #print()
             #print(f'ecl: t={ecl.t}/{ecl.T}')
-            #print(f'ior: t={ior.t}/{ior.T}')
-            if ior.t == ior.T:
-                break
-            if ior.t > ior.T:
+            #print(f'schedule: days={self.schedule.days}/{ior.T}')
+            #if ior.t == ior.T:
+            #    break
+            #if ior.t > ior.T:
                 #print('t>T')
                 #raise SystemError(ior.complete_msg())
-                raise SystemError(f'ERROR Simulation time exceeded: {ior.t}>{ior.T}')
+            #    raise SystemError(f'ERROR Simulation time exceeded: {ior.t}>{ior.T}')
         # Timestep loop finished
         ecl.quit()
         ior.quit()
@@ -1099,7 +1113,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-iorexe',         help="Name of IORSim executable, default is 'IORSimX'"                  )
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
-    parser.add_argument('-full_rft_check', help='Backward mode: Full check of RFT-file, default is to only check size', action='store_true')
+    parser.add_argument('-full_rft_check', help='Backward mode: Full check of RFT-file, default is to only check size', action='store_false')
     parser.add_argument('-pause',          default=0.5, help='Backward mode: pause between Eclipse and IORSim runs', type=float)
     parser.add_argument('-init_tstep',     default=1.0, help='Backward mode: initial Eclipse TSTEP', type=float)
     parser.add_argument('-v',              default=3, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
@@ -1121,7 +1135,7 @@ def parse_input(case_dir=None, settings_file=None):
 
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
-           init_tstep=1.0, check_unrst=True, check_rft=True, rft_size=True, keep_files=False, 
+           init_tstep=1.0, check_unrst=True, check_rft=True, rft_size=False, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
            stop_children=True):
 #--------------------------------------------------------------------------------

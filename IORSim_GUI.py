@@ -352,13 +352,13 @@ class sim_worker(base_worker):
         #------------------------------------
             if run and not value:
                 value = run.t
-            self.update_progress(value)
+            self.update_progress(int(value))
         #------------------------------------
-        def status(run=None, value=None, mode='forward', **x):
+        def status(run=None, value=None, mode=None, **x):
         #------------------------------------
             if run and not value:
-                value = '{}/{} days'.format(run.t, run.T)
-                if mode=='forward':
+                value = f'{run.name}   {int(run.t):4d}/{run.T} days'
+                if mode == 'forward':
                     value = run.name + ' ' + value
             self.status_message(value)
         #------------------------------------
@@ -2795,7 +2795,7 @@ class main_window(QMainWindow):                                    # main_window
         # backward mode
         if self.mode=='backward':
             #kwargs = {'mode':'backward', 'dt_init':s.get['dt'](), 'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':True}
-            kwargs = {'mode':'backward', 'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':True}
+            kwargs = {'mode':'backward', 'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':False}
         # forward mode
         elif self.mode in ('forward','eclipse','iorsim'):
             kwargs = {'mode':'forward', 'runs':self.run}
