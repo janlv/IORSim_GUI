@@ -25,7 +25,7 @@ import warnings
 import copy
 
 from ior2ecl import simulation, Schedule, ior_input, main as ior2ecl_main
-from IORlib.utils import Progress, assert_python_version, get_substrings, return_matching_string, delete_all, file_contains, upper_and_lower
+from IORlib.utils import Progress, assert_python_version, get_substrings, is_file_ignore_suffix_case, return_matching_string, delete_all, file_contains, upper_and_lower
 from IORlib.ECL import get_tsteps, unfmt_file #, input_days_and_steps as ECL_input_days_and_steps
 import GUI_icons
 
@@ -447,9 +447,9 @@ class Settings(QDialog):
                         'rft'         : True, 
                         'dt'          : '1', 
                         'convert'     : True,
-                        'del_convert' : False,
+                        'del_convert' : True,
                         'merge'       : True,
-                        'del_merge'   : False,
+                        'del_merge'   : True,
                         'stop_child'  : True,
                         'pause'       : '0.5'}
         self.abs_path = False
@@ -1209,12 +1209,12 @@ class main_window(QMainWindow):                                    # main_window
         for ext in upper_and_lower(('INC','DAT','GRDECL','EGRID','VFP')):
             for fil in Path(from_root).parent.glob('*.'+ext):
                 shutil.copy(str(fil), str(Path(to_root).parent/fil.name))
-        ext = '.schedule'
-        from_fil = from_root.with_suffix(ext)
-        if from_fil.is_file():
-            shutil.copy(from_fil, to_root.with_suffix(ext))
-        else:
-            schedule = Schedule(to_root)
+        #ext = '.schedule'
+        #from_fil = from_root.with_suffix(ext)
+        #if from_fil.is_file():
+        #    shutil.copy(from_fil, to_root.with_suffix(ext))
+        #else:
+        #    schedule = Schedule(to_root)
 
         
     #-----------------------------------------------------------------------
@@ -1556,7 +1556,7 @@ class main_window(QMainWindow):                                    # main_window
         else:
             self.chem_inp_act.setEnabled(False)
         # enable/disable schedule edit action
-        if self.input['root'] and Path(self.input['root']+'.SCH').is_file():
+        if self.input['root'] and is_file_ignore_suffix_case( self.input['root']+'.SCH' ):
             self.schedule_file_act.setEnabled(True)
         else:
             self.schedule_file_act.setEnabled(False)
@@ -2119,7 +2119,7 @@ class main_window(QMainWindow):                                    # main_window
         if self.this_file_is_open_in_editor(ext):
             return
         if self.input['root']:
-            fil = Path(self.input['root']+'.'+ext)
+            fil = is_file_ignore_suffix_case( self.input['root']+'.'+ext )
             if fil.is_file():
                 self.view_file(fil, title=title+', '+str(fil.name))        
                 self.highlight = Highlighter(self.editor.document(), comment=comment, keywords=keywords)

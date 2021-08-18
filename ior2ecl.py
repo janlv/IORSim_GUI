@@ -19,7 +19,7 @@ import traceback
 from numpy import ceil
 from re import match, search, compile
 
-from IORlib.utils import matches, number_of_blocks, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import is_file_ignore_suffix_case, matches, number_of_blocks, remove_comments, safeopen, Progress, check_endtag, upper_and_lower, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks, get_start, get_tsteps, unfmt_file, fmt_file, Section #, input_days_and_steps as ECL_input_days_and_steps
 
@@ -447,7 +447,6 @@ class Schedule:
         The schedule is a list of lists: [[start-time, ''],[days, 'KEYWORD'],[end-time, '']]
         '''
         self.case = Path(case)
-        self.file = self.case.with_suffix(ext)
         self.ifacefile = None
         self.comment = comment
         self.ifacefile = interface_file
@@ -456,7 +455,10 @@ class Schedule:
         self.start = get_start(DATA_file)
         self.tstep = 0
         self._schedule = []
-        if self.file.is_file():
+        self.file = None
+        # Ignore case in file extension
+        self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
+        if self.file:
             self._schedule = self.days_and_actions()
             # Add start time
             start = self.days
