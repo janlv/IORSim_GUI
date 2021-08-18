@@ -748,42 +748,23 @@ class simulation:
         #while self.schedule.days < ior.T:
         while ior.t < ior.T:
             self.print2log(f'\nLoop step {ecl.n}/{ecl.N}')
+            #ecl.t, ior.t = [run.t+self.schedule.tstep for run in self.runs]
             self.update.status(run=ecl, mode=self.mode)
             ecl.run_one_step(ior.satnum)
-            #self.update.progress(value=ecl.t+self.schedule.tstep)
-            #self.update.status(run=ecl, mode=self.mode)
             # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
             #sleep(self.pause)
-            #print(f'sleep {self.pause} seconds')
             # Run IORSim to prepare satnum input for the next Eclipse run
             self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
-            # Get tstep from IORSim
             ecl.t = ior.t = self.schedule.update()
             #ior.t = ior.time_and_step()[0]
-            #ecl.t = ecl.time_and_step()[0]
-            #print(f'ior: {ior.t}, schedule: {self.schedule.days}')
-            #self.update.progress(value=ior.t)
-            #ior.t = self.schedule.days
-            ior._print(f'days = {ior.t}/{ior.T}')
+            self.print2log(f'days = {ior.t}/{ior.T}')
             self.update.progress(value=ior.t)
-            #self.update.status(run=ior, mode=self.mode)
             self.update.plot()
-            #print()
-            #print(f'ecl: t={ecl.t}/{ecl.T}')
-            #print(f'schedule: days={self.schedule.days}/{ior.T}')
-            #if ior.t == ior.T:
-            #    break
-            #if ior.t > ior.T:
-                #print('t>T')
-                #raise SystemError(ior.complete_msg())
-            #    raise SystemError(f'ERROR Simulation time exceeded: {ior.t}>{ior.T}')
         # Timestep loop finished
-        #self.update.status(run=ior, mode=self.mode)
         for run in self.runs:
             self.update.status(value=f'Stopping {run.name}...')
             run.quit()
-            #ior.quit()
         return ecl.complete_msg()
 
     #-----------------------------------------------------------------------
