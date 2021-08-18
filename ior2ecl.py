@@ -184,7 +184,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
             self.check_UNRST_file(nblocks=nblocks) 
         self.nwell = self.unrst_check.var('nwell')
         nwell_max = (self.init_tsteps+1)*self.nwell
-        rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell, limit=200)
+        rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell)
         # If some wells are missing in the RFT-file we need to 
         # do the full RFT-check, not only the file-size check
         if rft_wells != nwell_max:
@@ -221,7 +221,8 @@ class ecl_backward(eclipse):                                           # ecl_bac
             if self.rft_size:
                 self.wait_for( self.check_RFT_size )
             else:
-                self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=200)
+                #self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=200)
+                self.check_RFT_file(nwell_max=self.nwell)
         #sleep(1)
         self.suspend(check=False)
         self.n += 1
@@ -244,7 +245,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
                        pause=pause, limit=limit )
 
     #--------------------------------------------------------------------------------
-    def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=10000):        # ecl_backward
+    def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=100):        # ecl_backward
     #--------------------------------------------------------------------------------
         ###
         ###  cannot always require nblocks=2*nwell in the initial RFT-check. In some situations
@@ -257,8 +258,10 @@ class ecl_backward(eclipse):                                           # ecl_bac
             if passed:
                 break
             if nblocks==nwell_min:
-                #self._print('', tag='')
-                raise SystemError('ERROR No TIME blocks found in the RFT-file. Check for closed wells in the Eclipse log.')
+                if nwell_min == 0:
+                    self._print('WARNING! No TIME blocks found in the RFT-file. Are all wells closed?')
+                else:
+                    self._print('WARNING! Only {nwell_min} TIME blocks found in the RFT-file')
         return nblocks
 
     #--------------------------------------------------------------------------------
@@ -276,11 +279,10 @@ class ecl_backward(eclipse):                                           # ecl_bac
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ecl_backward
     #--------------------------------------------------------------------------------
-        self._print(f'appending END to {self.interface_file(self.n).name()}')
-        #self.interface_file(self.n+1).append('END')
+        #self._print(f'appending END to {self.interface_file(self.n).name()}')
         self.interface_file(self.n).create_from_string('END')
         self.OK_file().create_empty()
-        super().quit(loop_func=lambda : None)
+        super().quit(loop_func=lambda:None)
 
 
 
@@ -813,79 +815,12 @@ class simulation:
             if self.output.convert and success:
                 sleep(0.05)  # Need a short break here to make the GUI progressbar responsive
                 conv_msg = self.convert_and_merge(case=self.root)
-                #complete, conv_msg = self.convert_restart_file(case=self.root)
-                #self.print2log('\n===== '+conv_msg+' ======')
-                #if not complete:
-                #    self.update.status(value=conv_msg)
-                #    msg += '\n'+conv_msg
             self.runs = []
             if self.runlog:
                 self.runlog.close()
-            #self.update.status(value='Simulation complete'+conv_msg)
             self.update.status(value=msg+conv_msg)
             return success, msg+conv_msg
 
-
-    # #-----------------------------------------------------------------------
-    # def convert_restart_file(self, case=None, fast=True):
-    # #-----------------------------------------------------------------------
-    #     msg = ''
-    #     complete = False
-    #     ecl = self.ecl or eclipse(root=case)   
-    #     ior = self.ior or iorsim(root=case)   
-    #     if not ior.funrst.is_file():
-    #         return complete, '' 
-    #     # Convert from formatted to unformatted restart file
-    #     self.update.status(value='Converting restart file...')
-    #     start = datetime.now()
-    #     try:
-    #         infile = fmt_file(ior.funrst)
-    #         if fast:
-    #             convert = infile.fast_convert
-    #         else:
-    #             N = number_of_blocks(file=ior.funrst, blockstart='SEQNUM')
-    #             self.update.progress(value=-(N-1))
-    #             convert = infile.convert 
-    #         ior_unrst = convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
-    #                             progress=lambda n: self.update.progress(value=n), 
-    #                             cancel=ior.stop_if_canceled)
-    #     except SystemError as e:
-    #         msg = str(e)
-    #         if 'run stopped' in msg.lower():
-    #             msg = 'Convert cancelled'
-    #         return complete, msg
-    #     except KeyboardInterrupt:
-    #         return complete, 'Convert cancelled'
-
-    #     # Merge Eclipse and IORSim restart files
-    #     self.update.status(value='Merging Eclipse and IORSim restart files...')
-    #     self.update.progress(value=0)   # Reset rprogress time
-    #     if ecl.unrst.is_file() and ior_unrst.is_file():
-    #         backup = Path(str(ecl.case)+'_ECLIPSE.UNRST')
-    #         if backup.is_file():
-    #             # This is a pure IORSim run and backup already exists; restore backup
-    #             shutil.copy(backup, ecl.unrst)
-    #         else:
-    #             # No backup exists; create backup copy
-    #             shutil.copy(ecl.unrst, backup)
-    #     else:
-    #         self.update.status(value='Files missing, unable to merge Eclipse and IORSim files')
-    #         return
-    #     # Define the sections in the restart files where they are stitched together
-    #     ecl_sec = Section(ecl.unrst, start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
-    #     ior_sec = Section(ior_unrst, start_after='DOUBHEAD', end_before='SEQNUM')
-    #     merged_file = Path(str(ior.case)+'_MERGED.UNRST')
-    #     merged_file = unfmt_file(merged_file).create(ecl_sec, ior_sec)
-    #     # Rename merged UNRST-file to original restart file
-    #     if not merged_file:
-    #         raise SystemError('WARNING Unable to merge {} and {}'.format(ecl.unrst, ior_unrst))
-    #     if merged_file.is_file():
-    #         merged_file.replace(ecl.unrst)
-    #     self.update.status(value='Simulation complete, restart file ready')
-    #     msg = 'Convert and merge of restart file completed, process-time was '+str(datetime.now()-start).split('.')[0]
-    #     complete = True    
-    #     return complete, msg
-    #     #self.progress(N)
 
     #-----------------------------------------------------------------------
     def convert_and_merge(self, case=None, only_convert=False, only_merge=False):
@@ -900,11 +835,7 @@ class simulation:
             self.print2log('\n===== '+msg+' ======')
             self.update.status(value=msg, newline=True)
             if not success:
-                #self.update.status(value=f'WARNING {msg}')
                 return msg
-                #raise SystemError(f'WARNING {msg}')
-                #return False, msg
-        #self.update.status(value='Restart file ready')
         return ''
 
     #-----------------------------------------------------------------------
@@ -951,7 +882,6 @@ class simulation:
         self.update.progress(value=0)   # Reset progress time
         ecl = self.ecl or eclipse(root=case)   
         ior = self.ior or iorsim(root=case)   
-        #ior_unrst = ior.funrst.with_suffix('.UNRST')
         if ecl.unrst.is_file() and ior.unrst.is_file():
             backup_ecl = Path(str(ecl.case)+'_ECLIPSE.UNRST')
             if backup_ecl.is_file():
@@ -988,43 +918,8 @@ class simulation:
 #############################################################################
 
 
-#-----------------------------------------------------------------------
-def ior_input(var=None, root=None):
-#-----------------------------------------------------------------------
-#
-#  Get dtecl from IORSim input file .trcinp
-#  Assumed format:    
-#    
-#  *INTEGRATION
-#  # tstart  tstop
-#    0.0  1.e99
-#  # dtmin dtmax 
-#    0.0  1.e99
-#  # dtecl dteclmax 
-#    5      20 
-#  # metnum
-#    0
-#
-    file=f'{root}.trcinp'
-    pos = var_group = None
-    if var == 'dtecl':
-        var_group = '\*INTEGRATION'
-        pos = 4
-    # Find position after var_group name 
-    end = [m.span()[1] for m in matches(file=file, pattern=fr'{var_group}\s*\n+')]
-    num = '\d+\.?e?E?\d*' # 1, 1.0, 1.e99, 1.E99
-    # Find uncommented lines with two numbers
-    val = [float(s.decode()) for m in matches(file=file, pattern=fr'\n+\s*{num}\s*{num}', pos=end[0]) for s in m.group(0).split()]
-    # Find commented lines with variable names
-    #if name:
-    #    name = [s.decode() for m in matches(file=file, pattern=fr'(?<=#)\s*\D+\s*\D*', pos=end[0]) for s in m.group(0).split()]
-    if val[pos]==0:
-        raise SystemError('WARNING IORSim timestep (dtecl) is zero')
-    return val[pos]
-
-
 # #-----------------------------------------------------------------------
-# def dtecl(root, ext='.trcinp'):                             # 
+# def ior_input(var=None, root=None):
 # #-----------------------------------------------------------------------
 # #
 # #  Get dtecl from IORSim input file .trcinp
@@ -1040,24 +935,53 @@ def ior_input(var=None, root=None):
 # #  # metnum
 # #    0
 # #
-#     read = False
-#     dt = ()
-#     with open(str(root)+ext) as f:
-#         for line in f:
-#             line = line.lstrip()
-#             if line.startswith('#'):
-#                 continue
-#             if line.startswith('*INTEGRATION'):
-#                 read = True
-#                 continue
-#             if read:
-#                 dt += tuple(line.split())
-#                 if len(dt) > 5:
-#                     break
-#     val = int(float(dt[4]))
-#     if val==0:
+#     file=f'{root}.trcinp'
+#     pos = var_group = None
+#     if var == 'dtecl':
+#         var_group = '\*INTEGRATION'
+#         pos = 4
+#     # Find position after var_group name 
+#     end = [m.span()[1] for m in matches(file=file, pattern=fr'{var_group}\s*\n+')]
+#     num = '\d+\.?e?E?\d*' # 1, 1.0, 1.e99, 1.E99
+#     # Find uncommented lines with two numbers
+#     try:
+#         val = [float(s.decode()) for m in matches(file=file, pattern=fr'\n+\s*{num}\s*{num}', pos=end[0]) for s in m.group(0).split()]
+#     except IndexError:
+#         raise SystemError(f'ERROR Unable to read {var_group} from IORSim input')
+#     # Find commented lines with variable names
+#     #if name:
+#     #    name = [s.decode() for m in matches(file=file, pattern=fr'(?<=#)\s*\D+\s*\D*', pos=end[0]) for s in m.group(0).split()]
+#     if val[pos]==0:
 #         raise SystemError('WARNING IORSim timestep (dtecl) is zero')
-#     return val
+#     return val[pos]
+
+#-----------------------------------------------------------------------
+def ior_input(var=None, root=None):
+#-----------------------------------------------------------------------
+#
+#  Read variables from IORSim input file .trcinp
+#
+#  *INTEGRATION : tstart, tstop, dtmin, dtmax, dtecl, dteclmax, metnum
+#
+    file=f'{root}.trcinp'
+    regname = [{}]
+    regname[0]['regex'] = r'\*\bINTEGRATION\b'
+    regname[0]['names'] = ['tstart','tstop','dtmin','dtmax','dtecl','dteclmax','metnum']
+    pos = keyword = []
+    for i,rn in enumerate(regname):
+        if var in rn['names']:
+            pos = rn['names'].index(var)
+            keyword = rn['regex']
+    if not keyword:
+        raise SystemError(f'ERROR {var} is not found in IORSim input')
+    data = remove_comments(file, comment='#')
+    regex = compile(fr'\s*{keyword}\s*([0-9.eE\s]+)')
+    try:
+        values = [float(s) for m in regex.finditer(data) for s in m.group(1).split()]
+        values = values[pos]
+    except IndexError:
+        raise SystemError(f'ERROR Unable to read {var} from {keyword} in IORSim input')
+    return values
 
 
 #--------------------------------------------------------------------------------
