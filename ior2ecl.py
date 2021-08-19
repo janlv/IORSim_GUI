@@ -141,6 +141,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
         self.tsteps = get_tsteps(self.case.with_suffix('.DATA'))
+        self.rft_start_size = 0
 
     #--------------------------------------------------------------------------------
     def check_input(self):                                             # ecl_backward
@@ -160,16 +161,13 @@ class ecl_backward(eclipse):                                           # ecl_bac
                 self.t = self.time_and_step()[0]
                 update.status(run=self)
                 update.progress(value=self.t)
-            #update and update.progress(run=self)
+                update.plot()
 
         # Start Eclipse in backward mode
         update and update.status(value=f'Starting {self.name}...')
         self.n = self.init_tsteps
-        #if self.echo:
-        #    print('  Starting Eclipse...', end='', flush=True)
         self.interface_file('all').delete()
         # Need to create all interface files in advance to avoid Eclipse termination
-        #[self.interface_file(i).create_empty() for i in range(1, self.N+1)] 
         [self.interface_file(i).create_empty() for i in range(self.n, self.N+self.n)] 
         self.OK_file().delete()
         super().start()  # eclipse.start()
@@ -208,9 +206,11 @@ class ecl_backward(eclipse):                                           # ecl_bac
     #--------------------------------------------------------------------------------
     def run_one_step(self, satnum_file):                            # ecl_backward
     #--------------------------------------------------------------------------------
-        self.rft_start_size = self.rft.stat().st_size
+        if self.rft_size:
+            self.rft_start_size = self.rft.stat().st_size
         ### run Eclipse
         self.interface_file(self.n).copy(satnum_file, delete=False)
+        #self.interface_file(self.n).copy('satnum_2.dat', delete=False)
         #self._print(self.interface_file(self.n).name())
         self.OK_file().create_empty()
         self.resume(check=False)
@@ -223,7 +223,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
             else:
                 #self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=200)
                 self.check_RFT_file(nwell_max=self.nwell)
-        #sleep(1)
         self.suspend(check=False)
         self.n += 1
 
@@ -417,11 +416,15 @@ class ior_backward(iorsim):                                            # ior_bac
             self.interface_file(self.n).create_empty()
             self.OK_file().create_empty()
             self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-            self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
-            warn_empty_file(self.satnum, comment='--')
+            #self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
+            #warn_empty_file(self.satnum, comment='--')
             if update:
                 self.t = self.time_and_step()[0]
                 update.progress(value=self.t)
+                update.status(run=self)
+                update.plot()
+        self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
+        warn_empty_file(self.satnum, comment='--')
 
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ior_backward
@@ -611,11 +614,12 @@ class simulation:
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, mode=None, root=None, pause=0, init_tstep=1, runs=[], to_screen=False, 
-                 convert=True, merge=True, del_convert=False, del_merge=False, delete=False,
+                 convert=True, merge=True, del_convert=False, del_merge=False, delete=True,
                  status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None, **kwargs):
     #--------------------------------------------------------------------------------
-        #print('mode',mode,'root',root,'pause',pause,'runs',runs,'to_screen',to_screen,'convert',convert,
-        #      'status',status,'progress',progress,'plot',plot,kwargs)
+        #print('mode',mode,'root',root,'pause',pause,'init_tstep',init_tstep,'runs',runs,'to_screen',to_screen,
+        #      'convert',convert,'merge',merge,'del_merge',del_merge,'del_convert',del_convert,
+        #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         #print(pause)
         self.name = 'ior2ecl'
         self.root = root
@@ -748,8 +752,6 @@ class simulation:
         ecl.t = ior.t = self.schedule.update()
 
         # Start timestep loop
-        #for n in range(ecl.N):
-        #while self.schedule.days < ior.T:
         while ior.t < ior.T:
             self.print2log(f'\nLoop step {ecl.n}/{ecl.N}')
             #ecl.t, ior.t = [run.t+self.schedule.tstep for run in self.runs]

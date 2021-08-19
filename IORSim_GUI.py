@@ -5,9 +5,9 @@
 import os
 from PyQt5.QtWidgets import QStatusBar, QDialog, QTextEdit, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PyQt5.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
-from PyQt5.QtCore import QObject, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QRect, QThreadPool, Qt, QRegExp
-#from PySide2.QtWidgets import QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-#from PySide2.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
+from PyQt5.QtCore import QObject, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
+#from PySide2.QtWidgets import QDialogButtonBox, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+#from PySide2.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QColor 
 #from PySide2.QtCore import QObject, Signal, Slot, QRunnable, QRect, QThreadPool, Qt, QRegExp
 import sys, traceback
 #import os
@@ -24,7 +24,7 @@ import shutil
 import warnings
 import copy
 
-from ior2ecl import simulation, Schedule, ior_input, main as ior2ecl_main
+from ior2ecl import simulation, ior_input, main as ior2ecl_main
 from IORlib.utils import Progress, assert_python_version, get_substrings, is_file_ignore_suffix_case, return_matching_string, delete_all, file_contains, upper_and_lower
 from IORlib.ECL import get_tsteps, unfmt_file #, input_days_and_steps as ECL_input_days_and_steps
 import GUI_icons
@@ -325,8 +325,8 @@ class base_worker(QRunnable):
 #===========================================================================
 class sim_worker(base_worker):                                              
 #===========================================================================
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.sim = None
         self.signals.stop.connect(self.stop_sim)
 
@@ -365,7 +365,7 @@ class sim_worker(base_worker):
         def plot(run=None, value=None):
         #------------------------------------
             self.update_plot()
-            
+
         self.sim = simulation(status=status, progress=progress, plot=plot, **self.kwargs)
         result, msg = self.sim.run()
         self.show_message(msg)
@@ -1999,12 +1999,15 @@ class main_window(QMainWindow):                                    # main_window
             self.set_cursor(pos-len(string), string)
         
     #-----------------------------------------------------------------------
-    def search_text(self, string, start=0):
+    def search_text(self, string, start=0, ignore_case=True):
     #-----------------------------------------------------------------------
         #print('search_text: '+string+' '+str(start))
         if start==0:
             self.search_pos = []          
         text = self.editor.toPlainText()
+        if ignore_case:
+            text = text.lower()
+            string = string.lower()
         pos = text[start:].find(string)
         if pos < 0:
             return
@@ -2929,7 +2932,8 @@ class Highlighter(QSyntaxHighlighter):
 ###################################
 
 if __name__ == '__main__':
-    assert_python_version(major=3, minor=6)
+    # Need to set the locale under Linux to avoid datetime.strptime errors
+    os.putenv("LC_ALL", "C")
     if len(sys.argv) > 1:
         print()
         print('   This is the terminal-version of IORSim_GUI')
