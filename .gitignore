@@ -179,3 +179,5 @@ GUI_old
 
 # Visual Studio
 .vscode
+
+satnum*.dat
