@@ -3,7 +3,7 @@
 
 #import atexit
 from collections import namedtuple
-from mmap import ACCESS_READ, mmap
+#from mmap import ACCESS_READ, mmap
 import os
 from pathlib import Path
 import sys
@@ -17,11 +17,11 @@ from psutil import NoSuchProcess
 import shutil
 import traceback
 from numpy import ceil
-from re import match, search, compile
+from re import search, compile
 
-from IORlib.utils import is_file_ignore_suffix_case, matches, number_of_blocks, remove_comments, safeopen, Progress, check_endtag, upper_and_lower, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks, get_start, get_tsteps, unfmt_file, fmt_file, Section #, input_days_and_steps as ECL_input_days_and_steps
+from IORlib.ECL import check_blocks, get_start, get_tsteps, unfmt_file, fmt_file, Section
 
 
 
@@ -191,9 +191,9 @@ class ecl_backward(eclipse):                                           # ecl_bac
             self._print(info)
         #print(f'self.nwell: {self.nwell}, nwell_max: {(self.init_tsteps+1)*self.nwell}, rft_wells: {rft_wells}')
         self.suspend(check=False)
-        if self.echo:
-            print('\r  Eclipse started, log file is ' + self.get_logfile(), flush=True)
-            print('  ' + self.timer.info) if self.timer else None
+        #if self.echo:
+        #    print('\r  Eclipse started, log file is ' + self.get_logfile(), flush=True)
+        #    print('  ' + self.timer.info) if self.timer else None
         if self.init_tsteps > 1:
             self.rft_size = None
         # only check RFT-file by size if all wells are initially written to the RFT-file 
@@ -1003,8 +1003,8 @@ def iorexe_from_settings(settings_file, iorexe):
                 if var=='iorsim':
                     break 
         return val
-    print('\n   Missing IORSim executable: '+str(iorexe)+'\n')
-    raise SystemExit
+    raise SystemError('\n   Missing IORSim executable: '+str(iorexe)+'\n')
+    #raise SystemExit
 
 #--------------------------------------------------------------------------------
 def case_from_casedir(case_dir, root):
@@ -1013,8 +1013,8 @@ def case_from_casedir(case_dir, root):
     case_dir = Path(case_dir)
     if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
         return case_dir/root/root
-    print('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
-    raise SystemExit
+    raise SystemError('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
+    #raise SystemExit
 
 #--------------------------------------------------------------------------------
 def parse_input(case_dir=None, settings_file=None):
@@ -1022,7 +1022,7 @@ def parse_input(case_dir=None, settings_file=None):
     description = 'Script for running IORSim and Eclipse in backward and forward mode'
     parser = ArgumentParser(description=description)
     parser.add_argument('root',            help='Eclipse case name without .DATA')
-    parser.add_argument('days',            help='Time interval of the simulation, if 0 only convert is performed', type=int)
+    parser.add_argument('days',            help='Time interval of the simulation, if 0 only convert+merge is performed', type=int)
     parser.add_argument('-eclexe',         default='eclrun', help="Name of excecutable, default is 'eclrun'")
     parser.add_argument('-iorexe',         help="Name of IORSim executable, default is 'IORSimX'"                  )
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
@@ -1036,7 +1036,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-only_convert',   help='Only convert+merge and exit', action='store_true')
     parser.add_argument('-only_merge',     help='Only merge and exit', action='store_true')
     parser.add_argument('-delete',         help='Delete obsolete output files after convert and merge has finished', action='store_true')
-    parser.add_argument('-alive_children', help='Only stop parent-processes (approx. 5% faster, but might be more unstable)', action='store_true')
+    parser.add_argument('-alive_children', help='Only stop parent-processes (approx. 5%% faster, but might be more unstable)', action='store_true')
     args = vars(parser.parse_args())
     # Look for case in case_dir if root is not a file
     if case_dir and not Path(args['root']+'.DATA').is_file():
@@ -1046,7 +1046,7 @@ def parse_input(case_dir=None, settings_file=None):
         args['iorexe'] = iorexe_from_settings(settings_file, args['iorexe'])
     return args
 
-
+#@print_error
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
            init_tstep=1.0, check_unrst=True, check_rft=True, rft_size=False, keep_files=False, 
@@ -1085,13 +1085,11 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
         return
 
     if sim.mode=='forward':
-        #sim.set_time(ECL_input_days_and_steps(root)[0])
         sim.set_time(int(sum(get_tsteps(str(root)+'.DATA'))))
     sim.info_header()
     result, msg = sim.run()
-    #not to_screen and print('\r   '+msg.replace('INFO','').strip()+'              \n')
 
-
+#@print_error
 #--------------------------------------------------------------------------------
 def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
 #--------------------------------------------------------------------------------
