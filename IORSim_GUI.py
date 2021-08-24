@@ -2123,7 +2123,7 @@ class main_window(QMainWindow):                                    # main_window
             return
         if self.input['root']:
             fil = is_file_ignore_suffix_case( self.input['root']+'.'+ext )
-            if fil.is_file():
+            if fil and fil.is_file():
                 self.view_file(fil, title=title+', '+str(fil.name))        
                 self.highlight = Highlighter(self.editor.document(), comment=comment, keywords=keywords)
                 self.save_btn.setEnabled(False)

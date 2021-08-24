@@ -21,7 +21,7 @@ from re import search, compile
 
 from IORlib.utils import print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks, get_start, get_tsteps, unfmt_file, fmt_file, Section
+from IORlib.ECL import check_blocks, get_date_time_steps_MSG, get_start, get_tsteps, unfmt_file, fmt_file, Section
 
 
 
@@ -40,6 +40,7 @@ class eclipse(runner):                                                      # ec
         self.unrst = Path(root+'.UNRST')
         self.unsmry = unfmt_file(root+'.UNSMRY')
         self.rft = Path(root+'.RFT')
+        self.msg = Path(root+'.MSG')
         self.inputfile = Path(root+'.DATA')
 
     #--------------------------------------------------------------------------------
@@ -47,12 +48,15 @@ class eclipse(runner):                                                      # ec
     #--------------------------------------------------------------------------------
         #for block in self.unsmry.blocks(only_new=True):
         t, n = 0, 0
-        for block in self.unsmry.tail_blocks():
-            if block.key()=='PARAMS':
-                t = block.data()[0]
-            if block.key()=='MINISTEP':
-                n = block.data()[0]
-                break
+        if self.unsmry.is_file():
+            for block in self.unsmry.tail_blocks():
+                if block.key()=='PARAMS':
+                    t = block.data()[0]
+                if block.key()=='MINISTEP':
+                    n = block.data()[0]
+                    break
+        elif self.msg.is_file():
+            d, t, n = get_date_time_steps_MSG(file=self.msg) 
         #print('{}: time = {}, step = {}'.format(self.name, t, n))
         return int(t), int(n)        
 
@@ -721,6 +725,7 @@ class simulation:
         #print('Forward run')
         run_time = timedelta()
         ret = ''
+        print(self.runs)
         for run in self.runs:
             self.current_run = run.name.lower()
             run.check_input()
@@ -732,6 +737,7 @@ class simulation:
             run.init_control_func(update=self.update) 
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             t = run.time_and_step()[0]
+            print(run.name, t, run.T)
             if t < run.T:
                 raise SystemError('ERROR ' + run.name + ' stopped unexpectedly, check the log')
             run_time += run.run_time()
