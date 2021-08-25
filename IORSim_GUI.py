@@ -2807,7 +2807,8 @@ class main_window(QMainWindow):                                    # main_window
             kwargs[opt] = s.get[opt]()
         sum_tsteps = sum(get_tsteps(i['root']+'.DATA'))
         if i['days'] < sum_tsteps:
-            self.days_box.setText(str(int(sum_tsteps)+int(s.get['dt']())+1))
+            self.days_box.setText( str(int(sum_tsteps)) )
+            #self.days_box.setText(str(int(sum_tsteps)+int(s.get['dt']())+1))
             show_message(self, 'info', text='Simulation time increased to match TSTEP in Eclipse input')
         #print(f'days: {i["days"]}')
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 

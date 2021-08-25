@@ -1,2 +1,5 @@
-- Legge inn 5. mode: kjøre IORSim som standalone utan input fra Eclipse? 
-- lag expert panel under settings
+- Input sjekk av DATA-fil:
+    - må ha UNIFOUT
+    - hvis RESTART, må ha UNIFIN
+
+    
