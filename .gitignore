@@ -181,3 +181,4 @@ GUI_old
 .vscode
 
 satnum*.dat
+test_regex.py
