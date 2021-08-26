@@ -460,8 +460,7 @@ class Schedule:
         self.comment = comment
         self.ifacefile = interface_file
         DATA_file = self.case.with_suffix('.DATA')
-        self.days = init_days #sum(get_tsteps(DATA_file)) + get_restart_time_step(file=DATA_file)[0]
-        print('Schedule: ', self.days)
+        self.days = init_days 
         self.start = get_start(DATA_file)
         self.tstep = 0
         self._schedule = []
@@ -470,17 +469,9 @@ class Schedule:
         self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
         if self.file:
             self._schedule = self.days_and_actions()
-            # Add start time
-            start = self.days
-            if start < self._schedule[0][0]:
-                self.insert(days=start)        
-        ### TEST
-        ###self._schedule.append([self.days, 'TSTEP\n1 /\n'])
-        ### TEST
         # Add end time 
         self.insert(days=T, remove=True)
-        self.insert(days=T)
-        print(self._schedule)
+        #[print(s) for s in self._schedule]
 
     #-----------------------------------------------------------------------
     def insert(self, index=None, days=None, action='', remove=False):
@@ -556,7 +547,7 @@ class Schedule:
         else:   
             days = list(accumulate([sum([float(i) for i in d.split()]) for d,s in date_span]))
         # Return only non-empty [day, action] pairs
-        return [[d, a+'\n'] for (d,a) in zip(days, actions) if a]
+        return [[float(d), a+'\n'] for (d,a) in zip(days, actions) if a]
 
     #--------------------------------------------------------------------------------
     def append(self, action=None, tstep=None, append_line=-4):             # schedule
@@ -566,6 +557,8 @@ class Schedule:
         '''
         if action is None and tstep is None:
             return
+        if tstep == 0:
+            raise SystemError(f'ERROR Simulation stopped because schedule gave TSTEP 0 at {self.days} days, check {self.file}')
         with open(self.ifacefile, 'r') as f:
             lines = f.readlines()
         n = len(lines) + append_line
@@ -574,9 +567,6 @@ class Schedule:
                 # Replace TSTEP
                 # +1 because we edit the value on the line after TSTEP
                 lines[n+1] = f'{tstep} /\n'
-            #else:
-            #    # Remove TSTEP
-            #    lines[n] = lines[n+1] = '\n'
             # Append action
             if action:
                 lines.insert(n, action)
@@ -597,22 +587,20 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def update(self):                                               # schedule
     #--------------------------------------------------------------------------------        
+        action = new_tstep = None
+        # Update days from previous step
         self.days += self.tstep
-        # Get tstep from IORSim
-        self.tstep = get_tsteps(self.ifacefile)[0]
-        #print(f'START: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
-        new_tstep = None
-        action = None
-        N = len(self._schedule)
-        # Check arrival of next event (if it exists) and adjust tstep if neccessary
-        if (N > 1) and (self.days + self.tstep > self._schedule[1][0]):
-            self.tstep = new_tstep = self._schedule[1][0] - self.days
         # Append action if time is right
         if self.days >= self._schedule[0][0]:
             action = self._schedule.pop(0)[1]
+        # Get tstep for next step (given by IORSim in satnum.dat)
+        self.tstep = get_tsteps(self.ifacefile)[0]
+        #print(f'START: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
+        # Check arrival of next event and adjust tstep if neccessary
+        if self._schedule and self.days + self.tstep > self._schedule[0][0]:
+            self.tstep = new_tstep = self._schedule[0][0] - self.days
         self.append(action=action, tstep=new_tstep)
         #self.check()
-        #self.days += self.tstep
         #print(f'END: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         return self.days
 
