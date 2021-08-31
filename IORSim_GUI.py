@@ -761,6 +761,7 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_prop = {}
         self.view = False
         self.plot_ref = None
+        self.progress = None
         self.vscroll = {}
         #self.modes = ('forward', 'backward', 'eclipse', 'iorsim')
         #guidir = Path('GUI')
@@ -2169,7 +2170,7 @@ class main_window(QMainWindow):                                    # main_window
                     'FWIT','FOIP','ROIP','WTPCHEA','WOPR','WWPR','WWIR','WBHP','WWCT','WOPT','WWIT','WTPRA1','WTPTA1','WTPCA1',
                     'WTIRA1','WTITA1','WTICA1','CTPRA1','CTIRA1','FOIP','ROIP','FPR','TCPU','TCPUTS','WNEWTON','ZIPEFF','STEPTYPE',
                     'NEWTON','NLINEARP','NLINEARS','MSUMLINS','MSUMNEWT','MSUMPROB','WTPRPAR','WTPRIDE','WTPCPAR','WTPCIDE','RUNSUM',
-                    'SEPARATE','WELSPECS','COMPDAT','WRFTPLT','TSTEP','DATES','SKIPREST','WCONINJE','WCONPROD','WTEMP','RPTSCHED',
+                    'SEPARATE','WELSPECS','COMPDAT','WRFTPLT','TSTEP','DATES','SKIPREST','WCONINJE','WCONPROD','WCONHIST','WTEMP','RPTSCHED',
                     'RPTRST','TUNING','READDATA', 'ROCKTABH','GRIDUNIT','NEWTRAN','MAPAXES','EQLDIMS','ROCKCOMP','TEMP',
                     'GRIDOPTS','VFPPDIMS','VFPIDIMS','AQUDIMS','SMRYDIMS','CPR','FAULTDIM','MEMORY','EQUALS','MINPV',
                     'COPY','MULTIPLY']
@@ -2691,6 +2692,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         if t==0: 
             self.update_remaining_time()
+            if self.progress:
+                self.progress.reset_time()
             return
         if t<0:
             N = abs(t) 
@@ -2804,15 +2807,18 @@ class main_window(QMainWindow):                                    # main_window
         for opt in ('convert','del_convert','merge','del_merge'):
             kwargs[opt] = s.get[opt]()
         DATA_file = i['root']+'.DATA'
-        sum_tsteps = sum(get_tsteps(DATA_file)) + get_restart_time_step(DATA_file)[0]
+        tsteps = get_tsteps(DATA_file)
+        restart_days = get_restart_time_step(DATA_file)[0]
+        #sum_tsteps = sum(get_tsteps(DATA_file)) + get_restart_time_step(DATA_file)[0]
+        sum_tsteps = int(sum(tsteps) + restart_days)
         if i['days'] < sum_tsteps:
-            self.days_box.setText( str(int(sum_tsteps)) )
+            self.days_box.setText( str(sum_tsteps) )
             #self.days_box.setText(str(int(sum_tsteps)+int(s.get['dt']())+1))
-            show_message(self, 'info', text='Simulation time increased to match TSTEP in Eclipse input')
+            show_message(self, 'info', text=f'Simulation time set to sum of TSTEP ({sum(tsteps)}) and RESTART ({restart_days}) in Eclipse input')
         #print(f'days: {i["days"]}')
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 
                                  pause=float(s.get['pause']()), init_tstep=float(s.get['dt']()), 
-                                 stop_children=s.get['stop_child'](), time_ecl=sum_tsteps, **kwargs)
+                                 stop_children=s.get['stop_child'](), tsteps=tsteps, restart_days=restart_days, **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)
