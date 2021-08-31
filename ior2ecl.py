@@ -161,6 +161,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         if file_contains(DATA_file, text='RESTART', comment='--'):
             self.restart_run = True
 
+
     #--------------------------------------------------------------------------------
     def start(self, update=None):                                      # ecl_backward
     #--------------------------------------------------------------------------------
@@ -185,8 +186,8 @@ class ecl_backward(eclipse):                                           # ecl_bac
         update and update.status(value=f'{self.name} running...')
         # Check if restart-file (UNRST) is flushed   
         nblocks = 1 + len(self.tsteps) # 1 for 0'th SEQNUM
-        if self.restart_run:
-            nblocks = 1
+        #if self.restart_run:
+        #    nblocks = 1
         if sum(self.tsteps) > 10: 
             self.check_UNRST_file(nblocks=nblocks, loop_func=loop_func, pause=0.5, limit=None) 
         else:
@@ -274,7 +275,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
                 if nwell_min == 0:
                     self._print('WARNING! No TIME blocks found in the RFT-file. Are all wells closed?')
                 else:
-                    self._print('WARNING! Only {nwell_min} TIME blocks found in the RFT-file')
+                    self._print(f'WARNING! Only {nwell_min} TIME blocks found in the RFT-file')
         return nblocks
         # nblocks = nwell_max
         # while nblocks and self.rft_check.file.end_not_reached():
@@ -500,6 +501,7 @@ class Schedule:
         s =   'Schedule\n'
         s += f'  file   : {self.file}\n'
         s += f'  start  : {self.start}\n'
+        s += f'  days   : {self.days}\n'
         s += f'  length : {len(self._schedule)}\n'
         return s
 
@@ -699,7 +701,6 @@ class simulation:
             self.ecl, self.ior = self.runs
             # Set up schedule of commands to pass to satnum-file
             self.schedule = Schedule(self.root, T=self.T, init_days=time_ecl, interface_file=self.ior.satnum)
-            #self.print2log(self.schedule.info())            
         # Forward simulation
         if self.mode=='forward':
             self.T = time
@@ -715,6 +716,9 @@ class simulation:
             #print(self.T, self.runs)
             self.runs = [run for run in (self.ecl, self.ior) if run]
         self.print2log(self.info_header())
+        if self.schedule:
+            self.print2log(self.schedule.info())            
+
 
     #-----------------------------------------------------------------------
     def set_time(self, time):
@@ -773,31 +777,16 @@ class simulation:
     #-----------------------------------------------------------------------
         self.update.progress(value=-self.runs[0].T)
         ecl, ior = self.runs
-        # for run in self.runs:
-        #     run.check_input()
-        #     run.delete_output_files()
-        #     run.start(update=self.update)
+        for run in self.runs:
+            run.check_input()
+            run.delete_output_files()
+            run.start(update=self.update)
 
-        # ecl.t = ior.t = self.schedule.update()
-
-        ecl.check_input()
-        ecl.delete_output_files()
-        ecl.start(update=self.update)
-        ior.satnum.write_text('\nTSTEP\n  1 /\n')
         ecl.t = ior.t = self.schedule.update()
-        print_file(ior.satnum)
-        ecl.run_one_step(ior.satnum)
-        ior.check_input()
-        ior.delete_output_files()
-        ior.start(update=self.update)
-
 
         # Start timestep loop
         while ior.t < ior.T:
             self.print2log(f'\nLoop step {ecl.n}/{ecl.N}')
-            #print(f'{ecl.n}/{ecl.N}')
-            #print(get_time_step_MSG(file=ecl.msg))
-            #ecl.t, ior.t = [run.t+self.schedule.tstep for run in self.runs]
             self.update.status(run=ecl, mode=self.mode)
             ecl.run_one_step(ior.satnum)
             # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
@@ -806,7 +795,6 @@ class simulation:
             self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
             ecl.t = ior.t = self.schedule.update()
-            #ior.t = ior.time_and_step()[0]
             self.print2log(f'days = {ior.t}/{ior.T}')
             self.update.progress(value=ior.t)
             self.update.plot()
