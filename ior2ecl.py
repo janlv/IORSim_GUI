@@ -16,12 +16,12 @@ from itertools import accumulate
 from psutil import NoSuchProcess
 import shutil
 import traceback
-from numpy import ceil
+#from numpy import ceil
 from re import search, compile
 
-from IORlib.utils import print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import print_error, is_file_ignore_suffix_case, number_of_blocks, print_file, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNSMRY, get_tsteps, unfmt_file, fmt_file, Section
+from IORlib.ECL import check_blocks, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, unfmt_file, fmt_file, Section
 
 
 
@@ -43,6 +43,8 @@ class eclipse(runner):                                                      # ec
         self.rft = Path(root+'.RFT')
         self.msg = Path(root+'.MSG')
         self.inputfile = Path(root+'.DATA')
+        self.is_iorsim = False
+        self.is_eclipse = True
 
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                # eclipse
@@ -52,14 +54,10 @@ class eclipse(runner):                                                      # ec
         # 
         if self.unsmry.is_file():
             t, n = get_time_step_UNSMRY(file=self.unsmry)
-            # for block in self.unsmry.tail_blocks():
-            #     if block.key()=='PARAMS':
-            #         t = block.data()[0]
-            #     if block.key()=='MINISTEP':
-            #         n = block.data()[0]
-            #         break
         elif self.msg.is_file():
             t, n = get_time_step_MSG(file=self.msg) 
+        elif self.unrst.is_file():
+            t, n = get_time_step_UNRST(file=self.unrst, end=True)
         #print('{}: time = {}, step = {}'.format(self.name, t, n))
         return int(t), int(n)        
 
@@ -149,15 +147,19 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
         self.tsteps = get_tsteps(self.case.with_suffix('.DATA'))
         self.rft_start_size = 0
+        self.restart_run = False
 
     #--------------------------------------------------------------------------------
     def check_input(self):                                             # ecl_backward
     #--------------------------------------------------------------------------------
         super().check_input()
         ### Check root.DATA exists and that READDATA keyword is NOT present
-        if not file_contains(str(self.case)+'.DATA', text='READDATA', comment='--'):
+        DATA_file = str(self.case)+'.DATA'
+        if not file_contains(DATA_file, text='READDATA', comment='--'):
             raise SystemError('WARNING The current case cannot be used in backward-mode: '+
                               'Eclipse input is missing the READDATA keyword.')
+        if file_contains(DATA_file, text='RESTART', comment='--'):
+            self.restart_run = True
 
     #--------------------------------------------------------------------------------
     def start(self, update=None):                                      # ecl_backward
@@ -182,7 +184,9 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
         update and update.status(value=f'{self.name} running...')
         # Check if restart-file (UNRST) is flushed   
-        nblocks = len(self.tsteps) + 1 # +1 for 0'th SEQNUM
+        nblocks = 1 + len(self.tsteps) # 1 for 0'th SEQNUM
+        if self.restart_run:
+            nblocks = 1
         if sum(self.tsteps) > 10: 
             self.check_UNRST_file(nblocks=nblocks, loop_func=loop_func, pause=0.5, limit=None) 
         else:
@@ -245,8 +249,13 @@ class ecl_backward(eclipse):                                           # ecl_bac
     def check_UNRST_file(self, nblocks=1, loop_func=None, pause=0.01, limit=100000):   # ecl_backward
     #--------------------------------------------------------------------------------
         self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info,
-                       error=self.unrst_check.file.name()+' not complete', loop_func=loop_func,
-                       pause=pause, limit=limit )
+                      error=self.unrst_check.file.name()+' not complete', loop_func=loop_func,
+                      pause=pause, limit=limit )
+        # while nblocks and self.unrst_check.file.end_not_reached():
+        #     self.wait_for( self.unrst_check.blocks_complete, nblocks=1, log=self.unrst_check.info,
+        #                    error=self.unrst_check.file.name()+' not complete', loop_func=loop_func,
+        #                    pause=pause, limit=limit )
+        #     nblocks -= 1
 
     #--------------------------------------------------------------------------------
     def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=100):        # ecl_backward
@@ -267,6 +276,11 @@ class ecl_backward(eclipse):                                           # ecl_bac
                 else:
                     self._print('WARNING! Only {nwell_min} TIME blocks found in the RFT-file')
         return nblocks
+        # nblocks = nwell_max
+        # while nblocks and self.rft_check.file.end_not_reached():
+        #     self.wait_for( self.rft_check.blocks_complete, nblocks=1, log=self.rft_check.info,
+        #                    error=self.rft_check.file.name()+' not complete', limit=10000 )
+        #     nblocks -= 1
 
     #--------------------------------------------------------------------------------
     def check_RFT_size(self):                                               # ecl_backward
@@ -310,7 +324,8 @@ class iorsim(runner):                                                        # i
         self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
         self.unrst = self.funrst.with_suffix('.UNRST')
         self.inputfile = Path(abs_root+'.trcinp')
-
+        self.is_iorsim = True
+        self.is_eclipse = False
 
     #--------------------------------------------------------------------------------
     def check_input(self):                                                   # iorsim
@@ -459,9 +474,14 @@ class Schedule:
         self.ifacefile = None
         self.comment = comment
         self.ifacefile = interface_file
-        DATA_file = self.case.with_suffix('.DATA')
         self.days = init_days 
+        DATA_file = self.case.with_suffix('.DATA')
         self.start = get_start(DATA_file)
+        # Read start-date from restart file if RESTART in DATA-file
+        self.restart_file = get_restart_file_step(DATA_file)[0]
+        if self.restart_file:
+            self.start = get_start_UNRST(file=self.restart_file)
+        #print(self.start)
         self.tstep = 0
         self._schedule = []
         self.file = None
@@ -472,6 +492,16 @@ class Schedule:
         # Add end time 
         self.insert(days=T, remove=True)
         #[print(s) for s in self._schedule]
+        #print(self.info())
+
+    #-----------------------------------------------------------------------
+    def info(self):
+    #-----------------------------------------------------------------------
+        s =   'Schedule\n'
+        s += f'  file   : {self.file}\n'
+        s += f'  start  : {self.start}\n'
+        s += f'  length : {len(self._schedule)}\n'
+        return s
 
     #-----------------------------------------------------------------------
     def insert(self, index=None, days=None, action='', remove=False):
@@ -644,14 +674,16 @@ class simulation:
     #-----------------------------------------------------------------------
     def prepare_mode(self, iorexe=None, eclexe=None, time=0, time_ecl=None, **kwargs):
     #-----------------------------------------------------------------------
+        #print('time_ecl', time_ecl)
         if not self.mode:
             self.mode = self.mode_from_case()
         # Backward simulation
         if self.mode=='backward':
             DATA_file = Path(self.root).with_suffix('.DATA')
             tsteps = get_tsteps(DATA_file)
-            restart_days = get_restart_time_step(DATA_file)[0]
+            restart_days = 0
             if time_ecl is None:
+                restart_days = get_restart_time_step(DATA_file)[0]
                 time_ecl = sum(tsteps) + restart_days
             if time < time_ecl:
                 print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(tsteps)}) and RESTART ({restart_days}) in {DATA_file.name}')
@@ -666,7 +698,8 @@ class simulation:
             self.runs = [ecl_backward(exe=eclexe, **kwargs), ior_backward(exe=iorexe, **kwargs)]
             self.ecl, self.ior = self.runs
             # Set up schedule of commands to pass to satnum-file
-            self.schedule = Schedule(self.root, T=self.T, init_days=time_ecl, interface_file=self.ior.satnum)            
+            self.schedule = Schedule(self.root, T=self.T, init_days=time_ecl, interface_file=self.ior.satnum)
+            #self.print2log(self.schedule.info())            
         # Forward simulation
         if self.mode=='forward':
             self.T = time
@@ -681,6 +714,7 @@ class simulation:
                     self.ior = ior_forward(exe=iorexe, **kwargs)
             #print(self.T, self.runs)
             self.runs = [run for run in (self.ecl, self.ior) if run]
+        self.print2log(self.info_header())
 
     #-----------------------------------------------------------------------
     def set_time(self, time):
@@ -739,12 +773,24 @@ class simulation:
     #-----------------------------------------------------------------------
         self.update.progress(value=-self.runs[0].T)
         ecl, ior = self.runs
-        for run in self.runs:
-            run.check_input()
-            run.delete_output_files()
-            run.start(update=self.update)
+        # for run in self.runs:
+        #     run.check_input()
+        #     run.delete_output_files()
+        #     run.start(update=self.update)
 
+        # ecl.t = ior.t = self.schedule.update()
+
+        ecl.check_input()
+        ecl.delete_output_files()
+        ecl.start(update=self.update)
+        ior.satnum.write_text('\nTSTEP\n  1 /\n')
         ecl.t = ior.t = self.schedule.update()
+        print_file(ior.satnum)
+        ecl.run_one_step(ior.satnum)
+        ior.check_input()
+        ior.delete_output_files()
+        ior.start(update=self.update)
+
 
         # Start timestep loop
         while ior.t < ior.T:
@@ -775,17 +821,18 @@ class simulation:
     #-----------------------------------------------------------------------
         logfiles = [run.log.name for run in self.runs]+[log.name for log in (self.runlog,) if log]
         case = Path(self.root).name
-        print()
-        print('   {:10s}: {}'.format('Case', case))
-        print('   {:10s}: {}'.format('Mode', self.mode.capitalize())) 
-        print('   {:10s}: {}'.format('Days', self.T), end='')
+        s  = '\n' #print()
+        s += '    {:10s}: {}\n'.format('Case', case)
+        s += '    {:10s}: {}\n'.format('Mode', self.mode.capitalize()) 
+        s += '    {:10s}: {}'.format('Days', self.T)
         if self.mode=='forward':
-            print(' (update TSTEP in '+case+'.DATA to change number of days)')
+            s += ' (update TSTEP in '+case+'.DATA to change number of days)'
         else:
-            print()
-        print('   {:10s}: {}'.format('Folder', Path(self.root).parent))
-        print('   {:10s}: {}'.format('Log-files', ', '.join([Path(file).name for file in logfiles])))
-        print()
+            s += '\n'
+        s += '    {:10s}: {}\n'.format('Folder', Path(self.root).parent)
+        s += '    {:10s}: {}\n'.format('Log-files', ', '.join([Path(file).name for file in logfiles]))
+        s += '\n'
+        return s
 
     #-----------------------------------------------------------------------
     def run(self):
@@ -813,14 +860,14 @@ class simulation:
             self.update.plot()
             self.update.status(value=msg, newline=True)
             conv_msg = ''
-            if self.output.convert and success:
+            if self.output.convert and success and any([run.is_iorsim for run in self.runs]):
                 sleep(0.05)  # Need a short break here to make the GUI progressbar responsive
                 conv_msg = self.convert_and_merge(case=self.root)
             self.runs = []
             if self.runlog:
                 self.runlog.close()
             self.update.status(value=msg+conv_msg)
-            return success, msg+conv_msg
+            return success, msg + ' ' + conv_msg
 
 
     #-----------------------------------------------------------------------
@@ -1083,7 +1130,8 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
 
     if sim.mode=='forward':
         sim.set_time(int(sum(get_tsteps(str(root)+'.DATA'))))
-    sim.info_header()
+    if not to_screen:
+        print(sim.info_header())
     result, msg = sim.run()
 
 #@print_error
