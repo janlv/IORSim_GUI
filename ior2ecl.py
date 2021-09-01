@@ -147,7 +147,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
         self.rft_start_size = 0
-        self.restart_run = False
+        #self.restart_run = False
 
     #--------------------------------------------------------------------------------
     def check_input(self):                                             # ecl_backward
@@ -158,19 +158,19 @@ class ecl_backward(eclipse):                                           # ecl_bac
         if not file_contains(DATA_file, text='READDATA', comment='--'):
             raise SystemError('WARNING The current case cannot be used in backward-mode: '+
                               'Eclipse input is missing the READDATA keyword.')
-        if file_contains(DATA_file, text='RESTART', comment='--'):
-            self.restart_run = True
+        #if file_contains(DATA_file, text='RESTART', comment='--'):
+        #    self.restart_run = True
 
 
     #--------------------------------------------------------------------------------
-    def start(self, update=None):                                      # ecl_backward
+    def start(self, update=None, restart=False):                       # ecl_backward
     #--------------------------------------------------------------------------------
         def loop_func(update=update):
             self.assert_running_and_stop_if_canceled()
             if update:
                 self.t = self.time_and_step()[0]
                 update.status(run=self)
-                update.progress(value=self.t)
+                restart or update.progress(value=self.t)
                 update.plot()
 
         # Start Eclipse in backward mode
@@ -186,8 +186,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
         update and update.status(value=f'{self.name} running...')
         # Check if restart-file (UNRST) is flushed   
         nblocks = 1 + len(self.tsteps) # 1 for 0'th SEQNUM
-        #if self.restart_run:
-        #    nblocks = 1
         if sum(self.tsteps) > 10: 
             self.check_UNRST_file(nblocks=nblocks, loop_func=loop_func, pause=0.5, limit=None) 
         else:
@@ -407,7 +405,7 @@ class ior_backward(iorsim):                                            # ior_bac
         silentdelete(self.satnum)
 
     #--------------------------------------------------------------------------------
-    def start(self, update=None):                         # ior_backward
+    def start(self, update=None, restart=False):                         # ior_backward
     #--------------------------------------------------------------------------------
         # Start IORSim backward run
         self.n = 1
@@ -418,7 +416,7 @@ class ior_backward(iorsim):                                            # ior_bac
         super().start()
         update and update.status(value=f'{self.name} running...')
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-        self.run_steps(self.init_tsteps, update=update)
+        self.run_steps(self.init_tsteps, update=update, restart=restart)
         self.suspend(check=False)
 
     #--------------------------------------------------------------------------------
@@ -430,7 +428,7 @@ class ior_backward(iorsim):                                            # ior_bac
         self.suspend(check=False)
 
     #--------------------------------------------------------------------------------
-    def run_steps(self, N, update=None):                                         # ior_backward
+    def run_steps(self, N, update=None, restart=False):                   # ior_backward
     #--------------------------------------------------------------------------------
         ### run IORSim
         for n in range(N):
@@ -442,7 +440,7 @@ class ior_backward(iorsim):                                            # ior_bac
             #warn_empty_file(self.satnum, comment='--')
             if update:
                 self.t = self.time_and_step()[0]
-                update.progress(value=self.t)
+                restart or update.progress(value=self.t)
                 update.status(run=self)
                 update.plot()
         self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
@@ -668,6 +666,7 @@ class simulation:
         self.T = 0
         self.mode = mode
         self.schedule = None
+        self.restart = False
         if root:
             kwargs.update({'root':str(root), 'runlog':self.runlog})
             self.prepare_mode(**kwargs)
@@ -676,14 +675,14 @@ class simulation:
     #-----------------------------------------------------------------------
     def prepare_mode(self, iorexe=None, eclexe=None, time=0, tsteps=None, restart_days=None, **kwargs):
     #-----------------------------------------------------------------------
-        #print('time_ecl', time_ecl)
+        DATA_file = Path(self.root).with_suffix('.DATA')
+        self.restart_days = int( restart_days or get_restart_time_step(DATA_file)[0] )
+        self.restart = self.restart_days > 0
+        self.tsteps = tsteps or get_tsteps(DATA_file)
         if not self.mode:
             self.mode = self.mode_from_case()
         # Backward simulation
         if self.mode=='backward':
-            DATA_file = Path(self.root).with_suffix('.DATA')
-            self.tsteps = tsteps or get_tsteps(DATA_file)
-            self.restart_days = restart_days or get_restart_time_step(DATA_file)[0]
             time_ecl = sum(self.tsteps) + self.restart_days
             if time < time_ecl:
                 print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
@@ -691,7 +690,7 @@ class simulation:
             self.T = time 
             # We assume 1 day timesteps, and set total steps N larger than what is needed.
             # The simulation is anyway ended when t == T. 
-            N = int(time)
+            N = int(time) #- self.restart_days
             kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps})
             # Init runs
             self.run_sim = self.backward
@@ -752,11 +751,14 @@ class simulation:
         for run in self.runs:
             run.check_input()
             run.delete_output_files()
-            run.start(update=self.update)
+            run.start(update=self.update, restart=self.restart)
         # The schedule appends keywords to the interface file
         ecl.t = ior.t = self.schedule.update()
+        # Fix progress for restart runs
+        if self.restart:
+            #[r.set_info(f'Restarted at {self.restart_days} days') for r in self.runs]
+            self.update.progress(value=self.ecl.t, min=self.restart_days)
         # Start timestep loop
-        #self.update.progress(value=0)  # Reset progress time
         while ior.t < ior.T:
             self.print2log(f'\nLoop step {ecl.n}/{ecl.N}')
             self.update.status(run=ecl, mode=self.mode)
@@ -1096,9 +1098,11 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
 
     prog = Progress(format='40#')
     #----------------------------------------
-    def progress(run=None, value=None):
+    def progress(run=None, value=None, min=None):
     #----------------------------------------
-        if value and value<0:
+        if min is not None:
+            prog.set_min(min)
+        if value is not None and value<0:
             prog.reset(N=abs(value))
             return
         if run:

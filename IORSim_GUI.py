@@ -285,7 +285,8 @@ class worker_signals(QObject):
     finished = Signal()
     result = Signal(int)
     error = Signal(tuple)
-    progress = Signal(int)
+    #progress = Signal(int)
+    progress = Signal(tuple)
     plot = Signal()
     #show_message = Signal(tuple)
     show_message = Signal(str)
@@ -347,17 +348,25 @@ class sim_worker(base_worker):
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
+        self.progress_min = None
         #------------------------------------
-        def progress(run=None, value=None):
+        def progress(run=None, value=None, min=None):
         #------------------------------------
-            if run and not value:
+            if min:
+                self.progress_min = min
+            if value == 0:
+                self.progress_min = None
+            if run and value is None:
                 value = run.t
-            self.update_progress(int(value))
+            self.update_progress((int(value), min))
         #------------------------------------
         def status(run=None, value=None, mode=None, **x):
         #------------------------------------
             if run and not value:
-                value = f'{run.name}   {int(run.t):4d}/{run.T} days'
+                count = f'{int(run.t)}'
+                if self.progress_min:
+                    count = f'({int(self.progress_min)} + {int(run.t-self.progress_min)})'
+                value = f'{run.name}   {count} / {run.T} days'
                 if mode == 'forward':
                     value = run.name + ' ' + value
             self.status_message(value)
@@ -2688,20 +2697,28 @@ class main_window(QMainWindow):                                    # main_window
         #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
 
     #-----------------------------------------------------------------------
-    def update_progress(self, t):
+    #def update_progress(self, t=None, min=None):
+    def update_progress(self, t_min_tuple):
     #-----------------------------------------------------------------------
-        if t==0: 
-            self.update_remaining_time()
+        t, min = t_min_tuple
+        if min is not None:
+            self.progressbar.setMinimum(int(min))
             if self.progress:
-                self.progress.reset_time()
-            return
-        if t<0:
-            N = abs(t) 
-            self.reset_progressbar(N=N)
-            self.progress = Progress(N=N)
-            return    
-        self.update_progressbar(t)
-        self.update_remaining_time( self.progress.remaining_time(t) )
+                self.progress.set_min(int(min))
+        if t is not None:
+            if t==0: 
+                self.update_remaining_time()
+                self.progressbar.setMinimum(0)
+                if self.progress:
+                    self.progress.set_min(0)
+                return
+            elif t<0:
+                N = abs(int(t)) 
+                self.reset_progressbar(N=N)
+                self.progress = Progress(N=N)
+                return  
+            self.update_progressbar(t)
+            self.update_remaining_time( self.progress.remaining_time(t) )
         #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
         
     #-----------------------------------------------------------------------
