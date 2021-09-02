@@ -26,7 +26,7 @@ import copy
 
 from ior2ecl import simulation, ior_input, main as ior2ecl_main
 from IORlib.utils import Progress, assert_python_version, get_substrings, is_file_ignore_suffix_case, return_matching_string, delete_all, file_contains, upper_and_lower
-from IORlib.ECL import get_tsteps, unfmt_file #, input_days_and_steps as ECL_input_days_and_steps
+from IORlib.ECL import get_restart_time_step, get_tsteps, unfmt_file #, input_days_and_steps as ECL_input_days_and_steps
 import GUI_icons
 
 gui_dir = Path('GUI')
@@ -37,9 +37,6 @@ settings_file = gui_dir/'settings.txt'
 default_font = 'default'
 default_size = 10
 default_weight = 50
-to_screen = False
-quiet = True
-echo = False
 
 blue   = QColor(31,119,180)  #1f77b4 
 orange = QColor(255,127,14)  #ff7f0e  
@@ -285,7 +282,8 @@ class worker_signals(QObject):
     finished = Signal()
     result = Signal(int)
     error = Signal(tuple)
-    progress = Signal(int)
+    #progress = Signal(int)
+    progress = Signal(tuple)
     plot = Signal()
     #show_message = Signal(tuple)
     show_message = Signal(str)
@@ -347,17 +345,25 @@ class sim_worker(base_worker):
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
+        self.progress_min = None
         #------------------------------------
-        def progress(run=None, value=None):
+        def progress(run=None, value=None, min=None):
         #------------------------------------
-            if run and not value:
+            if min:
+                self.progress_min = min
+            if value == 0:
+                self.progress_min = None
+            if run and value is None:
                 value = run.t
-            self.update_progress(int(value))
+            self.update_progress((int(value), min))
         #------------------------------------
         def status(run=None, value=None, mode=None, **x):
         #------------------------------------
             if run and not value:
-                value = f'{run.name}   {int(run.t):4d}/{run.T} days'
+                count = f'{int(run.t)}'
+                if self.progress_min:
+                    count = f'({int(self.progress_min)} + {int(run.t-self.progress_min)})'
+                value = f'{run.name}   {count} / {run.T} days'
                 if mode == 'forward':
                     value = run.name + ' ' + value
             self.status_message(value)
@@ -761,6 +767,7 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_prop = {}
         self.view = False
         self.plot_ref = None
+        self.progress = None
         self.vscroll = {}
         #self.modes = ('forward', 'backward', 'eclipse', 'iorsim')
         #guidir = Path('GUI')
@@ -1732,21 +1739,16 @@ class main_window(QMainWindow):                                    # main_window
         varnames = None
         try:
             for block in smspec.blocks():
-                if block.key()   == 'KEYWORDS':
-                    varnames = get_substrings(block.data()[0].decode(), 8)
-                    #print(varnames)
+                if block.key() == 'KEYWORDS':
+                    varnames = get_substrings(block.data()[0], 8)
                 elif block.key() == 'WGNAMES':
-                    #ecl_data.wells = [s.capitalize() for s in get_substrings(block.data()[0].decode(), 8)]
-                    ecl_data.wells = [s for s in get_substrings(block.data()[0].decode(), 8)]
-                    #print(ecl_data.wells)
+                    ecl_data.wells = [s for s in get_substrings(block.data()[0], 8)]
                 elif block.key() == 'MEASRMNT':
-                    data = block.data()[0].decode().lower()
+                    data = block.data()[0].lower()
                     width = len(data)/len(varnames)
                     measure = get_substrings(data, width)
-                    #print(measure)
                 elif block.key() == 'UNITS':
-                    ecl_data.units = get_substrings(block.data()[0].decode(), 8)                
-                    #print(ecl_data.units)
+                    ecl_data.units = get_substrings(block.data()[0], 8)                
         except (SystemError,TypeError) as e:
             #print(e)
             self.unsmry = None # so that we call this function again
@@ -2161,12 +2163,12 @@ class main_window(QMainWindow):                                    # main_window
         sections = [red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
                     'SOLUTION','SUMMARY','SCHEDULE','OPTIMIZE']
         # Global keywords
-        globals = [blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','COLUMN','DEBUG','DEBUG3','ECHO','END',
+        globals = [blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','COLUMNS','DEBUG','DEBUG3','ECHO','END',
                     'ENDINC','ENDSKIP','SKIP','SKIP100','SKIP300','EXTRAPMS','FORMFEED','GETDATA',
                     'INCLUDE','MESSAGES','NOECHO','NOWARN','WARN']
         # Common keywords
-        common = [green, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','TITLE','CART','DIMENS','FMTIN','FMTOUT',
-                    'FMTOUT','UNIFOUT','UNIFIN','OIL','WATER','GAS','METRIC','START','WELLDIMS','REGDIMS','TRACERS',
+        common = [green, QFont.Normal, Qt.CaseSensitive, r"\b",r'\b','TITLE','CART','DIMENS','FMTIN','FMTOUT',
+                    'FMTOUT','UNIFOUT','UNIFIN','OIL','WATER','GAS','VAPOIL','DISGAS','FIELD','METRIC','LAB','START','WELLDIMS','REGDIMS','TRACERS',
                     'NSTACK','TABDIMS','NOSIM','GRIDFILE','DX','DY','DZ','PORO','BOX','PERMX','PERMY','PERMZ','TOPS',
                     'INIT','RPTGRID','PVCDO','PVTW','DENSITY','PVDG','ROCK','SPECROCK','SPECHEAT','TRACER','TRACERKP',
                     'TRDIFPAR','TRDIFIDE','SATNUM','FIPNUM','TRKPFPAR','TRKPFIDE','RPTSOL','RESTART','PRESSURE','SWAT',
@@ -2174,7 +2176,10 @@ class main_window(QMainWindow):                                    # main_window
                     'FWIT','FOIP','ROIP','WTPCHEA','WOPR','WWPR','WWIR','WBHP','WWCT','WOPT','WWIT','WTPRA1','WTPTA1','WTPCA1',
                     'WTIRA1','WTITA1','WTICA1','CTPRA1','CTIRA1','FOIP','ROIP','FPR','TCPU','TCPUTS','WNEWTON','ZIPEFF','STEPTYPE',
                     'NEWTON','NLINEARP','NLINEARS','MSUMLINS','MSUMNEWT','MSUMPROB','WTPRPAR','WTPRIDE','WTPCPAR','WTPCIDE','RUNSUM',
-                    'SEPARATE','WELSPECS','COMPDAT','WRFTPLT','TSTEP','WCONINJE','WCONPROD','WTEMP','RTPSCHED','RPTRST','TUNING','READDATA']
+                    'SEPARATE','WELSPECS','COMPDAT','WRFTPLT','TSTEP','DATES','SKIPREST','WCONINJE','WCONPROD','WCONHIST','WTEMP','RPTSCHED',
+                    'RPTRST','TUNING','READDATA', 'ROCKTABH','GRIDUNIT','NEWTRAN','MAPAXES','EQLDIMS','ROCKCOMP','TEMP',
+                    'GRIDOPTS','VFPPDIMS','VFPIDIMS','AQUDIMS','SMRYDIMS','CPR','FAULTDIM','MEMORY','EQUALS','MINPV',
+                    'COPY','MULTIPLY']
         self.view_input_file(ext=ext, title=title, comment=comment, keywords=[sections, globals, common])
         
     #-----------------------------------------------------------------------
@@ -2689,18 +2694,28 @@ class main_window(QMainWindow):                                    # main_window
         #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
 
     #-----------------------------------------------------------------------
-    def update_progress(self, t):
+    #def update_progress(self, t=None, min=None):
+    def update_progress(self, t_min_tuple):
     #-----------------------------------------------------------------------
-        if t==0: 
-            self.update_remaining_time()
-            return
-        if t<0:
-            N = abs(t) 
-            self.reset_progressbar(N=N)
-            self.progress = Progress(N=N)
-            return    
-        self.update_progressbar(t)
-        self.update_remaining_time( self.progress.remaining_time(t) )
+        t, min = t_min_tuple
+        if min is not None:
+            self.progressbar.setMinimum(int(min))
+            if self.progress:
+                self.progress.set_min(int(min))
+        if t is not None:
+            if t==0: 
+                self.update_remaining_time()
+                self.progressbar.setMinimum(0)
+                if self.progress:
+                    self.progress.set_min(0)
+                return
+            elif t<0:
+                N = abs(int(t)) 
+                self.reset_progressbar(N=N)
+                self.progress = Progress(N=N)
+                return  
+            self.update_progressbar(t)
+            self.update_remaining_time( self.progress.remaining_time(t) )
         #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
         
     #-----------------------------------------------------------------------
@@ -2777,7 +2792,7 @@ class main_window(QMainWindow):                                    # main_window
         self.start_act.setEnabled(value)
         self.case_cb.setEnabled(value)
         self.mode_cb.setEnabled(value)
-        #self.days_box.setEnabled(value)
+        self.days_box.setEnabled(value)
         #self.sim_cb.setEnabled(value)
 
     #-----------------------------------------------------------------------
@@ -2805,15 +2820,19 @@ class main_window(QMainWindow):                                    # main_window
         # start simulation
         for opt in ('convert','del_convert','merge','del_merge'):
             kwargs[opt] = s.get[opt]()
-        sum_tsteps = sum(get_tsteps(i['root']+'.DATA'))
+        DATA_file = i['root']+'.DATA'
+        tsteps = get_tsteps(DATA_file)
+        restart_days = get_restart_time_step(DATA_file)[0]
+        #sum_tsteps = sum(get_tsteps(DATA_file)) + get_restart_time_step(DATA_file)[0]
+        sum_tsteps = int(sum(tsteps) + restart_days)
         if i['days'] < sum_tsteps:
-            self.days_box.setText( str(int(sum_tsteps)) )
+            self.days_box.setText( str(sum_tsteps) )
             #self.days_box.setText(str(int(sum_tsteps)+int(s.get['dt']())+1))
-            show_message(self, 'info', text='Simulation time increased to match TSTEP in Eclipse input')
+            show_message(self, 'info', text=f'Simulation time set to sum of TSTEP ({sum(tsteps)}) and RESTART ({restart_days}) in Eclipse input')
         #print(f'days: {i["days"]}')
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 
                                  pause=float(s.get['pause']()), init_tstep=float(s.get['dt']()), 
-                                 stop_children=s.get['stop_child'](), **kwargs)
+                                 stop_children=s.get['stop_child'](), tsteps=tsteps, restart_days=restart_days, **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)
@@ -2895,6 +2914,7 @@ class Highlighter(QSyntaxHighlighter):
         super(Highlighter, self).__init__(parent)
 
         self.highlightingRules = []
+        #print(keywords)
         while keywords:
             kword = keywords.pop(0)
             keywordFormat = QTextCharFormat()
