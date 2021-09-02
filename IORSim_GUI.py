@@ -378,7 +378,7 @@ class sim_worker(base_worker):
             self.show_message(text)
 
         self.sim = simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
-        self.days_box.setText(self.sim.get_time())
+        self.days_box.setText(str(self.sim.get_time()))
         result, msg = self.sim.run()
         self.show_message(msg)
         return result

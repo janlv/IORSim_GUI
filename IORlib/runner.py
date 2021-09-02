@@ -359,7 +359,6 @@ class runner:                                                               # ru
         if check:
             self.wait_for(self.parent.is_running)
         # Resume children
-        #if self.stop_children:
         [p.resume() for p in self.children]
         if check:
             [self.wait_for(p.is_running) for p in self.children]
