@@ -101,15 +101,51 @@ class Control_file:
             return None
 
 #====================================================================================
-class process:                                                               # process
+class Process:                                                               # process
 #====================================================================================
     
     #--------------------------------------------------------------------------------
-    def __init__(self, proc, name=None):
+    def __init__(self, proc, app_name=None):
     #--------------------------------------------------------------------------------
         self.proc = proc
-        self.name = name
+        self.pid = proc.pid
+        self.app_name = app_name
         #self.name = proc.name()
+
+    #--------------------------------------------------------------------------------
+    def process(self):
+    #--------------------------------------------------------------------------------
+        return self.proc
+
+    #--------------------------------------------------------------------------------
+    def name(self):
+    #--------------------------------------------------------------------------------
+        return self.proc.name()
+
+    #--------------------------------------------------------------------------------
+    def status(self):
+    #--------------------------------------------------------------------------------
+        return self.proc.status()
+
+    #--------------------------------------------------------------------------------
+    def cmdline(self):
+    #--------------------------------------------------------------------------------
+        return self.proc.cmdline()
+
+    #--------------------------------------------------------------------------------
+    def kill(self):
+    #--------------------------------------------------------------------------------
+        return self.proc.kill()
+
+    #--------------------------------------------------------------------------------
+    def suspend(self):
+    #--------------------------------------------------------------------------------
+        self.proc.suspend()
+
+    #--------------------------------------------------------------------------------
+    def resume(self):
+    #--------------------------------------------------------------------------------
+        self.proc.resume()
 
     #--------------------------------------------------------------------------------
     def current_status(self):
@@ -123,15 +159,15 @@ class process:                                                               # p
             if self.proc.is_running() and self.proc.status() != psutil.STATUS_ZOMBIE:
                 return True
             if raise_error:
-                raise SystemError(f'ERROR {self.name} is not running ({self.proc.name()} is {self.proc.status()})')
+                raise SystemError(f'ERROR {self.app_name} is not running ({self.name()} is {self.status()})')
         except (psutil.NoSuchProcess, ProcessLookupError):
             if raise_error:
-                raise SystemError(f'ERROR {self.name} stopped unexpectedly (process disappeared), check the log')        
+                raise SystemError(f'ERROR {self.app_name} stopped unexpectedly (process disappeared), check the log')        
             else:
                 return False
         except AttributeError:
             if raise_error:
-                raise SystemError(f'ERROR {self.name} process is {process}')        
+                raise SystemError(f'ERROR {self.app_name} process is {self.proc}')        
             else:
                 return True
             
@@ -139,7 +175,7 @@ class process:                                                               # p
     def is_not_running(self):                               # runner
     #--------------------------------------------------------------------------------
         try:
-            if not self.proc or not self.proc.is_running() or self.proc.status() == psutil.STATUS_ZOMBIE:
+            if not self.proc or not self.proc.is_running() or self.status() == psutil.STATUS_ZOMBIE:
                 return True
         except (psutil.NoSuchProcess, ProcessLookupError):
             return True
@@ -148,13 +184,18 @@ class process:                                                               # p
     def is_sleeping(self):                                            # runner
     #--------------------------------------------------------------------------------
         try:
-            if self.proc.status() in (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED): 
+            if self.status() in (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED): 
                 return True
-            elif not self.proc.is_running or self.proc.status() == psutil.STATUS_ZOMBIE:
-                raise SystemError(f'ERROR Process {self.proc.name()} disappeared while trying to sleep')
+            elif not self.proc.is_running() or self.status() == psutil.STATUS_ZOMBIE:
+                raise SystemError(f'ERROR Process {self.name()} disappeared while trying to sleep')
         except (psutil.NoSuchProcess, ProcessLookupError, AttributeError):
             raise SystemError(f'ERROR Process {self.proc} disappeared while trying to sleep')
                 
+    #--------------------------------------------------------------------------------
+    def assert_running(self):                                                # runner
+    #--------------------------------------------------------------------------------
+        return self.is_running(raise_error=True)
+
 
 #====================================================================================
 class runner:                                                               # runner
@@ -260,16 +301,19 @@ class runner:                                                               # ru
             P = Popen(self.cmd, stdout=self.log, stderr=STDOUT)      
         self.P = P
         pid = P.pid
-        self.parent = psutil.Process(pid=pid)
+        #self.parent = psutil.Process(pid=pid)
+        self.parent = Process(psutil.Process(pid=pid))
         # check if we need to look for child processes
         if not self.parent.name().lower().startswith(self.name.lower()):
             # looking for child-processes
             for i in range(100):
                 sleep(0.5)
-                self.children = self.parent.children(recursive=True)
+                self.children = self.parent.process().children(recursive=True)
                 if any([p.name().lower().startswith(self.name.lower()) for p in self.children]):
                     break
-        self.assert_running()
+        self.children = [Process(c) for c in self.children]
+        #self.assert_running()
+        self.parent.assert_running()
         self.cmdline = '\'' + ' '.join(self.parent.cmdline()) + '\''
         self._print(self.process_info())
         
@@ -298,11 +342,13 @@ class runner:                                                               # ru
         # Suspend children
         [p.suspend() for p in self.children]
         if check:
-            self.wait_for(self.children_are_sleeping)
+            [self.wait_for(p.is_sleeping) for p in self.children]
+            #self.wait_for(self.children_are_sleeping)
         # Suspend parent
         self.parent.suspend()
         if check:
-            self.wait_for(self.parent_is_sleeping)
+            self.wait_for(self.parent.is_sleeping)
+            #self.wait_for(self.parent_is_sleeping)
         if print:
             self.print_process_status()
         self.timer and self.timer.stop()
@@ -314,11 +360,13 @@ class runner:                                                               # ru
         # Resume parent
         self.parent.resume()
         if check:
-            self.wait_for(self.parent_is_running)
+            self.wait_for(self.parent.is_running)
+            #self.wait_for(self.parent_is_running)
         # Resume children
         [p.resume() for p in self.children]
         if check:
-            self.wait_for(self.children_are_running)
+            [self.wait_for(p.is_running) for p in self.children]
+            #self.wait_for(self.children_are_running)
         if print:
             self.print_process_status()
         self.timer and self.timer.start()
@@ -326,12 +374,13 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def _kill_process(self, proc, check=True):                                                     # runner
     #--------------------------------------------------------------------------------
-        def proc_not_running():
-            return self._process_is_not_running(proc)
-        if self._process_is_running(proc):
+        #def proc_not_running():
+        #    return self._process_is_not_running(proc)
+        #if self._process_is_running(proc):
+        if proc.is_running():
             proc.kill()
             if check:
-                self.wait_for(proc_not_running, loop_func=lambda:None)
+                self.wait_for(proc.is_not_running, loop_func=lambda:None)
 
     #--------------------------------------------------------------------------------
     def kill(self, check=True, v=1):                                                     # runner
@@ -343,87 +392,88 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def print_process_status(self, v=1):
     #--------------------------------------------------------------------------------
-        self._print(', '.join([f'{p.name()} {p.status()}' for p in [self.parent]+self.children]), v=v)
+        #self._print(', '.join([f'{p.name()} {p.status()}' for p in [self.parent]+self.children]), v=v)
+        self._print(', '.join([p.current_status() for p in [self.parent]+self.children]), v=v)
 
-    #--------------------------------------------------------------------------------
-    def _process_is_running(self, process, raise_error=False):                                                    # runner
-    #--------------------------------------------------------------------------------
-        try:
-            if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
-                return True
-            if raise_error:
-                raise SystemError(f'ERROR {self.name} is not running ({process.name()} is {process.status()})')
-        except (psutil.NoSuchProcess, ProcessLookupError):
-            if raise_error:
-                raise SystemError(f'ERROR {self.name} stopped unexpectedly (process disappeared), check the log')        
-            else:
-                return False
-        except AttributeError:
-            if raise_error:
-                raise SystemError(f'ERROR {self.name} process is {process}')        
-            else:
-                return True
+    # #--------------------------------------------------------------------------------
+    # def _process_is_running(self, process, raise_error=False):                                                    # runner
+    # #--------------------------------------------------------------------------------
+    #     try:
+    #         if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+    #             return True
+    #         if raise_error:
+    #             raise SystemError(f'ERROR {self.name} is not running ({process.name()} is {process.status()})')
+    #     except (psutil.NoSuchProcess, ProcessLookupError):
+    #         if raise_error:
+    #             raise SystemError(f'ERROR {self.name} stopped unexpectedly (process disappeared), check the log')        
+    #         else:
+    #             return False
+    #     except AttributeError:
+    #         if raise_error:
+    #             raise SystemError(f'ERROR {self.name} process is {process}')        
+    #         else:
+    #             return True
             
-    #--------------------------------------------------------------------------------
-    def _process_is_not_running(self, process):                               # runner
-    #--------------------------------------------------------------------------------
-        try:
-            if not process or not process.is_running() or process.status() == psutil.STATUS_ZOMBIE:
-                return True
-        except (psutil.NoSuchProcess, ProcessLookupError):
-            return True
+    # #--------------------------------------------------------------------------------
+    # def _process_is_not_running(self, process):                               # runner
+    # #--------------------------------------------------------------------------------
+    #     try:
+    #         if not process or not process.is_running() or process.status() == psutil.STATUS_ZOMBIE:
+    #             return True
+    #     except (psutil.NoSuchProcess, ProcessLookupError):
+    #         return True
             
-    #--------------------------------------------------------------------------------
-    def _process_is_sleeping(self, process):                                            # runner
-    #--------------------------------------------------------------------------------
-        try:
-            if process.status() in (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED): 
-                return True
-            elif not process.is_running or process.status() == psutil.STATUS_ZOMBIE:
-                raise SystemError(f'ERROR Process {process} disappeared while trying to sleep')
-        except (psutil.NoSuchProcess, ProcessLookupError, AttributeError):
-            raise SystemError(f'ERROR Process {process} disappeared while trying to sleep')
+    # #--------------------------------------------------------------------------------
+    # def _process_is_sleeping(self, process):                                            # runner
+    # #--------------------------------------------------------------------------------
+    #     try:
+    #         if process.status() in (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED): 
+    #             return True
+    #         elif not process.is_running or process.status() == psutil.STATUS_ZOMBIE:
+    #             raise SystemError(f'ERROR Process {process} disappeared while trying to sleep')
+    #     except (psutil.NoSuchProcess, ProcessLookupError, AttributeError):
+    #         raise SystemError(f'ERROR Process {process} disappeared while trying to sleep')
                 
-    #--------------------------------------------------------------------------------
-    def _check_children(self, check_func):                         # runner
-    #--------------------------------------------------------------------------------
-        if all([check_func(p) for p in self.children]):
-            return True
+    # #--------------------------------------------------------------------------------
+    # def _check_children(self, check_func):                         # runner
+    # #--------------------------------------------------------------------------------
+    #     if all([check_func(p) for p in self.children]):
+    #         return True
 
-    #--------------------------------------------------------------------------------
-    def assert_running(self):                                                # runner
-    #--------------------------------------------------------------------------------
-        return self._process_is_running(self.parent, raise_error=True)
+    # #--------------------------------------------------------------------------------
+    # def assert_running(self):                                                # runner
+    # #--------------------------------------------------------------------------------
+    #     return self._process_is_running(self.parent, raise_error=True)
         
-    #--------------------------------------------------------------------------------
-    def parent_is_running(self):                                                    # runner
-    #--------------------------------------------------------------------------------
-        return self._process_is_running(self.parent)
+    # #--------------------------------------------------------------------------------
+    # def parent_is_running(self):                                                    # runner
+    # #--------------------------------------------------------------------------------
+    #     return self._process_is_running(self.parent)
             
-    #--------------------------------------------------------------------------------
-    def parent_is_not_running(self):                                         # runner
-    #--------------------------------------------------------------------------------
-        return self._process_is_not_running(self.parent)
+    # #--------------------------------------------------------------------------------
+    # def parent_is_not_running(self):                                         # runner
+    # #--------------------------------------------------------------------------------
+    #     return self._process_is_not_running(self.parent)
             
-    #--------------------------------------------------------------------------------
-    def parent_is_sleeping(self):                                            # runner
-    #--------------------------------------------------------------------------------
-        return self._process_is_sleeping(self.parent)
+    # #--------------------------------------------------------------------------------
+    # def parent_is_sleeping(self):                                            # runner
+    # #--------------------------------------------------------------------------------
+    #     return self._process_is_sleeping(self.parent)
             
-    #--------------------------------------------------------------------------------
-    def children_are_running(self):                                            # runner
-    #--------------------------------------------------------------------------------
-        return self._check_children(self._process_is_running)
+    # #--------------------------------------------------------------------------------
+    # def children_are_running(self):                                            # runner
+    # #--------------------------------------------------------------------------------
+    #     return self._check_children(self._process_is_running)
                 
-    #--------------------------------------------------------------------------------
-    def children_are_not_running(self):                                       # runner
-    #--------------------------------------------------------------------------------
-        return self._check_children(self._process_is_not_running)
+    # #--------------------------------------------------------------------------------
+    # def children_are_not_running(self):                                       # runner
+    # #--------------------------------------------------------------------------------
+    #     return self._check_children(self._process_is_not_running)
 
-    #--------------------------------------------------------------------------------
-    def children_are_sleeping(self):                                       # runner
-    #--------------------------------------------------------------------------------
-        return self._check_children(self._process_is_sleeping)
+    # #--------------------------------------------------------------------------------
+    # def children_are_sleeping(self):                                       # runner
+    # #--------------------------------------------------------------------------------
+    #     return self._check_children(self._process_is_sleeping)
 
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                 # runner
@@ -450,7 +500,8 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def assert_running_and_stop_if_canceled(self):
     #--------------------------------------------------------------------------------
-        self.assert_running()
+        #self.assert_running()
+        self.parent.assert_running()
         self.stop_if_canceled()
 
     #--------------------------------------------------------------------------------
@@ -513,7 +564,8 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
         msg = msg or 'waiting for parent process to finish'
         self._print(msg, v=v)
-        success = self.wait_for(self.parent_is_not_running, error=error, pause=pause, limit=limit, loop_func=loop_func)
+        #success = self.wait_for(self.parent_is_not_running, error=error, pause=pause, limit=limit, loop_func=loop_func)
+        success = self.wait_for(self.parent.is_not_running, error=error, pause=pause, limit=limit, loop_func=loop_func)
         if not success:
              self._print('process did not finish within reasonable time and was killed', v=v)
              self.kill()
