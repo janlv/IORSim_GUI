@@ -99,7 +99,62 @@ class Control_file:
                 return True
         except PermissionError:
             return None
-        
+
+#====================================================================================
+class process:                                                               # process
+#====================================================================================
+    
+    #--------------------------------------------------------------------------------
+    def __init__(self, proc, name=None):
+    #--------------------------------------------------------------------------------
+        self.proc = proc
+        self.name = name
+        #self.name = proc.name()
+
+    #--------------------------------------------------------------------------------
+    def current_status(self):
+    #--------------------------------------------------------------------------------
+        return f'{self.proc.name()} {self.proc.status()}'
+
+    #--------------------------------------------------------------------------------
+    def is_running(self, raise_error=False):                                                    # runner
+    #--------------------------------------------------------------------------------
+        try:
+            if self.proc.is_running() and self.proc.status() != psutil.STATUS_ZOMBIE:
+                return True
+            if raise_error:
+                raise SystemError(f'ERROR {self.name} is not running ({self.proc.name()} is {self.proc.status()})')
+        except (psutil.NoSuchProcess, ProcessLookupError):
+            if raise_error:
+                raise SystemError(f'ERROR {self.name} stopped unexpectedly (process disappeared), check the log')        
+            else:
+                return False
+        except AttributeError:
+            if raise_error:
+                raise SystemError(f'ERROR {self.name} process is {process}')        
+            else:
+                return True
+            
+    #--------------------------------------------------------------------------------
+    def is_not_running(self):                               # runner
+    #--------------------------------------------------------------------------------
+        try:
+            if not self.proc or not self.proc.is_running() or self.proc.status() == psutil.STATUS_ZOMBIE:
+                return True
+        except (psutil.NoSuchProcess, ProcessLookupError):
+            return True
+            
+    #--------------------------------------------------------------------------------
+    def is_sleeping(self):                                            # runner
+    #--------------------------------------------------------------------------------
+        try:
+            if self.proc.status() in (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED): 
+                return True
+            elif not self.proc.is_running or self.proc.status() == psutil.STATUS_ZOMBIE:
+                raise SystemError(f'ERROR Process {self.proc.name()} disappeared while trying to sleep')
+        except (psutil.NoSuchProcess, ProcessLookupError, AttributeError):
+            raise SystemError(f'ERROR Process {self.proc} disappeared while trying to sleep')
+                
 
 #====================================================================================
 class runner:                                                               # runner
@@ -370,12 +425,6 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
         return self._check_children(self._process_is_sleeping)
 
-
-    # #--------------------------------------------------------------------------------
-    # def wait_until_terminated(self, v=1):                                      # runner
-    # #--------------------------------------------------------------------------------
-    #     self.wait_for_process_to_finish(msg='waiting for parent process to terminate', error='parent process did not terminate properly', loop_func=lambda:None)
-        
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                 # runner
     #--------------------------------------------------------------------------------
