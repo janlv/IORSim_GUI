@@ -297,15 +297,15 @@ class runner:                                                               # ru
             if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
                 return True
             if raise_error:
-                raise SystemError('ERROR ' + process.name() + ' is not running, status is ' + process.status())
+                raise SystemError(f'ERROR {self.name} is not running ({process.name()} is {process.status()})')
         except (psutil.NoSuchProcess, ProcessLookupError):
             if raise_error:
-                raise SystemError('ERROR ' + self.name + ' stopped unexpectedly, check the log')        
+                raise SystemError(f'ERROR {self.name} stopped unexpectedly (process disappeared), check the log')        
             else:
                 return False
         except AttributeError:
             if raise_error:
-                raise SystemError('ERROR process is None in runner._process_is_running()')        
+                raise SystemError(f'ERROR {self.name} process is {process}')        
             else:
                 return True
             
