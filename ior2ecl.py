@@ -199,7 +199,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
             self.rft_size = False
             info = 'Turned on full RFT-check (default is file-size check)' 
             self._print(info)
-        self.suspend(check=False)
+        self.suspend()
         if self.init_tsteps > 1:
             self.rft_size = None
         # only check RFT-file by size if all wells are initially written to the RFT-file 
@@ -221,7 +221,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.interface_file(self.n).copy(satnum_file, delete=False)
         #self._print(self.interface_file(self.n).name())
         self.OK_file().create_empty()
-        self.resume(check=False)
+        self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
         if self.check_unrst:
             self.check_UNRST_file()
@@ -231,7 +231,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
             else:
                 #self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=200)
                 self.check_RFT_file(nwell_max=self.nwell)
-        self.suspend(check=False)
+        self.suspend()
         self.n += 1
 
     #--------------------------------------------------------------------------------
@@ -417,15 +417,15 @@ class ior_backward(iorsim):                                            # ior_bac
         update and update.status(value=f'{self.name} running...')
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
         self.run_steps(self.init_tsteps, update=update, restart=restart)
-        self.suspend(check=False)
+        self.suspend()
 
     #--------------------------------------------------------------------------------
     def run_one_step(self):                                         # ior_backward
     #--------------------------------------------------------------------------------
         ### run IORSim
-        self.resume(check=False)
+        self.resume()
         self.run_steps(1)
-        self.suspend(check=False)
+        self.suspend()
 
     #--------------------------------------------------------------------------------
     def run_steps(self, N, update=None, restart=False):                   # ior_backward
@@ -1094,7 +1094,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
             nl = '\n'
             if x.get('newline'):
                 nl += '\n'
-            print('\r   '+value+50*' ', end=nl)
+            print('\r   '+value+60*' ', end=nl)
 
     prog = Progress(format='40#')
     #----------------------------------------
