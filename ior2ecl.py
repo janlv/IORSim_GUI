@@ -1079,7 +1079,7 @@ def parse_input(case_dir=None, settings_file=None):
         args['iorexe'] = iorexe_from_settings(settings_file, args['iorexe'])
     return args
 
-#@print_error
+@print_error
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
            init_tstep=1.0, check_unrst=True, check_rft=True, rft_size=False, keep_files=False, 
@@ -1125,7 +1125,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
         print(sim.info_header())
     result, msg = sim.run()
 
-#@print_error
+@print_error
 #--------------------------------------------------------------------------------
 def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
 #--------------------------------------------------------------------------------

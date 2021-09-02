@@ -21,8 +21,10 @@ def permission_error(func):
     def inner(*args, **kwargs):
         try:
             func(*args, **kwargs)
-        except PermissionError:
-            print('PermissionError in ' + func.__qualname__)
+        except PermissionError as e:
+            raise SystemError(f'WARNING PermissionError in {func.__qualname__}()')
+            #print('PermissionError in ' + func.__qualname__)
+            #print('PermissionError in ' + func.__qualname__ + ': ',e)
     return inner
 
 
@@ -86,6 +88,7 @@ class Control_file:
         path = self._name.parent
         name = self._name.name
         for f in path.glob(name):
+            #print('deleting',f)
             f.unlink()
 
     #--------------------------------------------------------------------------------
@@ -266,6 +269,23 @@ class runner:                                                               # ru
         self.timer and self.timer.start()
         
     #--------------------------------------------------------------------------------
+    def _kill_process(self, proc, check=True):                                                     # runner
+    #--------------------------------------------------------------------------------
+        def proc_not_running():
+            return self._process_is_not_running(proc)
+        if self._process_is_running(proc):
+            proc.kill()
+            if check:
+                self.wait_for(proc_not_running, loop_func=lambda:None)
+
+    #--------------------------------------------------------------------------------
+    def kill(self, check=True, v=1):                                                     # runner
+    #--------------------------------------------------------------------------------
+        # terminate parent before children
+        parent = self.parent and [self.parent] or []
+        [self._kill_process(p, check=check) for p in parent+self.children]
+
+    #--------------------------------------------------------------------------------
     def print_process_status(self, v=1):
     #--------------------------------------------------------------------------------
         self._print(', '.join([f'{p.name()} {p.status()}' for p in [self.parent]+self.children]), v=v)
@@ -350,26 +370,11 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
         return self._check_children(self._process_is_sleeping)
 
-    #--------------------------------------------------------------------------------
-    def kill(self, check=True, v=1):                                                     # runner
-    #--------------------------------------------------------------------------------
-        # terminate children before parent
-        procs = self.children
-        if self.parent:
-            procs += [self.parent]
-        for p in procs:
-            self._print(f'Killing {p.name()}', v=v)
-            if self._process_is_running(p):
-                p.kill()
-        self.wait_until_terminated()
-        self.parent = None
-        self.children = []
 
-
-    #--------------------------------------------------------------------------------
-    def wait_until_terminated(self, v=1):                                      # runner
-    #--------------------------------------------------------------------------------
-        self.wait_for_process_to_finish(msg='waiting for parent process to terminate', error='parent process did not terminate properly', loop_func=lambda:None)
+    # #--------------------------------------------------------------------------------
+    # def wait_until_terminated(self, v=1):                                      # runner
+    # #--------------------------------------------------------------------------------
+    #     self.wait_for_process_to_finish(msg='waiting for parent process to terminate', error='parent process did not terminate properly', loop_func=lambda:None)
         
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                 # runner
