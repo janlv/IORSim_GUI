@@ -37,9 +37,6 @@ settings_file = gui_dir/'settings.txt'
 default_font = 'default'
 default_size = 10
 default_weight = 50
-to_screen = False
-quiet = True
-echo = False
 
 blue   = QColor(31,119,180)  #1f77b4 
 orange = QColor(255,127,14)  #ff7f0e  
