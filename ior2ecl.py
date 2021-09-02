@@ -78,16 +78,6 @@ class eclipse(runner):                                                      # ec
         if not Path(inp_file).is_file():
             raise SystemError(msg + 'missing input file ' + inp_file)
 
-    # #--------------------------------------------------------------------------------
-    # def start(self):                                                        # eclipse
-    # #--------------------------------------------------------------------------------
-    #     # check input
-    #     self.check_input()
-    #     # delete output from previous runs
-    #     #self.delete_output_files()
-    #     # start run
-    #     super().start()    
-
 
 #====================================================================================
 class forward_mixin:
@@ -139,6 +129,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
     #--------------------------------------------------------------------------------
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', **kwargs)
         self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
+        self.update = kwargs.get('update') or None
         self.init_tsteps = len(self.tsteps) #kwargs.get('init_tsteps') or 1
         #print(self.init_tsteps)
         self.check_unrst = check_unrst
@@ -147,7 +138,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
         self.rft_start_size = 0
-        #self.restart_run = False
 
     #--------------------------------------------------------------------------------
     def check_input(self):                                             # ecl_backward
@@ -161,20 +151,28 @@ class ecl_backward(eclipse):                                           # ecl_bac
         #if file_contains(DATA_file, text='RESTART', comment='--'):
         #    self.restart_run = True
 
+    #--------------------------------------------------------------------------------
+    def suspend(self, raise_warning=True):                                                 # ecl_backward
+    #--------------------------------------------------------------------------------
+        if not super().suspend():
+            if self.stop_children:
+                self.stop_children = False
+                if raise_warning:
+                    self.update.message(text='WARNING Unable to suspend child-processes, only the parent process is suspended. This might lead to a more unstable simulation.')
 
     #--------------------------------------------------------------------------------
-    def start(self, update=None, restart=False):                       # ecl_backward
+    def start(self, restart=False):                       # ecl_backward
     #--------------------------------------------------------------------------------
-        def loop_func(update=update):
+        def loop_func():
             self.assert_running_and_stop_if_canceled()
-            if update:
+            if self.update:
                 self.t = self.time_and_step()[0]
-                update.status(run=self)
-                restart or update.progress(value=self.t)
-                update.plot()
+                self.update.status(run=self)
+                restart or self.update.progress(value=self.t)
+                self.update.plot()
 
         # Start Eclipse in backward mode
-        update and update.status(value=f'Starting {self.name}...')
+        self.update and self.update.status(value=f'Starting {self.name}...')
         #print(f'{self.name}: n0 = {self.n}')
         self.interface_file('all').delete()
         # Need to create all interface files in advance to avoid Eclipse termination
@@ -183,7 +181,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         super().start()  # eclipse.start()
         self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
-        update and update.status(value=f'{self.name} running...')
+        self.update and self.update.status(value=f'{self.name} running...')
         # Check if restart-file (UNRST) is flushed   
         nblocks = 1 + len(self.tsteps) # 1 for 0'th SEQNUM
         if sum(self.tsteps) > 10: 
@@ -392,6 +390,7 @@ class ior_backward(iorsim):                                            # ior_bac
         # Call iorsim.__init__()
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', **kwargs)
         self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
+        self.update = kwargs.get('update') or None
         self.init_tsteps = len(self.tsteps)
         self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
         self.endtag = '-- IORSimX done.'
@@ -405,18 +404,18 @@ class ior_backward(iorsim):                                            # ior_bac
         silentdelete(self.satnum)
 
     #--------------------------------------------------------------------------------
-    def start(self, update=None, restart=False):                         # ior_backward
+    def start(self, restart=False):                         # ior_backward
     #--------------------------------------------------------------------------------
         # Start IORSim backward run
         self.n = 1
-        update and update.status(value=f'Starting {self.name}...')
+        self.update and self.update.status(value=f'Starting {self.name}...')
         self.interface_file('all').delete()
         self.interface_file(self.n).create_empty()
         self.OK_file().create_empty()
         super().start()
-        update and update.status(value=f'{self.name} running...')
+        self.update and self.update.status(value=f'{self.name} running...')
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-        self.run_steps(self.init_tsteps, update=update, restart=restart)
+        self.run_steps(self.init_tsteps, restart=restart)
         self.suspend()
 
     #--------------------------------------------------------------------------------
@@ -428,7 +427,7 @@ class ior_backward(iorsim):                                            # ior_bac
         self.suspend()
 
     #--------------------------------------------------------------------------------
-    def run_steps(self, N, update=None, restart=False):                   # ior_backward
+    def run_steps(self, N, restart=False):                   # ior_backward
     #--------------------------------------------------------------------------------
         ### run IORSim
         for n in range(N):
@@ -438,11 +437,11 @@ class ior_backward(iorsim):                                            # ior_bac
             self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
             #self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
             #warn_empty_file(self.satnum, comment='--')
-            if update:
+            if self.update:
                 self.t = self.time_and_step()[0]
-                restart or update.progress(value=self.t)
-                update.status(run=self)
-                update.plot()
+                restart or self.update.progress(value=self.t)
+                self.update.status(run=self)
+                self.update.plot()
         self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
         warn_empty_file(self.satnum, comment='--')
 
@@ -641,23 +640,25 @@ class simulation:
     #--------------------------------------------------------------------------------
     def __init__(self, mode=None, root=None, pause=0, init_tstep=1, runs=[], to_screen=False, 
                  convert=True, merge=True, del_convert=False, del_merge=False, delete=True,
-                 status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None, **kwargs):
+                 status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None, 
+                 message=lambda **x:None, **kwargs):
     #--------------------------------------------------------------------------------
         #print('mode',mode,'root',root,'pause',pause,'init_tstep',init_tstep,'runs',runs,'to_screen',to_screen,
         #      'convert',convert,'merge',merge,'del_merge',del_merge,'del_convert',del_convert,
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.name = 'ior2ecl'
         self.root = root
-        self.update = namedtuple('update',['status','progress','plot'])(status, progress, plot)
+        DATA_file = Path(str(self.root)+'.DATA') 
+        if not DATA_file.is_file():
+            raise SystemError(f'ERROR No DATA-file found in {DATA_file.parent}')
+        self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
-        #self.init_tstep = init_tstep # backward mode: initial Eclipse TSTEP after READDATA
         if delete:
             del_convert = del_merge = True
         self.output = namedtuple('output',['convert','merge','del_convert','del_merge'])(convert, merge, del_convert, del_merge)
         self.runlog = None
         if root and not to_screen:
             self.runlog = safeopen(Path(root).parent/(self.name+'.log'), 'w')
-            #atexit.register(self.runlog.close)
         self.print2log = lambda txt: print(txt, file=self.runlog, flush=True)
         self.current_run = None
         self.runs = runs
@@ -685,13 +686,14 @@ class simulation:
         if self.mode=='backward':
             time_ecl = sum(self.tsteps) + self.restart_days
             if time < time_ecl:
-                print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
                 time = time_ecl + 1
+                self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(tsteps)}) and RESTART ({restart_days}) in Eclipse input')
+                #print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
             self.T = time 
             # We assume 1 day timesteps, and set total steps N larger than what is needed.
             # The simulation is anyway ended when t == T. 
             N = int(time) #- self.restart_days
-            kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps})
+            kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
             # Init runs
             self.run_sim = self.backward
             self.runs = [ecl_backward(exe=eclexe, **kwargs), ior_backward(exe=iorexe, **kwargs)]
@@ -751,7 +753,8 @@ class simulation:
         for run in self.runs:
             run.check_input()
             run.delete_output_files()
-            run.start(update=self.update, restart=self.restart)
+            #run.start(update=self.update, restart=self.restart)
+            run.start(restart=self.restart)
         # The schedule appends keywords to the interface file
         ecl.t = ior.t = self.schedule.update()
         # Fix progress for restart runs
@@ -931,6 +934,11 @@ class simulation:
             run.set_time(time)
 
     #-----------------------------------------------------------------------
+    def get_time(self):
+    #-----------------------------------------------------------------------
+        return self.T
+
+    #-----------------------------------------------------------------------
     def mode_from_case(self):
     #-----------------------------------------------------------------------
         data = str(self.root)+'.DATA'
@@ -955,42 +963,6 @@ class simulation:
 #############################################################################
 
 
-# #-----------------------------------------------------------------------
-# def ior_input(var=None, root=None):
-# #-----------------------------------------------------------------------
-# #
-# #  Get dtecl from IORSim input file .trcinp
-# #  Assumed format:    
-# #    
-# #  *INTEGRATION
-# #  # tstart  tstop
-# #    0.0  1.e99
-# #  # dtmin dtmax 
-# #    0.0  1.e99
-# #  # dtecl dteclmax 
-# #    5      20 
-# #  # metnum
-# #    0
-# #
-#     file=f'{root}.trcinp'
-#     pos = var_group = None
-#     if var == 'dtecl':
-#         var_group = '\*INTEGRATION'
-#         pos = 4
-#     # Find position after var_group name 
-#     end = [m.span()[1] for m in matches(file=file, pattern=fr'{var_group}\s*\n+')]
-#     num = '\d+\.?e?E?\d*' # 1, 1.0, 1.e99, 1.E99
-#     # Find uncommented lines with two numbers
-#     try:
-#         val = [float(s.decode()) for m in matches(file=file, pattern=fr'\n+\s*{num}\s*{num}', pos=end[0]) for s in m.group(0).split()]
-#     except IndexError:
-#         raise SystemError(f'ERROR Unable to read {var_group} from IORSim input')
-#     # Find commented lines with variable names
-#     #if name:
-#     #    name = [s.decode() for m in matches(file=file, pattern=fr'(?<=#)\s*\D+\s*\D*', pos=end[0]) for s in m.group(0).split()]
-#     if val[pos]==0:
-#         raise SystemError('WARNING IORSim timestep (dtecl) is zero')
-#     return val[pos]
 
 #-----------------------------------------------------------------------
 def ior_input(var=None, root=None):
@@ -1108,11 +1080,14 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
         if run:
             value = run.t
         prog.print(value)
-
+    #----------------------------------------
+    def message(text=None):
+    #----------------------------------------
+        text and print('   ' + text)
 
     sim = simulation(root=root, time=time, pause=pause, init_tstep=init_tstep, iorexe=iorexe, eclexe=eclexe, 
                      check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size,  
-                     keep_files=keep_files, progress=progress, status=status, to_screen=to_screen,
+                     keep_files=keep_files, progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert, merge=merge, delete=delete, stop_children=stop_children)
 
     if only_convert or only_merge:

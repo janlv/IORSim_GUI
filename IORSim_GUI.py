@@ -327,6 +327,7 @@ class sim_worker(base_worker):
         super().__init__(*args, **kwargs)
         self.sim = None
         self.signals.stop.connect(self.stop_sim)
+        self.days_box = kwargs.get('days_box') or None
 
     #-----------------------------------------------------------------------
     def current_run(self):
@@ -371,8 +372,13 @@ class sim_worker(base_worker):
         def plot(run=None, value=None):
         #------------------------------------
             self.update_plot()
+        #------------------------------------
+        def message(text=None):
+        #------------------------------------
+            self.show_message(text)
 
-        self.sim = simulation(status=status, progress=progress, plot=plot, **self.kwargs)
+        self.sim = simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
+        self.days_box.setText(self.sim.get_time())
         result, msg = self.sim.run()
         self.show_message(msg)
         return result
@@ -2812,7 +2818,6 @@ class main_window(QMainWindow):                                    # main_window
         s = self.settings
         # backward mode
         if self.mode=='backward':
-            #kwargs = {'mode':'backward', 'dt_init':s.get['dt'](), 'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':True}
             kwargs = {'mode':'backward', 'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':False}
         # forward mode
         elif self.mode in ('forward','eclipse','iorsim'):
@@ -2820,19 +2825,18 @@ class main_window(QMainWindow):                                    # main_window
         # start simulation
         for opt in ('convert','del_convert','merge','del_merge'):
             kwargs[opt] = s.get[opt]()
-        DATA_file = i['root']+'.DATA'
-        tsteps = get_tsteps(DATA_file)
-        restart_days = get_restart_time_step(DATA_file)[0]
-        #sum_tsteps = sum(get_tsteps(DATA_file)) + get_restart_time_step(DATA_file)[0]
-        sum_tsteps = int(sum(tsteps) + restart_days)
-        if i['days'] < sum_tsteps:
-            self.days_box.setText( str(sum_tsteps) )
-            #self.days_box.setText(str(int(sum_tsteps)+int(s.get['dt']())+1))
-            show_message(self, 'info', text=f'Simulation time set to sum of TSTEP ({sum(tsteps)}) and RESTART ({restart_days}) in Eclipse input')
+        #DATA_file = i['root']+'.DATA'
+        #tsteps = get_tsteps(DATA_file)
+        #restart_days = get_restart_time_step(DATA_file)[0]
+        #sum_tsteps = int(sum(tsteps) + restart_days)
+        #if i['days'] < sum_tsteps:
+        #    self.days_box.setText( str(sum_tsteps) )
+        #    show_message(self, 'info', text=f'Simulation time set to sum of TSTEP ({sum(tsteps)}) and RESTART ({restart_days}) in Eclipse input')
         #print(f'days: {i["days"]}')
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 
                                  pause=float(s.get['pause']()), init_tstep=float(s.get['dt']()), 
-                                 stop_children=s.get['stop_child'](), tsteps=tsteps, restart_days=restart_days, **kwargs)
+                                 stop_children=s.get['stop_child'](), days_box=self.days_box, **kwargs)
+        #self.days_box.setText( str(sum_tsteps) )
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)
@@ -2856,7 +2860,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def show_message(self, par):
     #-----------------------------------------------------------------------
-        #show_message(self, 'error', text=text)
         show_message(self, par[0], text=par[1])
         
     #-----------------------------------------------------------------------
