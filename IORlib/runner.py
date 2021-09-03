@@ -110,6 +110,7 @@ class Process:                                                               # p
         self.proc = proc
         self.pid = proc.pid
         self.app_name = app_name
+        self._suspend_errors = 0
         #self.name = proc.name()
 
     #--------------------------------------------------------------------------------
@@ -146,9 +147,9 @@ class Process:                                                               # p
     #--------------------------------------------------------------------------------
         try:
             self.proc.suspend()
-            #print(f'{self.name()} suspended')
             return True
         except psutil.AccessDenied:
+            self._suspend_errors += 1
             return False
 
     #--------------------------------------------------------------------------------
@@ -161,6 +162,13 @@ class Process:                                                               # p
     def current_status(self):
     #--------------------------------------------------------------------------------
         return f'{self.proc.name()} {self.proc.status()}'
+
+    #--------------------------------------------------------------------------------
+    def suspend_errors(self):
+    #--------------------------------------------------------------------------------
+        if self._suspend_errors > 0:
+            return f'{self.proc.name()} failed to suspend {self._suspend_errors} times'
+        return ''
 
     #--------------------------------------------------------------------------------
     def is_running(self, raise_error=False):                                                    # runner
@@ -380,6 +388,11 @@ class runner:                                                               # ru
     def print_process_status(self, v=1):
     #--------------------------------------------------------------------------------
         self._print(', '.join([p.current_status() for p in [self.parent]+self.children]), v=v)
+
+    #--------------------------------------------------------------------------------
+    def print_suspend_errors(self, v=1):
+    #--------------------------------------------------------------------------------
+        self._print(', '.join([p.suspend_errors() for p in [self.parent]+self.children]), v=v)
 
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                 # runner

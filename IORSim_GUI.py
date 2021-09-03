@@ -2825,18 +2825,9 @@ class main_window(QMainWindow):                                    # main_window
         # start simulation
         for opt in ('convert','del_convert','merge','del_merge'):
             kwargs[opt] = s.get[opt]()
-        #DATA_file = i['root']+'.DATA'
-        #tsteps = get_tsteps(DATA_file)
-        #restart_days = get_restart_time_step(DATA_file)[0]
-        #sum_tsteps = int(sum(tsteps) + restart_days)
-        #if i['days'] < sum_tsteps:
-        #    self.days_box.setText( str(sum_tsteps) )
-        #    show_message(self, 'info', text=f'Simulation time set to sum of TSTEP ({sum(tsteps)}) and RESTART ({restart_days}) in Eclipse input')
-        #print(f'days: {i["days"]}')
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 
                                  pause=float(s.get['pause']()), init_tstep=float(s.get['dt']()), 
                                  stop_children=s.get['stop_child'](), days_box=self.days_box, **kwargs)
-        #self.days_box.setText( str(sum_tsteps) )
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)

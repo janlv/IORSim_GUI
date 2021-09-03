@@ -130,8 +130,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', **kwargs)
         self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
         self.update = kwargs.get('update') or None
-        self.init_tsteps = len(self.tsteps) #kwargs.get('init_tsteps') or 1
-        #print(self.init_tsteps)
+        self.init_tsteps = len(self.tsteps) 
         self.check_unrst = check_unrst
         self.check_rft = check_rft
         self.rft_size = rft_size
@@ -148,15 +147,14 @@ class ecl_backward(eclipse):                                           # ecl_bac
         if not file_contains(DATA_file, text='READDATA', comment='--'):
             raise SystemError('WARNING The current case cannot be used in backward-mode: '+
                               'Eclipse input is missing the READDATA keyword.')
-        #if file_contains(DATA_file, text='RESTART', comment='--'):
-        #    self.restart_run = True
 
     #--------------------------------------------------------------------------------
-    def suspend(self, raise_warning=True):                                                 # ecl_backward
+    def suspend(self, raise_warning=False, correct=False):               # ecl_backward
     #--------------------------------------------------------------------------------
         if not super().suspend():
             if self.stop_children:
-                self.stop_children = False
+                if correct:
+                    self.stop_children = False
                 if raise_warning:
                     self.update.message(text='WARNING Unable to suspend child-processes, only the parent process is suspended. This might lead to a more unstable simulation.')
 
@@ -173,12 +171,11 @@ class ecl_backward(eclipse):                                           # ecl_bac
 
         # Start Eclipse in backward mode
         self.update and self.update.status(value=f'Starting {self.name}...')
-        #print(f'{self.name}: n0 = {self.n}')
         self.interface_file('all').delete()
         # Need to create all interface files in advance to avoid Eclipse termination
         [self.interface_file(i).create_empty() for i in range(self.n, self.N+self.n)] 
         self.OK_file().delete()
-        super().start()  # eclipse.start()
+        super().start()  
         self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
         self.update and self.update.status(value=f'{self.name} running...')
@@ -227,7 +224,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
             if self.rft_size:
                 self.wait_for( self.check_RFT_size )
             else:
-                #self.check_RFT_file(nwell_max=self.nwell, nwell_min=1, limit=200)
                 self.check_RFT_file(nwell_max=self.nwell)
         self.suspend()
         self.n += 1
@@ -248,11 +244,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info,
                       error=self.unrst_check.file.name()+' not complete', loop_func=loop_func,
                       pause=pause, limit=limit )
-        # while nblocks and self.unrst_check.file.end_not_reached():
-        #     self.wait_for( self.unrst_check.blocks_complete, nblocks=1, log=self.unrst_check.info,
-        #                    error=self.unrst_check.file.name()+' not complete', loop_func=loop_func,
-        #                    pause=pause, limit=limit )
-        #     nblocks -= 1
 
     #--------------------------------------------------------------------------------
     def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=100):        # ecl_backward
@@ -273,11 +264,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
                 else:
                     self._print(f'WARNING! Only {nwell_min} TIME blocks found in the RFT-file')
         return nblocks
-        # nblocks = nwell_max
-        # while nblocks and self.rft_check.file.end_not_reached():
-        #     self.wait_for( self.rft_check.blocks_complete, nblocks=1, log=self.rft_check.info,
-        #                    error=self.rft_check.file.name()+' not complete', limit=10000 )
-        #     nblocks -= 1
 
     #--------------------------------------------------------------------------------
     def check_RFT_size(self):                                               # ecl_backward
@@ -298,6 +284,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.interface_file(self.n).create_from_string('END')
         self.OK_file().create_empty()
         super().quit(loop_func=lambda:None)
+        self.print_suspend_errors()
 
 
 
@@ -712,7 +699,6 @@ class simulation:
                     self.ecl = ecl_forward(exe=eclexe, **kwargs)
                 if name=='iorsim':
                     self.ior = ior_forward(exe=iorexe, **kwargs)
-            #print(self.T, self.runs)
             self.runs = [run for run in (self.ecl, self.ior) if run]
         self.print2log(self.info_header())
         if self.schedule:
@@ -805,7 +791,7 @@ class simulation:
             self.current_run = None
             self.update.progress(value=0)   # Reset progress time
             self.update.plot()
-            self.update.status(value=msg, newline=True)
+            #self.update.status(value=msg, newline=True)
             conv_msg = ''
             if self.output.convert and success and any([run.is_iorsim for run in self.runs]):
                 sleep(0.05)  # Need a short break here to make the GUI progressbar responsive
@@ -813,7 +799,7 @@ class simulation:
             self.runs = []
             if self.runlog:
                 self.runlog.close()
-            self.update.status(value=msg+conv_msg)
+            self.update.status(value=msg+conv_msg, newline=True)
             return success, msg + ' ' + conv_msg
 
 
@@ -1063,7 +1049,8 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     #----------------------------------------
         if not to_screen and value:
             value = value.replace('INFO','').strip()
-            nl = '\n'
+            nl = ''
+            #nl = '\n'
             if x.get('newline'):
                 nl += '\n'
             print('\r   '+value+60*' ', end=nl)
@@ -1083,7 +1070,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     #----------------------------------------
     def message(text=None):
     #----------------------------------------
-        text and print('   ' + text)
+        text and print('\n\n     ' + text + '\n')
 
     sim = simulation(root=root, time=time, pause=pause, init_tstep=init_tstep, iorexe=iorexe, eclexe=eclexe, 
                      check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size,  
@@ -1099,6 +1086,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     if not to_screen:
         print(sim.info_header())
     result, msg = sim.run()
+    print()
 
 @print_error
 #--------------------------------------------------------------------------------
