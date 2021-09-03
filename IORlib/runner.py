@@ -20,11 +20,21 @@ def catch_permission_error(func):
 #--------------------------------------------------------------------------------
     def inner(*args, **kwargs):
         try:
-            func(*args, **kwargs)
+            return func(*args, **kwargs)
         except PermissionError as e:
             raise SystemError(f'WARNING PermissionError in {func.__qualname__}()')
             #print('PermissionError in ' + func.__qualname__)
             #print('PermissionError in ' + func.__qualname__ + ': ',e)
+    return inner
+
+#--------------------------------------------------------------------------------
+def ignore_process_error(func):
+#--------------------------------------------------------------------------------
+    def inner(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except (psutil.NoSuchProcess, ProcessLookupError):
+            return False
     return inner
 
 
@@ -109,6 +119,7 @@ class Process:                                                              # Pr
     #--------------------------------------------------------------------------------
         self.proc = proc
         self.pid = proc.pid
+        self._name = proc.name()
         self.app_name = app_name
         self._suspend_errors = 0
         #self.name = proc.name()
@@ -121,13 +132,15 @@ class Process:                                                              # Pr
     #--------------------------------------------------------------------------------
     def name(self):                                                         # Process
     #--------------------------------------------------------------------------------
-        return self.proc.name()
+        return self._name
 
+    @ignore_process_error
     #--------------------------------------------------------------------------------
     def status(self):                                                       # Process
     #--------------------------------------------------------------------------------
         return self.proc.status()
 
+    @ignore_process_error
     #--------------------------------------------------------------------------------
     def cmdline(self):                                                      # Process
     #--------------------------------------------------------------------------------
@@ -164,16 +177,18 @@ class Process:                                                              # Pr
             return False
 
 
+    @ignore_process_error
     #--------------------------------------------------------------------------------
     def current_status(self):                                               # Process
     #--------------------------------------------------------------------------------
         return f'{self.proc.name()} {self.proc.status()}'
+    
 
     #--------------------------------------------------------------------------------
     def suspend_errors(self):                                               # Process
     #--------------------------------------------------------------------------------
         if self._suspend_errors > 0:
-            return f'{self.proc.name()} failed to suspend {self._suspend_errors} times'
+            return f'{self._name} failed to suspend {self._suspend_errors} times'
         return ''
 
     #--------------------------------------------------------------------------------
@@ -183,7 +198,7 @@ class Process:                                                              # Pr
             if self.proc.is_running() and self.proc.status() != psutil.STATUS_ZOMBIE:
                 return True
             if raise_error:
-                raise SystemError(f'ERROR {self.app_name} is not running ({self.name()} is {self.status()})')
+                raise SystemError(f'ERROR {self.app_name} is not running ({self._name} is {self.status()})')
         except (psutil.NoSuchProcess, ProcessLookupError):
             if raise_error:
                 raise SystemError(f'ERROR {self.app_name} stopped unexpectedly (process disappeared), check the log')        
@@ -301,7 +316,7 @@ class runner:                                                               # ru
         return Control_file(ext=self.ext_OK, root=self.case)
 
     #--------------------------------------------------------------------------------
-    def start(self, check=None):                                            # runner
+    def start(self, check=None, remove_cmdexe=False):                        # runner
     #--------------------------------------------------------------------------------
         pid = None
         self.starttime = datetime.now()
@@ -322,6 +337,8 @@ class runner:                                                               # ru
                 self.children = self.parent.process().children(recursive=True)
                 if any([p.name().lower().startswith(self.name.lower()) for p in self.children]):
                     break
+        if remove_cmdexe:
+            self.children = [child for child in self.children if child.name != 'cmd.exe']
         self.children = [Process(c, app_name=self.name) for c in self.children]
         self.parent.assert_running()
         self.cmdline = '\'' + ' '.join(self.parent.cmdline()) + '\''
@@ -346,7 +363,7 @@ class runner:                                                               # ru
         return header
         
     #--------------------------------------------------------------------------------
-    def suspend(self, check=False, print=True, v=1):          # runner
+    def suspend(self, check=True, print=True, v=1):          # runner
     #--------------------------------------------------------------------------------
         self._print(f'suspending {self.name} ({self.parent.pid})', v=v)
         success = True
@@ -395,22 +412,26 @@ class runner:                                                               # ru
         self.parent = None
         self.children = []
 
+    #--------------------------------------------------------------------------------
+    def process_list(self):
+    #--------------------------------------------------------------------------------
+        return (self.parent and [self.parent] or []) + self.children
 
     #--------------------------------------------------------------------------------
     def print_process_status(self, v=1):
     #--------------------------------------------------------------------------------
-        self._print(', '.join([p.current_status() for p in [self.parent]+self.children]), v=v)
-
+        self._print(', '.join([p.current_status() for p in self.process_list() if p.current_status()]), v=v)
 
     #--------------------------------------------------------------------------------
     def print_suspend_errors(self, v=1):
     #--------------------------------------------------------------------------------
-        val = []
-        for p in [self.parent]+self.children:
-            stat = p.suspend_errors()
-            if stat:
-                val.append(stat)        
-        self._print(', '.join(val), v=v)
+        self._print(', '.join([p.suspend_errors() for p in self.process_list() if p.suspend_errors()]), v=v)
+        # val = []
+        # for p in [self.parent]+self.children:
+        #     stat = p.suspend_errors()
+        #     if stat:
+        #         val.append(stat)        
+        # self._print(', '.join(val), v=v)
 
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                 # runner
