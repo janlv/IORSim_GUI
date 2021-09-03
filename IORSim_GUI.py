@@ -373,12 +373,12 @@ class sim_worker(base_worker):
         #------------------------------------
             self.update_plot()
         #------------------------------------
-        def message(text=None):
+        def message(text=None, **kwargs):
         #------------------------------------
-            self.show_message(text)
+            text and self.show_message(text)
 
         self.sim = simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
-        self.days_box.setText(str(self.sim.get_time()))
+        self.days_box.setText(str(int(self.sim.get_time())))
         result, msg = self.sim.run()
         self.show_message(msg)
         return result

@@ -16,7 +16,7 @@ from shutil import copy
 from .utils import loop_until, list2str, safeopen, Timer, silentdelete
 
 #--------------------------------------------------------------------------------
-def permission_error(func):
+def catch_permission_error(func):
 #--------------------------------------------------------------------------------
     def inner(*args, **kwargs):
         try:
@@ -52,20 +52,20 @@ class Control_file:
     #--------------------------------------------------------------------------------
         print(self._name)
         
-    @permission_error
+    @catch_permission_error
     #--------------------------------------------------------------------------------
     def create_empty(self, delete=False):
     #--------------------------------------------------------------------------------
         self._name.touch()
     
-    @permission_error
+    @catch_permission_error
     #--------------------------------------------------------------------------------
     def create_from_string(self, string):    
     #--------------------------------------------------------------------------------
         with open(self._name,'w') as f:
             f.write(string)
 
-    @permission_error
+    @catch_permission_error
     #--------------------------------------------------------------------------------
     def copy(self, src, delete=False):
     #--------------------------------------------------------------------------------
@@ -74,14 +74,14 @@ class Control_file:
             silentdelete(src)
             #src.unlink(missing_ok=True)
         
-    @permission_error
+    @catch_permission_error
     #--------------------------------------------------------------------------------
     def append(self, _ascii):
     #--------------------------------------------------------------------------------
         with open(self._name, 'a') as f:
             f.write(f'{_ascii}\n')
 
-    @permission_error
+    @catch_permission_error
     #--------------------------------------------------------------------------------
     def delete(self):
     #--------------------------------------------------------------------------------
@@ -101,11 +101,11 @@ class Control_file:
             return None
 
 #====================================================================================
-class Process:                                                               # process
+class Process:                                                              # Process
 #====================================================================================
     
     #--------------------------------------------------------------------------------
-    def __init__(self, proc, app_name=None):
+    def __init__(self, proc, app_name=None):                                # Process
     #--------------------------------------------------------------------------------
         self.proc = proc
         self.pid = proc.pid
@@ -114,36 +114,36 @@ class Process:                                                               # p
         #self.name = proc.name()
 
     #--------------------------------------------------------------------------------
-    def process(self):
+    def process(self):                                                      # Process
     #--------------------------------------------------------------------------------
         return self.proc
 
     #--------------------------------------------------------------------------------
-    def name(self):
+    def name(self):                                                         # Process
     #--------------------------------------------------------------------------------
         return self.proc.name()
 
     #--------------------------------------------------------------------------------
-    def status(self):
+    def status(self):                                                       # Process
     #--------------------------------------------------------------------------------
         return self.proc.status()
 
     #--------------------------------------------------------------------------------
-    def cmdline(self):
+    def cmdline(self):                                                      # Process
     #--------------------------------------------------------------------------------
         return self.proc.cmdline()
 
     #--------------------------------------------------------------------------------
-    def kill(self):
+    def kill(self):                                                         # Process
     #--------------------------------------------------------------------------------
         try:
             self.proc.kill()
             return True
-        except (psutil.NoSuchProcess, ProcessLookupError):
+        except (psutil.AccessDenied, psutil.NoSuchProcess, ProcessLookupError):
             return False
 
     #--------------------------------------------------------------------------------
-    def suspend(self):
+    def suspend(self):                                                      # Process
     #--------------------------------------------------------------------------------
         try:
             self.proc.suspend()
@@ -151,27 +151,33 @@ class Process:                                                               # p
         except psutil.AccessDenied:
             self._suspend_errors += 1
             return False
+        except (psutil.NoSuchProcess, ProcessLookupError):
+            return False
 
     #--------------------------------------------------------------------------------
-    def resume(self):
+    def resume(self):                                                       # Process
     #--------------------------------------------------------------------------------
-        self.proc.resume()
-        #print(f'{self.name()} resumed')
+        try:
+            self.proc.resume()
+            return True
+        except (psutil.AccessDenied, psutil.NoSuchProcess, ProcessLookupError):
+            return False
+
 
     #--------------------------------------------------------------------------------
-    def current_status(self):
+    def current_status(self):                                               # Process
     #--------------------------------------------------------------------------------
         return f'{self.proc.name()} {self.proc.status()}'
 
     #--------------------------------------------------------------------------------
-    def suspend_errors(self):
+    def suspend_errors(self):                                               # Process
     #--------------------------------------------------------------------------------
         if self._suspend_errors > 0:
             return f'{self.proc.name()} failed to suspend {self._suspend_errors} times'
         return ''
 
     #--------------------------------------------------------------------------------
-    def is_running(self, raise_error=False):                                                    # runner
+    def is_running(self, raise_error=False):                                # Process
     #--------------------------------------------------------------------------------
         try:
             if self.proc.is_running() and self.proc.status() != psutil.STATUS_ZOMBIE:
@@ -190,7 +196,7 @@ class Process:                                                               # p
                 return True
             
     #--------------------------------------------------------------------------------
-    def is_not_running(self):                               # runner
+    def is_not_running(self):                                               # Process
     #--------------------------------------------------------------------------------
         try:
             if not self.proc or not self.proc.is_running() or self.status() == psutil.STATUS_ZOMBIE:
@@ -199,7 +205,7 @@ class Process:                                                               # p
             return True
             
     #--------------------------------------------------------------------------------
-    def is_sleeping(self):                                            # runner
+    def is_sleeping(self):                                                  # Process
     #--------------------------------------------------------------------------------
         try:
             if self.status() in (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED): 
@@ -210,7 +216,7 @@ class Process:                                                               # p
             raise SystemError(f'ERROR Process {self.proc} disappeared while trying to sleep')
                 
     #--------------------------------------------------------------------------------
-    def assert_running(self):                                                # runner
+    def assert_running(self):                                                # Process
     #--------------------------------------------------------------------------------
         return self.is_running(raise_error=True)
 
@@ -374,25 +380,37 @@ class runner:                                                               # ru
             self.print_process_status()
         self.timer and self.timer.start()
 
+
     #--------------------------------------------------------------------------------
     def kill(self, check=True, v=1):                                                     # runner
     #--------------------------------------------------------------------------------
         # terminate parent before children
+        self._print('\n', tag='')
         procs = (self.parent and [self.parent] or []) + self.children
         for p in procs:
+            self._print(f'killing {p.name()}')
             p.kill()
             if check:
                 self.wait_for(p.is_not_running, loop_func=lambda:None)
+        self.parent = None
+        self.children = []
+
 
     #--------------------------------------------------------------------------------
     def print_process_status(self, v=1):
     #--------------------------------------------------------------------------------
         self._print(', '.join([p.current_status() for p in [self.parent]+self.children]), v=v)
 
+
     #--------------------------------------------------------------------------------
     def print_suspend_errors(self, v=1):
     #--------------------------------------------------------------------------------
-        self._print(', '.join([p.suspend_errors() for p in [self.parent]+self.children]), v=v)
+        val = []
+        for p in [self.parent]+self.children:
+            stat = p.suspend_errors()
+            if stat:
+                val.append(stat)        
+        self._print(', '.join(val), v=v)
 
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                 # runner
@@ -413,7 +431,7 @@ class runner:                                                               # ru
                 c = int(self.n)
                 if c == 0:
                     c = self.time_and_step()[1]
-            self._print('', tag='')
+            self._print(' ', tag='')
             raise SystemError('INFO Run stopped after ' + str(c) + ' ' + step)    
 
     #--------------------------------------------------------------------------------
@@ -469,7 +487,7 @@ class runner:                                                               # ru
         self._print(f'calling wait_for( {func.__qualname__}({passed_args}), limit={limit}, pause={pause} )... ', v=v, end='')
         n = loop_until(func, *args, **kwargs, error=error, pause=pause, limit=limit, loop_func=loop_func)
         if n<0:
-            self._print('', tag='')    
+            self._print(' ', tag='')    
             return False    
         self._print(str(n) + ' loops', v=3, tag='')
         if callable(log):
@@ -484,14 +502,17 @@ class runner:                                                               # ru
         self._print(msg, v=v)
         success = self.wait_for(self.parent.is_not_running, error=error, pause=pause, limit=limit, loop_func=loop_func)
         if not success:
-             self._print('process did not finish within reasonable time and was killed', v=v)
-             self.kill()
+            self._print('process did not finish within reasonable time and was killed', v=v)
+            self.kill()
+        else:
+            self.parent = None
+            self.children = []
 
 
     #--------------------------------------------------------------------------------
     def quit(self, v=1, loop_func=lambda:None):
     #--------------------------------------------------------------------------------
-        #self._print('quitting process', v=v)
+        self._print(f'\nquitting', v=v)
         self.resume()
         self.wait_for_process_to_finish(msg='waiting for process to quit', limit=10000, pause=0.01, loop_func=loop_func)
         self.log.close()
@@ -526,7 +547,7 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def _print(self, txt, v=1, tag=None, **kwargs):                         # runner
     #--------------------------------------------------------------------------------
-        if v <= self.verbose:
+        if txt and v <= self.verbose:
             if tag==None:
                 tag = self.name + ': '
             print(tag + txt, file=self.runlog, flush=True, **kwargs)

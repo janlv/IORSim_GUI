@@ -163,14 +163,14 @@ class ecl_backward(eclipse):                                           # ecl_bac
     #--------------------------------------------------------------------------------
         def loop_func():
             self.assert_running_and_stop_if_canceled()
-            if self.update:
-                self.t = self.time_and_step()[0]
-                self.update.status(run=self)
-                restart or self.update.progress(value=self.t)
-                self.update.plot()
+            #if self.update:
+            self.t = self.time_and_step()[0]
+            self.update.status(run=self)
+            restart or self.update.progress(value=self.t)
+            self.update.plot()
 
         # Start Eclipse in backward mode
-        self.update and self.update.status(value=f'Starting {self.name}...')
+        self.update.status(value=f'Starting {self.name}...')
         self.interface_file('all').delete()
         # Need to create all interface files in advance to avoid Eclipse termination
         [self.interface_file(i).create_empty() for i in range(self.n, self.N+self.n)] 
@@ -178,7 +178,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         super().start()  
         self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
-        self.update and self.update.status(value=f'{self.name} running...')
+        self.update.status(value=f'{self.name} running...')
         # Check if restart-file (UNRST) is flushed   
         nblocks = 1 + len(self.tsteps) # 1 for 0'th SEQNUM
         if sum(self.tsteps) > 10: 
@@ -214,7 +214,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
             self.rft_start_size = self.rft.stat().st_size
         ### run Eclipse
         self.interface_file(self.n).copy(satnum_file, delete=False)
-        #self._print(self.interface_file(self.n).name())
         self.OK_file().create_empty()
         self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
@@ -281,10 +280,10 @@ class ecl_backward(eclipse):                                           # ecl_bac
     def quit(self):                                                    # ecl_backward
     #--------------------------------------------------------------------------------
         #self._print(f'appending END to {self.interface_file(self.n).name()}')
+        self.print_suspend_errors()
         self.interface_file(self.n).create_from_string('END')
         self.OK_file().create_empty()
-        super().quit(loop_func=lambda:None)
-        self.print_suspend_errors()
+        super().quit()
 
 
 
@@ -674,7 +673,7 @@ class simulation:
             time_ecl = sum(self.tsteps) + self.restart_days
             if time < time_ecl:
                 time = time_ecl + 1
-                self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(tsteps)}) and RESTART ({restart_days}) in Eclipse input')
+                self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
                 #print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
             self.T = time 
             # We assume 1 day timesteps, and set total steps N larger than what is needed.
