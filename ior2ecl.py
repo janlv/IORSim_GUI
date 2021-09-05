@@ -159,15 +159,28 @@ class ecl_backward(eclipse):                                           # ecl_bac
                     self.update.message(text='WARNING Unable to suspend child-processes, only the parent process is suspended. This might lead to a more unstable simulation.')
 
     #--------------------------------------------------------------------------------
+    def update_function(self, progress=True):                       # ecl_backward
+    #--------------------------------------------------------------------------------
+        self.assert_running_and_stop_if_canceled()
+        #if self.update:
+        self.t = self.time_and_step()[0]
+        self.update.status(run=self)
+        progress and self.update.progress(value=self.t)
+        self.update.plot()
+
+
+    #--------------------------------------------------------------------------------
     def start(self, restart=False):                       # ecl_backward
     #--------------------------------------------------------------------------------
         def loop_func():
-            self.assert_running_and_stop_if_canceled()
-            #if self.update:
-            self.t = self.time_and_step()[0]
-            self.update.status(run=self)
-            restart or self.update.progress(value=self.t)
-            self.update.plot()
+            self.update_function(progress=not restart)
+        # def loop_func():
+        #     self.assert_running_and_stop_if_canceled()
+        #     #if self.update:
+        #     self.t = self.time_and_step()[0]
+        #     self.update.status(run=self)
+        #     restart or self.update.progress(value=self.t)
+        #     self.update.plot()
 
         # Start Eclipse in backward mode
         self.update.status(value=f'Starting {self.name}...')
@@ -700,8 +713,8 @@ class simulation:
                     self.ior = ior_forward(exe=iorexe, **kwargs)
             self.runs = [run for run in (self.ecl, self.ior) if run]
         self.print2log(self.info_header())
-        if self.schedule:
-            self.print2log(self.schedule.info())            
+        #if self.schedule:
+        #    self.print2log(self.schedule.info())            
 
 
     #-----------------------------------------------------------------------
@@ -785,6 +798,7 @@ class simulation:
             msg = traceback.format_exc()
         finally:
             # Kill possible remaining processes
+            self.print2log('')
             [run.kill_and_clean() for run in self.runs]
             self.print2log('\n======  ' + msg + '  ======')
             self.current_run = None
