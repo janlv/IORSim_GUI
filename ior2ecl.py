@@ -148,15 +148,15 @@ class ecl_backward(eclipse):                                           # ecl_bac
             raise SystemError('WARNING The current case cannot be used in backward-mode: '+
                               'Eclipse input is missing the READDATA keyword.')
 
-    #--------------------------------------------------------------------------------
-    def suspend(self, raise_warning=False, correct=False):               # ecl_backward
-    #--------------------------------------------------------------------------------
-        if not super().suspend():
-            if self.stop_children:
-                if correct:
-                    self.stop_children = False
-                if raise_warning:
-                    self.update.message(text='WARNING Unable to suspend child-processes, only the parent process is suspended. This might lead to a more unstable simulation.')
+    # #--------------------------------------------------------------------------------
+    # def suspend(self, raise_warning=False, correct=False):               # ecl_backward
+    # #--------------------------------------------------------------------------------
+    #     if not super().suspend():
+    #         if self.stop_children:
+    #             if correct:
+    #                 self.stop_children = False
+    #             if raise_warning:
+    #                 self.update.message(text='WARNING Unable to suspend child-processes, only the parent process is suspended. This might lead to a more unstable simulation.')
 
     #--------------------------------------------------------------------------------
     def update_function(self, progress=True):                       # ecl_backward
@@ -174,13 +174,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
     #--------------------------------------------------------------------------------
         def loop_func():
             self.update_function(progress=not restart)
-        # def loop_func():
-        #     self.assert_running_and_stop_if_canceled()
-        #     #if self.update:
-        #     self.t = self.time_and_step()[0]
-        #     self.update.status(run=self)
-        #     restart or self.update.progress(value=self.t)
-        #     self.update.plot()
 
         # Start Eclipse in backward mode
         self.update.status(value=f'Starting {self.name}...')

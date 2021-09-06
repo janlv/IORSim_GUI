@@ -371,11 +371,11 @@ class runner:                                                               # ru
         # Suspend children
         if self.stop_children:
             success = all([p.suspend() for p in self.children])
-            if check:
+            if check and success:
                 [self.wait_for(p.is_sleeping) for p in self.children]
         # Suspend parent
-        self.parent.suspend()
-        if check:
+        ok = self.parent.suspend()
+        if check and ok:
             self.wait_for(self.parent.is_sleeping)
         if print:
             self.print_process_status()
