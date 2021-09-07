@@ -1,19 +1,19 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 # importing libraries 
 import os
-from PyQt5.QtWidgets import QStatusBar, QDialog, QTextEdit, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-from PyQt5.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
-from PyQt5.QtCore import QObject, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
-#from PySide2.QtWidgets import QDialogButtonBox, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-#from PySide2.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QColor 
-#from PySide2.QtCore import QObject, Signal, Slot, QRunnable, QRect, QThreadPool, Qt, QRegExp
+#from PySide6.QtWidgets import QStatusBar, QDialog, QTextEdit, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+#from PySide6.QtGui import  QAction, QActionGroup, QColor, QColorConstants, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
+#from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression
+#from PyQt5.QtWidgets import QStatusBar, QDialog, QTextEdit, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+#from PyQt5.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
+#from PyQt5.QtCore import QObject, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
+from PySide2.QtWidgets import QDialogButtonBox, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+from PySide2.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QColor 
+from PySide2.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegExp
 import sys, traceback
-#import os
-#import psutil
 from time import sleep
-#from datetime import datetime
 from pathlib import Path
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
@@ -637,7 +637,8 @@ class Settings(QDialog):
 
         ### OK / Cancel buttons
         n += 1
-        yes_no = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        #yes_no = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        yes_no = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         self.yes_no_btns = QDialogButtonBox(yes_no)
         grid.addWidget(self.yes_no_btns, n, 0, 1, 3)
         self.yes_no_btns.accepted.connect(self.on_OK_click)
@@ -669,7 +670,8 @@ class Settings(QDialog):
         self.set_default(var)
         button = False
         if open_func:
-            button = QDialogButtonBox(QDialogButtonBox.Open)
+            #button = QDialogButtonBox(QDialogButtonBox.Open)
+            button = QDialogButtonBox(QDialogButtonBox.StandardButton.Open)
             button.clicked.connect(open_func)
         if button:
             return label, line, button
@@ -750,7 +752,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         super(main_window, self).__init__(*args, **kwargs)
         self.setWindowTitle('IORSim') 
-        self.setGeometry(300, 100, 1100, 800)
+        self.setGeometry(300, 100, 1200, 800)
         self.setMinimumHeight(600)
         self.setMinimumWidth(800)
         #self.setContentsMargins(2,2,2,2)
@@ -860,7 +862,7 @@ class main_window(QMainWindow):                                    # main_window
         ### menu
         menu = self.menuBar()
         #self.setStyleSheet('QMainWindow::menuBar { padding: 10px; }')
-        file_menu = menu.addMenu('&Case')
+        file_menu = menu.addMenu('&File')
         file_menu.addAction(self.add_case_act)
         file_menu.addAction(self.dupl_case_act) 
         file_menu.addAction(self.rename_case_act)
@@ -899,12 +901,10 @@ class main_window(QMainWindow):                                    # main_window
         self.toolbar = QToolBar('Toolbar')
         self.toolbar.setStyleSheet('QToolBar{spacing:15px; padding:5px;}')
         self.addToolBar(self.toolbar)
-        self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        #self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.toolbar.setStyleSheet('QToolButton { padding: 0px 0px 0px 0px}')
-        #self.toolbar.addSeparator()
         self.create_toolbar_widgets()
-        #self.toolbar.addAction(self.start_act)
-        #self.toolbar.addAction(self.stop_act)
 
     #-----------------------------------------------------------------------
     def create_toolbar_widgets(self):                           # main_window
@@ -957,7 +957,7 @@ class main_window(QMainWindow):                                    # main_window
         self.mode_cb.currentIndexChanged[int].connect(self.on_mode_select)
         # case
         self.case_cb = widgets['case']
-        self.case_cb.setStyleSheet('QComboBox {min-width: 120px;}')
+        self.case_cb.setStyleSheet('QComboBox {min-width: 200px;}')
         self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
         # steps
         self.days_box = widgets['days']
@@ -967,7 +967,7 @@ class main_window(QMainWindow):                                    # main_window
         # reference
         self.ref_case = widgets['compare']
         self.ref_case.setObjectName('compare')
-        self.ref_case.setStyleSheet('QComboBox {min-width: 120px;}')
+        self.ref_case.setStyleSheet('QComboBox {min-width: 200px;}')
         self.ref_case.currentIndexChanged[int].connect(self.on_compare_select)
         self.ref_case.setProperty('lastitem',0)    
 
@@ -1751,7 +1751,7 @@ class main_window(QMainWindow):                                    # main_window
                     ecl_data.wells = [s for s in get_substrings(block.data()[0], 8)]
                 elif block.key() == 'MEASRMNT':
                     data = block.data()[0].lower()
-                    width = len(data)/len(varnames)
+                    width = len(data)/max(len(varnames), 1)
                     measure = get_substrings(data, width)
                 elif block.key() == 'UNITS':
                     ecl_data.units = get_substrings(block.data()[0], 8)                
@@ -2090,14 +2090,14 @@ class main_window(QMainWindow):                                    # main_window
         # Avoid re-opening file after it is saved
         if str(file) == self.editor.objectName():
             return
-        #print('view_file')
-        self.editor.setObjectName('')
+        self.editor.setObjectName(str(file))
+        #self.editor.setObjectName('')
         self.highlight = None
         self.search_field.setPlaceholderText('Search text')
         text = ''
         if file and Path(file).is_file():
             text = open(file).read()
-            self.editor.setObjectName(str(file))
+            #self.editor.setObjectName(str(file))
         self.editor.setPlainText(text)
         vscroll = self.vscroll.get(str(file)) or 0
         self.editor.verticalScrollBar().setValue(vscroll)
@@ -2118,7 +2118,7 @@ class main_window(QMainWindow):                                    # main_window
         if file and Path(file).is_file():
             text = open(file).read()
             self.editor.setObjectName(str(file))
-        self.editor.setPlainText(text)
+            self.editor.setPlainText(text)
         vscroll = self.vscroll.get(str(file)) or 0
         self.editor.verticalScrollBar().setValue(vscroll)
 
@@ -2764,6 +2764,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         i = self.input
         #if i['nsteps']==0:
+        if self.case_cb.currentIndex() < 0:
+            show_message(self, 'warning', text='You need to choose a case from the case drop-down list.')
+            return False
         if i['days']==0:
             show_message(self, 'warning', text='Total time interval is missing.')
             return False
@@ -2905,6 +2908,7 @@ class main_window(QMainWindow):                                    # main_window
 ###
 class Highlighter(QSyntaxHighlighter):
     def __init__(self, parent=None, comment='#', color=Qt.gray, keywords=[]):
+#    def __init__(self, parent=None, comment='#', color=QColorConstants.Gray, keywords=[]):
         super(Highlighter, self).__init__(parent)
 
         self.highlightingRules = []
@@ -2923,22 +2927,23 @@ class Highlighter(QSyntaxHighlighter):
             #keywordPatterns = ["\\b*TEMPERATURE\\b", "\\b*INTEGRATION\\b", "\\b*MODELTYPE\\b"]
             
             self.highlightingRules.extend( [(QRegExp(pattern, cs=case_sens), keywordFormat) for pattern in keywordPatterns] )
+            #self.highlightingRules.extend( [(QRegularExpression(pattern, cs=case_sens), keywordFormat) for pattern in keywordPatterns] )
         singleLineCommentFormat = QTextCharFormat()
         singleLineCommentFormat.setForeground(color)
-        #singleLineCommentFormat.setFontItalic(True)
         self.highlightingRules.append((QRegExp(comment+'[^\n]*'), singleLineCommentFormat))
-        #print(self.highlightingRules)
+        #self.highlightingRules.append((QRegularExpression(comment+'[^\n]*'), singleLineCommentFormat))
 
     def highlightBlock(self, text):
         for pattern, format in self.highlightingRules:
             expression = QRegExp(pattern)
+            #expression = QRegularExpression(pattern)
             index = expression.indexIn(text)
             while index >= 0:
                 length = expression.matchedLength()
                 self.setFormat(index, length, format)
                 index = expression.indexIn(text, index + length)
 
-                
+
                 
 ###################################
 #                                 #

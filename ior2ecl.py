@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 #import atexit
@@ -19,7 +19,7 @@ import traceback
 #from numpy import ceil
 from re import search, compile
 
-from IORlib.utils import print_error, is_file_ignore_suffix_case, number_of_blocks, print_file, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import get_python_version, print_error, is_file_ignore_suffix_case, number_of_blocks, print_file, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, unfmt_file, fmt_file, Section
 
@@ -652,6 +652,7 @@ class simulation:
         if root and not to_screen:
             self.runlog = safeopen(Path(root).parent/(self.name+'.log'), 'w')
         self.print2log = lambda txt: print(txt, file=self.runlog, flush=True)
+        self.print2log(get_python_version())
         self.current_run = None
         self.runs = runs
         self.run_sim = None

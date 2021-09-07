@@ -1,18 +1,13 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 from datetime import datetime
-from subprocess import Popen, PIPE, STDOUT, call
-#import atexit
-#import signal
-#import os
-#import sys
+from subprocess import Popen, PIPE, STDOUT
 import psutil
 from shutil import which
 from time import sleep
 from pathlib import Path #, PurePath
 from shutil import copy
-#from struct import unpack
 from .utils import loop_until, list2str, safeopen, Timer, silentdelete
 
 #--------------------------------------------------------------------------------
@@ -134,17 +129,22 @@ class Process:                                                              # Pr
     #--------------------------------------------------------------------------------
         return self._name
 
+    #--------------------------------------------------------------------------------
+    def name_pid(self):                                                     # Process
+    #--------------------------------------------------------------------------------
+        return f"\'{self._name}\' ({self.pid})"
+
     # @ignore_process_error
     # #--------------------------------------------------------------------------------
     # def status(self):                                                       # Process
     # #--------------------------------------------------------------------------------
     #     return self.proc.status()
 
-    @ignore_process_error
-    #--------------------------------------------------------------------------------
-    def cmdline(self):                                                      # Process
-    #--------------------------------------------------------------------------------
-        return self.proc.cmdline()
+    # @ignore_process_error
+    # #--------------------------------------------------------------------------------
+    # def cmdline(self):                                                      # Process
+    # #--------------------------------------------------------------------------------
+    #     return self.proc.cmdline()
 
     # #--------------------------------------------------------------------------------
     # def kill(self):                                                         # Process
@@ -321,10 +321,10 @@ class runner:                                                               # ru
         pid = None
         self.starttime = datetime.now()
         if self.pipe:
-            self._print(f"starting {self.name} in PIPE-mode", v=1)
+            self._print(f"Starting in PIPE-mode", v=1)
             P = Popen(self.cmd, stdin=PIPE, stdout=self.log, stderr=STDOUT)
         else:
-            self._print(f'starting {self.name}', v=1)
+            self._print(f"Starting \'{' '.join(self.cmd)}\'", v=1)
             P = Popen(self.cmd, stdout=self.log, stderr=STDOUT)      
         self.P = P
         pid = P.pid
@@ -341,9 +341,10 @@ class runner:                                                               # ru
             self.children = [child for child in self.children if child.name != 'cmd.exe']
         self.children = [Process(c, app_name=self.name) for c in self.children]
         self.parent.assert_running()
-        self.cmdline = '\'' + ' '.join(self.parent.cmdline()) + '\''
-        self._print(' ')
-        self._print(self.process_info(), tag='')
+        #self.cmdline = '\'' + ' '.join(self.parent.cmdline()) + '\''
+        self._print(f'Parent process: {self.parent.name_pid()}')
+        self._print(f'Child process{len(self.children)>1 and "es" or ""}: {"".join([p.name_pid() for p in self.children])}')
+        #self._print(self.process_info(), tag='')
         
         
     #--------------------------------------------------------------------------------
@@ -351,41 +352,39 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
         return self.log.name
     
-    #--------------------------------------------------------------------------------
-    def process_info(self, indent=2):                                        # runner
-    #--------------------------------------------------------------------------------
-        ind = ' ' * indent
-        header = ind + 'Started {:s} ({:d})\n'.format(self.cmdline, self.parent.pid)
-        if self.children:
-            ch_names = [p.name() for p in self.children]
-            ch_pids = [p.pid for p in self.children]
-            header += ind + 'Child processes are {:s} ({:s})\n'.format(list2str(ch_names, sep='\''), list2str(ch_pids))
-        #header += ind + 'Log-file is {:s}'.format(self.log.name)
-        return header
+    # #--------------------------------------------------------------------------------
+    # def process_info(self, indent=0):                                        # runner
+    # #--------------------------------------------------------------------------------
+    #     ind = ' ' * indent
+    #     header = ind + 'Started {:s} ({:d})\n'.format(self.cmdline, self.parent.pid)
+    #     if self.children:
+    #         ch_names = [p.name() for p in self.children]
+    #         ch_pids = [p.pid for p in self.children]
+    #         header += ind + 'Child processes are {:s} ({:s})\n'.format(list2str(ch_names, sep='\''), list2str(ch_pids))
+    #     #header += ind + 'Log-file is {:s}'.format(self.log.name)
+    #     return header
         
     #--------------------------------------------------------------------------------
-    def suspend(self, check=True, print=True, v=1):          # runner
+    def suspend(self, check=False, status=True, v=1):          # runner
     #--------------------------------------------------------------------------------
-        self._print(f'suspending {self.name} ({self.parent.pid})', v=v)
-        success = True
+        self._print(f'Suspending {self.name} ({self.parent.pid})', v=v)
         # Suspend children
         if self.stop_children:
-            success = all([p.suspend() for p in self.children])
-            if check and success:
-                [self.wait_for(p.is_sleeping) for p in self.children]
+            [p.suspend() for p in self.children]
+            if check:
+                [self.wait_for(p.is_sleeping, limit=100) for p in self.children]
         # Suspend parent
-        ok = self.parent.suspend()
-        if check and ok:
-            self.wait_for(self.parent.is_sleeping)
-        if print:
+        self.parent.suspend()
+        if check:
+            self.wait_for(self.parent.is_sleeping, limit=100)
+        if status:
             self.print_process_status()
         self.timer and self.timer.stop()
-        return success
 
     #--------------------------------------------------------------------------------
-    def resume(self, check=False, print=True, v=1):                       # runner
+    def resume(self, check=False, status=True, v=1):                       # runner
     #--------------------------------------------------------------------------------
-        self._print(f'resuming {self.name} ({self.parent.pid})', v=v)
+        self._print(f'Resuming {self.name} ({self.parent.pid})', v=v)
         # Resume parent
         self.parent.resume()
         if check:
@@ -394,7 +393,7 @@ class runner:                                                               # ru
         [p.resume() for p in self.children]
         if check:
             [self.wait_for(p.is_running) for p in self.children]
-        if print:
+        if status:
             self.print_process_status()
         self.timer and self.timer.start()
 
@@ -509,14 +508,15 @@ class runner:                                                               # ru
             # Default checks during loop
             loop_func = self.assert_running_and_stop_if_canceled
         passed_args = ','.join([f'{k}={v}' for k,v in kwargs.items()])
-        self._print(f'calling wait_for( {func.__qualname__}({passed_args}), limit={limit}, pause={pause} )... ', v=v, end='')
+        self._print(f'Calling wait_for( {func.__qualname__}({passed_args}), limit={limit}, pause={pause} )... ', v=v, end='')
         #n = loop_until(func, *args, **kwargs, error=error, pause=pause, limit=limit, loop_func=loop_func)
         n = loop_until(func, *args, pause=pause, limit=limit, loop_func=loop_func, **kwargs)
         if n<0:
             if raise_error:
                 raise SystemError(error or f'wait_for({func.__qualname__}) reached loop-limit {limit}')
+            self._print('loop limit reached!', tag='', v=v)
             return False    
-        self._print(str(n) + ' loops', v=3, tag='')
+        self._print(str(n) + ' loops', tag='', v=v)
         if callable(log):
             self._print(log())
         return True
