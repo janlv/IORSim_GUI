@@ -1056,11 +1056,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     #----------------------------------------
         if not to_screen and value:
             value = value.replace('INFO','').strip()
-            nl = ''
-            #nl = '\n'
-            if x.get('newline'):
-                nl += '\n'
-            print('\r   '+value+60*' ', end=nl)
+            print('\r   '+value+60*' ', end=x.get('newline') and '\n' or '')
 
     prog = Progress(format='40#')
     #----------------------------------------
