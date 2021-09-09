@@ -64,9 +64,9 @@ class eclipse(runner):                                                      # ec
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                          # eclipse
     #--------------------------------------------------------------------------------
-        silentdelete( [self.unrst, self.rft] +
-                      [str(self.case)+ext for ext in ('.SMSPEC','.UNSMRY','.RTELOG','.RTEMSG','_ECLIPSE.UNRST')] )
-    
+        silentdelete( [self.unrst, self.rft] )
+        silentdelete( [str(self.case)+ext for ext in ('.SMSPEC','.UNSMRY','.RTELOG','.RTEMSG','_ECLIPSE.UNRST')] )
+        delete_files_matching( [str(self.case)+fil for fil in ('*.session*', '*.dbprtx.lock', '*.dbprtx.lock-journal')] )
 
     #--------------------------------------------------------------------------------
     def check_input(self):                                                  # eclipse
@@ -159,21 +159,22 @@ class ecl_backward(eclipse):                                           # ecl_bac
     #                 self.update.message(text='WARNING Unable to suspend child-processes, only the parent process is suspended. This might lead to a more unstable simulation.')
 
     #--------------------------------------------------------------------------------
-    def update_function(self, progress=True):                       # ecl_backward
+    def update_function(self, progress=True, plot=False):              # ecl_backward
     #--------------------------------------------------------------------------------
+        #print(f'update_function(progress={progress}, plot={plot}')
         self.assert_running_and_stop_if_canceled()
         #if self.update:
         self.t = self.time_and_step()[0]
         self.update.status(run=self)
         progress and self.update.progress(value=self.t)
-        self.update.plot()
+        plot and self.update.plot()
 
 
     #--------------------------------------------------------------------------------
-    def start(self, restart=False):                       # ecl_backward
+    def start(self, restart=False):                                    # ecl_backward
     #--------------------------------------------------------------------------------
         def loop_func():
-            self.update_function(progress=not restart)
+            self.update_function(progress=not restart, plot=True)
 
         # Start Eclipse in backward mode
         self.update.status(value=f'Starting {self.name}...')
@@ -362,8 +363,8 @@ class iorsim(runner):                                                        # i
     def delete_output_files(self):                                           # iorsim
     #--------------------------------------------------------------------------------
         case = str(self.case)
-        delete_files_matching(case+'*.trcconc')
-        delete_files_matching(case+'*.trcprd')
+        delete_files_matching(case+'*.trcconc', raise_error=True)
+        delete_files_matching(case+'*.trcprd', raise_error=True)
         silentdelete(self.funrst)
 
 
