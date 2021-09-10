@@ -1742,26 +1742,28 @@ class main_window(QMainWindow):                                    # main_window
         smspec = unfmt_file(smspec)
 
         ### read variable specifications
-        ecl_data = namedtuple('ecl_data','time fluid wells yaxis units')
-        varnames = None
-        try:
-            for block in smspec.blocks():
-                if block.key() == 'KEYWORDS':
-                    varnames = get_substrings(block.data()[0], 8)
-                elif block.key() == 'WGNAMES':
-                    ecl_data.wells = [s for s in get_substrings(block.data()[0], 8)]
-                elif block.key() == 'MEASRMNT':
-                    data = block.data()[0].lower()
-                    width = len(data)/max(len(varnames), 1)
-                    measure = get_substrings(data, width)
-                elif block.key() == 'UNITS':
-                    ecl_data.units = get_substrings(block.data()[0], 8)                
-        except (SystemError,TypeError) as e:
-            print(e)
+        ecl_data = namedtuple('ecl_data','time fluid wells yaxis units indx', defaults=(None,))
+        varnames = measure = None
+        #try:
+        for block in smspec.blocks():
+            if block.key() == 'KEYWORDS':
+                varnames = get_substrings(block.data()[0], 8)
+            elif block.key() == 'WGNAMES':
+                ecl_data.wells = [s for s in get_substrings(block.data()[0], 8)]
+            elif block.key() == 'MEASRMNT':
+                data = block.data()[0].lower()
+                width = len(data)/max(len(varnames), 1)
+                measure = get_substrings(data, width)
+            elif block.key() == 'UNITS':
+                ecl_data.units = get_substrings(block.data()[0], 8)                
+        #except (SystemError,TypeError) as e:
+        #    print(e)
+        #    self.unsmry = None # so that we call this function again
+        #    return
+        #if not varnames:
+        if any([not v for v in (varnames, ecl_data.wells, measure, ecl_data.units)]):
             self.unsmry = None # so that we call this function again
-            return
-        if not varnames:
-            self.unsmry = None # so that we call this function again
+            print('return in ecl_init_data()')
             return
         ecl_data.time = varnames.index('TIME')
         fluid_type = {'O':'Oil', 'W':'Water', 'G':'Gas'}
@@ -1769,7 +1771,7 @@ class main_window(QMainWindow):                                    # main_window
         yaxis_type = ['prod','rate']
         ecl_data.yaxis = {var:return_matching_string(yaxis_type, measure[i]) for i,var in enumerate(varnames)}
         ecl_data.yaxis['WTPCHEA'] = 'rate'
-        ecl_data.index = {var:[] for var in varlist}
+        ecl_data.indx = {var:[] for var in varlist}
 
         ### prepare data dict 
         ecl = {}
@@ -1788,14 +1790,14 @@ class main_window(QMainWindow):                                    # main_window
                 well = ecl_data.wells[i]
                 if var==name and not ':+:' in well:
                     match = True
-                    ecl_data.index[var].append(i)
+                    ecl_data.indx[var].append(i)
                     y = ecl_data.yaxis[var]
                     f = ecl_data.fluid[var]
                     ecl[well][y][f+' var'] = [var]
                     if 'Temp' in f:
                         ecl[well]['prod'][f] = ecl[well]['rate'][f] 
             if not match:
-                del ecl_data.index[var]
+                del ecl_data.indx[var]
                 #print('WARNING! Variable {} not found in {}'.format(var, self.unsmry.name()))
         self.ecl_data = ecl_data
         self.data['ecl'] = ecl
@@ -1823,7 +1825,7 @@ class main_window(QMainWindow):                                    # main_window
                 if time==0.0:
                     continue
                 self.data['ecl']['days'].append( time )
-                for var,index in self.ecl_data.index.items():
+                for var,index in self.ecl_data.indx.items():
                     yaxis = self.ecl_data.yaxis[var]
                     fluid = self.ecl_data.fluid[var]
                     wells = self.ecl_data.wells
