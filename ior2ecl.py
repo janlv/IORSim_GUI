@@ -169,7 +169,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
         progress and self.update.progress(value=self.t)
         plot and self.update.plot()
 
-
     #--------------------------------------------------------------------------------
     def start(self, restart=False):                                    # ecl_backward
     #--------------------------------------------------------------------------------
@@ -907,16 +906,15 @@ class simulation:
     #-----------------------------------------------------------------------
         logfiles = [run.log.name for run in self.runs]+[log.name for log in (self.runlog,) if log]
         case = Path(self.root).name
-        s  = '\n' #print()
-        s += '    {:10s}: {}\n'.format('Case', case)
-        s += '    {:10s}: {}\n'.format('Mode', self.mode.capitalize()) 
-        s += '    {:10s}: {}'.format('Days', self.T)
+        s  = '\n'
+        s += f'    {"Case":10s}: {case}\n'
+        s += f'    {"Mode":10s}: {self.mode.capitalize()}\n'
+        s += f'    {"Days":10s}: {self.T}'
         if self.mode=='forward':
-            s += ' (update TSTEP in '+case+'.DATA to change number of days)'
-        else:
-            s += '\n'
-        s += '    {:10s}: {}\n'.format('Folder', Path(self.root).parent)
-        s += '    {:10s}: {}\n'.format('Log-files', ', '.join([Path(file).name for file in logfiles]))
+            s += f' (edit TSTEP in {case}.DATA to change number of days)'
+        s += '\n'
+        s += f'    {"Folder":10s}: {Path(self.root).parent}\n'
+        s += f'    {"Log-files":10s}: {", ".join([Path(file).name for file in logfiles])}\n'
         s += '\n'
         return s
 
@@ -1072,7 +1070,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
             value = run.t
         prog.print(value)
     #----------------------------------------
-    def message(text=None):
+    def message(text=None, **x):
     #----------------------------------------
         text and print('\n\n     ' + text + '\n')
 

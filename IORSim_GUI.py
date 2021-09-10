@@ -1367,6 +1367,7 @@ class main_window(QMainWindow):                                    # main_window
             try:
                 if file_contains(self.case+'.DATA', text='READDATA', comment='--'):
                     mode = 'backward'
+                    self.days_box.setEnabled(False)
                     #print('file_contains: '+mode)
             except FileNotFoundError as e:
                 show_message(self, 'error', text='The Eclipse DATA-file is missing for this case')
@@ -1756,7 +1757,7 @@ class main_window(QMainWindow):                                    # main_window
                 elif block.key() == 'UNITS':
                     ecl_data.units = get_substrings(block.data()[0], 8)                
         except (SystemError,TypeError) as e:
-            #print(e)
+            print(e)
             self.unsmry = None # so that we call this function again
             return
         if not varnames:
@@ -2427,8 +2428,8 @@ class main_window(QMainWindow):                                    # main_window
             if yaxis=='prd':
                 yaxis = 'prod'
             data = genfromtxt(str(file))
-            ior['days'] = data[1:,0]
             try:
+                ior['days'] = data[1:,0]
                 for i,name in enumerate(inp['species']):
                     ior[well][yaxis][name] = data[1:,i+1]
                 if 'conc' in yaxis:
@@ -2801,7 +2802,8 @@ class main_window(QMainWindow):                                    # main_window
         self.start_act.setEnabled(value)
         self.case_cb.setEnabled(value)
         self.mode_cb.setEnabled(value)
-        self.days_box.setEnabled(value)
+        if self.mode=='backward':
+            self.days_box.setEnabled(value)
         #self.sim_cb.setEnabled(value)
 
     #-----------------------------------------------------------------------

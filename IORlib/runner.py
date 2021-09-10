@@ -201,7 +201,10 @@ class Process:                                                              # Pr
                 raise SystemError(f'ERROR {self.app_name} is not running ({self._name} is {self.proc.status()})')
         except (psutil.NoSuchProcess, ProcessLookupError):
             if raise_error:
-                raise SystemError(f'ERROR {self.app_name} stopped unexpectedly, check the log')        
+                msg = ', check the log'
+                if raise_error is not True:
+                    msg = raise_error
+                raise SystemError(f'ERROR {self.app_name} stopped unexpectedly' + msg)        
             else:
                 return False
         except AttributeError:
@@ -231,9 +234,9 @@ class Process:                                                              # Pr
             raise SystemError(f'ERROR Process {self.proc} disappeared while trying to sleep')
                 
     #--------------------------------------------------------------------------------
-    def assert_running(self):                                                # Process
+    def assert_running(self, raise_error=True):                             # Process
     #--------------------------------------------------------------------------------
-        return self.is_running(raise_error=True)
+        return self.is_running(raise_error=raise_error)
 
 
 #====================================================================================
@@ -351,19 +354,8 @@ class runner:                                                               # ru
     def get_logfile(self):                                                   # runner
     #--------------------------------------------------------------------------------
         return self.log.name
-    
-    # #--------------------------------------------------------------------------------
-    # def process_info(self, indent=0):                                        # runner
-    # #--------------------------------------------------------------------------------
-    #     ind = ' ' * indent
-    #     header = ind + 'Started {:s} ({:d})\n'.format(self.cmdline, self.parent.pid)
-    #     if self.children:
-    #         ch_names = [p.name() for p in self.children]
-    #         ch_pids = [p.pid for p in self.children]
-    #         header += ind + 'Child processes are {:s} ({:s})\n'.format(list2str(ch_names, sep='\''), list2str(ch_pids))
-    #     #header += ind + 'Log-file is {:s}'.format(self.log.name)
-    #     return header
-        
+
+
     #--------------------------------------------------------------------------------
     def suspend(self, check=False, status=True, v=1):          # runner
     #--------------------------------------------------------------------------------
@@ -462,9 +454,9 @@ class runner:                                                               # ru
             raise SystemError('INFO Run stopped after ' + str(c) + ' ' + step)    
 
     #--------------------------------------------------------------------------------
-    def assert_running_and_stop_if_canceled(self):
+    def assert_running_and_stop_if_canceled(self, raise_error=True):
     #--------------------------------------------------------------------------------
-        self.parent.assert_running()
+        self.parent.assert_running(raise_error=raise_error)
         self.stop_if_canceled()
 
     #--------------------------------------------------------------------------------
