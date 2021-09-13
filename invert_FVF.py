@@ -23,7 +23,7 @@ unpack_char = {b'INTE' : 'i',
                b'MESS' : ' '}
 
 #====================================================================================
-class blockdata:
+class unfmt_block:
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, key=b'', length=0, type=b'', start=0, end=0, data=None, data_start=0, file=None):
@@ -38,7 +38,7 @@ class blockdata:
         self.data_start = data_start
 
     #--------------------------------------------------------------------------------
-    def info(self, details=False):                                                       # block
+    def info(self, details=False):                                      # unfmt_block
     #--------------------------------------------------------------------------------
         s = f'{self._key.decode()}'
         if details:
@@ -48,7 +48,7 @@ class blockdata:
         return s
 
     #--------------------------------------------------------------------------------
-    def print(self, data=None, details=False):                                                       # block
+    def print(self, data=None, details=False):                          # unfmt_block
     #--------------------------------------------------------------------------------
         print(self.info(details=details), end='')
         if data is not None:
@@ -57,7 +57,7 @@ class blockdata:
             print()
 
     #--------------------------------------------------------------------------------
-    def read_size_at(self, pos):
+    def read_size_at(self, pos):                                        # unfmt_block
     #--------------------------------------------------------------------------------
         size = unpack(endian+'i',self.mmap[pos:pos+4])[0]
         if self.type == b'CHAR':
@@ -67,12 +67,12 @@ class blockdata:
         return size, n 
 
     #--------------------------------------------------------------------------------
-    def pack_format(self, n):
+    def pack_format(self, n):                                           # unfmt_block
     #--------------------------------------------------------------------------------
         return endian+f'{n}{unpack_char[self.type]}'
 
     #--------------------------------------------------------------------------------
-    def replace(self, func, key=None):
+    def replace(self, func, key=None):                                  # unfmt_block
     #--------------------------------------------------------------------------------
         with open(self.file, mode='r+') as f:
             with mmap(f.fileno(), length=0, access=ACCESS_WRITE) as mmap_write:
@@ -89,9 +89,10 @@ class blockdata:
                     mmap_write[pos:pos+size] = pack(self.pack_format(n), *newdata[N:N+n])
                     pos += size + 4
                     N += n
+                mmap_write.flush()
 
     #--------------------------------------------------------------------------------
-    def data(self):
+    def data(self):                                                     # unfmt_block
     #--------------------------------------------------------------------------------
         value = []
         a = self.data_start
@@ -108,7 +109,7 @@ class blockdata:
         return value
 
     #--------------------------------------------------------------------------------
-    def key(self):                                             # block
+    def key(self):                                                      # unfmt_block
     #--------------------------------------------------------------------------------
         return self._key.decode().strip()
         
@@ -129,7 +130,7 @@ class unfmt_file:
         self.endpos = self.startpos = 0
 
     #--------------------------------------------------------------------------------
-    def blocks(self, only_new=False):   # unfmt_file
+    def blocks(self, only_new=False):                                    # unfmt_file
     #--------------------------------------------------------------------------------
         if not Path(self._filename).is_file():
             return
@@ -153,7 +154,7 @@ class unfmt_file:
                         max_length = 105
                     bytes = length*datasize[type] + 8*int(ceil(length/max_length))
                     data.seek(bytes, 1)
-                    yield blockdata(key=key, length=length, type=type, start=start, end=data.tell(), 
+                    yield unfmt_block(key=key, length=length, type=type, start=start, end=data.tell(), 
                                     data=data, data_start=data_start, file=self._filename)
                 self.endpos = data.tell()
 
@@ -178,11 +179,10 @@ def convert(file=None, fra=None, til=None, func=None):
 ######################################################################################
 
 if __name__ == '__main__':
-    import sys
     from argparse import ArgumentParser
 
     def invert(alist):
-        return [1/a for a in alist]
+        return [1/a if a!=0 else 1 for a in alist]
 
     print()
     parser = ArgumentParser(description='Convert from 1/FVF* to FVF* (Formation Volume Factors) in Eclipse UNRST-files')
@@ -198,6 +198,7 @@ if __name__ == '__main__':
         til_copy = til
         til = fra
         fra = til_copy
+
     convert(file=args['file'], fra=fra, til=til, func=invert)
 
     if args['print']:
