@@ -501,7 +501,6 @@ class runner:                                                               # ru
             loop_func = self.assert_running_and_stop_if_canceled
         passed_args = ','.join([f'{k}={v}' for k,v in kwargs.items()])
         self._print(f'Calling wait_for( {func.__qualname__}({passed_args}), limit={limit}, pause={pause} )... ', v=v, end='')
-        #n = loop_until(func, *args, **kwargs, error=error, pause=pause, limit=limit, loop_func=loop_func)
         n = loop_until(func, *args, pause=pause, limit=limit, loop_func=loop_func, **kwargs)
         if n<0:
             if raise_error:
