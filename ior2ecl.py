@@ -181,9 +181,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.t, self.n = get_restart_time_step(self.case.with_suffix('.DATA'))
         self.n += self.init_tsteps  
         self.interface_file('all').delete()
-        # Need to create all interface files in advance to avoid Eclipse termination
-        print('self.n:', self.n)
-        #[self.interface_file(i).create_empty() for i in range(self.n, self.N+self.n)] 
+        # Need to create all interface files in advance to avoid Eclipse termination        #[self.interface_file(i).create_empty() for i in range(self.n, self.N+self.n)] 
         [self.interface_file(i).create_empty() for i in range(self.n, self.N)] 
         self.OK_file().delete()
         super().start()  
