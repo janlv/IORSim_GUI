@@ -177,9 +177,14 @@ class ecl_backward(eclipse):                                           # ecl_bac
 
         # Start Eclipse in backward mode
         self.update.status(value=f'Starting {self.name}...')
+        # If RESTART in DATA, add time and step from restart-file
+        self.t, self.n = get_restart_time_step(self.case.with_suffix('.DATA'))
+        self.n += self.init_tsteps  
         self.interface_file('all').delete()
         # Need to create all interface files in advance to avoid Eclipse termination
-        [self.interface_file(i).create_empty() for i in range(self.n, self.N+self.n)] 
+        print('self.n:', self.n)
+        #[self.interface_file(i).create_empty() for i in range(self.n, self.N+self.n)] 
+        [self.interface_file(i).create_empty() for i in range(self.n, self.N)] 
         self.OK_file().delete()
         super().start()  
         self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
@@ -188,7 +193,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         # Check if restart-file (UNRST) is flushed   
         nblocks = 1 + len(self.tsteps) # 1 for 0'th SEQNUM
         if sum(self.tsteps) > 10: 
-            self.check_UNRST_file(nblocks=nblocks, loop_func=loop_func, pause=0.5, limit=None) 
+            self.check_UNRST_file(nblocks=nblocks, loop_func=loop_func, pause=0.5) 
         else:
             self.check_UNRST_file(nblocks=nblocks) 
         self.nwell = self.unrst_check.var('nwell')
@@ -209,9 +214,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
             self.rft_size = int(0.5*self.rft.stat().st_size)
             if 2*self.rft_size != self.rft.stat().st_size:
                 self.print2log('\nWARNING! Initial size of RFT size not even!\n')
-        # If RESTART in DATA, add time and step from restart-file
-        self.t, self.n = get_restart_time_step(self.case.with_suffix('.DATA'))
-        self.n += self.init_tsteps  
 
     #--------------------------------------------------------------------------------
     def run_one_step(self, satnum_file):                            # ecl_backward
@@ -244,7 +246,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
 
 
     #--------------------------------------------------------------------------------
-    def check_UNRST_file(self, nblocks=1, loop_func=None, pause=0.01, limit=100000):   # ecl_backward
+    def check_UNRST_file(self, nblocks=1, loop_func=None, pause=0.01, limit=None):   # ecl_backward
     #--------------------------------------------------------------------------------
         self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info,
                       error=self.unrst_check.file.name()+' not complete', loop_func=loop_func,

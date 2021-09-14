@@ -494,7 +494,7 @@ class runner:                                                               # ru
         return value
 
     #--------------------------------------------------------------------------------
-    def wait_for(self, func, *args, limit=100000, pause=0.01, v=3, error=None, raise_error=False, log=None, loop_func=None, **kwargs):
+    def wait_for(self, func, *args, limit=None, pause=0.01, v=3, error=None, raise_error=False, log=None, loop_func=None, **kwargs):
     #--------------------------------------------------------------------------------
         if not loop_func:
             # Default checks during loop
