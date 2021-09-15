@@ -169,6 +169,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         progress and self.update.progress(value=self.t)
         plot and self.update.plot()
 
+
     #--------------------------------------------------------------------------------
     def start(self, restart=False):                                    # ecl_backward
     #--------------------------------------------------------------------------------
@@ -181,7 +182,7 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.t, self.n = get_restart_time_step(self.case.with_suffix('.DATA'))
         self.n += self.init_tsteps  
         self.interface_file('all').delete()
-        # Need to create all interface files in advance to avoid Eclipse termination        #[self.interface_file(i).create_empty() for i in range(self.n, self.N+self.n)] 
+        # Need to create all interface files in advance to avoid Eclipse termination        
         [self.interface_file(i).create_empty() for i in range(self.n, self.N)] 
         self.OK_file().delete()
         super().start()  
@@ -213,8 +214,9 @@ class ecl_backward(eclipse):                                           # ecl_bac
             if 2*self.rft_size != self.rft.stat().st_size:
                 self.print2log('\nWARNING! Initial size of RFT size not even!\n')
 
+
     #--------------------------------------------------------------------------------
-    def run_one_step(self, satnum_file):                            # ecl_backward
+    def run_one_step(self, satnum_file):                               # ecl_backward
     #--------------------------------------------------------------------------------
         if self.rft_size:
             self.rft_start_size = self.rft.stat().st_size
@@ -1025,7 +1027,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
     parser.add_argument('-full_rft_check', help='Backward mode: Full check of RFT-file, default is to only check size', action='store_false')
-    parser.add_argument('-pause',          default=0.5, help='Backward mode: pause between Eclipse and IORSim runs', type=float)
+    #    parser.add_argument('-pause',          default=0.5, help='Backward mode: pause between Eclipse and IORSim runs', type=float)
     parser.add_argument('-init_tstep',     default=1.0, help='Backward mode: initial Eclipse TSTEP', type=float)
     parser.add_argument('-v',              default=3, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
     parser.add_argument('-keep_files',     help='Interface-files are not deleted after completion', action='store_true')

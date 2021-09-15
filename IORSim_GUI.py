@@ -501,7 +501,6 @@ class Settings(QDialog):
         # layout given as (row, col, rowspan, colspan)
         grid.addWidget(widget[1] , n, 1)
         grid.addWidget(widget[2] , n, 2)
-        #for w in widget[1:]:
         widget[1].setToolTip(tool_tip[var])
         self.iorsim = widget[1]
             
@@ -589,20 +588,20 @@ class Settings(QDialog):
         txt.setText('TSTEP')
         box.addWidget(txt)
 
-        n += 1
+        # n += 1
         # pause between runs
         var, text = 'pause', 'Pause before IORSim resumes '
         lbl_pause, self.pause = self.new_line(var=var, text=text)
-        self.pause.setToolTip(tool_tip[var])
-        lbl_pause.setToolTip(tool_tip[var])
-        self.pause.setFixedWidth(40)
-        layout.addWidget(lbl_pause, 1, 0)
-        box = QHBoxLayout()
-        layout.addLayout(box, 1, 1)
-        box.addWidget(self.pause)
-        sec = QLabel()
-        sec.setText('seconds')
-        box.addWidget(sec)
+        # self.pause.setToolTip(tool_tip[var])
+        # lbl_pause.setToolTip(tool_tip[var])
+        # self.pause.setFixedWidth(40)
+        # layout.addWidget(lbl_pause, 1, 0)
+        # box = QHBoxLayout()
+        # layout.addLayout(box, 1, 1)
+        # box.addWidget(self.pause)
+        # sec = QLabel()
+        # sec.setText('seconds')
+        # box.addWidget(sec)
 
         n += 1
         # unrst file check
@@ -2768,7 +2767,7 @@ class main_window(QMainWindow):                                    # main_window
         i = self.input
         #if i['nsteps']==0:
         if self.case_cb.currentIndex() < 0:
-            show_message(self, 'warning', text='You need to choose a case from the case drop-down list.')
+            show_message(self, 'warning', text='You need to choose a case from the case drop-down list, or add a new case from File -> Add case.')
             return False
         if i['days']==0:
             show_message(self, 'warning', text='Total time interval is missing.')
