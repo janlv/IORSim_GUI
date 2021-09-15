@@ -148,15 +148,6 @@ class ecl_backward(eclipse):                                           # ecl_bac
             raise SystemError('WARNING The current case cannot be used in backward-mode: '+
                               'Eclipse input is missing the READDATA keyword.')
 
-    # #--------------------------------------------------------------------------------
-    # def suspend(self, raise_warning=False, correct=False):               # ecl_backward
-    # #--------------------------------------------------------------------------------
-    #     if not super().suspend():
-    #         if self.stop_children:
-    #             if correct:
-    #                 self.stop_children = False
-    #             if raise_warning:
-    #                 self.update.message(text='WARNING Unable to suspend child-processes, only the parent process is suspended. This might lead to a more unstable simulation.')
 
     #--------------------------------------------------------------------------------
     def update_function(self, progress=True, plot=False):              # ecl_backward
@@ -190,29 +181,17 @@ class ecl_backward(eclipse):                                           # ecl_bac
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
         self.update.status(value=f'{self.name} running...')
         # Check if restart-file (UNRST) is flushed   
-        nblocks = 1 + len(self.tsteps) # 1 for 0'th SEQNUM
+        nblocks = 1 + self.init_tsteps # len(self.tsteps) # 1 for 0'th SEQNUM
         if sum(self.tsteps) > 10: 
             self.check_UNRST_file(nblocks=nblocks, loop_func=loop_func, pause=0.5) 
         else:
             self.check_UNRST_file(nblocks=nblocks) 
         self.nwell = self.unrst_check.var('nwell')
-        nwell_max = (self.init_tsteps+1)*self.nwell
+        nwell_max = nblocks*self.nwell
         rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell)
-        # If some wells are missing in the RFT-file we need to 
-        # do the full RFT-check, not only the file-size check
-        if rft_wells != nwell_max:
-            self.rft_size = False
-            info = 'Turned on full RFT-check (default is file-size check)' 
-            self._print(info)
         self.suspend()
-        if self.init_tsteps > 1:
-            self.rft_size = None
-        # only check RFT-file by size if all wells are initially written to the RFT-file 
-        if self.rft_size and rft_wells == 2*self.nwell:
-            # get size of RFT file
-            self.rft_size = int(0.5*self.rft.stat().st_size)
-            if 2*self.rft_size != self.rft.stat().st_size:
-                self.print2log('\nWARNING! Initial size of RFT size not even!\n')
+        if self.rft_size:
+            self.init_RFT_size_check(rft_wells, nwell_max)
 
 
     #--------------------------------------------------------------------------------
@@ -272,8 +251,25 @@ class ecl_backward(eclipse):                                           # ecl_bac
                     self._print(f'WARNING! Only {nwell_min} TIME blocks found in the RFT-file')
         return nblocks
 
+
     #--------------------------------------------------------------------------------
-    def check_RFT_size(self):                                               # ecl_backward
+    def init_RFT_size_check(self, init_wells, total_wells):            # ecl_backward
+    #--------------------------------------------------------------------------------
+        #print(init_wells, total_wells)
+        if init_wells != total_wells:
+            # Turn off simple RFT-file size check if some wells are missing in initial RFT-file 
+            self.rft_size = False
+            info = 'Turned on full RFT-check due to missing wells in initial file' 
+            self._print(info)
+        if self.rft_size: 
+            # Check size of initial RFT file
+            self.rft_size = int(0.5*self.rft.stat().st_size)
+            if 2*self.rft_size != self.rft.stat().st_size:
+                self.print2log('\nWARNING! Initial size of RFT size not even!\n')
+
+
+    #--------------------------------------------------------------------------------
+    def check_RFT_size(self):                                          # ecl_backward
     #--------------------------------------------------------------------------------
         diff = self.rft.stat().st_size-self.rft_start_size
         if diff==self.rft_size:
@@ -751,10 +747,13 @@ class simulation:
             run.start(restart=self.restart)
         # The schedule appends keywords to the interface file
         ecl.t = ior.t = self.schedule.update()
-        # Fix progress for restart runs
+        # Update progress
         if self.restart:
-            #[r.set_info(f'Restarted at {self.restart_days} days') for r in self.runs]
+            # Fix progress for restart runs
             self.update.progress(value=self.ecl.t, min=self.restart_days)
+        else:
+           # Reset progress-time for more accurate time-estimate   
+           self.update.progress(value=0)
         # Start timestep loop
         while ior.t < ior.T:
             self.print2log(f'\nLoop step {ecl.n}/{ecl.N}')
@@ -1026,7 +1025,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-iorexe',         help="Name of IORSim executable, default is 'IORSimX'"                  )
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
-    parser.add_argument('-full_rft_check', help='Backward mode: Full check of RFT-file, default is to only check size', action='store_false')
+    parser.add_argument('-rft_size',       help='Backward mode: Only check size of RFT-file, default is full check', action='store_true')
     #    parser.add_argument('-pause',          default=0.5, help='Backward mode: pause between Eclipse and IORSim runs', type=float)
     parser.add_argument('-init_tstep',     default=1.0, help='Backward mode: initial Eclipse TSTEP', type=float)
     parser.add_argument('-v',              default=3, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
@@ -1065,9 +1064,12 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     #----------------------------------------
         if min is not None:
             prog.set_min(min)
-        if value is not None and value<0:
-            prog.reset(N=abs(value))
-            return
+        if value is not None:
+            if value<0:
+                prog.reset(N=abs(value))
+                return
+            elif value==0:
+                prog.reset_time()
         if run:
             value = run.t
         prog.print(value)
@@ -1097,8 +1099,8 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
 def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
 #--------------------------------------------------------------------------------
     args = parse_input(case_dir=case_dir, settings_file=settings_file)
-    runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=(not args['full_rft_check']), 
-           to_screen=args['to_screen'], pause=args['pause'], init_tstep=args['init_tstep'], eclexe=args['eclexe'], iorexe=args['iorexe'],
+    runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=args['rft_size'], 
+           to_screen=args['to_screen'], init_tstep=args['init_tstep'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
            stop_children=(not args['alive_children']))
     os._exit(0)
