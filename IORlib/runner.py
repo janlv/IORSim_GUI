@@ -134,27 +134,6 @@ class Process:                                                              # Pr
     #--------------------------------------------------------------------------------
         return f"\'{self._name}\' ({self.pid})"
 
-    # @ignore_process_error
-    # #--------------------------------------------------------------------------------
-    # def status(self):                                                       # Process
-    # #--------------------------------------------------------------------------------
-    #     return self.proc.status()
-
-    # @ignore_process_error
-    # #--------------------------------------------------------------------------------
-    # def cmdline(self):                                                      # Process
-    # #--------------------------------------------------------------------------------
-    #     return self.proc.cmdline()
-
-    # #--------------------------------------------------------------------------------
-    # def kill(self):                                                         # Process
-    # #--------------------------------------------------------------------------------
-    #     try:
-    #         self.proc.kill()
-    #         return True
-    #     except (psutil.AccessDenied, psutil.NoSuchProcess, ProcessLookupError):
-    #         return False
-
     #--------------------------------------------------------------------------------
     def suspend(self):                                                      # Process
     #--------------------------------------------------------------------------------
@@ -346,7 +325,7 @@ class runner:                                                               # ru
         self.parent.assert_running()
         #self.cmdline = '\'' + ' '.join(self.parent.cmdline()) + '\''
         self._print(f'Parent process: {self.parent.name_pid()}')
-        self._print(f'Child process{len(self.children)>1 and "es" or ""}: {"".join([p.name_pid() for p in self.children])}')
+        self._print(f'Child process{len(self.children)>1 and "es" or ""}: {", ".join([p.name_pid() for p in self.children])}')
         #self._print(self.process_info(), tag='')
         
         
