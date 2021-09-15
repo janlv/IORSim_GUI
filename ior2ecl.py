@@ -425,11 +425,9 @@ class ior_backward(iorsim):                                            # ior_bac
             self.interface_file(self.n).create_empty()
             self.OK_file().create_empty()
             self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-            #self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
-            #warn_empty_file(self.satnum, comment='--')
-            if self.update:
+            if restart:
                 self.t = self.time_and_step()[0]
-                restart or self.update.progress(value=self.t)
+                self.update.progress(value=self.t)
                 self.update.status(run=self)
                 self.update.plot()
         self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
@@ -754,6 +752,7 @@ class simulation:
         else:
            # Reset progress-time for more accurate time-estimate   
            self.update.progress(value=0)
+        self.update.progress(value=ior.t)
         # Start timestep loop
         while ior.t < ior.T:
             self.print2log(f'\nLoop step {ecl.n}/{ecl.N}')
@@ -1064,15 +1063,16 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     #----------------------------------------
         if min is not None:
             prog.set_min(min)
+        if run:
+            value = run.t
         if value is not None:
             if value<0:
                 prog.reset(N=abs(value))
                 return
             elif value==0:
                 prog.reset_time()
-        if run:
-            value = run.t
-        prog.print(value)
+            prog.print(value)
+
     #----------------------------------------
     def message(text=None, **x):
     #----------------------------------------
