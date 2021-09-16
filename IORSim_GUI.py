@@ -24,9 +24,9 @@ import shutil
 import warnings
 import copy
 
-from ior2ecl import simulation, ior_input, main as ior2ecl_main
-from IORlib.utils import Progress, assert_python_version, get_substrings, is_file_ignore_suffix_case, return_matching_string, delete_all, file_contains, upper_and_lower
-from IORlib.ECL import get_restart_time_step, get_tsteps, unfmt_file #, input_days_and_steps as ECL_input_days_and_steps
+from ior2ecl import simulation, main as ior2ecl_main
+from IORlib.utils import Progress, get_substrings, is_file_ignore_suffix_case, return_matching_string, delete_all, file_contains, upper_and_lower
+from IORlib.ECL import get_tsteps, unfmt_file
 import GUI_icons
 
 gui_dir = Path('GUI')
@@ -758,7 +758,6 @@ class main_window(QMainWindow):                                    # main_window
         self.setWindowIcon(QIcon(':program_icon'))
         self.font = QFont().defaultFamily()
         self.menu_fontsize = 7
-        #self.help_win = help_window(self.pos(), parent=self)
         self.plot_lines = None
         self.data = {}
         self.plot_ref_data = {}
@@ -776,17 +775,12 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_ref = None
         self.progress = None
         self.vscroll = {}
-        #self.modes = ('forward', 'backward', 'eclipse', 'iorsim')
-        #guidir = Path('GUI')
         gui_dir.mkdir(exist_ok=True)
         self.settings = Settings(self, file=str(settings_file))
-        #self.settings = Settings(self, file=str(guidir/'settings.txt'))
-        #font = QFont(default_font, pointSize=default_size, weight=default_weight)
-        #print(self.settings.get['fontsize']())
-        #self.setFont(font)
-        self.casedir = case_dir #gui_dir/'cases'
+        self.casedir = case_dir 
         self.input_file = input_file #gui_dir/'input.txt'
-        self.input = {'root':None, 'ecl_days':None, 'dtecl':None, 'days':None, 'step':None, 'species':[], 'mode':None} #, 'case':None}
+        #self.input = {'root':None, 'ecl_days':None, 'dtecl':None, 'days':None, 'step':None, 'species':[], 'mode':None} #, 'case':None}
+        self.input = {'root':None, 'ecl_days':None, 'days':None, 'step':None, 'species':[], 'mode':None}
         self.input_to_save = ['root','days','mode']
         self.load_input()
         self.initUI()
@@ -1083,9 +1077,10 @@ class main_window(QMainWindow):                                    # main_window
     def set_variables_from_casefiles(self):                # main_window
     #-----------------------------------------------------------------------
         inp = self.input
-        inp['dtecl'] = inp['ecl_days'] = inp['species'] = None
+        #inp['dtecl'] = inp['ecl_days'] = inp['species'] = None
+        inp['ecl_days'] = inp['species'] = None
         if inp['root']:
-            inp['dtecl']   = ior_input(var='dtecl', root=inp['root'])
+            #inp['dtecl']   = ior_input(var='dtecl', root=inp['root'])
             #inp['ecl_days'] = ECL_input_days_and_steps(inp['root'])[0]
             inp['ecl_days'] = int(sum(get_tsteps(inp['root']+'.DATA')))
             inp['species'] = get_species(inp['root'])
@@ -2773,9 +2768,9 @@ class main_window(QMainWindow):                                    # main_window
         if i['days']==0:
             show_message(self, 'warning', text='Total time interval is missing.')
             return False
-        if self.mode=='backward' and i['days']<i['dtecl']:
-            show_message(self, 'warning', text='Total time interval of {} days is less than the IORSim timestep of {} days'.format(i['days'],i['dtecl']))
-            return False
+        # if self.mode=='backward' and i['days']<i['dtecl']:
+        #     show_message(self, 'warning', text='Total time interval of {} days is less than the IORSim timestep of {} days'.format(i['days'],i['dtecl']))
+        #     return False
         if self.max_days and i['days']>self.max_days:
             show_message(self, 'warning', text='The Eclipse output read by IORSim currently sets a limit of ' + str(self.max_days) + 
                                                ' days on the time interval. Run Eclipse with a higher TSTEP to increase the maximun time interval.')

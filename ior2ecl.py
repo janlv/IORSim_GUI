@@ -971,36 +971,38 @@ class simulation:
 
 
 #############################################################################
+#                                                                           #
+#                    Various utility functions                              #
+#                                                                           #
+#############################################################################
 
-
-
-#-----------------------------------------------------------------------
-def ior_input(var=None, root=None):
-#-----------------------------------------------------------------------
-#
-#  Read variables from IORSim input file .trcinp
-#
-#  *INTEGRATION : tstart, tstop, dtmin, dtmax, dtecl, dteclmax, metnum
-#
-    file=f'{root}.trcinp'
-    regname = [{}]
-    regname[0]['regex'] = r'\*\bINTEGRATION\b'
-    regname[0]['names'] = ['tstart','tstop','dtmin','dtmax','dtecl','dteclmax','metnum']
-    pos = keyword = []
-    for i,rn in enumerate(regname):
-        if var in rn['names']:
-            pos = rn['names'].index(var)
-            keyword = rn['regex']
-    if not keyword:
-        raise SystemError(f'ERROR {var} is not found in IORSim input')
-    data = remove_comments(file, comment='#')
-    regex = compile(fr'\s*{keyword}\s*([0-9.eE\s]+)')
-    try:
-        values = [float(s) for m in regex.finditer(data) for s in m.group(1).split()]
-        values = values[pos]
-    except IndexError:
-        raise SystemError(f'ERROR Unable to read {var} from {keyword} in IORSim input')
-    return values
+# #-----------------------------------------------------------------------
+# def ior_input(var=None, root=None):
+# #-----------------------------------------------------------------------
+# #
+# #  Read variables from IORSim input file .trcinp
+# #
+# #  *INTEGRATION : tstart, tstop, dtmin, dtmax, dtecl, dteclmax, metnum
+# #
+#     file=f'{root}.trcinp'
+#     regname = [{}]
+#     regname[0]['regex'] = r'\*\bINTEGRATION\b'
+#     regname[0]['names'] = ['tstart','tstop','dtmin','dtmax','dtecl','dteclmax','metnum']
+#     pos = keyword = []
+#     for i,rn in enumerate(regname):
+#         if var in rn['names']:
+#             pos = rn['names'].index(var)
+#             keyword = rn['regex']
+#     if not keyword:
+#         raise SystemError(f'ERROR {var} is not found in IORSim input')
+#     data = remove_comments(file, comment='#')
+#     regex = compile(fr'\s*{keyword}\s*([0-9.eE\s]+)')
+#     try:
+#         values = [float(s) for m in regex.finditer(data) for s in m.group(1).split()]
+#         values = values[pos]
+#     except IndexError:
+#         raise SystemError(f'ERROR Unable to read {var} from {keyword} in IORSim input')
+#     return values
 
 
 #--------------------------------------------------------------------------------
