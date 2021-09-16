@@ -120,9 +120,25 @@ class ecl_forward(forward_mixin, eclipse):                              # ecl_fo
                               'Eclipse input contains the READDATA keyword.')
 
 
+#====================================================================================
+class backward_mixin:
+#====================================================================================
+    #--------------------------------------------------------------------------------
+    def update_function(self, progress=True, plot=False):            # backward_mixin
+    #--------------------------------------------------------------------------------
+        #print(f'update_function(progress={progress}, plot={plot}')
+        self.assert_running_and_stop_if_canceled()
+        #if self.update:
+        self.t = self.time_and_step()[0]
+        self.update.status(run=self)
+        progress and self.update.progress(value=self.t)
+        plot and self.update.plot()
+
+
+
 
 #====================================================================================
-class ecl_backward(eclipse):                                           # ecl_backward
+class ecl_backward(backward_mixin, eclipse):                           # ecl_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, check_unrst=True, check_rft=True, rft_size=False, **kwargs):
@@ -149,16 +165,16 @@ class ecl_backward(eclipse):                                           # ecl_bac
                               'Eclipse input is missing the READDATA keyword.')
 
 
-    #--------------------------------------------------------------------------------
-    def update_function(self, progress=True, plot=False):              # ecl_backward
-    #--------------------------------------------------------------------------------
-        #print(f'update_function(progress={progress}, plot={plot}')
-        self.assert_running_and_stop_if_canceled()
-        #if self.update:
-        self.t = self.time_and_step()[0]
-        self.update.status(run=self)
-        progress and self.update.progress(value=self.t)
-        plot and self.update.plot()
+    # #--------------------------------------------------------------------------------
+    # def update_function(self, progress=True, plot=False):              # ecl_backward
+    # #--------------------------------------------------------------------------------
+    #     #print(f'update_function(progress={progress}, plot={plot}')
+    #     self.assert_running_and_stop_if_canceled()
+    #     #if self.update:
+    #     self.t = self.time_and_step()[0]
+    #     self.update.status(run=self)
+    #     progress and self.update.progress(value=self.t)
+    #     plot and self.update.plot()
 
 
     #--------------------------------------------------------------------------------
@@ -372,7 +388,7 @@ class ior_forward(forward_mixin, iorsim):                               # ior_fo
     pass
 
 #====================================================================================
-class ior_backward(iorsim):                                            # ior_backward
+class ior_backward(backward_mixin, iorsim):                             # ior_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, **kwargs):
@@ -417,19 +433,21 @@ class ior_backward(iorsim):                                            # ior_bac
         self.suspend()
 
     #--------------------------------------------------------------------------------
-    def run_steps(self, N, restart=False):                   # ior_backward
+    def run_steps(self, N, restart=False):                             # ior_backward
     #--------------------------------------------------------------------------------
         ### run IORSim
         for n in range(N):
+            if n > 0:
+                self.update_function(plot=True)
             self.n += 1
             self.interface_file(self.n).create_empty()
             self.OK_file().create_empty()
             self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-            if restart:
-                self.t = self.time_and_step()[0]
-                self.update.progress(value=self.t)
-                self.update.status(run=self)
-                self.update.plot()
+            # if restart:
+            #     self.t = self.time_and_step()[0]
+            #     self.update.progress(value=self.t)
+            #     self.update.status(run=self)
+            #     self.update.plot()
         self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
         warn_empty_file(self.satnum, comment='--')
 
