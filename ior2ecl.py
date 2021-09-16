@@ -768,9 +768,9 @@ class simulation:
             # Fix progress for restart runs
             self.update.progress(value=self.ecl.t, min=self.restart_days)
         else:
-           # Reset progress-time for more accurate time-estimate   
-           self.update.progress(value=0)
-        self.update.progress(value=ior.t)
+            # Reset progress-time for more accurate time-estimate   
+            #self.update.progress(value=0)
+            self.update.progress(value=ior.t, n0=ior.t)
         # Start timestep loop
         while ior.t < ior.T:
             self.print2log(f'\nLoop step {ecl.n}/{ecl.N}')
@@ -1077,8 +1077,10 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
 
     prog = Progress(format='40#')
     #----------------------------------------
-    def progress(run=None, value=None, min=None):
+    def progress(run=None, value=None, min=None, n0=None):
     #----------------------------------------
+        if n0 is not None:
+            prog.reset_time(n=n0)
         if min is not None:
             prog.set_min(min)
         if run:

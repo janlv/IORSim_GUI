@@ -348,15 +348,15 @@ class sim_worker(base_worker):
     #-----------------------------------------------------------------------
         self.progress_min = None
         #------------------------------------
-        def progress(run=None, value=None, min=None):
+        def progress(run=None, value=None, min=None, n0=None):
         #------------------------------------
-            if min:
+            if min is not None:
                 self.progress_min = min
             if value == 0:
                 self.progress_min = None
             if run and value is None:
                 value = run.t
-            self.update_progress((int(value), min))
+            self.update_progress((int(value), min, n0))
         #------------------------------------
         def status(run=None, value=None, mode=None, **x):
         #------------------------------------
@@ -2703,13 +2703,14 @@ class main_window(QMainWindow):                                    # main_window
 
     #-----------------------------------------------------------------------
     #def update_progress(self, t=None, min=None):
-    def update_progress(self, t_min_tuple):
+    def update_progress(self, t_min_n0_tuple):
     #-----------------------------------------------------------------------
-        t, min = t_min_tuple
+        t, min, n0 = t_min_n0_tuple
+        if n0 is not None:
+            self.progress and self.progress.reset_time(n=n0)
         if min is not None:
             self.progressbar.setMinimum(int(min))
-            if self.progress:
-                self.progress.set_min(int(min))
+            self.progress and self.progress.set_min(int(min))
         if t is not None:
             if t==0: 
                 self.update_remaining_time()
