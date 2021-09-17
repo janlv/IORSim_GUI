@@ -6,9 +6,9 @@ from subprocess import Popen, PIPE, STDOUT
 import psutil
 from shutil import which
 from time import sleep
-from pathlib import Path #, PurePath
+from pathlib import Path 
 from shutil import copy
-from .utils import loop_until, list2str, safeopen, Timer, silentdelete
+from .utils import loop_until, safeopen, Timer, silentdelete
 
 #--------------------------------------------------------------------------------
 def catch_permission_error(func):

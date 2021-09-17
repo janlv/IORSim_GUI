@@ -1,25 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-#import atexit
 from collections import namedtuple
-#from mmap import ACCESS_READ, mmap
 import os
 from pathlib import Path
 import sys
 from argparse import ArgumentParser
-#from shutil import which
 from datetime import datetime, timedelta
 from time import sleep
 from itertools import accumulate
-#from types import GeneratorType
 from psutil import NoSuchProcess
 import shutil
 import traceback
-#from numpy import ceil
 from re import search, compile
 
-from IORlib.utils import get_python_version, print_error, is_file_ignore_suffix_case, number_of_blocks, print_file, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import get_python_version, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, unfmt_file, fmt_file, Section
 
@@ -977,7 +972,7 @@ class simulation:
 #############################################################################
 
 # #-----------------------------------------------------------------------
-# def ior_input(var=None, root=None):
+# def ior_input_old(var=None, root=None):
 # #-----------------------------------------------------------------------
 # #
 # #  Read variables from IORSim input file .trcinp
@@ -985,9 +980,10 @@ class simulation:
 # #  *INTEGRATION : tstart, tstop, dtmin, dtmax, dtecl, dteclmax, metnum
 # #
 #     file=f'{root}.trcinp'
-#     regname = [{}]
-#     regname[0]['regex'] = r'\*\bINTEGRATION\b'
-#     regname[0]['names'] = ['tstart','tstop','dtmin','dtmax','dtecl','dteclmax','metnum']
+#     regname = []
+#     regname.append( {'regex':r'\*\bINTEGRATION\b', 'names':['tstart','tstop','dtmin','dtmax','dtecl','dteclmax','metnum']} )
+#     regname.append( {'regex':r'\*\bWELLSPECIES\b', 'names':['Ninjwell','Injwellname','Ntime']} )
+#     regname.append( {'regex':r'\*\bOUTPUT\b', 'names':['Noutwell','Outwellname']} )
 #     pos = keyword = []
 #     for i,rn in enumerate(regname):
 #         if var in rn['names']:
@@ -998,11 +994,28 @@ class simulation:
 #     data = remove_comments(file, comment='#')
 #     regex = compile(fr'\s*{keyword}\s*([0-9.eE\s]+)')
 #     try:
-#         values = [float(s) for m in regex.finditer(data) for s in m.group(1).split()]
+#         #values = [float(s) for m in regex.finditer(data) for s in m.group(1).split()]
+#         values = [m for m in regex.finditer(data) for s in m.group(1).split()]
+#         print(values)
 #         values = values[pos]
 #     except IndexError:
 #         raise SystemError(f'ERROR Unable to read {var} from {keyword} in IORSim input')
+#     print(values)
 #     return values
+
+# #-----------------------------------------------------------------------
+# def ior_input(root, keyword=None):
+# #-----------------------------------------------------------------------
+# #
+# #  Read variables from IORSim input file .trcinp
+# #
+# #
+#     file=f'{root}.trcinp'
+#     return get_keyword(file, keyword=keyword)
+#     #data = remove_comments(file, comment='#')
+#     #regex = compile(fr'{keyword}\s+([0-9A-Za-z.-_+\s]+)(?={end})') 
+#     #values = [v.split() for v in regex.findall(data)]
+#     #return [float_or_str(v) for v in values]
 
 
 #--------------------------------------------------------------------------------

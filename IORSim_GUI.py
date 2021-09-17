@@ -25,7 +25,7 @@ import warnings
 import copy
 
 from ior2ecl import simulation, main as ior2ecl_main
-from IORlib.utils import Progress, get_substrings, is_file_ignore_suffix_case, return_matching_string, delete_all, file_contains, upper_and_lower
+from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, return_matching_string, delete_all, file_contains, upper_and_lower
 from IORlib.ECL import get_tsteps, unfmt_file
 import GUI_icons
 
@@ -74,53 +74,70 @@ def create_action(win, text=None, shortcut=None, tip=None, func=None, icon=None,
 
 
 #-----------------------------------------------------------------------
-def get_species(root):
+def get_species_iorsim(root):
 #-----------------------------------------------------------------------
-    species = []
-    with open(str(root)+'.trcinp') as f:
-        for line in f:
-            if line.startswith('*SPECIES'):
-                (kw, specie) = line.split()
-                species.append(specie)
+    file = f'{root}.trcinp'
+    species = get_keyword(file, keyword='\*solution')
+    if species:
+        species = species[0][1::2]
+    else:
+        # Read old input format
+        species = flat_list(get_keyword(file, keyword='\*SPECIES'))
     return species
+    # species = []
+    # with open(str(root)+'.trcinp') as f:
+    #     for line in f:
+    #         if line.startswith('*SPECIES'):
+    #             (kw, specie) = line.split()
+    #             species.append(specie)
+    # return species
                 
 
 #-----------------------------------------------------------------------
 def get_wells_iorsim(root):
 #-----------------------------------------------------------------------
-    def get_wells(num, wells, line):
-        if num is not None:
-            if num==0:
-                # first line is number of wells
-                num = int(line.split()[0])
-            else:
-                num -= 1
-                wells.append(line.split()[0])
-                if num==0:
-                    num = None
-        return num, wells
+    file = f'{root}.trcinp'
+    out_wells = flat_list(get_keyword(file, keyword='\*PRODUCER'))
+    in_wells = flat_list(get_keyword(file, keyword='\*INJECTOR'))
+    if not out_wells or not in_wells:
+        # Read old input format
+        out_wells = get_keyword(file, keyword='\*OUTPUT')[0][1:]
+        w = get_keyword(file, keyword='\*WELLSPECIES')[0]
+        in_wells = w[1:1+int(w[0])]
+    return out_wells, in_wells
+    # def get_wells(num, wells, line):
+    #     if num is not None:
+    #         if num==0:
+    #             # first line is number of wells
+    #             num = int(line.split()[0])
+    #         else:
+    #             num -= 1
+    #             wells.append(line.split()[0])
+    #             if num==0:
+    #                 num = None
+    #     return num, wells
                     
-    out_well = []
-    in_well = []
-    if root:
-        n_out = n_in = None
-        if not Path(str(root)+'.trcinp').is_file():
-            raise SystemError('trcinp-file is missing')
-        with open(str(root)+'.trcinp') as f:
-            for line in f:
-                if line.lstrip().startswith('#') or line.isspace():
-                    continue
-                if line.lstrip().startswith('*OUTPUT'):
-                    n_out = 0
-                    continue
-                if line.lstrip().startswith('*WELLSPECIES'):
-                    n_in = 0
-                    continue
-                n_out, out_well = get_wells(n_out, out_well, line)
-                n_in, in_well = get_wells(n_in, in_well, line)
+    # out_well = []
+    # in_well = []
+    # if root:
+    #     n_out = n_in = None
+    #     if not Path(str(root)+'.trcinp').is_file():
+    #         raise SystemError('trcinp-file is missing')
+    #     with open(str(root)+'.trcinp') as f:
+    #         for line in f:
+    #             if line.lstrip().startswith('#') or line.isspace():
+    #                 continue
+    #             if line.lstrip().startswith('*OUTPUT'):
+    #                 n_out = 0
+    #                 continue
+    #             if line.lstrip().startswith('*WELLSPECIES'):
+    #                 n_in = 0
+    #                 continue
+    #             n_out, out_well = get_wells(n_out, out_well, line)
+    #             n_in, in_well = get_wells(n_in, in_well, line)
 
-    #print(out_well, in_well)
-    return out_well, in_well
+    # #print(out_well, in_well)
+    # return out_well, in_well
     
 #-----------------------------------------------------------------------
 def get_eclipse_well_yaxis_fluid(root):
@@ -1083,7 +1100,7 @@ class main_window(QMainWindow):                                    # main_window
             #inp['dtecl']   = ior_input(var='dtecl', root=inp['root'])
             #inp['ecl_days'] = ECL_input_days_and_steps(inp['root'])[0]
             inp['ecl_days'] = int(sum(get_tsteps(inp['root']+'.DATA')))
-            inp['species'] = get_species(inp['root'])
+            inp['species'] = get_species_iorsim(inp['root'])
 
 
     #-----------------------------------------------------------------------
