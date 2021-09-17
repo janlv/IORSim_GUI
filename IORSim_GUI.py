@@ -83,20 +83,17 @@ def get_species_iorsim(root):
     else:
         # Read old input format
         species = flat_list(get_keyword(file, keyword='\*SPECIES'))
+        species = [s for s in species if isinstance(s, str)]
+    #print(species)
     return species
-    # species = []
-    # with open(str(root)+'.trcinp') as f:
-    #     for line in f:
-    #         if line.startswith('*SPECIES'):
-    #             (kw, specie) = line.split()
-    #             species.append(specie)
-    # return species
                 
 
 #-----------------------------------------------------------------------
 def get_wells_iorsim(root):
 #-----------------------------------------------------------------------
     file = f'{root}.trcinp'
+    #print(file)
+    in_wells, out_wells = [], []
     out_wells = flat_list(get_keyword(file, keyword='\*PRODUCER'))
     in_wells = flat_list(get_keyword(file, keyword='\*INJECTOR'))
     if not out_wells or not in_wells:
@@ -104,41 +101,10 @@ def get_wells_iorsim(root):
         out_wells = get_keyword(file, keyword='\*OUTPUT')[0][1:]
         w = get_keyword(file, keyword='\*WELLSPECIES')[0]
         in_wells = w[1:1+int(w[0])]
+    #print(out_wells, in_wells)
     return out_wells, in_wells
-    # def get_wells(num, wells, line):
-    #     if num is not None:
-    #         if num==0:
-    #             # first line is number of wells
-    #             num = int(line.split()[0])
-    #         else:
-    #             num -= 1
-    #             wells.append(line.split()[0])
-    #             if num==0:
-    #                 num = None
-    #     return num, wells
-                    
-    # out_well = []
-    # in_well = []
-    # if root:
-    #     n_out = n_in = None
-    #     if not Path(str(root)+'.trcinp').is_file():
-    #         raise SystemError('trcinp-file is missing')
-    #     with open(str(root)+'.trcinp') as f:
-    #         for line in f:
-    #             if line.lstrip().startswith('#') or line.isspace():
-    #                 continue
-    #             if line.lstrip().startswith('*OUTPUT'):
-    #                 n_out = 0
-    #                 continue
-    #             if line.lstrip().startswith('*WELLSPECIES'):
-    #                 n_in = 0
-    #                 continue
-    #             n_out, out_well = get_wells(n_out, out_well, line)
-    #             n_in, in_well = get_wells(n_in, in_well, line)
 
-    # #print(out_well, in_well)
-    # return out_well, in_well
-    
+
 #-----------------------------------------------------------------------
 def get_eclipse_well_yaxis_fluid(root):
 #-----------------------------------------------------------------------
