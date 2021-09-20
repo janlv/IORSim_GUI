@@ -25,7 +25,7 @@ import warnings
 import copy
 
 from ior2ecl import simulation, main as ior2ecl_main
-from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, return_matching_string, delete_all, file_contains, upper_and_lower
+from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, return_matching_string, delete_all, file_contains, safeopen, upper_and_lower, write_file
 from IORlib.ECL import get_tsteps, unfmt_file
 import GUI_icons
 
@@ -114,7 +114,14 @@ def get_eclipse_well_yaxis_fluid(root):
     summary = well = False
     vars = []
     wells = []
-    with open(fil) as f:
+    encoding = None
+    try:
+        with open(fil) as f:
+            for line in f:
+                l = f.readline()
+    except UnicodeDecodeError:
+        encoding = 'ISO-8859-1'
+    with open(fil, encoding=encoding) as f:
         for line in f:
             if line.lstrip().startswith('--') or line.isspace():
                 continue
@@ -1351,7 +1358,8 @@ class main_window(QMainWindow):                                    # main_window
             # set mode from file
             mode_file = Path(self.case).parent/'mode.gui'
             if mode_file.is_file():
-                mode = open(mode_file).readline().strip()
+                with open(mode_file) as f:
+                    mode = f.readline().strip()
             # on_mode_select() is called in prepare_case() and 
             # dont need to be triggered here    
             self.mode_cb.blockSignals(True)
@@ -2031,8 +2039,13 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         #print('save_text')
         #self.editor.blockSignals(True)
-        with open(self.editor.objectName(), 'w') as f:
-            f.write(self.editor.toPlainText())
+        write_file(self.editor.objectName(), self.editor.toPlainText())
+        #try:
+        #    with open(self.editor.objectName(), 'w') as f:
+        #        f.write(self.editor.toPlainText())
+        #except UnicodeEncodeError:
+        #    with open(self.editor.objectName(), 'w', encoding='ISO-8859-1') as f:
+        #        f.write(self.editor.toPlainText())
         #self.cursor_pos = self.editor.textCursor().position()
         #self.vscroll_pos = self.editor.verticalScrollBar().value()
         #print(self.vscroll_pos)
@@ -2076,7 +2089,8 @@ class main_window(QMainWindow):                                    # main_window
         self.search_field.setPlaceholderText('Search text')
         text = ''
         if file and Path(file).is_file():
-            text = open(file).read()
+            text = read_file(file)
+            #text = open(file).read()
             #self.editor.setObjectName(str(file))
         self.editor.setPlainText(text)
         vscroll = self.vscroll.get(str(file)) or 0
@@ -2096,7 +2110,8 @@ class main_window(QMainWindow):                                    # main_window
         file = self.editor.objectName()
         self.vscroll[file] = self.editor.verticalScrollBar().value()
         if file and Path(file).is_file():
-            text = open(file).read()
+            text = read_file(file)
+            #text = open(file).read()
             self.editor.setObjectName(str(file))
             self.editor.setPlainText(text)
         vscroll = self.vscroll.get(str(file)) or 0
@@ -2228,9 +2243,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         if self.log_file:
             #print('update_log:',self.log_file)
-            self.editor.setPlainText(open(self.log_file).read())
-            #self.editor.setCenterOnScroll(True)
-            #self.editor.ensureCursorVisible()
+            text = read_file(self.log_file)
+            self.editor.setPlainText(text)
+            #self.editor.setPlainText(open(self.log_file).read())
             self.editor.moveCursor(QTextCursor.End)
             self.save_btn.setEnabled(False)
     
