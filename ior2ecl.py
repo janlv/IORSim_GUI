@@ -152,12 +152,19 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
     #--------------------------------------------------------------------------------
     def check_input(self):                                             # ecl_backward
     #--------------------------------------------------------------------------------
+        def raise_error(msg):
+            raise SystemError(f'ERROR To run the current case in backward-mode, you need to {msg}')
+        ### Check that root.DATA exists 
         super().check_input()
-        ### Check root.DATA exists and that READDATA keyword is NOT present
+        kwargs = {'comment':'--', 'end':'END'}
+        ### Check presence of READDATA
         DATA_file = str(self.case)+'.DATA'
-        if not file_contains(DATA_file, text='READDATA', comment='--'):
-            raise SystemError('WARNING The current case cannot be used in backward-mode: '+
-                              'Eclipse input is missing the READDATA keyword.')
+        #if not file_contains(DATA_file, text='READDATA', comment=comment, end=end):
+        if not file_contains(DATA_file, text='READDATA', **kwargs):
+            raise_error("insert 'READDATA /' in the DATA-file between 'TSTEP' and 'END'.")
+        ### Check presence of RPTSOL RESTART>1
+        if not file_contains(DATA_file, regex=r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}", **kwargs):
+            raise_error("insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in the DATA-file.")
 
 
     # #--------------------------------------------------------------------------------
