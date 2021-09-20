@@ -120,7 +120,8 @@ def get_eclipse_well_yaxis_fluid(root):
             for line in f:
                 l = f.readline()
     except UnicodeDecodeError:
-        encoding = 'ISO-8859-1'
+        #encoding = 'ISO-8859-1'
+        encoding = 'latin-1'
     with open(fil, encoding=encoding) as f:
         for line in f:
             if line.lstrip().startswith('--') or line.isspace():
@@ -1349,10 +1350,9 @@ class main_window(QMainWindow):                                    # main_window
             mode = 'forward'
             #print(self.case, self.input['root'])
             try:
-                if file_contains(self.case+'.DATA', text='READDATA', comment='--'):
+                if file_contains(self.case+'.DATA', text='READDATA', comment='--', end='END'):
                     mode = 'backward'
                     self.days_box.setEnabled(False)
-                    #print('file_contains: '+mode)
             except FileNotFoundError as e:
                 show_message(self, 'error', text='The Eclipse DATA-file is missing for this case')
             # set mode from file
