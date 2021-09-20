@@ -566,7 +566,7 @@ class Schedule:
         if use_dates:
             regex = compile(r'\n?\s*\bDATES\b\s+(\d+)\s+\'?(\w+)\'?\s+(\d+)\s*/\s+/')
         else:
-            regex = compile(r'\n?\s*\bTSTEP\b\s+([0-9 ]+)\s*/\s+')
+            regex = compile(r'\n?\s*\bTSTEP\b\s+([0-9.* ]+)\s*/\s+')
         # Create list of (time, (start, end))-tuple
         date_span = [(' '.join(m.groups()), m.span()) for m in regex.finditer(schfile)]
         pos = [s for d,s in date_span] + [(len(schfile), 0)]
@@ -576,7 +576,9 @@ class Schedule:
         if use_dates:
             days = [(datetime.strptime(d, '%d %b %Y').date()-self.start).days for d,s in date_span]
         else:   
-            days = list(accumulate([sum([float(i) for i in d.split()]) for d,s in date_span]))
+            # Process x*y statements
+            prod = lambda x, y : int(x)*float(y) 
+            days = list(accumulate([sum([prod(*i.split('*')) if '*' in i else float(i) for i in d.split()]) for d,s in date_span]))
         # Return only non-empty [day, action] pairs
         return [[float(d), a+'\n'] for (d,a) in zip(days, actions) if a]
 
