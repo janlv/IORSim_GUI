@@ -1051,8 +1051,8 @@ def parse_input(case_dir=None, settings_file=None):
 #--------------------------------------------------------------------------------
     description = 'Script for running IORSim and Eclipse in backward and forward mode'
     parser = ArgumentParser(description=description)
-    parser.add_argument('root',            help='Eclipse case name without .DATA')
-    parser.add_argument('days',            help='Time interval of the simulation, if 0 only convert+merge is performed', type=int)
+    parser.add_argument('root',            help='Eclipse case folder or full path of the DATA-file')
+    parser.add_argument('days',            help='Simulation time interval', type=int)
     parser.add_argument('-eclexe',         default='eclrun', help="Name of excecutable, default is 'eclrun'")
     parser.add_argument('-iorexe',         help="Name of IORSim executable, default is 'IORSimX'"                  )
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
@@ -1069,8 +1069,11 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-alive_children', help='Only stop parent-processes (approx. 5%% faster, but might be more unstable)', action='store_true')
     args = vars(parser.parse_args())
     # Look for case in case_dir if root is not a file
-    if case_dir and not Path(args['root']+'.DATA').is_file():
+    if case_dir and not Path(args['root']).is_file():
         args['root'] = case_from_casedir(case_dir, args['root'])
+    # Remove suffix from root
+    args['root'] = Path(args['root']).parent/Path(args['root']).stem
+    print(args['root'])
     # Read iorexe from settings if argument is missing
     if settings_file and not args['iorexe']:
         args['iorexe'] = iorexe_from_settings(settings_file, args['iorexe'])
