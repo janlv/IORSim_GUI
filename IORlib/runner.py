@@ -397,7 +397,7 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def print_process_status(self, v=1):
     #--------------------------------------------------------------------------------
-        self._print(', '.join([p.current_status() for p in self.process_list() if p.current_status()]), v=v)
+        self._print(', '.join( [str(p.current_status()) for p in self.process_list()] ), v=v)
 
     #--------------------------------------------------------------------------------
     def print_suspend_errors(self, v=1):
