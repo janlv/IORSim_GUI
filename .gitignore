@@ -166,7 +166,6 @@ test_merge.py
 .#ior2ecl_GUI.py
 \#ior2ecl_GUI.py#
 file_satnum.dat
-loop_run.py
 dist/IORSim_GUI.exe
 IORSim_GUI.exe
 schedule.txt
