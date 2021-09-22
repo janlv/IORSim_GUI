@@ -4,7 +4,7 @@ from pathlib import Path
 def mypath(dirs):
     return Path.home().joinpath(*(dirs.split()))
 
-def run(cases, times):
+def loop_run(cases, times):
     iorexe = mypath('codes IORSim build bin IORSimX.exe')
     cdir = mypath('codes IORSim_GUI GUI cases')
     n = 0
@@ -14,5 +14,7 @@ def run(cases, times):
         n += 1
 
 if __name__ == '__main__':
-    run(10*['L18'], 10*[1100])
+    cases = 1*['L18']+['KURS-07A', 'SNORRE-IORSIM-OLD', 'GEOCHEM_BACK', 'GEOCHEM_FWD']
+    times = 1*[1100 ]+[2000      , 3700               , 1000          , 1000]
+    loop_run(cases, times)
 
