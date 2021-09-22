@@ -978,51 +978,6 @@ class simulation:
 #                                                                           #
 #############################################################################
 
-# #-----------------------------------------------------------------------
-# def ior_input_old(var=None, root=None):
-# #-----------------------------------------------------------------------
-# #
-# #  Read variables from IORSim input file .trcinp
-# #
-# #  *INTEGRATION : tstart, tstop, dtmin, dtmax, dtecl, dteclmax, metnum
-# #
-#     file=f'{root}.trcinp'
-#     regname = []
-#     regname.append( {'regex':r'\*\bINTEGRATION\b', 'names':['tstart','tstop','dtmin','dtmax','dtecl','dteclmax','metnum']} )
-#     regname.append( {'regex':r'\*\bWELLSPECIES\b', 'names':['Ninjwell','Injwellname','Ntime']} )
-#     regname.append( {'regex':r'\*\bOUTPUT\b', 'names':['Noutwell','Outwellname']} )
-#     pos = keyword = []
-#     for i,rn in enumerate(regname):
-#         if var in rn['names']:
-#             pos = rn['names'].index(var)
-#             keyword = rn['regex']
-#     if not keyword:
-#         raise SystemError(f'ERROR {var} is not found in IORSim input')
-#     data = remove_comments(file, comment='#')
-#     regex = compile(fr'\s*{keyword}\s*([0-9.eE\s]+)')
-#     try:
-#         #values = [float(s) for m in regex.finditer(data) for s in m.group(1).split()]
-#         values = [m for m in regex.finditer(data) for s in m.group(1).split()]
-#         print(values)
-#         values = values[pos]
-#     except IndexError:
-#         raise SystemError(f'ERROR Unable to read {var} from {keyword} in IORSim input')
-#     print(values)
-#     return values
-
-# #-----------------------------------------------------------------------
-# def ior_input(root, keyword=None):
-# #-----------------------------------------------------------------------
-# #
-# #  Read variables from IORSim input file .trcinp
-# #
-# #
-#     file=f'{root}.trcinp'
-#     return get_keyword(file, keyword=keyword)
-#     #data = remove_comments(file, comment='#')
-#     #regex = compile(fr'{keyword}\s+([0-9A-Za-z.-_+\s]+)(?={end})') 
-#     #values = [v.split() for v in regex.findall(data)]
-#     #return [float_or_str(v) for v in values]
 
 
 #--------------------------------------------------------------------------------
@@ -1041,7 +996,7 @@ def iorexe_from_settings(settings_file, iorexe):
                     break 
         return val
     raise SystemError('\n   Missing IORSim executable: '+str(iorexe)+'\n')
-    #raise SystemExit
+
 
 #--------------------------------------------------------------------------------
 def case_from_casedir(case_dir, root):
@@ -1065,7 +1020,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
     parser.add_argument('-rft_size',       help='Backward mode: Only check size of RFT-file, default is full check', action='store_true')
-    #    parser.add_argument('-pause',          default=0.5, help='Backward mode: pause between Eclipse and IORSim runs', type=float)
+    #parser.add_argument('-pause',          default=0.5, help='Backward mode: pause between Eclipse and IORSim runs', type=float)
     #parser.add_argument('-init_tstep',     default=1.0, help='Backward mode: initial Eclipse TSTEP', type=float)
     parser.add_argument('-v',              default=3, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
     parser.add_argument('-keep_files',     help='Interface-files are not deleted after completion', action='store_true')
@@ -1117,6 +1072,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
             elif value==0:
                 prog.reset_time()
             prog.print(value)
+            print()
 
     #----------------------------------------
     def message(text=None, **x):
