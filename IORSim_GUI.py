@@ -769,6 +769,7 @@ class main_window(QMainWindow):                                    # main_window
         gui_dir.mkdir(exist_ok=True)
         self.settings = Settings(self, file=str(settings_file))
         self.casedir = case_dir 
+        self.case = None
         self.input_file = input_file #gui_dir/'input.txt'
         #self.input = {'root':None, 'ecl_days':None, 'dtecl':None, 'days':None, 'step':None, 'species':[], 'mode':None} #, 'case':None}
         self.input = {'root':None, 'ecl_days':None, 'days':None, 'step':None, 'species':[], 'mode':None}
@@ -1293,7 +1294,7 @@ class main_window(QMainWindow):                                    # main_window
     def on_mode_select(self, nr):                               # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
-        if nr<0:
+        if nr<0 or not self.case:
             return
         self.max_days = None
         mode = self.modes[nr]
@@ -2252,10 +2253,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_plot(self):                                # main_window
     #-----------------------------------------------------------------------
-        #if not self.case:
-        #    #self.sender().setChecked(False)
-        #    self.missing_case_error('plot: ')
-        #    return False
+        if not self.case:
+            self.missing_case_error()
+            return False
         self.log_file = None
         self.editor.setObjectName('')
         if self.current_view:
