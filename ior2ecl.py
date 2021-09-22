@@ -646,12 +646,12 @@ class Schedule:
 class simulation:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, mode=None, root=None, pause=0, init_tstep=1, runs=[], to_screen=False, 
+    def __init__(self, mode=None, root=None, pause=0, runs=[], to_screen=False, 
                  convert=True, merge=True, del_convert=False, del_merge=False, delete=True,
                  status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None, 
                  message=lambda **x:None, **kwargs):
     #--------------------------------------------------------------------------------
-        #print('mode',mode,'root',root,'pause',pause,'init_tstep',init_tstep,'runs',runs,'to_screen',to_screen,
+        #print('mode',mode,'root',root,'pause',pause,'runs',runs,'to_screen',to_screen,
         #      'convert',convert,'merge',merge,'del_merge',del_merge,'del_convert',del_convert,
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.name = 'ior2ecl'
@@ -1066,7 +1066,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
     parser.add_argument('-rft_size',       help='Backward mode: Only check size of RFT-file, default is full check', action='store_true')
     #    parser.add_argument('-pause',          default=0.5, help='Backward mode: pause between Eclipse and IORSim runs', type=float)
-    parser.add_argument('-init_tstep',     default=1.0, help='Backward mode: initial Eclipse TSTEP', type=float)
+    #parser.add_argument('-init_tstep',     default=1.0, help='Backward mode: initial Eclipse TSTEP', type=float)
     parser.add_argument('-v',              default=3, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
     parser.add_argument('-keep_files',     help='Interface-files are not deleted after completion', action='store_true')
     parser.add_argument('-to_screen',      help='Print program log to screen', action='store_true')
@@ -1089,7 +1089,7 @@ def parse_input(case_dir=None, settings_file=None):
 @print_error
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
-           init_tstep=1.0, check_unrst=True, check_rft=True, rft_size=False, keep_files=False, 
+           check_unrst=True, check_rft=True, rft_size=False, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
            stop_children=True):
 #--------------------------------------------------------------------------------
@@ -1123,7 +1123,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     #----------------------------------------
         text and print('\n\n     ' + text + '\n')
 
-    sim = simulation(root=root, time=time, pause=pause, init_tstep=init_tstep, iorexe=iorexe, eclexe=eclexe, 
+    sim = simulation(root=root, time=time, pause=pause, iorexe=iorexe, eclexe=eclexe, 
                      check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size,  
                      keep_files=keep_files, progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert, merge=merge, delete=delete, stop_children=stop_children)
@@ -1145,7 +1145,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
 #--------------------------------------------------------------------------------
     args = parse_input(case_dir=case_dir, settings_file=settings_file)
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=args['rft_size'], 
-           to_screen=args['to_screen'], init_tstep=args['init_tstep'], eclexe=args['eclexe'], iorexe=args['iorexe'],
+           to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
            stop_children=(not args['alive_children']))
     os._exit(0)

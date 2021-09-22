@@ -448,7 +448,6 @@ class Settings(QDialog):
         self.default = {'eclrun'      : 'eclrun', 
                         'unrst'       : True, 
                         'rft'         : True, 
-                        'dt'          : '1', 
                         'convert'     : True,
                         'del_convert' : True,
                         'merge'       : True,
@@ -475,7 +474,6 @@ class Settings(QDialog):
                     'eclrun'      : "Eclipse command, default is 'eclrun'",
                     'unrst'       : 'Check that the UNRST-file is properly flushed before suspending Eclipse',
                     'rft'         : 'Check that the RFT-file is properly flushed before suspending Eclipse',
-                    'dt'          : 'Eclipse starts before IORSim and the first Eclipse TSTEP is given here. Subsequent TSTEPs are provided by IORSim via the interface-file.',
                     'convert'     : 'Convert IORSim formatted output to unformatted format (readable by ResInsight), and also add output from the Eclipse run',
                     'del_convert' : 'Delete the original formatted IORSim output if the convert is successful',
                     'merge'       : 'Merge the unformatted output from Eclipse and IORSim into one file',
@@ -562,24 +560,24 @@ class Settings(QDialog):
         label.setText('Backward options')
         grid.addWidget(label, n, 0)
 
-        # initial timestep
-        n += 1
-        layout = QGridLayout()
-        grid.addLayout(layout, n, 1) # (layout, row, col, rowspan, colspan)
-        var, text = 'dt', 'Initial timestep passed to Eclipse '
-        lbl_dt, self.dt = self.new_line(var=var, text=text, required=True)
-        self.dt.setFixedWidth(40)
-        self.dt.setToolTip(tool_tip[var])
-        lbl_dt.setToolTip(tool_tip[var])
-        layout.addWidget(lbl_dt, 0, 0)
-        box = QHBoxLayout()
-        layout.addLayout(box, 0, 1)
-        box.addWidget(self.dt)
-        txt = QLabel()
-        txt.setText('TSTEP')
-        box.addWidget(txt)
-
+        # # initial timestep
         # n += 1
+        # layout = QGridLayout()
+        # grid.addLayout(layout, n, 1) # (layout, row, col, rowspan, colspan)
+        # var, text = 'dt', 'Initial timestep passed to Eclipse '
+        # lbl_dt, self.dt = self.new_line(var=var, text=text, required=True)
+        # self.dt.setFixedWidth(40)
+        # self.dt.setToolTip(tool_tip[var])
+        # lbl_dt.setToolTip(tool_tip[var])
+        # layout.addWidget(lbl_dt, 0, 0)
+        # box = QHBoxLayout()
+        # layout.addLayout(box, 0, 1)
+        # box.addWidget(self.dt)
+        # txt = QLabel()
+        # txt.setText('TSTEP')
+        # box.addWidget(txt)
+
+        #n += 1
         # pause between runs
         var, text = 'pause', 'Pause before IORSim resumes '
         lbl_pause, self.pause = self.new_line(var=var, text=text)
@@ -596,6 +594,8 @@ class Settings(QDialog):
 
         n += 1
         # unrst file check
+        layout = QGridLayout()
+        grid.addLayout(layout, n, 1) # (layout, row, col, rowspan, colspan)
         lbl = QLabel()
         lbl.setText('Eclipse outfile checks ')
         layout.addWidget(lbl, 2, 0)    
@@ -613,7 +613,7 @@ class Settings(QDialog):
         n += 1
         # stop child process
         lbl = QLabel()
-        lbl.setText('Suspend Eclipse child-process')
+        lbl.setText('Suspend child processes')
         layout.addWidget(lbl, 3, 0)    
         var, text = 'stop_child', ''
         self.stop_child = self.new_box(var=var, text=text)
@@ -729,7 +729,10 @@ class Settings(QDialog):
                         var = line.rstrip()
                         val = ''
                     else:
-                        self.set[var.strip()]( str_to_bool(val.strip()) )
+                        try:
+                            self.set[var.strip()]( str_to_bool(val.strip()) )
+                        except KeyError:
+                            pass
 
                         
         
@@ -2766,18 +2769,14 @@ class main_window(QMainWindow):                                    # main_window
         if i['days']==0:
             show_message(self, 'warning', text='Total time interval is missing.')
             return False
-        # if self.mode=='backward' and i['days']<i['dtecl']:
-        #     show_message(self, 'warning', text='Total time interval of {} days is less than the IORSim timestep of {} days'.format(i['days'],i['dtecl']))
-        #     return False
         if self.max_days and i['days']>self.max_days:
             show_message(self, 'warning', text='The Eclipse output read by IORSim currently sets a limit of ' + str(self.max_days) + 
                                                ' days on the time interval. Run Eclipse with a higher TSTEP to increase the maximun time interval.')
             return False
-        #if i['dt']==0:
-        if not self.settings.get['dt']() or int(self.settings.get['dt']())==0:
-            show_message(self, 'warning', text='Timestep missing in settings')
-            self.settings.open()
-            return False
+        # if not self.settings.get['dt']() or int(self.settings.get['dt']())==0:
+        #     show_message(self, 'warning', text='Timestep missing in settings')
+        #     self.settings.open()
+        #     return False
         if not i['root']:
             show_message(self, 'warning', text='No input-case selected')
             return False
@@ -2826,8 +2825,7 @@ class main_window(QMainWindow):                                    # main_window
         for opt in ('convert','del_convert','merge','del_merge'):
             kwargs[opt] = s.get[opt]()
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 
-                                 pause=float(s.get['pause']()), init_tstep=float(s.get['dt']()), 
-                                 stop_children=s.get['stop_child'](), days_box=self.days_box, **kwargs)
+                                 pause=float(s.get['pause']()), stop_children=s.get['stop_child'](), days_box=self.days_box, **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)
