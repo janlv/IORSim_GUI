@@ -1072,8 +1072,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
             elif value==0:
                 prog.reset_time()
             prog.print(value)
-            print()
-
+            
     #----------------------------------------
     def message(text=None, **x):
     #----------------------------------------
