@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from collections import namedtuple
+from mmap import ACCESS_READ, mmap
 import os
 from pathlib import Path
 import sys
@@ -14,7 +15,7 @@ import shutil
 import traceback
 from re import search, compile
 
-from IORlib.utils import get_python_version, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, check_endtag, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import get_python_version, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, unfmt_file, fmt_file, Section
 
@@ -31,6 +32,7 @@ class eclipse(runner):                                                      # ec
         root = str(root)        
         #exe = kwargs.pop('exe', None) or 'eclrun' # Default executable
         #print(exe)
+        exe = str(exe)
         super().__init__(name='Eclipse', case=root, exe=exe, cmd=[exe, 'eclipse', root], **kwargs)                        
         self.unrst = Path(root+'.UNRST')
         #self.unsmry = unfmt_file(root+'.UNSMRY')
@@ -149,11 +151,12 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
         self.rft_start_size = 0
 
+
     #--------------------------------------------------------------------------------
     def check_input(self):                                             # ecl_backward
     #--------------------------------------------------------------------------------
         def raise_error(msg):
-            raise SystemError(f'ERROR To run the current case in backward-mode, you need to {msg}')
+            raise SystemError(f'ERROR To run the current case in backward-mode you need to {msg}')
         ### Check that root.DATA exists 
         super().check_input()
         kwargs = {'comment':'--', 'end':'END'}
@@ -167,24 +170,9 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
             raise_error("insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in the DATA-file.")
 
 
-    # #--------------------------------------------------------------------------------
-    # def update_function(self, progress=True, plot=False):              # ecl_backward
-    # #--------------------------------------------------------------------------------
-    #     #print(f'update_function(progress={progress}, plot={plot}')
-    #     self.assert_running_and_stop_if_canceled()
-    #     #if self.update:
-    #     self.t = self.time_and_step()[0]
-    #     self.update.status(run=self)
-    #     progress and self.update.progress(value=self.t)
-    #     plot and self.update.plot()
-
-
     #--------------------------------------------------------------------------------
     def start(self, restart=False):                                    # ecl_backward
     #--------------------------------------------------------------------------------
-        def loop_func():
-            self.update_function(progress=not restart, plot=True)
-
         # Start Eclipse in backward mode
         self.update.status(value=f'Starting {self.name}...')
         # If RESTART in DATA, add time and step from restart-file
@@ -199,11 +187,11 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
         self.update.status(value=f'{self.name} running...')
         # Check if restart-file (UNRST) is flushed   
-        nblocks = 1 + self.init_tsteps # len(self.tsteps) # 1 for 0'th SEQNUM
-        if sum(self.tsteps) > 10: 
-            self.check_UNRST_file(nblocks=nblocks, loop_func=loop_func, pause=0.5) 
-        else:
-            self.check_UNRST_file(nblocks=nblocks) 
+        nblocks = 1 + self.init_tsteps # 1 for 0'th SEQNUM
+        for i in range(nblocks):
+            if i > 0:
+                self.update_function(progress=not restart, plot=True)
+            self.check_UNRST_file() 
         self.nwell = self.unrst_check.var('nwell')
         nwell_max = nblocks*self.nwell
         rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell)
@@ -218,7 +206,7 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
         if self.rft_size:
             self.rft_start_size = self.rft.stat().st_size
         ### run Eclipse
-        self.interface_file(self.n).copy(satnum_file, delete=False)
+        self.interface_file(self.n).copy(satnum_file, delete=True)
         self.OK_file().create_empty()
         self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
@@ -243,11 +231,9 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
 
 
     #--------------------------------------------------------------------------------
-    def check_UNRST_file(self, nblocks=1, loop_func=None, pause=0.01, limit=None):   # ecl_backward
+    def check_UNRST_file(self, nblocks=1, pause=0.01):   # ecl_backward
     #--------------------------------------------------------------------------------
-        self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info,
-                      error=self.unrst_check.file.name()+' not complete', loop_func=loop_func,
-                      pause=pause, limit=limit )
+        self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info, pause=pause )
 
     #--------------------------------------------------------------------------------
     def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=100):        # ecl_backward
@@ -316,6 +302,7 @@ class iorsim(runner):                                                        # i
     def __init__(self, root=None, exe='IORSimX', args='', **kwargs):
     #--------------------------------------------------------------------------------
         #print('iorsim.__init__: ',root, exe, args, kwargs)
+        exe = str(exe)
         if '.exe' not in exe and sys.platform == 'win32':
             exe += '.exe'
         # IORSim only accepts root relative to the current directory
@@ -402,7 +389,6 @@ class ior_backward(backward_mixin, iorsim):                             # ior_ba
         self.init_tsteps = len(self.tsteps)
         self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
         self.endtag = '-- IORSimX done.'
-        self.satnum_check = check_endtag(file=self.satnum, endtag=self.endtag)  # Check if satnum-file is flushed
 
 
     #--------------------------------------------------------------------------------
@@ -412,30 +398,39 @@ class ior_backward(backward_mixin, iorsim):                             # ior_ba
         silentdelete(self.satnum)
 
     #--------------------------------------------------------------------------------
-    def start(self, restart=False):                         # ior_backward
+    def satnum_flushed(self):
+    #--------------------------------------------------------------------------------
+        file = Path(self.satnum)
+        nchar = len(self.endtag) + 3
+        endtag = self.endtag.encode()
+        if not file.is_file() or file.stat().st_size < nchar:
+            return False
+        with open(file) as f:
+            try:
+                with mmap(f.fileno(), length=0, access=ACCESS_READ) as data:
+                    if endtag in data[-nchar:]:
+                        #print(data[-nchar:])
+                        return True
+            except ValueError:  # Catch 'cannot mmap empty file'
+                return False
+        return False
+
+
+    #--------------------------------------------------------------------------------
+    def start(self, restart=False):                                    # ior_backward
     #--------------------------------------------------------------------------------
         # Start IORSim backward run
-        self.n = 1
-        self.update and self.update.status(value=f'Starting {self.name}...')
+        self.n = 0 
         self.interface_file('all').delete()
-        self.interface_file(self.n).create_empty()
-        self.OK_file().create_empty()
-        super().start()
-        self.update and self.update.status(value=f'{self.name} running...')
-        self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-        self.run_steps(self.init_tsteps, restart=restart)
-        self.suspend()
+        self.run_steps(1+self.init_tsteps, start=True)
 
     #--------------------------------------------------------------------------------
-    def run_one_step(self):                                         # ior_backward
+    def run_one_step(self):                                            # ior_backward
     #--------------------------------------------------------------------------------
-        ### run IORSim
-        self.resume()
         self.run_steps(1)
-        self.suspend()
 
     #--------------------------------------------------------------------------------
-    def run_steps(self, N, restart=False):                             # ior_backward
+    def run_steps(self, N, start=False):                               # ior_backward
     #--------------------------------------------------------------------------------
         ### run IORSim
         for n in range(N):
@@ -444,14 +439,17 @@ class ior_backward(backward_mixin, iorsim):                             # ior_ba
             self.n += 1
             self.interface_file(self.n).create_empty()
             self.OK_file().create_empty()
+            if n == 0:
+                if start:
+                    self.update and self.update.status(value=f'Starting {self.name}...')
+                    super().start()
+                    self.update and self.update.status(value=f'{self.name} running...')
+                else:
+                    self.resume()
             self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
-            # if restart:
-            #     self.t = self.time_and_step()[0]
-            #     self.update.progress(value=self.t)
-            #     self.update.status(run=self)
-            #     self.update.plot()
-        self.wait_for( self.satnum_check.find_endtag, error=self.satnum_check.file().name+' has no endtag')
+        self.wait_for(self.satnum_flushed)
         warn_empty_file(self.satnum, comment='--')
+        self.suspend()
 
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ior_backward
