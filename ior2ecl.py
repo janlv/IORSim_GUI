@@ -1021,7 +1021,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
     parser.add_argument('-rft_size',       help='Backward mode: Only check size of RFT-file, default is full check', action='store_true')
     #parser.add_argument('-pause',          default=0.5, help='Backward mode: pause between Eclipse and IORSim runs', type=float)
-    #parser.add_argument('-init_tstep',     default=1.0, help='Backward mode: initial Eclipse TSTEP', type=float)
+    parser.add_argument('-mode',           choices=['eclipse','iorsim'], help="Run only eclipse or iorsim")
     parser.add_argument('-v',              default=3, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
     parser.add_argument('-keep_files',     help='Interface-files are not deleted after completion', action='store_true')
     parser.add_argument('-to_screen',      help='Print program log to screen', action='store_true')
@@ -1035,7 +1035,7 @@ def parse_input(case_dir=None, settings_file=None):
         args['root'] = case_from_casedir(case_dir, args['root'])
     # Remove suffix from root
     args['root'] = Path(args['root']).parent/Path(args['root']).stem
-    print(args['root'])
+    #print(args['root'])
     # Read iorexe from settings if argument is missing
     if settings_file and not args['iorexe']:
         args['iorexe'] = iorexe_from_settings(settings_file, args['iorexe'])
@@ -1046,7 +1046,7 @@ def parse_input(case_dir=None, settings_file=None):
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
            check_unrst=True, check_rft=True, rft_size=False, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
-           stop_children=True):
+           stop_children=True, mode=None):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1078,10 +1078,17 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
     #----------------------------------------
         text and print('\n\n     ' + text + '\n')
 
+    # Check if we only run eclipse or iorsim
+    runs = []
+    if mode and mode.lower() in ('eclipse','iorsim'):
+        runs = [mode.lower()]
+        mode = 'forward'
+
     sim = simulation(root=root, time=time, pause=pause, iorexe=iorexe, eclexe=eclexe, 
                      check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size,  
                      keep_files=keep_files, progress=progress, status=status, message=message, to_screen=to_screen,
-                     convert=convert, merge=merge, delete=delete, stop_children=stop_children)
+                     convert=convert, merge=merge, delete=delete, stop_children=stop_children,
+                     runs=runs, mode=mode)
 
     if only_convert or only_merge:
         sim.convert_and_merge(case=sim.root, only_merge=only_merge)
@@ -1102,7 +1109,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=args['rft_size'], 
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
-           stop_children=(not args['alive_children']))
+           stop_children=(not args['alive_children']), mode=args['mode'])
     os._exit(0)
 
 
