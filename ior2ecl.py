@@ -647,7 +647,7 @@ class simulation:
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, mode=None, root=None, pause=0, runs=[], to_screen=False, 
-                 convert=True, merge=True, del_convert=False, del_merge=False, delete=True,
+                 convert=True, merge=True, del_convert=False, del_merge=False, delete=False,
                  status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None, 
                  message=lambda **x:None, **kwargs):
     #--------------------------------------------------------------------------------

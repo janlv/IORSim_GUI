@@ -77,15 +77,20 @@ def create_action(win, text=None, shortcut=None, tip=None, func=None, icon=None,
 def get_species_iorsim(root):
 #-----------------------------------------------------------------------
     file = f'{root}.trcinp'
-    species = get_keyword(file, keyword='\*solution')
+    species = get_keyword(file, '\*solution')
     if species:
         species = species[0][1::2]
     else:
         # Read old input format
-        species = flat_list(get_keyword(file, keyword='\*SPECIES'))
+        species = flat_list(get_keyword(file, '\*SPECIES'))
         species = [s for s in species if isinstance(s, str)]
     #print(species)
-    return species
+    # Also add tracers to species list
+    tracers = flat_list(get_keyword(file, '\*NAME'))
+    if tracers:
+        tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
+    #print(tracers)
+    return species+tracers
                 
 
 #-----------------------------------------------------------------------
@@ -94,13 +99,17 @@ def get_wells_iorsim(root):
     file = f'{root}.trcinp'
     #print(file)
     in_wells, out_wells = [], []
-    out_wells = flat_list(get_keyword(file, keyword='\*PRODUCER'))
-    in_wells = flat_list(get_keyword(file, keyword='\*INJECTOR'))
+    out_wells = flat_list(get_keyword(file, '\*PRODUCER'))
+    in_wells = flat_list(get_keyword(file, '\*INJECTOR'))
     if not out_wells or not in_wells:
         # Read old input format
-        out_wells = get_keyword(file, keyword='\*OUTPUT')[0][1:]
-        w = get_keyword(file, keyword='\*WELLSPECIES')[0]
-        in_wells = w[1:1+int(w[0])]
+        ow = get_keyword(file, '\*OUTPUT')
+        if ow:
+            out_wells = ow[0][1:]
+        w = get_keyword(file, '\*WELLSPECIES')
+        if w:
+            w = w[0]
+            in_wells = w[1:1+int(w[0])]
     #print(out_wells, in_wells)
     return out_wells, in_wells
 
@@ -319,6 +328,7 @@ class sim_worker(base_worker):
         self.sim = None
         self.signals.stop.connect(self.stop_sim)
         self.days_box = kwargs.get('days_box') or None
+        #print(self.kwargs)
 
     #-----------------------------------------------------------------------
     def current_run(self):
@@ -1090,30 +1100,30 @@ class main_window(QMainWindow):                                    # main_window
 
         species = enumerate(self.input['species'] or [])
         prop = {}
-        prop['color'] = None
-        prop['line'] = None
-        prop['alpha'] = None
+        prop['color'] = {} #None
+        prop['line'] = {} #None
+        prop['alpha'] = {} #None
         species = self.input['species']
         if species:
             prop['color'] = {specie:colors[i%len(colors)] for i,specie in enumerate(species)}
             prop['line'] = {specie:'-' for i,specie in enumerate(species)}
             prop['alpha'] = {specie:1.0 for i,specie in enumerate(species)}
-            for var in ('Temp','Temp_ecl'):
-                prop['color'][var] = '#000000' 
-                prop['line'][var] = '--' 
-                prop['alpha'][var] = 0.5
-            var = 'Oil'
-            prop['color'][var] = '#d62728' # red
-            prop['line'][var] = '-' 
-            prop['alpha'][var] = 1.0
-            var = 'Water'
-            prop['color'][var] = '#1f77b4' # blue
-            prop['line'][var] = '-' 
-            prop['alpha'][var] = 1.0
-            var = 'Gas'
-            prop['color'][var] = '#2ca02c' # green
-            prop['line'][var] = '-' 
-            prop['alpha'][var] = 1.0
+        for var in ('Temp','Temp_ecl'):
+            prop['color'][var] = '#000000' 
+            prop['line'][var] = '--' 
+            prop['alpha'][var] = 0.5
+        var = 'Oil'
+        prop['color'][var] = '#d62728' # red
+        prop['line'][var] = '-' 
+        prop['alpha'][var] = 1.0
+        var = 'Water'
+        prop['color'][var] = '#1f77b4' # blue
+        prop['line'][var] = '-' 
+        prop['alpha'][var] = 1.0
+        var = 'Gas'
+        prop['color'][var] = '#2ca02c' # green
+        prop['line'][var] = '-' 
+        prop['alpha'][var] = 1.0
         self.plot_prop = prop
 
             
@@ -1616,7 +1626,7 @@ class main_window(QMainWindow):                                    # main_window
         #box.setStyleSheet('padding-left: 15px ')
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        if not color and self.plot_prop:
+        if not color and self.plot_prop['color']:
             color = to_rgb(self.plot_prop['color'][name])
         if color:
             line.setStyleSheet('border: 3px '+linestyle+' '+color)
@@ -2427,13 +2437,16 @@ class main_window(QMainWindow):                                    # main_window
             data = genfromtxt(str(file))
             try:
                 ior['days'] = data[1:,0]
+                #print(ior['days'])
                 for i,name in enumerate(inp['species']):
+                    #print(well, yaxis, name)
                     ior[well][yaxis][name] = data[1:,i+1]
                 if 'conc' in yaxis:
                     ior[well]['conc']['Temp'] = data[1:,-1]
                     ior[well]['prod']['Temp'] = data[1:,-1]
             except (KeyError, IndexError, TypeError) as e:
-                return False
+                #print(e)
+                pass #return False
         self.data['ior'] = ior
         return True
 
