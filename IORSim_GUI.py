@@ -85,14 +85,18 @@ def get_species_iorsim(root):
         species = flat_list(get_keyword(file, '\*SPECIES'))
         species = [s for s in species if isinstance(s, str)]
     #print(species)
-    # Also add tracers to species list
+    return species
+
+#-----------------------------------------------------------------------
+def get_tracers_iorsim(root):
+#-----------------------------------------------------------------------
+    file = f'{root}.trcinp'
     tracers = flat_list(get_keyword(file, '\*NAME'))
     if tracers:
         tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
     #print(tracers)
-    return species+tracers
+    return tracers
                 
-
 #-----------------------------------------------------------------------
 def get_wells_iorsim(root):
 #-----------------------------------------------------------------------
@@ -1083,12 +1087,14 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         inp = self.input
         #inp['dtecl'] = inp['ecl_days'] = inp['species'] = None
-        inp['ecl_days'] = inp['species'] = None
+        inp['ecl_days'] = inp['species'] = inp['tracers'] = None
         if inp['root']:
             #inp['dtecl']   = ior_input(var='dtecl', root=inp['root'])
             #inp['ecl_days'] = ECL_input_days_and_steps(inp['root'])[0]
             inp['ecl_days'] = int(sum(get_tsteps(inp['root']+'.DATA')))
             inp['species'] = get_species_iorsim(inp['root'])
+            inp['tracers'] = get_tracers_iorsim(inp['root'])
+            inp['species'] += inp['tracers']
 
 
     #-----------------------------------------------------------------------
@@ -2434,6 +2440,12 @@ class main_window(QMainWindow):                                    # main_window
             well, yaxis = file.name.split('_W_')[-1].split('.trc')
             if yaxis=='prd':
                 yaxis = 'prod'
+                prod_box = self.ior_boxes['yaxis']['prod']
+                if self.input['tracers']:
+                    prod_box.setEnabled(False)
+                    prod_box.setChecked(False)
+                else:
+                    prod_box.setEnabled(True)
             data = genfromtxt(str(file))
             try:
                 ior['days'] = data[1:,0]
