@@ -74,9 +74,14 @@ def create_action(win, text=None, shortcut=None, tip=None, func=None, icon=None,
 
 
 #-----------------------------------------------------------------------
-def get_species_iorsim(root):
+def get_species_iorsim(root, raise_error=True):
 #-----------------------------------------------------------------------
     file = f'{root}.trcinp'
+    if not Path(file).is_file():
+        if raise_error:
+            raise SystemError(f'ERROR {Path(file).name} is missing')
+        else:
+            return []
     species = get_keyword(file, '\*solution')
     if species:
         species = species[0][1::2]
@@ -88,9 +93,14 @@ def get_species_iorsim(root):
     return species
 
 #-----------------------------------------------------------------------
-def get_tracers_iorsim(root):
+def get_tracers_iorsim(root, raise_error=True):
 #-----------------------------------------------------------------------
     file = f'{root}.trcinp'
+    if not Path(file).is_file():
+        if raise_error:
+            raise SystemError(f'ERROR {Path(file).name} is missing')
+        else:
+            return []
     tracers = flat_list(get_keyword(file, '\*NAME'))
     if tracers:
         tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
@@ -102,6 +112,8 @@ def get_wells_iorsim(root):
 #-----------------------------------------------------------------------
     file = f'{root}.trcinp'
     #print(file)
+    if not Path(file).is_file():
+        return [],[]
     in_wells, out_wells = [], []
     out_wells = flat_list(get_keyword(file, '\*PRODUCER'))
     in_wells = flat_list(get_keyword(file, '\*INJECTOR'))
@@ -380,11 +392,14 @@ class sim_worker(base_worker):
         #------------------------------------
         def message(text=None, **kwargs):
         #------------------------------------
-            text and self.show_message(text)
+            #text and self.show_message(text)
+            self.show_message(text)
 
+        result, msg = False, ''
         self.sim = simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
-        self.days_box.setText(str(int(self.sim.get_time())))
-        result, msg = self.sim.run()
+        if self.sim.ready():
+            self.days_box.setText(str(int(self.sim.get_time())))
+            result, msg = self.sim.run()
         self.show_message(msg)
         return result
 
@@ -1091,10 +1106,15 @@ class main_window(QMainWindow):                                    # main_window
         if inp['root']:
             #inp['dtecl']   = ior_input(var='dtecl', root=inp['root'])
             #inp['ecl_days'] = ECL_input_days_and_steps(inp['root'])[0]
-            inp['ecl_days'] = int(sum(get_tsteps(inp['root']+'.DATA')))
-            inp['species'] = get_species_iorsim(inp['root'])
-            inp['tracers'] = get_tracers_iorsim(inp['root'])
-            inp['species'] += inp['tracers']
+            tsteps = get_tsteps(inp['root']+'.DATA')
+            # if tsteps == [0]:
+            #     tsteps = get_tsteps_from_schedule_files(inp['root'])
+            inp['ecl_days'] = int(sum(tsteps))
+            #if self.get_current_mode().lower() != 'eclipse':
+            if not self.is_eclipse_mode():
+                inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
+                inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
+                inp['species'] += inp['tracers']
 
 
     #-----------------------------------------------------------------------
@@ -1216,23 +1236,20 @@ class main_window(QMainWindow):                                    # main_window
     def copy_case_files(self, from_root, to_root):             # main_window
     #-----------------------------------------------------------------------
         #print('COPY: {} -> {}'.format(from_root, to_root))
-        for ext in ('.DATA','.trcinp','.geocheminp','.sch','.SCH'):
-            #from_fil = str(from_root)+ext
-            #if Path(from_fil).is_file():
+        #for ext in ('.DATA','.trcinp','.geocheminp','.sch','.SCH'):
+        for ext in upper_and_lower(('.DATA','.trcinp','.geocheminp','.cheminit')):
             from_fil = from_root.with_suffix(ext)
             if from_fil.is_file():
-                #to_fil = str(to_root)+ext
-                #shutil.copy(from_fil, to_fil)
                 shutil.copy(from_fil, to_root.with_suffix(ext))
-        for ext in upper_and_lower(('INC','DAT','GRDECL','EGRID','VFP')):
-            for fil in Path(from_root).parent.glob('*.'+ext):
-                shutil.copy(str(fil), str(Path(to_root).parent/fil.name))
-        #ext = '.schedule'
-        #from_fil = from_root.with_suffix(ext)
-        #if from_fil.is_file():
-        #    shutil.copy(from_fil, to_root.with_suffix(ext))
-        #else:
-        #    schedule = Schedule(to_root)
+        from_dir = Path(from_root).parent
+        to_dir = Path(to_root).parent
+        for ext in upper_and_lower(('INC','DAT','GRDECL','EGRID','VFP','SCH')):
+            for fil in from_dir.glob('**/*.'+ext):
+                to_fil = to_dir/fil.relative_to(from_dir)
+                #print(f'{fil} -> {to_fil}')
+                os.makedirs(to_fil.parent, exist_ok=True)
+                shutil.copy(str(fil), str(to_fil))
+
 
         
     #-----------------------------------------------------------------------
@@ -1542,6 +1559,22 @@ class main_window(QMainWindow):                                    # main_window
         rename.set_func(func)
         rename.open()
         
+    #-----------------------------------------------------------------------
+    def get_current_mode(self):
+    #-----------------------------------------------------------------------
+        ind = self.mode_cb.currentIndex()
+        if ind >= 0:
+            return self.modes[ind].lower()
+
+    #-----------------------------------------------------------------------
+    def is_eclipse_mode(self):
+    #-----------------------------------------------------------------------
+        return self.get_current_mode() == 'eclipse'
+
+    #-----------------------------------------------------------------------
+    def is_iorsim_mode(self):
+    #-----------------------------------------------------------------------
+        return self.get_current_mode() == 'iorsim'
 
     #-----------------------------------------------------------------------
     def prepare_case(self, root):
@@ -1557,14 +1590,27 @@ class main_window(QMainWindow):                                    # main_window
             if root:
                 self.on_mode_select(self.mode_cb.currentIndex())
             self.set_plot_properties()
-            self.update_ior_menu()
+            # Add iorsim menu checkboxes
+            self.update_ior_menu(checked = not self.is_eclipse_mode())
+            # if self.is_eclipse_mode():
+            #     # No iorsim run, delete all iorsim checkboxes
+            #     delete_all_widgets_in_layout(self.ior_menu_layout)
+            # else:
+            #     # iorsim boxes checked by default
+            #     self.update_ior_menu(checked=True)
         except SystemError as e:
             self.show_message_text(str(e))
         self.data = {}
         self.unsmry = None  # Signals to re-read Eclipse data
         self.read_ior_data()
         self.read_ecl_data()
-        self.update_ecl_menu()
+        # Add eclipse menu buttons
+        # if self.is_iorsim_mode():
+        #     # No eclipse run, delete all eclipse checkboxes
+        #     delete_all_widgets_in_layout(self.ecl_menu_layout)
+        # else:
+        # Check boxes only if this a eclipse run
+        self.update_ecl_menu(checked=self.is_eclipse_mode())
         self.create_plot()
         if self.view_ag.checkedAction():
            self.view_ag.checkedAction().trigger()
@@ -1632,7 +1678,7 @@ class main_window(QMainWindow):                                    # main_window
         #box.setStyleSheet('padding-left: 15px ')
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        if not color and self.plot_prop['color']:
+        if not color and self.plot_prop.get('color'):
             color = to_rgb(self.plot_prop['color'][name])
         if color:
             line.setStyleSheet('border: 3px '+linestyle+' '+color)
@@ -1665,7 +1711,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         #print('update_ior_menu')
         delete_all_widgets_in_layout(self.ior_menu_layout)
-        if not self.input['root']:
+        if not self.input['root'] or not self.input['species']:
             return False
         col = self.ior_menu_col
         self.ior_boxes = {}
@@ -1703,6 +1749,7 @@ class main_window(QMainWindow):                                    # main_window
             self.ior_boxes['var'][specie] = box
             col[1].addLayout(layout)
         # add temperature box
+        #if len(self.input['species']) > 0:
         layout, box = self.new_box_with_line_layout('Temp', linestyle='dotted', color='#707070', func=self.on_specie_click)
         self.ior_boxes['var']['Temp'] = box
         col[1].addLayout(layout)
@@ -1840,7 +1887,7 @@ class main_window(QMainWindow):                                    # main_window
 
                         
     #-----------------------------------------------------------------------
-    def update_ecl_menu(self, case=None):                       # main_window
+    def update_ecl_menu(self, case=None, checked=False):         # main_window
     #-----------------------------------------------------------------------
         root = self.input['root']
         if case:
@@ -1896,6 +1943,8 @@ class main_window(QMainWindow):                                    # main_window
                                                     color='#707070', func=self.on_ecl_var_click)
         self.ecl_boxes['var']['Temp_ecl'] = box
         self.ecl_menu_col[1].addLayout(layout)
+        if checked:
+            self.update_menu_boxes('ecl')
 
         
     #-----------------------------------------------------------------------
@@ -2444,6 +2493,7 @@ class main_window(QMainWindow):                                    # main_window
                 if self.input['tracers']:
                     prod_box.setEnabled(False)
                     prod_box.setChecked(False)
+                    continue
                 else:
                     prod_box.setEnabled(True)
             data = genfromtxt(str(file))
@@ -2862,6 +2912,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def show_message_text(self, text):
     #-----------------------------------------------------------------------
+        if not text:
+            return ''
         text = text.lstrip()
         kind = 'error'
         if text.startswith(('ERROR','WARNING','INFO')):

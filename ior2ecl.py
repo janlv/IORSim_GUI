@@ -17,7 +17,7 @@ from re import search, compile
 
 from IORlib.utils import get_python_version, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, unfmt_file, fmt_file, Section
+from IORlib.ECL import check_blocks, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
 
 
 
@@ -112,7 +112,7 @@ class ecl_forward(forward_mixin, eclipse):                              # ecl_fo
     #--------------------------------------------------------------------------------
         super().check_input()
         ### Check root.DATA exists and that READDATA keyword is NOT present
-        if file_contains(str(self.case)+'.DATA', text='READDATA', comment='--'):
+        if file_contains(str(self.case)+'.DATA', text='READDATA', comment='--', end='END'):
             raise SystemError('WARNING The current case cannot be used in forward-mode: '+
                               'Eclipse input contains the READDATA keyword.')
 
@@ -162,7 +162,6 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
         kwargs = {'comment':'--', 'end':'END'}
         ### Check presence of READDATA
         DATA_file = str(self.case)+'.DATA'
-        #if not file_contains(DATA_file, text='READDATA', comment=comment, end=end):
         if not file_contains(DATA_file, text='READDATA', **kwargs):
             raise_error("insert 'READDATA /' in the DATA-file between 'TSTEP' and 'END'.")
         ### Check presence of RPTSOL RESTART>1
@@ -484,7 +483,7 @@ class Schedule:
         self.start = get_start(DATA_file)
         # Read start-date from restart file if RESTART in DATA-file
         self.restart_file = get_restart_file_step(DATA_file)[0]
-        if self.restart_file:
+        if self.restart_file and self.restart_file.is_file():
             self.start = get_start_UNRST(file=self.restart_file)
         #print(self.start)
         self.tstep = 0
@@ -677,18 +676,32 @@ class simulation:
         self.mode = mode
         self.schedule = None
         self.restart = False
+        self.kwargs = kwargs
         if root:
-            kwargs.update({'root':str(root), 'runlog':self.runlog})
+            self.kwargs.update({'root':str(root), 'runlog':self.runlog})
             self.prepare_mode(**kwargs)
 
+    #-----------------------------------------------------------------------
+    def ready(self):
+    #-----------------------------------------------------------------------
+        if self.run_sim:
+            return True
+        else:
+            return False
 
     #-----------------------------------------------------------------------
     def prepare_mode(self, iorexe=None, eclexe=None, time=0, tsteps=None, restart_days=None, **kwargs):
     #-----------------------------------------------------------------------
         DATA_file = Path(self.root).with_suffix('.DATA')
-        self.restart_days = int( restart_days or get_restart_time_step(DATA_file)[0] )
+        try:
+            self.restart_days = int( restart_days or get_restart_time_step(DATA_file)[0] )
+        except SystemError as e:
+            self.update.message(f'{e}')
+            return
         self.restart = self.restart_days > 0
         self.tsteps = tsteps or get_tsteps(DATA_file)
+        if self.tsteps == [0]:
+            self.tsteps = get_tsteps_from_schedule_files(self.root)
         if not self.mode:
             self.mode = self.mode_from_case()
         # Backward simulation
@@ -711,7 +724,11 @@ class simulation:
             self.schedule = Schedule(self.root, T=self.T, init_days=time_ecl, interface_file=self.ior.satnum)
         # Forward simulation
         if self.mode=='forward':
+            time_ecl = sum(self.tsteps)
+            if time != time_ecl:
+                time = time_ecl
             self.T = time
+            #print(f'time: {time}, time_ecl: {time_ecl}')
             kwargs.update({'T':self.T})
             self.run_sim = self.forward
             if not self.runs:
@@ -763,7 +780,7 @@ class simulation:
             run.delete_output_files()
             #run.start(update=self.update, restart=self.restart)
             run.start(restart=self.restart)
-        # The schedule appends keywords to the interface file
+        # The schedule appends keywords to the interface file (satnum.dat)
         ecl.t = ior.t = self.schedule.update()
         # Update progress
         if self.restart:
@@ -799,8 +816,11 @@ class simulation:
         msg = ''
         success = False
         try:
-            msg = self.run_sim()
-            success = True
+            if self.ready():
+                msg = self.run_sim()
+                success = True
+            else:
+                return False, ''
         except (SystemError, ProcessLookupError, NoSuchProcess) as e:
             msg = str(e)
             success = 'simulation complete' in msg.lower()
@@ -929,9 +949,12 @@ class simulation:
         s  = '\n'
         s += f'    {"Case":10s}: {case}\n'
         s += f'    {"Mode":10s}: {self.mode.capitalize()}\n'
-        s += f'    {"Days":10s}: {self.T}'
+        s += f'    {"Days":10s}: {self.T}' 
         if self.mode=='forward':
             s += f' (edit TSTEP in {case}.DATA to change number of days)'
+        if self.restart:
+            days = timedelta(days=self.restart_days)
+            s += f' (restart after {days.days} days, at {self.schedule.start + days})'
         s += '\n'
         s += f'    {"Folder":10s}: {Path(self.root).parent}\n'
         s += f'    {"Log-files":10s}: {", ".join([Path(file).name for file in logfiles])}\n'
@@ -955,7 +978,7 @@ class simulation:
     #-----------------------------------------------------------------------
         data = str(self.root)+'.DATA'
         if Path(data).is_file():
-            if file_contains(data, text='READDATA', comment='--'):
+            if file_contains(data, text='READDATA', comment='--', end='END'):
                 return 'backward'
             else:
                 return 'forward'
@@ -1090,6 +1113,9 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
                      keep_files=keep_files, progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert, merge=merge, delete=delete, stop_children=stop_children,
                      runs=runs, mode=mode)
+
+    if not sim.ready():
+        return 
 
     if only_convert or only_merge:
         sim.convert_and_merge(case=sim.root, only_merge=only_merge)
