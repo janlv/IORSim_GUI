@@ -38,16 +38,26 @@ default_font = 'default'
 default_size = 10
 default_weight = 50
 
-blue   = QColor(31,119,180)  #1f77b4 
-orange = QColor(255,127,14)  #ff7f0e  
-green  = QColor(44,160,44)   #2ca02c
-red    = QColor(214,39,40)   #d62728
-violet = QColor(148,103,189) #9467bd
-brown  = QColor(140,86,75)   #8c564b
-pink   = QColor(227,119,194) #e377c2
-gray   = QColor(127,127,127) #7f7f7f
-yellow = QColor(188,189,34)  #bcbd22
-turq   = QColor(23,190,207)  #17becf
+class GUI_color(QColor):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    def as_hex(self):
+        return '#'+hex(self.rgb()).split('0xff')[-1]
+class color:
+    black  = GUI_color(00,00,00)
+    white  = GUI_color(255,255,255)
+    blue   = GUI_color(31,119,180)  #1f77b4 
+    orange = GUI_color(255,127,14)  #ff7f0e  
+    green  = GUI_color(44,160,44)   #2ca02c
+    red    = GUI_color(214,39,40)   #d62728
+    violet = GUI_color(148,103,189) #9467bd
+    brown  = GUI_color(140,86,75)   #8c564b
+    pink   = GUI_color(227,119,194) #e377c2
+    gray   = GUI_color(127,127,127) #7f7f7f
+    yellow = GUI_color(188,189,34)  #bcbd22
+    turq   = GUI_color(23,190,207)  #17becf
+    as_tuple = (blue, orange, green, red, violet, brown, pink, gray, yellow, turq)
+
 
 #-----------------------------------------------------------------------
 def open_file_dialog(win, text, filetype):
@@ -89,7 +99,7 @@ def get_species_iorsim(root, raise_error=True):
         # Read old input format
         species = flat_list(get_keyword(file, '\*SPECIES'))
         species = [s for s in species if isinstance(s, str)]
-    #print(species)
+    #print(file, species)
     return species
 
 #-----------------------------------------------------------------------
@@ -1121,8 +1131,9 @@ class main_window(QMainWindow):                                    # main_window
     def set_plot_properties(self):                # main_window
     #-----------------------------------------------------------------------
         #colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-        colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-                  '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        #colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+        #          '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+        colors = color.as_tuple
 
         species = enumerate(self.input['species'] or [])
         prop = {}
@@ -1131,23 +1142,23 @@ class main_window(QMainWindow):                                    # main_window
         prop['alpha'] = {} #None
         species = self.input['species']
         if species:
-            prop['color'] = {specie:colors[i%len(colors)] for i,specie in enumerate(species)}
+            prop['color'] = {specie:colors[i%len(colors)].as_hex() for i,specie in enumerate(species)}
             prop['line'] = {specie:'-' for i,specie in enumerate(species)}
             prop['alpha'] = {specie:1.0 for i,specie in enumerate(species)}
         for var in ('Temp','Temp_ecl'):
-            prop['color'][var] = '#000000' 
+            prop['color'][var] = color.black.as_hex() #'#000000' 
             prop['line'][var] = '--' 
             prop['alpha'][var] = 0.5
         var = 'Oil'
-        prop['color'][var] = '#d62728' # red
+        prop['color'][var] = color.red.as_hex() #'#d62728' # red
         prop['line'][var] = '-' 
         prop['alpha'][var] = 1.0
         var = 'Water'
-        prop['color'][var] = '#1f77b4' # blue
+        prop['color'][var] = color.blue.as_hex() #'#1f77b4' # blue
         prop['line'][var] = '-' 
         prop['alpha'][var] = 1.0
         var = 'Gas'
-        prop['color'][var] = '#2ca02c' # green
+        prop['color'][var] = color.green.as_hex() #'#2ca02c' # green
         prop['line'][var] = '-' 
         prop['alpha'][var] = 1.0
         self.plot_prop = prop
@@ -1185,7 +1196,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def missing_file_error(self, tag=''):
     #-----------------------------------------------------------------------
-        show_message(self, 'warning', text=f'{tag}-file is missing')
+        show_message(self, 'warning', text=f'The {tag}-file is missing for the {Path(self.case).name} case')
 
         
     #-----------------------------------------------------------------------
@@ -1194,12 +1205,8 @@ class main_window(QMainWindow):                                    # main_window
         self.case = self.copy_case(case, rename=rename)
         if not self.case:
             return None
-        #choose = None
-        #if choose_new:
-        #    choose = self.case
-        #self.create_caselist(insert=self.case, choose=choose)
 
-                
+
     #-----------------------------------------------------------------------
     def copy_case(self, case, rename=False, choose_new=True): 
     #-----------------------------------------------------------------------
@@ -1235,21 +1242,23 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def copy_case_files(self, from_root, to_root):             # main_window
     #-----------------------------------------------------------------------
-        #print('COPY: {} -> {}'.format(from_root, to_root))
-        #for ext in ('.DATA','.trcinp','.geocheminp','.sch','.SCH'):
-        for ext in upper_and_lower(('.DATA','.trcinp','.geocheminp','.cheminit')):
-            from_fil = from_root.with_suffix(ext)
-            if from_fil.is_file():
-                shutil.copy(from_fil, to_root.with_suffix(ext))
-        from_dir = Path(from_root).parent
-        to_dir = Path(to_root).parent
-        for ext in upper_and_lower(('INC','DAT','GRDECL','EGRID','VFP','SCH')):
-            for fil in from_dir.glob('**/*.'+ext):
-                to_fil = to_dir/fil.relative_to(from_dir)
-                #print(f'{fil} -> {to_fil}')
-                os.makedirs(to_fil.parent, exist_ok=True)
-                shutil.copy(str(fil), str(to_fil))
-
+        inp_ext = ('.data','.trcinp','.geocheminp','.cheminit')
+        add_ext = ('.inc','.dat','.grdecl','.egrid','.vfp','.sch')
+        exclude = 'file_satnum.dat'
+        src = Path(from_root)
+        dst = Path(to_root)
+        src_files = [f for f in src.parent.glob('**/*') if not exclude in f.name]        
+        for src_fil in src_files:
+            ext = src_fil.suffix.lower()
+            if ext in inp_ext+add_ext:
+                dst_fil = dst.parent/src_fil.relative_to(src.parent)
+                os.makedirs(dst_fil.parent, exist_ok=True)
+                if ext in inp_ext:
+                    # This is an input file, change name
+                    dst_fil = dst_fil.parent/dst_fil.name.replace(src.stem,dst.stem)
+                #print(f'{src_fil} -> {dst_fil}')
+                shutil.copy(src_fil, dst_fil)
+    
 
         
     #-----------------------------------------------------------------------
@@ -1390,7 +1399,7 @@ class main_window(QMainWindow):                                    # main_window
                 if file_contains(self.case+'.DATA', text='READDATA', comment='--', end='END'):
                     mode = 'backward'
                     self.days_box.setEnabled(False)
-            except FileNotFoundError as e:
+            except (FileNotFoundError, SystemError) as e:
                 show_message(self, 'error', text='The Eclipse DATA-file is missing for this case')
             # set mode from file
             mode_file = Path(self.case).parent/'mode.gui'
@@ -1467,7 +1476,6 @@ class main_window(QMainWindow):                                    # main_window
             for fil in case.parent.glob('*UNRST'):
                 fil.unlink()
             clean_dir = case.parent/'CLEAN'
-            clean_dir.mkdir(exist_ok=True)
             # copy case-files to the CLEAN-folder
             self.copy_case_files(case, clean_dir/case.stem)
             # delete all files in case-folder
@@ -1582,51 +1590,52 @@ class main_window(QMainWindow):                                    # main_window
         self.reset_progress_and_message()
         self.plot_lines = {}
         self.ref_plot_lines = {}
+        self.max_3_checked = []
         try:
             self.ref_case.setCurrentIndex(0)
             self.out_wells, self.in_wells = get_wells_iorsim(root)
             self.set_variables_from_casefiles()
-            #print('prepare_case: '+str(ind))
             if root:
                 self.on_mode_select(self.mode_cb.currentIndex())
             self.set_plot_properties()
-            # Add iorsim menu checkboxes
-            self.update_ior_menu(checked = not self.is_eclipse_mode())
-            # if self.is_eclipse_mode():
-            #     # No iorsim run, delete all iorsim checkboxes
-            #     delete_all_widgets_in_layout(self.ior_menu_layout)
-            # else:
-            #     # iorsim boxes checked by default
-            #     self.update_ior_menu(checked=True)
+            # # Add iorsim menu checkboxes
+            # self.update_ior_menu(checked = not self.is_eclipse_mode())
         except SystemError as e:
             self.show_message_text(str(e))
         self.data = {}
         self.unsmry = None  # Signals to re-read Eclipse data
+        # IORSim data and menu
         self.read_ior_data()
+        # Add iorsim menu boxes
+        self.update_ior_menu(checked = not self.is_eclipse_mode())
+        # Eclipse data and menu
         self.read_ecl_data()
-        # Add eclipse menu buttons
-        # if self.is_iorsim_mode():
-        #     # No eclipse run, delete all eclipse checkboxes
-        #     delete_all_widgets_in_layout(self.ecl_menu_layout)
-        # else:
-        # Check boxes only if this a eclipse run
+        # Add eclipse menu boxes
+        # Check boxes only if this an eclipse-only run
         self.update_ecl_menu(checked=self.is_eclipse_mode())
         self.create_plot()
         if self.view_ag.checkedAction():
            self.view_ag.checkedAction().trigger()
-        #self.update_view_area()
-        # enable/disable geochem edit action
-        if self.input['root'] and Path(self.input['root']+'.geocheminp').is_file():
-            self.chem_inp_act.setEnabled(True)
-        else:
-            self.chem_inp_act.setEnabled(False)
-        # enable/disable schedule edit action
-        if self.input['root'] and is_file_ignore_suffix_case( self.input['root']+'.SCH' ):
-            self.schedule_file_act.setEnabled(True)
-        else:
-            self.schedule_file_act.setEnabled(False)
+        self.update_edit_menu()
 
-            
+
+    #-----------------------------------------------------------------------
+    def update_edit_menu(self):
+    #-----------------------------------------------------------------------
+        '''
+        Only enable file-actions in the Edit-menu if the file exists
+        '''
+        if not self.input['root']:
+            return
+        suffixes = ('.trcinp',       '.geocheminp',      '.data',          '.sch')
+        actions =  (self.ior_inp_act, self.chem_inp_act, self.ecl_inp_act, self.schedule_file_act)
+        for act, ext in zip(actions, suffixes):
+            value = False
+            if is_file_ignore_suffix_case( self.input['root']+ext ):
+                value = True
+            act.setEnabled(value)
+
+
     #-----------------------------------------------------------------------
     def create_ecl_menu(self):                                # main_window
     #-----------------------------------------------------------------------
@@ -1715,21 +1724,19 @@ class main_window(QMainWindow):                                    # main_window
             return False
         col = self.ior_menu_col
         self.ior_boxes = {}
-        # add conc / prod boxes
+        # Add conc / prod boxes
         lbl = QLabel()
         lbl.setText('Y-axis')
         lbl.setStyleSheet('padding-left: 10px')
-        #lbl.setFont(QFont(self.font, self.menu_fontsize))
         col[0].addWidget(lbl)
         self.ior_boxes['yaxis'] = {}
         for text in ('Prod', 'Conc'):
             box = self.new_checkbox(text=text+'.', name='yaxis '+text.lower()+' ior', func=self.on_ior_menu_click)
             col[0].addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['yaxis'][text.lower()] = box
-        # add well boxes
+        # Add well boxes
         lbl = QLabel()
         lbl.setText('Wells')
-        #lbl.setFont(QFont(self.font, self.menu_fontsize))
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
         col[0].addWidget(lbl)
         self.ior_boxes['well'] = {}
@@ -1737,10 +1744,9 @@ class main_window(QMainWindow):                                    # main_window
             box = self.new_checkbox(text=well, name='well '+well+' ior', func=self.on_ior_menu_click)
             col[0].addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['well'][well] = box
-        # add specie boxes
+        # Add specie boxes
         lbl = QLabel()
         lbl.setText('Variables')
-        #lbl.setFont(QFont(self.font, self.menu_fontsize))
         lbl.setStyleSheet('padding-left: 15px')
         col[1].addWidget(lbl)
         self.ior_boxes['var'] = {}
@@ -1748,18 +1754,18 @@ class main_window(QMainWindow):                                    # main_window
             layout, box = self.new_box_with_line_layout(specie, func=self.on_specie_click)
             self.ior_boxes['var'][specie] = box
             col[1].addLayout(layout)
-        # add temperature box
-        #if len(self.input['species']) > 0:
+        # Add temperature box
         layout, box = self.new_box_with_line_layout('Temp', linestyle='dotted', color='#707070', func=self.on_specie_click)
         self.ior_boxes['var']['Temp'] = box
         col[1].addLayout(layout)
-        # set default checked boxes and add them to the checked list
-        #self.max_3_checked = []
+        # Set default checked boxes and add them to the checked list
         if checked:
             self.update_menu_boxes('ior')
-            # for box in [self.ior_boxes['yaxis']['conc']]+[b for i,b in enumerate(self.ior_boxes['well'].values()) if i<2]:
-            #     set_checkbox(box, True, block_signal=False)
-            #     self.max_3_checked.append(box)
+        # Disable prod box for tracer cases 
+        if self.input['tracers']:
+            box = self.ior_boxes['yaxis']['prod']
+            box.setEnabled(False)
+            box.setChecked(False)
             
 
     #-----------------------------------------------------------------------
@@ -1815,7 +1821,7 @@ class main_window(QMainWindow):                                    # main_window
         #if not varnames:
         if any([not v for v in (varnames, ecl_data.wells, measure, ecl_data.units)]):
             self.unsmry = None # so that we call this function again
-            print('return in ecl_init_data()')
+            #print('return in ecl_init_data()')
             return
         ecl_data.time = varnames.index('TIME')
         fluid_type = {'O':'Oil', 'W':'Water', 'G':'Gas'}
@@ -2107,20 +2113,9 @@ class main_window(QMainWindow):                                    # main_window
     def save_text(self):
     #-----------------------------------------------------------------------
         #print('save_text')
-        #self.editor.blockSignals(True)
         write_file(self.editor.objectName(), self.editor.toPlainText())
-        #try:
-        #    with open(self.editor.objectName(), 'w') as f:
-        #        f.write(self.editor.toPlainText())
-        #except UnicodeEncodeError:
-        #    with open(self.editor.objectName(), 'w', encoding='ISO-8859-1') as f:
-        #        f.write(self.editor.toPlainText())
-        #self.cursor_pos = self.editor.textCursor().position()
-        #self.vscroll_pos = self.editor.verticalScrollBar().value()
-        #print(self.vscroll_pos)
         self.save_btn.setEnabled(False)
         self.prepare_case(self.case)
-        #self.editor.blockSignals(False)
 
     #-----------------------------------------------------------------------
     def activate_save(self):
@@ -2139,9 +2134,20 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         #self.vscroll_pos = self.editor.verticalScrollBar().value()
         self.editor.redo()
-            
+
     #-----------------------------------------------------------------------
-    def view_file(self, file, title=''):                                # main_window
+    def clear_editor(self):                                       # main_window
+    #-----------------------------------------------------------------------
+        self.view_file(None)
+        # self.editor.setObjectName('')
+        # self.editor_group.setTitle('')
+        # self.search_field.setText('')
+        # self.search_field.setPlaceholderText('Search text')
+        # self.editor.setPlainText('')
+        # self.editor.verticalScrollBar().setValue(0)
+
+    #-----------------------------------------------------------------------
+    def view_file(self, file, title=''):                       # main_window
     #-----------------------------------------------------------------------
         curr_file = self.editor.objectName()
         if curr_file:
@@ -2204,6 +2210,7 @@ class main_window(QMainWindow):                                    # main_window
             else:
                 self.sender().setChecked(False)
                 self.sender().parent().missing_file_error(tag=ext)
+                self.clear_editor()
                 return False
         
         else:
@@ -2230,14 +2237,14 @@ class main_window(QMainWindow):                                    # main_window
         if self.this_file_is_open_in_editor(ext):
             return
         # Sections
-        sections = [red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
+        sections = [color.red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
                     'SOLUTION','SUMMARY','SCHEDULE','OPTIMIZE']
         # Global keywords
-        globals = [blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','COLUMNS','DEBUG','DEBUG3','ECHO','END',
+        globals = [color.blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','COLUMNS','DEBUG','DEBUG3','ECHO','END',
                     'ENDINC','ENDSKIP','SKIP','SKIP100','SKIP300','EXTRAPMS','FORMFEED','GETDATA',
                     'INCLUDE','MESSAGES','NOECHO','NOWARN','WARN']
         # Common keywords
-        common = [green, QFont.Normal, Qt.CaseSensitive, r"\b",r'\b','TITLE','CART','DIMENS','FMTIN','FMTOUT',
+        common = [color.green, QFont.Normal, Qt.CaseSensitive, r"\b",r'\b','TITLE','CART','DIMENS','FMTIN','FMTOUT',
                     'FMTOUT','UNIFOUT','UNIFIN','OIL','WATER','GAS','VAPOIL','DISGAS','FIELD','METRIC','LAB','START','WELLDIMS','REGDIMS','TRACERS',
                     'NSTACK','TABDIMS','NOSIM','GRIDFILE','DX','DY','DZ','PORO','BOX','PERMX','PERMY','PERMZ','TOPS',
                     'INIT','RPTGRID','PVCDO','PVTW','DENSITY','PVDG','ROCK','SPECROCK','SPECHEAT','TRACER','TRACERKP',
@@ -2261,10 +2268,10 @@ class main_window(QMainWindow):                                    # main_window
         if self.this_file_is_open_in_editor(ext):
             return
         # Mandatory keywords
-        mandatory = [blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b', '*RESTART_WRITE','*RESTART_FILE','*GRIDPLOT_WRITE','*GRIDPLOT_FILE' ,
+        mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b', '*RESTART_WRITE','*RESTART_FILE','*GRIDPLOT_WRITE','*GRIDPLOT_FILE' ,
                      '*RESTART_READ','*INTEGRATION','*OUTPUT','*WELLPLOT_INTERVAL','*END']
         # Optional keywords
-        optional = [green, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b', '*TEMPERATURE', '*TRACER_LGR','*N_TRACER','*NAME','*K_WATER','*K_OIL','*K_GAS',
+        optional = [color.green, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b', '*TEMPERATURE', '*TRACER_LGR','*N_TRACER','*NAME','*K_WATER','*K_OIL','*K_GAS',
                     '*DW','*DO','*DG','*K_ADS','*C_INIT','*CONC_INJECTION','*REACTING_SYSTEM','*INTEGRATE_SPECIES',
                     '*MODELTYPE','*SPECIES','*MODELTEMPLATE','*TINIT','*MODELINSTANCE','*WELLSPECIES']
         self.view_input_file(ext=ext, title=title, comment=comment, keywords=[mandatory, optional])
@@ -2447,8 +2454,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         #print('ior_menu: '+self.sender().objectName())
         self.update_checked_list(self.sender())
-        #if self.plot_ref_data:
-        #    self.plot_ref = True
         self.create_plot()
 
         
@@ -2489,13 +2494,6 @@ class main_window(QMainWindow):                                    # main_window
             well, yaxis = file.name.split('_W_')[-1].split('.trc')
             if yaxis=='prd':
                 yaxis = 'prod'
-                prod_box = self.ior_boxes['yaxis']['prod']
-                if self.input['tracers']:
-                    prod_box.setEnabled(False)
-                    prod_box.setChecked(False)
-                    continue
-                else:
-                    prod_box.setEnabled(True)
             data = genfromtxt(str(file))
             try:
                 ior['days'] = data[1:,0]
