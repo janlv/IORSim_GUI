@@ -1121,10 +1121,10 @@ class main_window(QMainWindow):                                    # main_window
             #     tsteps = get_tsteps_from_schedule_files(inp['root'])
             inp['ecl_days'] = int(sum(tsteps))
             #if self.get_current_mode().lower() != 'eclipse':
-            if not self.is_eclipse_mode():
-                inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
-                inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
-                inp['species'] += inp['tracers']
+            #if not self.is_eclipse_mode():
+            inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
+            inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
+            inp['species'] += inp['tracers']
 
 
     #-----------------------------------------------------------------------
@@ -1598,8 +1598,6 @@ class main_window(QMainWindow):                                    # main_window
             if root:
                 self.on_mode_select(self.mode_cb.currentIndex())
             self.set_plot_properties()
-            # # Add iorsim menu checkboxes
-            # self.update_ior_menu(checked = not self.is_eclipse_mode())
         except SystemError as e:
             self.show_message_text(str(e))
         self.data = {}
