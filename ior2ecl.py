@@ -113,7 +113,7 @@ class ecl_forward(forward_mixin, eclipse):                              # ecl_fo
         super().check_input()
         ### Check root.DATA exists and that READDATA keyword is NOT present
         if file_contains(str(self.case)+'.DATA', text='READDATA', comment='--', end='END'):
-            raise SystemError('WARNING The current case cannot be used in forward-mode: '+
+            raise SystemError('WARNING The current case cannot run in forward-mode: '+
                               'Eclipse input contains the READDATA keyword.')
 
 
@@ -323,18 +323,20 @@ class iorsim(runner):                                                        # i
     #--------------------------------------------------------------------------------
         super().check_input()
 
-        msg = 'WARNING Unable to start IORSim: '
         ### check root.trcinp exists
         inp_file = str(self.case)+'.trcinp'
         if not Path(inp_file).is_file():
-            raise SystemError(msg + 'missing input file ' + inp_file)
+            raise SystemError(f'ERROR Missing IORSim input file {inp_file}')
 
+    #--------------------------------------------------------------------------------
+    def start(self):                                                         # iorsim
+    #--------------------------------------------------------------------------------
         ### check that Eclipse UNRST and RFT files exists
         for ext in ('.UNRST','.RFT'):
             fname = str(self.case)+ext
             if not Path(fname).is_file():
-                raise SystemError(msg + 'missing Eclipse file ' + str(Path(fname).name))
-
+                raise SystemError(f'ERROR Unable to start IORSim: Eclipse output file {Path(fname).name} is missing')
+        super().start()
 
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                 # iorsim
@@ -739,6 +741,15 @@ class simulation:
                 if name=='iorsim':
                     self.ior = ior_forward(exe=iorexe, **kwargs)
             self.runs = [run for run in (self.ecl, self.ior) if run]
+        # Check neccessary input files
+        try:
+            for run in self.runs:
+                run.check_input()
+        except SystemError as e:
+            self.run_sim = None  # => ready() returns False
+            self.update.message(f'{e}')
+            return
+        # Print simulation data
         self.print2log(self.info_header())
         #if self.schedule:
         #    self.print2log(self.schedule.info())            
@@ -752,7 +763,7 @@ class simulation:
         ret = ''
         for run in self.runs:
             self.current_run = run.name.lower()
-            run.check_input()
+            #run.check_input()
             run.delete_output_files()
             self.update.status(value='Starting '+run.name, mode=self.mode)
             self.update.progress(value=-run.T)
