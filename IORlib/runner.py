@@ -32,6 +32,16 @@ def ignore_process_error(func):
             return False
     return inner
 
+#--------------------------------------------------------------------------------
+def pass_KeyboardInterrupt(func):
+#--------------------------------------------------------------------------------
+    def inner(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except KeyboardInterrupt:
+            pass
+    return inner
+
 
 #====================================================================================
 class Control_file:
@@ -518,21 +528,20 @@ class runner:                                                               # ru
         self.wait_for_process_to_finish(msg='waiting for process to quit', limit=6000, pause=0.01, loop_func=loop_func)
         self.log.close()
 
-
     #--------------------------------------------------------------------------------
     def clean_up(self):
     #--------------------------------------------------------------------------------
         if self.ext_iface and not self.keep_files:
             self.interface_file('all').delete()
 
-
+    
+    #@pass_KeyboardInterrupt
     #--------------------------------------------------------------------------------
     def kill_and_clean(self):
     #--------------------------------------------------------------------------------
         self.kill()
         self.log.close()
         self.clean_up()
-
 
     #--------------------------------------------------------------------------------
     def write_to_stdin(self, i):                                             # runner
