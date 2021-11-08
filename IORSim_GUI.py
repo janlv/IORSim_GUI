@@ -92,12 +92,13 @@ def get_species_iorsim(root, raise_error=True):
             raise SystemError(f'ERROR {Path(file).name} is missing')
         else:
             return []
-    species = get_keyword(file, '\*solution')
+    species = get_keyword(file, '\*solution', end='\*')
+    #print(species)
     if species:
         species = species[0][1::2]
     else:
         # Read old input format
-        species = flat_list(get_keyword(file, '\*SPECIES'))
+        species = flat_list(get_keyword(file, '\*SPECIES', end='\*'))
         species = [s for s in species if isinstance(s, str)]
     #print(file, species)
     return species
@@ -111,7 +112,7 @@ def get_tracers_iorsim(root, raise_error=True):
             raise SystemError(f'ERROR {Path(file).name} is missing')
         else:
             return []
-    tracers = flat_list(get_keyword(file, '\*NAME'))
+    tracers = flat_list(get_keyword(file, '\*NAME', end='\*'))
     if tracers:
         tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
     #print(tracers)
@@ -125,14 +126,14 @@ def get_wells_iorsim(root):
     if not Path(file).is_file():
         return [],[]
     in_wells, out_wells = [], []
-    out_wells = flat_list(get_keyword(file, '\*PRODUCER'))
-    in_wells = flat_list(get_keyword(file, '\*INJECTOR'))
+    out_wells = flat_list(get_keyword(file, '\*PRODUCER', end='\*'))
+    in_wells = flat_list(get_keyword(file, '\*INJECTOR', end='\*'))
     if not out_wells or not in_wells:
         # Read old input format
-        ow = get_keyword(file, '\*OUTPUT')
+        ow = get_keyword(file, '\*OUTPUT', end='\*')
         if ow:
             out_wells = ow[0][1:]
-        w = get_keyword(file, '\*WELLSPECIES')
+        w = get_keyword(file, '\*WELLSPECIES', end='\*')
         if w:
             w = w[0]
             in_wells = w[1:1+int(w[0])]
@@ -1242,7 +1243,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def copy_case_files(self, from_root, to_root):             # main_window
     #-----------------------------------------------------------------------
-        inp_ext = ('.data','.trcinp','.geocheminp','.cheminit')
+        #inp_ext = ('.data','.trcinp','.geocheminp','.cheminit')
+        inp_ext = ('.data','.trcinp')
         add_ext = ('.inc','.dat','.grdecl','.egrid','.vfp','.sch')
         exclude = 'file_satnum.dat'
         src = Path(from_root)
@@ -1258,7 +1260,11 @@ class main_window(QMainWindow):                                    # main_window
                     dst_fil = dst_fil.parent/dst_fil.name.replace(src.stem,dst.stem)
                 #print(f'{src_fil} -> {dst_fil}')
                 shutil.copy(src_fil, dst_fil)
-    
+        chemfiles = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
+        for name in chemfiles:
+            cfile = Path(name)
+            shutil.copy(cfile, dst.parent/cfile.name)
+
 
         
     #-----------------------------------------------------------------------
