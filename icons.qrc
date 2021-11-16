@@ -10,6 +10,10 @@
   <file alias="document-e">icons/document-attribute-e.png</file>
   <file alias="document-g">icons/document-attribute-g.png</file>
   <file alias="document-i">icons/document-attribute-i.png</file>
+  <file alias="document-c">icons/document-attribute-c.png</file>
+  <file alias="document-s">icons/document-attribute-s.png</file>
+  <file alias="document-s">icons/document-attribute-s.png</file>
+  <file alias="documents-stack">icons/documents-stack.png</file>
   <file alias="document-copy">icons/document-copy.png</file>
   <file alias="document-import">icons/document-import.png</file>
   <file alias="document-insert">icons/document-insert.png</file>
@@ -17,6 +21,9 @@
   <file alias="document--minus">icons/document--minus.png</file>
   <file alias="document--plus">icons/document--plus.png</file>
   <file alias="terminal">icons/terminal.png</file>
+  <file alias="script-e">icons/script-attribute-e.png</file>
+  <file alias="script-i">icons/script-attribute-i.png</file>
+  <file alias="script-p">icons/script-attribute-p.png</file>
 </qresource>
 </RCC>
 
