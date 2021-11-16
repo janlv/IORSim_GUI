@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # importing libraries 
+from enum import unique
 import os
 #from PySide6.QtWidgets import QStatusBar, QDialog, QTextEdit, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 #from PySide6.QtGui import  QAction, QActionGroup, QColor, QColorConstants, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
@@ -23,9 +24,13 @@ from collections import namedtuple
 import shutil
 import warnings
 import copy
+from functools import partial
+from re import compile
 
-from ior2ecl import simulation, main as ior2ecl_main
-from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, return_matching_string, delete_all, file_contains, safeopen, upper_and_lower, write_file
+from numpy.ma.core import masked_not_equal
+
+from ior2ecl import iorsim, simulation, main as ior2ecl_main
+from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, remove_comments, return_matching_string, delete_all, file_contains, safeopen, upper_and_lower, write_file
 from IORlib.ECL import get_tsteps, unfmt_file
 import GUI_icons
 
@@ -862,15 +867,15 @@ class main_window(QMainWindow):                                    # main_window
                                          func=self.view_eclipse_input, checkable=True)
         self.ior_inp_act = create_action(self, text='IORSim input file', icon='document-i',
                                          func=self.view_iorsim_input, checkable=True)
-        self.chem_inp_act = create_action(self, text='IORSim geochem file', icon='document-g',
-                                          func=self.view_geochem_input, checkable=True)
-        self.schedule_file_act = create_action(self, text='IORSim schedule file', icon='document-i',
+        # self.chem_inp_act = create_action(self, text='IORSim geochem file', icon='document-g',
+        #                                   func=self.view_geochem_input, checkable=True)
+        self.schedule_file_act = create_action(self, text='Schedule file', icon='document-s',
                                           func=self.view_schedule_file, checkable=True)
-        self.ecl_log_act = create_action(self, text='Eclipse log file', icon='terminal',
+        self.ecl_log_act = create_action(self, text='Eclipse log', icon='script-e',
                                          func=self.view_eclipse_log, checkable=True)
-        self.ior_log_act = create_action(self, text='IORSim log file', icon='terminal',
+        self.ior_log_act = create_action(self, text='IORSim log', icon='script-i',
                                          func=self.view_iorsim_log, checkable=True)
-        self.py_log_act = create_action(self, text='Program log file', icon='terminal',
+        self.py_log_act = create_action(self, text='Program log', icon='script-p',
                                         func=self.view_program_log, checkable=True)
         # fwd = create_action(self, text='Forward', icon='',
         #                     func=self.mode_forward, checkable=True)
@@ -905,9 +910,11 @@ class main_window(QMainWindow):                                    # main_window
         #     self.mode_ag.addAction(act)
         edit_menu = menu.addMenu('&Edit')
         self.view_ag = QActionGroup(self)
-        for act in (self.ecl_inp_act, self.ior_inp_act, self.chem_inp_act, self.schedule_file_act):
+        #for act in (self.ecl_inp_act, self.ior_inp_act, self.chem_inp_act, self.schedule_file_act):
+        for act in (self.ecl_inp_act, self.ior_inp_act, self.schedule_file_act):
             edit_menu.addAction(act)
             self.view_ag.addAction(act)
+        self.chem_menu = edit_menu.addMenu(QIcon(':documents-stack'), 'Chemistry files')
         edit_menu.addSeparator()
         edit_menu.addAction(self.set_act)
         view_menu = menu.addMenu('&View')
@@ -1197,7 +1204,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def missing_file_error(self, tag=''):
     #-----------------------------------------------------------------------
-        show_message(self, 'warning', text=f'The {tag}-file is missing for the {Path(self.case).name} case')
+        show_message(self, 'warning', text=f'The file {Path(tag).name} is missing for the {Path(self.case).name} case')
 
         
     #-----------------------------------------------------------------------
@@ -1243,16 +1250,21 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def copy_case_files(self, from_root, to_root):             # main_window
     #-----------------------------------------------------------------------
-        #inp_ext = ('.data','.trcinp','.geocheminp','.cheminit')
+        '''
+        Copy case input-files and files included by the input-files.
+        The file suffix match is not sensitive to case.
+        '''
         inp_ext = ('.data','.trcinp')
         add_ext = ('.inc','.dat','.grdecl','.egrid','.vfp','.sch')
         exclude = 'file_satnum.dat'
         src = Path(from_root)
         dst = Path(to_root)
         src_files = [f for f in src.parent.glob('**/*') if not exclude in f.name]        
+        # Loop recursively over all files in case-dir, except for files in exclude
         for src_fil in src_files:
             ext = src_fil.suffix.lower()
             if ext in inp_ext+add_ext:
+                # Copy file
                 dst_fil = dst.parent/src_fil.relative_to(src.parent)
                 os.makedirs(dst_fil.parent, exist_ok=True)
                 if ext in inp_ext:
@@ -1260,10 +1272,13 @@ class main_window(QMainWindow):                                    # main_window
                     dst_fil = dst_fil.parent/dst_fil.name.replace(src.stem,dst.stem)
                 #print(f'{src_fil} -> {dst_fil}')
                 shutil.copy(src_fil, dst_fil)
+        # Copy files given by the *CHEMFILE keyword in trcinp-file (may occur > 1)
         chemfiles = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
         for name in chemfiles:
-            cfile = Path(name)
-            shutil.copy(cfile, dst.parent/cfile.name)
+            chfile = src.parent/name
+            if chfile.is_file():
+                #print(f'{chfile} -> {dst.parent/chfile.name}')
+                shutil.copy(chfile, dst.parent/chfile.name)
 
 
         
@@ -1631,13 +1646,24 @@ class main_window(QMainWindow):                                    # main_window
         '''
         if not self.input['root']:
             return
-        suffixes = ('.trcinp',       '.geocheminp',      '.data',          '.sch')
-        actions =  (self.ior_inp_act, self.chem_inp_act, self.ecl_inp_act, self.schedule_file_act)
+        # suffixes = ('.trcinp',       '.geocheminp',      '.data',          '.sch')
+        # actions =  (self.ior_inp_act, self.chem_inp_act, self.ecl_inp_act, self.schedule_file_act)
+        suffixes = ('.trcinp',       '.data',          '.sch')
+        actions =  (self.ior_inp_act, self.ecl_inp_act, self.schedule_file_act)
         for act, ext in zip(actions, suffixes):
             value = False
             if is_file_ignore_suffix_case( self.input['root']+ext ):
                 value = True
             act.setEnabled(value)
+        # Chemistry files are put in a separate menu, clear menu before adding actions
+        self.chem_menu.clear()
+        chemfiles = flat_list(get_keyword(self.input['root']+'.trcinp', '\*CHEMFILE', end='\*'))
+        self.chemfile_act = []
+        for name in chemfiles:
+            filename = Path(self.case).parent/name
+            act = create_action(self, text=name, func=partial(self.view_input_file, name=filename, title='Chemistry input file'), icon='document-c')
+            self.chem_menu.addAction(act)
+            self.chemfile_act.append(act)
 
 
     #-----------------------------------------------------------------------
@@ -2197,23 +2223,26 @@ class main_window(QMainWindow):                                    # main_window
         self.editor.verticalScrollBar().setValue(vscroll)
 
     #-----------------------------------------------------------------------
-    def view_input_file(self, ext=None, title=None, comment='#', keywords=[]):                                # main_window
+    def view_input_file(self, name=None, ext=None, title=None, comment='#', keywords=[]):                                # main_window
     #-----------------------------------------------------------------------
         # Avoid re-opening file after it is saved
         self.log_file = None
-        if self.this_file_is_open_in_editor(ext):
-            return
         if self.input['root']:
-            fil = is_file_ignore_suffix_case( self.input['root']+'.'+ext )
-            if fil and fil.is_file():
-                self.view_file(fil, title=title+', '+str(fil.name))        
+            if not name:
+                name = self.input['root']+ext
+            if self.this_file_is_open_in_editor(name):
+                return
+            fil = is_file_ignore_suffix_case(name)
+            # fil = is_file_ignore_suffix_case( self.input['root']+'.'+ext )
+            if fil: # and fil.is_file():
+                self.view_file(fil, title=f'{title}: {fil.name}')        
                 self.highlight = Highlighter(self.editor.document(), comment=comment, keywords=keywords)
                 self.save_btn.setEnabled(False)
                 self.undo_btn.setEnabled(True)
                 self.redo_btn.setEnabled(True)
             else:
                 self.sender().setChecked(False)
-                self.sender().parent().missing_file_error(tag=ext)
+                self.sender().parent().missing_file_error(tag=name)
                 self.clear_editor()
                 return False
         
@@ -2223,10 +2252,12 @@ class main_window(QMainWindow):                                    # main_window
             return False
 
     #-----------------------------------------------------------------------
-    def this_file_is_open_in_editor(self, ext):
+    #def this_file_is_open_in_editor(self, ext):
+    def this_file_is_open_in_editor(self, filename):
     #-----------------------------------------------------------------------
         #print(self.input['root']+'.'+ext)
-        if self.input['root'] and (self.input['root']+'.'+ext == self.editor.objectName()):
+        #if self.input['root'] and (self.input['root']+'.'+ext == self.editor.objectName()):
+        if filename == self.editor.objectName():
             return True
         return False
 
@@ -2234,11 +2265,13 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_eclipse_input(self):                 # main_window
     #-----------------------------------------------------------------------
-        ext='DATA'
+        if not self.input['root']:
+            return
+        ext='.DATA'
         title='Eclipse input file'
         comment='--'
         # Avoid re-opening file after it is saved
-        if self.this_file_is_open_in_editor(ext):
+        if self.this_file_is_open_in_editor(self.input['root']+ext):
             return
         # Sections
         sections = [color.red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
@@ -2266,29 +2299,32 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_iorsim_input(self):                                # main_window
     #-----------------------------------------------------------------------
-        ext='trcinp'
+        if not self.input['root']:
+            return
+        ext='.trcinp'
         title='IORSim input file'
         comment='#'
-        if self.this_file_is_open_in_editor(ext):
+        name = self.input['root']+ext
+        if self.this_file_is_open_in_editor(name):
             return
         # Mandatory keywords
-        mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b', '*RESTART_WRITE','*RESTART_FILE','*GRIDPLOT_WRITE','*GRIDPLOT_FILE' ,
-                     '*RESTART_READ','*INTEGRATION','*OUTPUT','*WELLPLOT_INTERVAL','*END']
+        mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.required
         # Optional keywords
-        optional = [color.green, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b', '*TEMPERATURE', '*TRACER_LGR','*N_TRACER','*NAME','*K_WATER','*K_OIL','*K_GAS',
-                    '*DW','*DO','*DG','*K_ADS','*C_INIT','*CONC_INJECTION','*REACTING_SYSTEM','*INTEGRATE_SPECIES',
-                    '*MODELTYPE','*SPECIES','*MODELTEMPLATE','*TINIT','*MODELINSTANCE','*WELLSPECIES']
-        self.view_input_file(ext=ext, title=title, comment=comment, keywords=[mandatory, optional])
-        
+        optional = [color.green, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.optional
+        self.view_input_file(name=name, title=title, comment=comment, keywords=[mandatory, optional])
+
+
     #-----------------------------------------------------------------------
     def view_geochem_input(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_input_file(ext='geocheminp', title='IORSim geochem file', comment='#')
+        self.view_input_file(ext='.geocheminp', title='IORSim geochem file', comment='#')
         
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_input_file(ext='SCH', title='Schedule file for backward runs', comment='--')
+        globals = [color.blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','END']
+        common = [color.green, QFont.Normal, Qt.CaseSensitive, r"\b",r'\b','TSTEP','DATES','WCONINJE','WCONHIST']
+        self.view_input_file(ext='.SCH', title='Schedule file for backward runs', comment='--', keywords=[globals, common])
         
     #-----------------------------------------------------------------------
     def view_log(self, logfile, title=None):                                # main_window
