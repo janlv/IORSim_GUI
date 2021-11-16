@@ -316,6 +316,7 @@ class runner:                                                               # ru
             self._print(f"Starting in PIPE-mode", v=1)
             P = Popen(self.cmd, stdin=PIPE, stdout=self.log, stderr=STDOUT)
         else:
+            #self._print(f"Starting \'{' '.join(self.cmd)}\' in {Path.cwd()}", v=1)
             self._print(f"Starting \'{' '.join(self.cmd)}\'", v=1)
             P = Popen(self.cmd, stdout=self.log, stderr=STDOUT)      
         self.P = P
