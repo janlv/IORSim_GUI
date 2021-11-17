@@ -345,11 +345,12 @@ class iorsim(runner):                                                        # i
         self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
         self.unrst = self.funrst.with_suffix('.UNRST')
         self.inputfile = Path(abs_root+'.trcinp')
+        self.check_keywords = kwargs.get('check_input_kw') or False
         self.is_iorsim = True
         self.is_eclipse = False
 
     #--------------------------------------------------------------------------------
-    def check_input(self, check_keywords=False):                                # iorsim
+    def check_input(self):                                                   # iorsim
     #--------------------------------------------------------------------------------
         def raise_error(error):
             raise SystemError(f'ERROR Error in IORSim input file: {error}')    
@@ -360,7 +361,7 @@ class iorsim(runner):                                                        # i
         if not self.inputfile.is_file():
             raise SystemError(f'ERROR Missing IORSim input file {self.inputfile.name}')
         # Check if required keywords are used, and if the order is correct 
-        if check_keywords:
+        if self.check_keywords:
             text = remove_comments(self.inputfile, comment='#')
             file_kw = [kw.upper() for kw in compile(r'(\*[A-Za-z_-]+)').findall(text)]
             # Remove repeated keywords, i.e. make unique list
@@ -736,9 +737,8 @@ class simulation:
         self.mode = mode
         self.schedule = None
         self.restart = False
-        self.kwargs = kwargs
         if root:
-            self.kwargs.update({'root':str(root), 'runlog':self.runlog})
+            kwargs.update({'root':str(root), 'runlog':self.runlog})
             self.prepare_mode(**kwargs)
 
     #-----------------------------------------------------------------------
@@ -1110,7 +1110,6 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
     parser.add_argument('-rft_size',       help='Backward mode: Only check size of RFT-file, default is full check', action='store_true')
-    #parser.add_argument('-pause',          default=0.5, help='Backward mode: pause between Eclipse and IORSim runs', type=float)
     parser.add_argument('-iorsim',         help="Run only iorsim", action='store_true')
     parser.add_argument('-eclipse',        help="Run only eclipse", action='store_true')
     parser.add_argument('-v',              default=3, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
@@ -1120,6 +1119,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-only_merge',     help='Only merge and exit', action='store_true')
     parser.add_argument('-delete',         help='Delete obsolete output files after convert and merge has finished', action='store_true')
     parser.add_argument('-alive_children', help='Only stop parent-processes (approx. 5%% faster, but might be more unstable)', action='store_true')
+    parser.add_argument('-check_input',    help='Check IORSim input file keywords', action='store_true', dest='check_input_kw')
     args = vars(parser.parse_args())
     # Look for case in case_dir if root is not a file
     if case_dir and not Path(args['root']).is_file():
@@ -1134,10 +1134,10 @@ def parse_input(case_dir=None, settings_file=None):
 
 @print_error
 #--------------------------------------------------------------------------------
-def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, pause=0.5, 
+def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
            check_unrst=True, check_rft=True, rft_size=False, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
-           stop_children=True, only_eclipse=False, only_iorsim=False):
+           stop_children=True, only_eclipse=False, only_iorsim=False, check_input=False):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1175,11 +1175,11 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
         mode = 'forward'
         runs = only_eclipse and ['eclipse'] or ['iorsim']
 
-    sim = simulation(root=root, time=time, pause=pause, iorexe=iorexe, eclexe=eclexe, 
+    sim = simulation(root=root, time=time, iorexe=iorexe, eclexe=eclexe, 
                      check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size,  
                      keep_files=keep_files, progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert, merge=merge, delete=delete, stop_children=stop_children,
-                     runs=runs, mode=mode)
+                     runs=runs, mode=mode, check_input_kw=check_input)
 
     if not sim.ready():
         return 
@@ -1203,7 +1203,8 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=args['rft_size'], 
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
-           stop_children=(not args['alive_children']), only_eclipse=args['eclipse'], only_iorsim=args['iorsim'])
+           stop_children=(not args['alive_children']), only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
+           check_input_kw=args['check_input_kw'])
     os._exit(0)
 
 
