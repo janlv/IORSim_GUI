@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from collections import namedtuple
+from collections import Counter, namedtuple
 from mmap import ACCESS_READ, mmap
 import os
 from pathlib import Path
@@ -475,6 +475,22 @@ class ior_backward(backward_mixin, iorsim):                             # ior_ba
                 return False
         return False
 
+    #--------------------------------------------------------------------------------
+    def satnum_dist(self, echo=False):                                             # ior_backward
+    #--------------------------------------------------------------------------------
+        '''
+        Return the distribution of SATNUM numbers as a dict
+        '''
+        lines = remove_comments(self.satnum, comment='--') 
+        values = compile(r'SATNUM\s+([0-9\s]+)').findall(lines) 
+        if values:
+            values = [int(v) for v in values[0].split('\n') if v.strip()]
+            count = Counter(values)
+            dist = {k:count[k] for k in sorted(count.keys())}
+            if echo:
+                print( f'n: {self.n}, SATNUM: ' + ', '.join([f'{k}:{v}' for k,v in dist.items()]) )
+            else:
+                return dist
 
     #--------------------------------------------------------------------------------
     def start(self, restart=False):                                    # ior_backward
@@ -488,6 +504,7 @@ class ior_backward(backward_mixin, iorsim):                             # ior_ba
     def run_one_step(self):                                            # ior_backward
     #--------------------------------------------------------------------------------
         self.run_steps(1)
+        #self.satnum_dist(echo=True)
 
     #--------------------------------------------------------------------------------
     def run_steps(self, N, start=False):                               # ior_backward
