@@ -105,7 +105,8 @@ def get_species_iorsim(root, raise_error=True):
         # Read old input format
         species = flat_list(get_keyword(file, '\*SPECIES', end='\*'))
         species = [s for s in species if isinstance(s, str)]
-    #print(file, species)
+    # Change pH to H 
+    species = [s if s.lower() != 'ph' else 'H' for s in species]
     return species
 
 #-----------------------------------------------------------------------
@@ -1416,11 +1417,14 @@ class main_window(QMainWindow):                                    # main_window
                 ior = True
             # copy original data back
             self.data = data
-            #print(case, ecl, ior, self.mode)
             if (self.mode=='eclipse' and not ecl) or (self.mode=='iorsim' and not ior) or (not ecl or not ior):
                 self.ref_case.setCurrentIndex(self.ref_case.property('lastitem'))
-                self.update_message('Cannot compare {} against {}'.format(Path(case).name, Path(self.case).name))
+                msg = f'Cannot compare {Path(case).name} against {Path(self.case).name}'
+                if not self.unsmry or not self.unsmry.is_file():
+                    msg += f': {Path(case).name+".UNSMRY"} is missing'
                 #self.ref_case.setCurrentIndex(0)
+                #self.update_message(msg)
+                self.show_message_text('WARNING '+msg)
                 return
             self.plot_ref = case
             #print('AFTER')
@@ -1735,10 +1739,12 @@ class main_window(QMainWindow):                                    # main_window
             col[0].addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['well'][well] = box
         # Add specie boxes
-        lbl = QLabel()
-        lbl.setText('Variables')
-        lbl.setStyleSheet('padding-left: 15px')
-        col[1].addWidget(lbl)
+        box = QCheckBox('Variables')
+        box.setChecked(True)
+        box.stateChanged.connect(self.set_ior_variable_boxes)
+        box.setStyleSheet('padding-left: 15px')
+        col[1].addWidget(box)
+        self.ior_var_box = box
         self.ior_boxes['var'] = {}
         for i,specie in enumerate(self.input['species'] or []):
             layout, box = self.new_box_with_line_layout(specie, func=self.on_specie_click)
@@ -1757,6 +1763,13 @@ class main_window(QMainWindow):                                    # main_window
             box.setEnabled(False)
             box.setChecked(False)
             
+    #-----------------------------------------------------------------------
+    def set_ior_variable_boxes(self):
+    #-----------------------------------------------------------------------
+        checked = self.ior_var_box.isChecked()
+        for box in self.ior_boxes['var'].values():
+            box.setChecked(checked)
+
 
     #-----------------------------------------------------------------------
     def init_ecl_data(self, case=None):
@@ -1855,7 +1868,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def read_ecl_data(self, case=None, reinit=False):
     #-----------------------------------------------------------------------
-        #print('read_ecl_data')
+        #print('read_ecl_data', case, reinit, self.unsmry)
         datafile = self.input['root']
         if case:
             datafile = case
@@ -1926,10 +1939,12 @@ class main_window(QMainWindow):                                    # main_window
             col[0].addWidget(box, alignment=Qt.AlignTop)
             self.ecl_boxes['well'][well] = box
         # variables
-        lbl = QLabel()
-        lbl.setText('Variables')
-        lbl.setStyleSheet('padding-left: 15px')
-        col[1].addWidget(lbl)
+        box = QCheckBox('Variables')
+        box.setChecked(True)
+        box.stateChanged.connect(self.set_ecl_variable_boxes)
+        box.setStyleSheet('padding-left: 15px')
+        col[1].addWidget(box)
+        self.ecl_var_box = box
         self.ecl_boxes['var'] = {}
         for var in fluids: 
             layout, box = self.new_box_with_line_layout(var, func=self.on_ecl_var_click)
@@ -1941,6 +1956,13 @@ class main_window(QMainWindow):                                    # main_window
         self.ecl_menu_col[1].addLayout(layout)
         if checked:
             self.update_menu_boxes('ecl')
+
+    #-----------------------------------------------------------------------
+    def set_ecl_variable_boxes(self):
+    #-----------------------------------------------------------------------
+        checked = self.ecl_var_box.isChecked()
+        for box in self.ecl_boxes['var'].values():
+            box.setChecked(checked)
 
         
     #-----------------------------------------------------------------------
