@@ -141,7 +141,7 @@ def get_wells_iorsim(root):
             out_wells = ow[0][1:]
         w = get_keyword(file, '\*WELLSPECIES', end='\*')
         if w and w[0]:
-            print(w)
+            #print(w)
             w = w[0]
             in_wells = w[1:1+int(w[0])]
     #print(out_wells, in_wells)
@@ -2359,7 +2359,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_iorsim_input(self):                                # main_window
     #-----------------------------------------------------------------------
-        print('view_iorsim_input:', self.input['root'])
+        #print('view_iorsim_input:', self.input['root'])
         if not self.input['root']:
             return
         ext='.trcinp'
