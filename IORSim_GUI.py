@@ -140,7 +140,8 @@ def get_wells_iorsim(root):
         if ow:
             out_wells = ow[0][1:]
         w = get_keyword(file, '\*WELLSPECIES', end='\*')
-        if w:
+        if w and w[0]:
+            print(w)
             w = w[0]
             in_wells = w[1:1+int(w[0])]
     #print(out_wells, in_wells)
@@ -477,9 +478,28 @@ class User_input(QDialog):
         if self.func:
             self.func()
         super().accept()
+#===========================================================================
+class Plot(QGroupBox):                                              
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, parent=None):
+    #-----------------------------------------------------------------------
+        super(Plot, self).__init__(parent)
+        self.setTitle('Plot')
+        self.setObjectName('plot')
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        self.canvas = Mpl_canvas(self)
+        toolbar = NavigationToolbar(self.canvas, self)
+        layout.addWidget(toolbar)
+        layout.addWidget(self.canvas)
+
+    #-----------------------------------------------------------------------
+    def file_is_open(self, filename):
+    #-----------------------------------------------------------------------
+        return False
 
 #===========================================================================
-#class Editor(QWidget):                                              
 class Editor(QGroupBox):                                              
 #===========================================================================
     #-----------------------------------------------------------------------
@@ -570,8 +590,8 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def file_is_open(self, filename):
     #-----------------------------------------------------------------------
-        #print(f'|{filename}|, |{self.objectName()}|')
-        if filename == self.objectName():
+        #print(f'|{filename.lower()}|, |{self.objectName().lower()}|')
+        if filename.lower() == self.objectName().lower():
             return True
         return False
 
@@ -656,7 +676,6 @@ class Editor(QGroupBox):
         cursor.setPosition(start+len(string), QTextCursor.KeepAnchor)   
         #print(cursor.blockNumber(), cursor.columnNumber())
         self.editor_.setTextCursor(cursor)
-        #self.editor.verticalScrollBar().setValue(self.editor.verticalScrollBar().value()+10)
         if center:
             cursor = self.editor_.cursorRect()
             cursor_line = int(cursor.y()/cursor.height())
@@ -688,25 +707,17 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def undo(self):                                         # Editor
     #-----------------------------------------------------------------------
-        #self.vscroll_pos = self.editor.verticalScrollBar().value()
         self.editor_.undo()
             
     #-----------------------------------------------------------------------
     def redo(self):                                           # Editor
     #-----------------------------------------------------------------------
-        #self.vscroll_pos = self.editor.verticalScrollBar().value()
         self.editor_.redo()
 
     #-----------------------------------------------------------------------
     def clear(self):                                             # Editor
     #-----------------------------------------------------------------------
         self.view_file(None)
-        # self.editor.setObjectName('')
-        # self.editor_group.setTitle('')
-        # self.search_field.setText('')
-        # self.search_field.setPlaceholderText('Search text')
-        # self.editor.setPlainText('')
-        # self.editor.verticalScrollBar().setValue(0)
 
     #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                            # Editor
@@ -726,18 +737,9 @@ class Editor(QGroupBox):
         if file and Path(file).is_file():
             text = read_file(file)
         self.set_text(text)
-        # if self.plain_text:
-        #     self.editor_.setPlainText(text)
-        # else:
-        #     self.editor_.setText(text)
         vscroll = self.vscroll.get(str(file)) or 0
         self.editor_.verticalScrollBar().setValue(vscroll)
-        #self.editor_text = text
         self.setTitle(title)
-        #return self.group
-        # self.current_view.setParent(None)
-        # self.layout.addWidget(self.group, *self.position['plot'])
-        # self.current_view = self.group
 
 
     #-----------------------------------------------------------------------
@@ -749,10 +751,6 @@ class Editor(QGroupBox):
             text = read_file(file)
             self.setObjectName(str(file))
             self.set_text(text)
-            # if self.plain_text:
-            #     self.editor_.setPlainText(text)
-            # else:
-            #     self.editor_.setText(text)
         vscroll = self.vscroll.get(str(file)) or 0
         self.editor_.verticalScrollBar().setValue(vscroll)
 
@@ -1953,7 +1951,7 @@ class main_window(QMainWindow):                                    # main_window
         if self.plot_ref_data:
             #print('ref_data')
             self.update_plot_line(name, is_checked, lines=self.ref_plot_lines, set_data=False)
-        self.canvas.draw()
+        self.plot.canvas.draw()
 
     #-----------------------------------------------------------------------
     def create_ior_menu(self):                                # main_window
@@ -2267,38 +2265,22 @@ class main_window(QMainWindow):                                    # main_window
     def on_ecl_plot_click(self):
     #-----------------------------------------------------------------------
         self.update_checked_list(self.sender())
-        #if self.plot_ref_data:
-        #    self.plot_ref = True
         self.create_plot()
 
                     
     #-----------------------------------------------------------------------
     def create_plot_field(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.plot_group = QGroupBox()
-        self.current_view = self.plot_group
-        self.plot_group.setTitle('Plot')
-        self.plot_group.setObjectName('plot')
-        layout = QVBoxLayout()
-        self.plot_group.setLayout(layout)
-        self.layout.addWidget(self.plot_group, *self.position['plot'])
-        self.canvas = Mpl_canvas(self)
-        toolbar = NavigationToolbar(self.canvas, self)
-        layout.addWidget(toolbar)
-        layout.addWidget(self.canvas)
+        self.plot = Plot() 
+        self.current_view = self.plot
+        self.layout.addWidget(self.plot, *self.position['plot'])
         self.checked_boxes = {}
         self.plotted_lines = {}
 
         
-    # #-----------------------------------------------------------------------
-    # def create_editor_field(self):                                # main_window
-    # #-----------------------------------------------------------------------
-    #     self.editor = Editor(save_func=partial(self.prepare_case, self.case))
-
     #-----------------------------------------------------------------------
     def view_file(self, file, viewer=None, title='', reset=True):           # main_window
     #-----------------------------------------------------------------------
-        #self.editor.view_file(file, title=title)
         if not viewer:
             viewer = self.editor
         viewer.view_file(file, title=title)
@@ -2316,17 +2298,17 @@ class main_window(QMainWindow):                                    # main_window
         if self.input['root']:
             if not name:
                 name = self.input['root']+ext
-            #if self.this_file_is_open_in_editor(name):
-            if self.editor.file_is_open(name):
+            #if self.editor.file_is_open(name):
+            if self.current_view and self.current_view.file_is_open(name):
                 return
             fil = is_file_ignore_suffix_case(name)
             # fil = is_file_ignore_suffix_case( self.input['root']+'.'+ext )
             if fil: # and fil.is_file():
                 self.view_file(fil, viewer=self.editor, title=f'{title}: {fil.name}')        
                 self.highlight = Highlighter(self.editor.document(), comment=comment, keywords=keywords)
-                self.editor.save_btn.setEnabled(False)
-                self.editor.undo_btn.setEnabled(True)
-                self.editor.redo_btn.setEnabled(True)
+                #self.editor.save_btn.setEnabled(False)
+                #self.editor.undo_btn.setEnabled(True)
+                #self.editor.redo_btn.setEnabled(True)
             else:
                 self.sender().setChecked(False)
                 self.sender().parent().missing_file_error(tag=name)
@@ -2348,7 +2330,8 @@ class main_window(QMainWindow):                                    # main_window
         title='Eclipse input file'
         comment='--'
         # Avoid re-opening file after it is saved
-        if self.editor.file_is_open(self.input['root']+ext):
+        #if self.editor.file_is_open(self.input['root']+ext):
+        if self.current_view and self.current_view.file_is_open(self.input['root']+ext):
             return
         # Sections
         sections = [color.red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
@@ -2376,14 +2359,15 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_iorsim_input(self):                                # main_window
     #-----------------------------------------------------------------------
+        print('view_iorsim_input:', self.input['root'])
         if not self.input['root']:
             return
         ext='.trcinp'
         title='IORSim input file'
         comment='#'
         name = self.input['root']+ext
-        #if self.this_file_is_open_in_editor(name):
-        if self.editor.file_is_open(name):
+        #if self.editor.file_is_open(name):
+        if self.current_view and self.current_view.file_is_open(name):
             return
         # Mandatory keywords
         mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.required
@@ -2413,9 +2397,9 @@ class main_window(QMainWindow):                                    # main_window
             return False
         self.log_file = Path(self.case).parent/logfile
         self.view_file(self.log_file, viewer=self.log_viewer, title=title)
-        self.editor.save_btn.setEnabled(False)
-        self.editor.undo_btn.setEnabled(False)
-        self.editor.redo_btn.setEnabled(False)
+        #self.editor.save_btn.setEnabled(False)
+        #self.editor.undo_btn.setEnabled(False)
+        #self.editor.redo_btn.setEnabled(False)
         
     #-----------------------------------------------------------------------
     def view_eclipse_log(self):                                # main_window
@@ -2436,7 +2420,8 @@ class main_window(QMainWindow):                                    # main_window
     def update_log(self):                                # main_window
     #-----------------------------------------------------------------------
         if self.log_file:
-            self.editor.update(self.log_file)
+            #self.editor.update(self.log_file)
+            self.log_viewer.update(self.log_file)
             # #print('update_log:',self.log_file)
             # text = read_file(self.log_file)
             # self.editor.setPlainText(text)
@@ -2454,8 +2439,8 @@ class main_window(QMainWindow):                                    # main_window
         self.editor.setObjectName('')
         if self.current_view:
             self.current_view.setParent(None)
-        self.layout.addWidget(self.plot_group, *self.position['plot'])
-        self.current_view = self.plot_group
+        self.layout.addWidget(self.plot, *self.position['plot'])
+        self.current_view = self.plot
         if not self.worker:# and self.case:
             self.read_ior_data()
             self.read_ecl_data()
@@ -2504,7 +2489,7 @@ class main_window(QMainWindow):                                    # main_window
         self.update_plot_line(specie, is_checked)
         if self.plot_ref_data:
             self.update_plot_line(self.sender().objectName(), is_checked, lines=self.ref_plot_lines, set_data=False)
-        self.canvas.draw()
+        self.plot.canvas.draw()
 
     #-----------------------------------------------------------------------
     def update_plot_line(self, name, is_checked, lines=None, set_data=True):
@@ -2660,9 +2645,9 @@ class main_window(QMainWindow):                                    # main_window
         if self.plot_ref_data:
             self.plot_ref = True
         # clear figure 
-        self.canvas.fig.clf()
+        self.plot.canvas.fig.clf()
         if not self.input['root']:
-            self.canvas.draw()
+            self.plot.canvas.draw()
             return False
         self.update_axes_names()
         #if len(self.canvas.fig.axes)>0:
@@ -2677,7 +2662,7 @@ class main_window(QMainWindow):                                    # main_window
         src = {'ecl':'Eclipse', 'ior':'IORSim'}
         for i, ax_name in enumerate(self.ioraxes_names):
             yaxis, well, data = ax_name.split()
-            ax = self.canvas.fig.add_subplot(nplot, 1, i+1)
+            ax = self.plot.canvas.fig.add_subplot(nplot, 1, i+1)
             #self.plot_axes[ax_name] = ax
             self.plot_axes.append(ax)
             ax.set_label(ax_name)
@@ -2712,8 +2697,8 @@ class main_window(QMainWindow):                                    # main_window
             #    ax.set_xlim(*self.xlim)
             #    axx.set_xlim(*self.xlim)
         self.create_plot_lines()
-        self.canvas.fig.subplots_adjust(top=.93, hspace=0.4, right=.87)
-        self.canvas.draw()
+        self.plot.canvas.fig.subplots_adjust(top=.93, hspace=0.4, right=.87)
+        self.plot.canvas.draw()
         return True
 
     
@@ -2855,7 +2840,7 @@ class main_window(QMainWindow):                                    # main_window
                 #    #pass
         try:
             self.update_axes_limits()
-            self.canvas.draw()
+            self.plot.canvas.draw()
         except ValueError as e:
             pass
             #print('ValueError: '+str(e))
