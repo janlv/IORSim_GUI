@@ -10,7 +10,7 @@ import os
 #from PySide2.QtWidgets import QDialogButtonBox, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 #from PySide2.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QColor 
 #from PySide2.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegExp
-from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QStatusBar, QDialog, QTextBrowser, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PyQt5.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
 from PyQt5.QtCore import QObject, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
 import sys, traceback
@@ -478,7 +478,297 @@ class User_input(QDialog):
             self.func()
         super().accept()
 
+#===========================================================================
+#class Editor(QWidget):                                              
+class Editor(QGroupBox):                                              
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, parent=None, name='', read_only=False, save_func=None, browser=False,
+                 top=True, top_name='Top', end=True, search=True, search_width=None,
+                 refresh=True, space=0):
+    #-----------------------------------------------------------------------
+        super(Editor, self).__init__(parent)
+        self.btn_width = 60
+        self.btn_height = 25
+        self.vscroll = {}
+        self.name = name
+        layout = QVBoxLayout()
+        buttons = QHBoxLayout()
+        layout.addLayout(buttons)
+        self.browser = browser
+        if browser:
+            self.editor_ = QTextBrowser()
+            self.set_text = self.editor_.setText
+        else:
+            self.editor_ = QPlainTextEdit()
+            self.editor_.setLineWrapMode(QPlainTextEdit.NoWrap)
+            self.set_text = self.editor_.setPlainText
+        layout.addWidget(self.editor_)
+        self.setLayout(layout)
+        if refresh:
+            ### Refresh button
+            self.refresh_btn = self.new_button(text='Refresh', func=self.refresh)
+            buttons.addWidget(self.refresh_btn)
+        if not browser:
+            if read_only:
+                self.editor_.setReadOnly(True)
+            else:
+                self.editor_.textChanged.connect(self.activate_save)
+                ### Save button
+                if save_func:
+                    self.save_btn = self.new_button(text='Save', func=partial(self.save_text, save_func=save_func))            
+                else:
+                    self.save_btn = self.new_button(text='Save', func=self.save_text)
+                buttons.addWidget(self.save_btn)
+                ### Undo button
+                self.undo_btn = self.new_button(text='Undo', func=self.undo)
+                buttons.addWidget(self.undo_btn)
+                ### Redo button
+                self.redo_btn = self.new_button(text='Redo', func=self.redo)
+                buttons.addWidget(self.redo_btn)
+        if top:
+            ### Top button
+            L = len(top_name)
+            width = self.btn_width
+            if L > 6:
+                width = L*10
+            self.top_btn = self.new_button(text=top_name, width=width, func=self.goto_top)
+            buttons.addWidget(self.top_btn)
+        if end:
+            ### End button
+            self.end_btn = self.new_button(text='End', func=self.goto_end)
+            buttons.addWidget(self.end_btn)
+        if space:
+            lbl = QLabel(' ')
+            lbl.setFixedWidth(space)
+            buttons.addWidget(lbl)
+        if search:
+            ### Search field
+            self.search_pos = []
+            self.search_field = QLineEdit()
+            self.search_field.setFixedHeight(self.btn_height)
+            if search_width:
+                self.search_field.setFixedWidth(search_width)
+            self.search_field.setClearButtonEnabled(True) 
+            self.search_field.setPlaceholderText('Search text')
+            self.search_field.textChanged.connect(self.search_text)
+            buttons.addWidget(self.search_field)
+            ### Prev button
+            self.prev_btn = self.new_button(text='Prev', func=self.search_prev)
+            buttons.addWidget(self.prev_btn)
+            ### Next button
+            self.next_btn = self.new_button(text='Next', func=self.search_next)
+            buttons.addWidget(self.next_btn)
+
+    #-----------------------------------------------------------------------
+    def update(self, file):
+    #-----------------------------------------------------------------------
+        self.set_text(read_file(file))
+        self.editor_.moveCursor(QTextCursor.End)
+        self.save_btn.setEnabled(False)
+
+    #-----------------------------------------------------------------------
+    def file_is_open(self, filename):
+    #-----------------------------------------------------------------------
+        #print(f'|{filename}|, |{self.objectName()}|')
+        if filename == self.objectName():
+            return True
+        return False
+
+    #-----------------------------------------------------------------------
+    def document(self):                                              # Editor
+    #-----------------------------------------------------------------------
+        return self.editor_.document()
+
+    #-----------------------------------------------------------------------
+    def new_button(self, text=None, icon=None, func=None, width=None):          # Editor
+    #-----------------------------------------------------------------------
+        btn = None
+        if icon:
+            btn = QPushButton(icon=QIcon(':'+icon))
+        else:
+            btn = QPushButton(text=text)
+        if not width:
+            width = self.btn_width
+        btn.setFixedWidth(width)
+        btn.setFixedHeight(self.btn_height)
+        btn.clicked.connect(func)
+        return btn
+
+    #-----------------------------------------------------------------------
+    def goto_end(self):                                            # Editor
+    #-----------------------------------------------------------------------
+        self.refresh()
+        self.editor_.moveCursor(QTextCursor.End)
+
+    #-----------------------------------------------------------------------
+    def goto_top(self):                                            # Editor
+    #-----------------------------------------------------------------------
+        self.editor_.moveCursor(QTextCursor.Start)
         
+    #-----------------------------------------------------------------------
+    def search_next(self):                                            # Editor
+    #-----------------------------------------------------------------------
+        #print(self.search_string+' '+str(self.search_pos))
+        start = 0
+        if self.search_pos:
+            start = self.search_pos[-1]
+        self.search_text(self.search_field.text(), start=start)
+        
+    #-----------------------------------------------------------------------
+    def search_prev(self):                                           # Editor
+    #-----------------------------------------------------------------------
+        #print(self.search_string+' '+str(self.search_pos))
+        if self.search_pos:
+            string = self.search_field.text()
+            if len(self.search_pos)==1:
+                pos = self.search_pos[0]
+            else:
+                pos = self.search_pos.pop()
+                if self.editor_.textCursor().position() == pos:
+                    pos = self.search_pos.pop()
+            self.set_cursor(pos-len(string), string)
+        
+    #-----------------------------------------------------------------------
+    def search_text(self, string, start=0, ignore_case=True):   # Editor
+    #-----------------------------------------------------------------------
+        #print('search_text: '+string+' '+str(start))
+        if start==0:
+            self.search_pos = []          
+        text = self.editor_.toPlainText()
+        if ignore_case:
+            text = text.lower()
+            string = string.lower()
+        pos = text[start:].find(string)
+        if pos < 0:
+            return
+        pos += start
+        #print(pos)
+        self.search_pos.append(pos+len(string))
+        #self.search_string = string
+        self.set_cursor(pos, string)
+        
+    #-----------------------------------------------------------------------
+    def set_cursor(self, start, string, center=True):           # Editor
+    #-----------------------------------------------------------------------
+        cursor = self.editor_.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(start+len(string), QTextCursor.KeepAnchor)   
+        #print(cursor.blockNumber(), cursor.columnNumber())
+        self.editor_.setTextCursor(cursor)
+        #self.editor.verticalScrollBar().setValue(self.editor.verticalScrollBar().value()+10)
+        if center:
+            cursor = self.editor_.cursorRect()
+            cursor_line = int(cursor.y()/cursor.height())
+            page_height = self.editor_.geometry().height()-self.editor_.horizontalScrollBar().height()
+            mid_line = int(0.5*page_height/cursor.height())
+            shift = cursor_line-mid_line
+            vbar = self.editor_.verticalScrollBar()
+            newpos = shift + vbar.value()
+            if newpos>0:
+                vbar.setValue(newpos)            
+                #print(newpos)
+        
+    #-----------------------------------------------------------------------
+    def save_text(self, save_func=None):            # Editor
+    #-----------------------------------------------------------------------
+        #print('save_text')
+        write_file(self.objectName(), self.editor_.toPlainText())
+        self.save_btn.setEnabled(False)
+        if save_func:
+            save_func()
+        #self.prepare_case(self.case)
+
+    #-----------------------------------------------------------------------
+    def activate_save(self):                                           # Editor
+    #-----------------------------------------------------------------------
+        #print(self.sender())
+        self.save_btn.setEnabled(True)
+        
+    #-----------------------------------------------------------------------
+    def undo(self):                                         # Editor
+    #-----------------------------------------------------------------------
+        #self.vscroll_pos = self.editor.verticalScrollBar().value()
+        self.editor_.undo()
+            
+    #-----------------------------------------------------------------------
+    def redo(self):                                           # Editor
+    #-----------------------------------------------------------------------
+        #self.vscroll_pos = self.editor.verticalScrollBar().value()
+        self.editor_.redo()
+
+    #-----------------------------------------------------------------------
+    def clear(self):                                             # Editor
+    #-----------------------------------------------------------------------
+        self.view_file(None)
+        # self.editor.setObjectName('')
+        # self.editor_group.setTitle('')
+        # self.search_field.setText('')
+        # self.search_field.setPlaceholderText('Search text')
+        # self.editor.setPlainText('')
+        # self.editor.verticalScrollBar().setValue(0)
+
+    #-----------------------------------------------------------------------
+    def view_file(self, file, title=''):                            # Editor
+    #-----------------------------------------------------------------------
+        curr_file = self.objectName()
+        if curr_file:
+            self.vscroll[curr_file] = self.editor_.verticalScrollBar().value()
+        # Clear search field
+        self.search_field.setText('')
+        # Avoid re-opening file after it is saved
+        if str(file) == self.objectName():
+            return
+        self.setObjectName(str(file))
+        self.highlight = None
+        self.search_field.setPlaceholderText('Search text')
+        text = ''
+        if file and Path(file).is_file():
+            text = read_file(file)
+        self.set_text(text)
+        # if self.plain_text:
+        #     self.editor_.setPlainText(text)
+        # else:
+        #     self.editor_.setText(text)
+        vscroll = self.vscroll.get(str(file)) or 0
+        self.editor_.verticalScrollBar().setValue(vscroll)
+        #self.editor_text = text
+        self.setTitle(title)
+        #return self.group
+        # self.current_view.setParent(None)
+        # self.layout.addWidget(self.group, *self.position['plot'])
+        # self.current_view = self.group
+
+
+    #-----------------------------------------------------------------------
+    def refresh(self):                                           # Editor
+    #-----------------------------------------------------------------------
+        file = self.objectName()
+        self.vscroll[file] = self.editor_.verticalScrollBar().value()
+        if file and Path(file).is_file():
+            text = read_file(file)
+            self.setObjectName(str(file))
+            self.set_text(text)
+            # if self.plain_text:
+            #     self.editor_.setPlainText(text)
+            # else:
+            #     self.editor_.setText(text)
+        vscroll = self.vscroll.get(str(file)) or 0
+        self.editor_.verticalScrollBar().setValue(vscroll)
+
+
+#===========================================================================
+class Window(QMainWindow):                                              
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, parent=None, widget=None, title='', size=(1000, 500)):
+    #-----------------------------------------------------------------------
+        super(Window, self).__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumSize(*size)
+        self.widget = widget
+        self.setCentralWidget(widget)
+
 #===========================================================================
 class Settings(QDialog):                                              
 #===========================================================================
@@ -774,9 +1064,14 @@ class main_window(QMainWindow):                                    # main_window
         self.view = False
         self.plot_ref = None
         self.progress = None
-        self.vscroll = {}
+        #self.vscroll = {}
         gui_dir.mkdir(exist_ok=True)
         self.settings = Settings(self, file=str(settings_file))
+        # User guide window
+        guide = Path('IORSim 2021 User Guide.htm')
+        browser = Editor(browser=True, space=200, search_width=500, refresh=False, end=False, top_name='Contents')
+        browser.view_file(guide)
+        self.user_guide = Window(widget=browser, title=guide.stem, size=(1000, 800))
         self.casedir = case_dir 
         self.case = None
         self.input_file = input_file #gui_dir/'input.txt'
@@ -808,8 +1103,8 @@ class main_window(QMainWindow):                                    # main_window
                                        tip='Run simulation', func=self.run_sim)
         self.stop_act = create_action(self, text=None, icon='stop', shortcut='Ctrl+E',
                                       tip='Stop simulation', func=self.killsim)
-#        self.help_act = create_action(self, text='Keyboard shortcuts',  shortcut='',
-#                                      tip='Display help', func=self.help_win.open_win)
+        self.user_guide_act = create_action(self, text='IORSim User Guide', icon='help', shortcut='',
+                                      tip='IORSim User Guide', func=self.user_guide.show)
         self.exit_act = create_action(self, text='&Exit', icon='control-power', shortcut='Ctrl+Q',
                                       tip='Exit application', func=self.quit)
         self.add_case_act = create_action(self, text='Add case...', icon='document--plus',
@@ -886,8 +1181,8 @@ class main_window(QMainWindow):                                    # main_window
             view_menu.addAction(act)
             self.view_ag.addAction(act)
         
-        #help_menu = menu.addMenu('&Help')
-        #help_menu.addAction(self.help_act)
+        help_menu = menu.addMenu('&Help')
+        help_menu.addAction(self.user_guide_act)
         
         
     #-----------------------------------------------------------------------
@@ -1017,11 +1312,10 @@ class main_window(QMainWindow):                                    # main_window
         self.create_ecl_menu()
         # plot
         self.create_plot_field()
-        self.create_editor_field()
-        #print(self.layout.columnCount(), self.layout.rowCount())
-        #margins = self.contentsMargins()
-        #margins.setBottom(0)    
-        #self.setContentsMargins(0,0,0,0)        
+        #self.create_editor_field()
+        self.editor = Editor(name='editor', save_func=self.prepare_case)
+        self.log_viewer = Editor(name='log_viewer', read_only=True)
+
 
 
     #-----------------------------------------------------------------------
@@ -1393,7 +1687,8 @@ class main_window(QMainWindow):                                    # main_window
             self.mode_cb.blockSignals(True)
             self.mode_cb.setCurrentIndex(self.modes.index(mode))
             self.mode_cb.blockSignals(False)
-            self.prepare_case(self.input['root'])
+            #self.prepare_case(self.input['root'])
+            self.prepare_case()
                 
     #-----------------------------------------------------------------------
     def on_compare_select(self, nr):                              # main_window
@@ -1504,7 +1799,8 @@ class main_window(QMainWindow):                                    # main_window
         self.max_3_checked = []
         if self.current_view.objectName()=='editor':
             self.view_file(None)
-        self.prepare_case(None)
+        #self.prepare_case(None)
+        self.prepare_case()
 
 
         
@@ -1570,8 +1866,10 @@ class main_window(QMainWindow):                                    # main_window
         return self.get_current_mode() == 'iorsim'
 
     #-----------------------------------------------------------------------
-    def prepare_case(self, root):
+    def prepare_case(self):
     #-----------------------------------------------------------------------
+        root = self.case or self.input['root']
+        #print('prepare_case: ',root)
         self.reset_progress_and_message()
         self.plot_lines = {}
         self.ref_plot_lines = {}
@@ -1992,217 +2290,23 @@ class main_window(QMainWindow):                                    # main_window
         self.plotted_lines = {}
 
         
-    #-----------------------------------------------------------------------
-    def create_editor_field(self):                                # main_window
-    #-----------------------------------------------------------------------
-        width = 60
-        height = 25
-        def new_button(text=None, icon=None, func=None):
-            btn = None
-            if icon:
-                btn = QPushButton(icon=QIcon(':'+icon))
-            else:
-                btn = QPushButton(text=text)
-            #if icon:
-            #    btn.setIcon(QIcon(':'+icon))
-            #btn.setStyleSheet('QPushButton {max-width}')
-            btn.setFixedWidth(width)
-            btn.setFixedHeight(height)
-            btn.clicked.connect(func)
-            return btn
-
-        layout = QVBoxLayout()
-        buttons = QHBoxLayout()
-        layout.addLayout(buttons)
-        self.editor = QPlainTextEdit()
-        #self.vscroll_pos = None
-        layout.addWidget(self.editor)
-        self.editor.textChanged.connect(self.activate_save)
-        self.editor.setLineWrapMode(QPlainTextEdit.NoWrap)
-        self.editor_group = QGroupBox()
-        self.editor_group.setObjectName('editor')
-        self.editor_group.setLayout(layout)
-        ### Refresh button
-        self.refresh_btn = new_button(text='Refresh', func=self.editor_refresh)
-        buttons.addWidget(self.refresh_btn)
-        ### Save button
-        self.save_btn = new_button(text='Save', func=self.save_text)
-        buttons.addWidget(self.save_btn)
-        ### Undo button
-        self.undo_btn = new_button(text='Undo', func=self.editor_undo)
-        buttons.addWidget(self.undo_btn)
-        ### Redo button
-        self.redo_btn = new_button(text='Redo', func=self.editor_redo)
-        buttons.addWidget(self.redo_btn)
-        ### End button
-        self.end_btn = new_button(text='End', func=self.goto_end)
-        buttons.addWidget(self.end_btn)
-        ### Search field
-        self.search_pos = []
-        self.search_field = QLineEdit()
-        self.search_field.setFixedHeight(height)
-        self.search_field.setClearButtonEnabled(True) 
-        self.search_field.setPlaceholderText('Search text')
-        self.search_field.textChanged.connect(self.search_text)
-        buttons.addWidget(self.search_field)
-        ### Prev button
-        self.prev_btn = new_button(text='Prev', func=self.search_prev)
-        buttons.addWidget(self.prev_btn)
-        ### Next button
-        self.next_btn = new_button(text='Next', func=self.search_next)
-        buttons.addWidget(self.next_btn)
+    # #-----------------------------------------------------------------------
+    # def create_editor_field(self):                                # main_window
+    # #-----------------------------------------------------------------------
+    #     self.editor = Editor(save_func=partial(self.prepare_case, self.case))
 
     #-----------------------------------------------------------------------
-    def goto_end(self):
+    def view_file(self, file, viewer=None, title='', reset=True):           # main_window
     #-----------------------------------------------------------------------
-        self.editor_refresh()
-        self.editor.moveCursor(QTextCursor.End)
-        
-    #-----------------------------------------------------------------------
-    def search_next(self):
-    #-----------------------------------------------------------------------
-        #print(self.search_string+' '+str(self.search_pos))
-        start = 0
-        if self.search_pos:
-            start = self.search_pos[-1]
-        self.search_text(self.search_field.text(), start=start)
-        
-    #-----------------------------------------------------------------------
-    def search_prev(self):
-    #-----------------------------------------------------------------------
-        #print(self.search_string+' '+str(self.search_pos))
-        if self.search_pos:
-            string = self.search_field.text()
-            if len(self.search_pos)==1:
-                pos = self.search_pos[0]
-            else:
-                pos = self.search_pos.pop()
-                if self.editor.textCursor().position() == pos:
-                    pos = self.search_pos.pop()
-            self.set_cursor(pos-len(string), string)
-        
-    #-----------------------------------------------------------------------
-    def search_text(self, string, start=0, ignore_case=True):
-    #-----------------------------------------------------------------------
-        #print('search_text: '+string+' '+str(start))
-        if start==0:
-            self.search_pos = []          
-        text = self.editor.toPlainText()
-        if ignore_case:
-            text = text.lower()
-            string = string.lower()
-        pos = text[start:].find(string)
-        if pos < 0:
-            return
-        pos += start
-        #print(pos)
-        self.search_pos.append(pos+len(string))
-        #self.search_string = string
-        self.set_cursor(pos, string)
-        
-    #-----------------------------------------------------------------------
-    def set_cursor(self, start, string, center=True):
-    #-----------------------------------------------------------------------
-        cursor = self.editor.textCursor()
-        cursor.setPosition(start)
-        cursor.setPosition(start+len(string), QTextCursor.KeepAnchor)   
-        #print(cursor.blockNumber(), cursor.columnNumber())
-        self.editor.setTextCursor(cursor)
-        #self.editor.verticalScrollBar().setValue(self.editor.verticalScrollBar().value()+10)
-        if center:
-            cursor = self.editor.cursorRect()
-            cursor_line = int(cursor.y()/cursor.height())
-            page_height = self.editor.geometry().height()-self.editor.horizontalScrollBar().height()
-            mid_line = int(0.5*page_height/cursor.height())
-            shift = cursor_line-mid_line
-            vbar = self.editor.verticalScrollBar()
-            newpos = shift + vbar.value()
-            if newpos>0:
-                vbar.setValue(newpos)            
-                #print(newpos)
-        
-    #-----------------------------------------------------------------------
-    def save_text(self):
-    #-----------------------------------------------------------------------
-        #print('save_text')
-        write_file(self.editor.objectName(), self.editor.toPlainText())
-        self.save_btn.setEnabled(False)
-        self.prepare_case(self.case)
-
-    #-----------------------------------------------------------------------
-    def activate_save(self):
-    #-----------------------------------------------------------------------
-        #print(self.sender())
-        self.save_btn.setEnabled(True)
-        
-    #-----------------------------------------------------------------------
-    def editor_undo(self):                               # main_window
-    #-----------------------------------------------------------------------
-        #self.vscroll_pos = self.editor.verticalScrollBar().value()
-        self.editor.undo()
-            
-    #-----------------------------------------------------------------------
-    def editor_redo(self):                               # main_window
-    #-----------------------------------------------------------------------
-        #self.vscroll_pos = self.editor.verticalScrollBar().value()
-        self.editor.redo()
-
-    #-----------------------------------------------------------------------
-    def clear_editor(self):                                       # main_window
-    #-----------------------------------------------------------------------
-        self.view_file(None)
-        # self.editor.setObjectName('')
-        # self.editor_group.setTitle('')
-        # self.search_field.setText('')
-        # self.search_field.setPlaceholderText('Search text')
-        # self.editor.setPlainText('')
-        # self.editor.verticalScrollBar().setValue(0)
-
-    #-----------------------------------------------------------------------
-    def view_file(self, file, title=''):                       # main_window
-    #-----------------------------------------------------------------------
-        curr_file = self.editor.objectName()
-        if curr_file:
-            self.vscroll[curr_file] = self.editor.verticalScrollBar().value()
-        self.reset_progress_and_message()
-        # Clear search field
-        self.search_field.setText('')
-        # Avoid re-opening file after it is saved
-        if str(file) == self.editor.objectName():
-            return
-        self.editor.setObjectName(str(file))
-        #self.editor.setObjectName('')
-        self.highlight = None
-        self.search_field.setPlaceholderText('Search text')
-        text = ''
-        if file and Path(file).is_file():
-            text = read_file(file)
-            #text = open(file).read()
-            #self.editor.setObjectName(str(file))
-        self.editor.setPlainText(text)
-        vscroll = self.vscroll.get(str(file)) or 0
-        self.editor.verticalScrollBar().setValue(vscroll)
-        #self.editor_text = text
-        self.editor_group.setTitle(title)
+        #self.editor.view_file(file, title=title)
+        if not viewer:
+            viewer = self.editor
+        viewer.view_file(file, title=title)
         self.current_view.setParent(None)
-        self.layout.addWidget(self.editor_group, *self.position['plot'])
-        self.current_view = self.editor_group
-        #if self.vscroll_pos:
-        #    self.editor.verticalScrollBar().setValue(self.vscroll_pos)
-            #print(self.cursor_pos)
- 
-    #-----------------------------------------------------------------------
-    def editor_refresh(self):
-    #-----------------------------------------------------------------------
-        file = self.editor.objectName()
-        self.vscroll[file] = self.editor.verticalScrollBar().value()
-        if file and Path(file).is_file():
-            text = read_file(file)
-            #text = open(file).read()
-            self.editor.setObjectName(str(file))
-            self.editor.setPlainText(text)
-        vscroll = self.vscroll.get(str(file)) or 0
-        self.editor.verticalScrollBar().setValue(vscroll)
+        self.layout.addWidget(viewer, *self.position['plot'])
+        self.current_view = viewer
+        if reset:
+            self.reset_progress_and_message()
 
     #-----------------------------------------------------------------------
     def view_input_file(self, name=None, ext=None, title=None, comment='#', keywords=[]):                                # main_window
@@ -2212,36 +2316,27 @@ class main_window(QMainWindow):                                    # main_window
         if self.input['root']:
             if not name:
                 name = self.input['root']+ext
-            if self.this_file_is_open_in_editor(name):
+            #if self.this_file_is_open_in_editor(name):
+            if self.editor.file_is_open(name):
                 return
             fil = is_file_ignore_suffix_case(name)
             # fil = is_file_ignore_suffix_case( self.input['root']+'.'+ext )
             if fil: # and fil.is_file():
-                self.view_file(fil, title=f'{title}: {fil.name}')        
+                self.view_file(fil, viewer=self.editor, title=f'{title}: {fil.name}')        
                 self.highlight = Highlighter(self.editor.document(), comment=comment, keywords=keywords)
-                self.save_btn.setEnabled(False)
-                self.undo_btn.setEnabled(True)
-                self.redo_btn.setEnabled(True)
+                self.editor.save_btn.setEnabled(False)
+                self.editor.undo_btn.setEnabled(True)
+                self.editor.redo_btn.setEnabled(True)
             else:
                 self.sender().setChecked(False)
                 self.sender().parent().missing_file_error(tag=name)
-                self.clear_editor()
+                self.editor.clear()
                 return False
         
         else:
             self.sender().setChecked(False)
             self.sender().parent().missing_case_error(tag='input: ')
             return False
-
-    #-----------------------------------------------------------------------
-    #def this_file_is_open_in_editor(self, ext):
-    def this_file_is_open_in_editor(self, filename):
-    #-----------------------------------------------------------------------
-        #print(self.input['root']+'.'+ext)
-        #if self.input['root'] and (self.input['root']+'.'+ext == self.editor.objectName()):
-        if filename == self.editor.objectName():
-            return True
-        return False
 
 
     #-----------------------------------------------------------------------
@@ -2253,7 +2348,7 @@ class main_window(QMainWindow):                                    # main_window
         title='Eclipse input file'
         comment='--'
         # Avoid re-opening file after it is saved
-        if self.this_file_is_open_in_editor(self.input['root']+ext):
+        if self.editor.file_is_open(self.input['root']+ext):
             return
         # Sections
         sections = [color.red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
@@ -2287,7 +2382,8 @@ class main_window(QMainWindow):                                    # main_window
         title='IORSim input file'
         comment='#'
         name = self.input['root']+ext
-        if self.this_file_is_open_in_editor(name):
+        #if self.this_file_is_open_in_editor(name):
+        if self.editor.file_is_open(name):
             return
         # Mandatory keywords
         mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.required
@@ -2309,17 +2405,17 @@ class main_window(QMainWindow):                                    # main_window
         self.view_input_file(ext='.SCH', title='Schedule file for backward runs', comment='--', keywords=[globals, common])
         
     #-----------------------------------------------------------------------
-    def view_log(self, logfile, title=None):                                # main_window
+    def view_log(self, logfile, title=None):                   # main_window
     #-----------------------------------------------------------------------
         if not self.case:
             self.sender().setChecked(False)
             self.sender().parent().missing_case_error(tag='log: ')
             return False
         self.log_file = Path(self.case).parent/logfile
-        self.view_file(self.log_file, title=title)
-        self.save_btn.setEnabled(False)
-        self.undo_btn.setEnabled(False)
-        self.redo_btn.setEnabled(False)
+        self.view_file(self.log_file, viewer=self.log_viewer, title=title)
+        self.editor.save_btn.setEnabled(False)
+        self.editor.undo_btn.setEnabled(False)
+        self.editor.redo_btn.setEnabled(False)
         
     #-----------------------------------------------------------------------
     def view_eclipse_log(self):                                # main_window
@@ -2340,12 +2436,13 @@ class main_window(QMainWindow):                                    # main_window
     def update_log(self):                                # main_window
     #-----------------------------------------------------------------------
         if self.log_file:
-            #print('update_log:',self.log_file)
-            text = read_file(self.log_file)
-            self.editor.setPlainText(text)
-            #self.editor.setPlainText(open(self.log_file).read())
-            self.editor.moveCursor(QTextCursor.End)
-            self.save_btn.setEnabled(False)
+            self.editor.update(self.log_file)
+            # #print('update_log:',self.log_file)
+            # text = read_file(self.log_file)
+            # self.editor.setPlainText(text)
+            # #self.editor.setPlainText(open(self.log_file).read())
+            # self.editor.moveCursor(QTextCursor.End)
+            # self.editor.save_btn.setEnabled(False)
     
     #-----------------------------------------------------------------------
     def view_plot(self):                                # main_window
