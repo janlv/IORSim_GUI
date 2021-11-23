@@ -63,6 +63,15 @@ class color:
     turq   = GUI_color(23,190,207)  #17becf
     as_tuple = (blue, orange, green, red, violet, brown, pink, gray, yellow, turq)
 
+#-----------------------------------------------------------------------
+def resource_path():
+#-----------------------------------------------------------------------
+    try:
+        path = Path(sys._MEIPASS)
+    except AttributeError:
+        path = Path().cwd()
+    return path
+
 
 #-----------------------------------------------------------------------
 def open_file_dialog(win, text, filetype):
@@ -1066,7 +1075,7 @@ class main_window(QMainWindow):                                    # main_window
         gui_dir.mkdir(exist_ok=True)
         self.settings = Settings(self, file=str(settings_file))
         # User guide window
-        guide = Path('IORSim 2021 User Guide.htm')
+        guide = resource_path()/'IORSim 2021 User Guide.htm'
         browser = Editor(browser=True, space=200, search_width=500, refresh=False, end=False, top_name='Contents')
         browser.view_file(guide)
         self.user_guide = Window(widget=browser, title=guide.stem, size=(1000, 800))
