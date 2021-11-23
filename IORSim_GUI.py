@@ -1804,7 +1804,8 @@ class main_window(QMainWindow):                                    # main_window
         self.delete_case(self.case)
         self.input['root'] = self.case = None
         self.max_3_checked = []
-        if self.current_view.objectName()=='editor':
+        #if self.current_view.objectName()=='editor':
+        if self.current_view.objectName() in ('editor','log_viewer'):
             self.view_file(None)
         #self.prepare_case(None)
         self.prepare_case()
@@ -2940,7 +2941,8 @@ class main_window(QMainWindow):                                    # main_window
         #print('view:', view)
         if view=='plot':
             self.update_all_plot_lines()
-        elif view=='editor':
+        #elif view=='editor':
+        elif view=='log_viewer':
             self.update_log()
         #print(datetime.now()-B)
 
