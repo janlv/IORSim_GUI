@@ -495,6 +495,7 @@ class Plot(QGroupBox):
     #-----------------------------------------------------------------------
         super(Plot, self).__init__(parent)
         self.setTitle('Plot')
+        self.name = 'plot'
         self.setObjectName('plot')
         layout = QVBoxLayout()
         self.setLayout(layout)
@@ -521,6 +522,7 @@ class Editor(QGroupBox):
         self.btn_height = 25
         self.vscroll = {}
         self.name = name
+        self.file = None
         layout = QVBoxLayout()
         buttons = QHBoxLayout()
         layout.addLayout(buttons)
@@ -594,13 +596,13 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
         self.set_text(read_file(file))
         self.editor_.moveCursor(QTextCursor.End)
-        self.save_btn.setEnabled(False)
 
     #-----------------------------------------------------------------------
     def file_is_open(self, filename):
     #-----------------------------------------------------------------------
         #print(f'|{filename.lower()}|, |{self.objectName().lower()}|')
-        if filename.lower() == self.objectName().lower():
+        #if filename.lower() == self.objectName().lower():
+        if str(filename).lower() == str(self.file).lower():
             return True
         return False
 
@@ -731,15 +733,16 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                            # Editor
     #-----------------------------------------------------------------------
-        curr_file = self.objectName()
+        curr_file = self.file
         if curr_file:
             self.vscroll[curr_file] = self.editor_.verticalScrollBar().value()
         # Clear search field
         self.search_field.setText('')
         # Avoid re-opening file after it is saved
-        if str(file) == self.objectName():
+        if self.file_is_open(file):
             return
-        self.setObjectName(str(file))
+        #self.setObjectName(str(file))
+        self.file = str(file)
         self.highlight = None
         self.search_field.setPlaceholderText('Search text')
         text = ''
@@ -754,13 +757,12 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def refresh(self):                                           # Editor
     #-----------------------------------------------------------------------
-        file = self.objectName()
-        self.vscroll[file] = self.editor_.verticalScrollBar().value()
-        if file and Path(file).is_file():
-            text = read_file(file)
-            self.setObjectName(str(file))
-            self.set_text(text)
-        vscroll = self.vscroll.get(str(file)) or 0
+        #file = self.objectName()
+        self.vscroll[self.file] = self.editor_.verticalScrollBar().value()
+        if self.file and Path(self.file).is_file():
+            #self.setObjectName(str(file))
+            self.set_text(read_file(self.file))
+        vscroll = self.vscroll.get(str(self.file)) or 0
         self.editor_.verticalScrollBar().setValue(vscroll)
 
 
@@ -1804,8 +1806,8 @@ class main_window(QMainWindow):                                    # main_window
         self.delete_case(self.case)
         self.input['root'] = self.case = None
         self.max_3_checked = []
-        #if self.current_view.objectName()=='editor':
-        if self.current_view.objectName() in ('editor','log_viewer'):
+        #if self.current_view.objectName() in ('editor','log_viewer'):
+        if self.current_view.name in ('editor','log_viewer'):
             self.view_file(None)
         #self.prepare_case(None)
         self.prepare_case()
@@ -2308,17 +2310,12 @@ class main_window(QMainWindow):                                    # main_window
         if self.input['root']:
             if not name:
                 name = self.input['root']+ext
-            #if self.editor.file_is_open(name):
             if self.current_view and self.current_view.file_is_open(name):
                 return
             fil = is_file_ignore_suffix_case(name)
-            # fil = is_file_ignore_suffix_case( self.input['root']+'.'+ext )
-            if fil: # and fil.is_file():
+            if fil: 
                 self.view_file(fil, viewer=self.editor, title=f'{title}: {fil.name}')        
                 self.highlight = Highlighter(self.editor.document(), comment=comment, keywords=keywords)
-                #self.editor.save_btn.setEnabled(False)
-                #self.editor.undo_btn.setEnabled(True)
-                #self.editor.redo_btn.setEnabled(True)
             else:
                 self.sender().setChecked(False)
                 self.sender().parent().missing_file_error(tag=name)
@@ -2913,19 +2910,11 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_view_area(self):
     #-----------------------------------------------------------------------
-        #A = datetime.now()
         if self.mode == 'backward':
             self.read_ior_data()
             self.read_ecl_data()
-        #B = datetime.now()
-        #print(B-A, ', ', end='')
-
         self.days = None
-        #print('Mode: '+self.mode)
-        #if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current:
         if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current_run():
-            #print('Current: '+self.worker.current)
-            #run = self.worker.current
             run = self.worker.current_run()
             if run in ('ecl','eclipse','eclrun'):
                 self.read_ecl_data()
@@ -2935,16 +2924,12 @@ class main_window(QMainWindow):                                    # main_window
                 run = 'ior'
             if self.data.get(run):
                 self.days = (self.data[run]).get('days')
-                #print(self.days[-1])
-
-        view = self.current_view.objectName()
+        view = self.current_view.name
         #print('view:', view)
         if view=='plot':
             self.update_all_plot_lines()
-        #elif view=='editor':
         elif view=='log_viewer':
             self.update_log()
-        #print(datetime.now()-B)
 
     #-----------------------------------------------------------------------
     def input_OK(self):
