@@ -39,6 +39,17 @@ case_dir = gui_dir/'cases'
 input_file = gui_dir/'input.txt'
 settings_file = gui_dir/'settings.txt'
 
+# class App_files:
+#     def __init__(self):
+#         self.update()
+    
+#     def update(self, gui_dir='GUI'):
+#         self.case_dir = gui_dir/'cases'
+#         self.input = gui_dir/'input.txt'
+#         self.settings = gui_dir/'settings.txt'
+
+# app_file = App_files()
+
 default_font = 'default'
 default_size = 10
 default_weight = 50
@@ -69,7 +80,7 @@ def resource_path():
     try:
         path = Path(sys._MEIPASS)
     except AttributeError:
-        path = Path().cwd()
+        path = Path.cwd()
     return path
 
 
@@ -705,7 +716,7 @@ class Editor(QGroupBox):
     def save_text(self, save_func=None):            # Editor
     #-----------------------------------------------------------------------
         #print('save_text')
-        write_file(self.objectName(), self.editor_.toPlainText())
+        write_file(self.file, self.editor_.toPlainText())
         self.save_btn.setEnabled(False)
         if save_func:
             save_func()
@@ -817,8 +828,8 @@ class Settings(QDialog):
         grid.setColumnStretch(2,15) 
 
         tool_tip = {'iorsim'         : 'Path to the IORSim executable',
-                    'iorarg'         : 'Additional arguments passed to IORSim',
                     'eclrun'         : "Eclipse command, default is 'eclrun'",
+                    'workdir'        : 'Path to GUI-folder',
                     'unrst'          : 'Check that the UNRST-file is properly flushed before suspending Eclipse',
                     'rft'            : 'Check that the RFT-file is properly flushed before suspending Eclipse',
                     'convert'        : 'Convert IORSim formatted output to unformatted format (readable by ResInsight)',
@@ -851,7 +862,24 @@ class Settings(QDialog):
         #for w in widget[1:]:
         widget[1].setToolTip(tool_tip[var])
         self.eclrun = widget[1]
-        
+
+        ### Workdir        
+        n += 1
+        var, text = 'workdir', 'Case-folder'
+        text, line = self.new_line(var=var, text=text, required=False)
+        grid.addWidget(text , n, 0)
+        hbox = QHBoxLayout()
+        grid.addLayout(hbox, n, 1)
+        self.workdir = line
+        line.setText(str(Path.cwd()))
+        line.setAlignment(Qt.AlignRight)
+        line.setToolTip(tool_tip[var])
+        line.setEnabled(False)
+        casedir = QLabel()
+        casedir.setText(str(Path('/GUI/cases')))
+        hbox.addWidget(line)
+        hbox.addWidget(casedir)
+
         ### Space
         n += 1
         grid.addWidget(QLabel(), n, 0)
