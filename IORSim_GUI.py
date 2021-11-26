@@ -819,10 +819,10 @@ class Settings(QDialog):
                     'eclrun'         : "Eclipse command, default is 'eclrun'",
                     'unrst'          : 'Check that the UNRST-file is properly flushed before suspending Eclipse',
                     'rft'            : 'Check that the RFT-file is properly flushed before suspending Eclipse',
-                    'convert'        : 'Convert IORSim formatted output to unformatted format (readable by ResInsight), and also add output from the Eclipse run',
-                    'del_convert'    : 'Delete the original formatted IORSim output if the convert is successful',
+                    'convert'        : 'Convert IORSim formatted output to unformatted format (readable by ResInsight)',
+                    'del_convert'    : 'Delete the FUNRST-file if it is successfully converted to an UNRST-file',
                     'merge'          : 'Merge the unformatted output from Eclipse and IORSim into one file',
-                    'del_merge'      : 'Delete the separate output-files from Elipse and IORSim if the merge is successful',
+                    'del_merge'      : 'Delete the original UNRST-files from Elipse and IORSim if successfully merged',
                     'stop_child'     : 'Stop both Eclipse parent and child process to increase stability (~5% performance drop)',
                     'check_input_kw' : 'Check IORSim input file keywords'}
 
@@ -1918,24 +1918,25 @@ class main_window(QMainWindow):                                    # main_window
         '''
         if not self.input['root']:
             return
-        # suffixes = ('.trcinp',       '.geocheminp',      '.data',          '.sch')
-        # actions =  (self.ior_inp_act, self.chem_inp_act, self.ecl_inp_act, self.schedule_file_act)
         suffixes = ('.trcinp',       '.data',          '.sch')
         actions =  (self.ior_inp_act, self.ecl_inp_act, self.schedule_file_act)
+        #files = []
         for act, ext in zip(actions, suffixes):
-            value = False
+            enable = False
             if is_file_ignore_suffix_case( self.input['root']+ext ):
-                value = True
-            act.setEnabled(value)
+                #files.append(ext)
+                enable = True
+            act.setEnabled(enable)
         # Chemistry files are put in a separate menu, clear menu before adding actions
         self.chem_menu.clear()
+        #if '.trcinp' in files:
         chemfiles = flat_list(get_keyword(self.input['root']+'.trcinp', '\*CHEMFILE', end='\*'))
-        self.chemfile_act = []
+        #self.chemfile_act = []
         for name in chemfiles:
             filename = Path(self.case).parent/name
             act = create_action(self, text=name, func=partial(self.view_input_file, name=filename, title='Chemistry input file'), icon='document-c')
             self.chem_menu.addAction(act)
-            self.chemfile_act.append(act)
+            #self.chemfile_act.append(act)
 
 
     #-----------------------------------------------------------------------
