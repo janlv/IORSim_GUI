@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # importing libraries 
-from enum import unique
+#from enum import unique
 import os
 #from PySide6.QtWidgets import QStatusBar, QDialog, QTextEdit, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 #from PySide6.QtGui import  QAction, QActionGroup, QColor, QColorConstants, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
@@ -25,9 +25,9 @@ import shutil
 import warnings
 import copy
 from functools import partial
-from re import compile
+#from re import compile
 
-from numpy.ma.core import masked_not_equal
+#from numpy.ma.core import masked_not_equal
 
 from ior2ecl import iorsim, simulation, main as ior2ecl_main
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, remove_comments, return_matching_string, delete_all, file_contains, safeopen, upper_and_lower, write_file
@@ -226,7 +226,7 @@ def get_eclipse_well_yaxis_fluid(root):
             
     
 #-----------------------------------------------------------------------
-def show_message(window, kind, text='', extra='', detail=None):
+def show_message(window, kind, text='', extra='', wait=False, detail=None):
 #-----------------------------------------------------------------------
     kind = kind.lower()
     if kind=='info':
@@ -251,8 +251,10 @@ def show_message(window, kind, text='', extra='', detail=None):
     if detail:
         msg.setdetailedText(detail)
     msg.setStandardButtons(QMessageBox.Ok)  # | QMessageBox.Cancel)
-    #msg.exec_()
-    msg.show()
+    if wait:
+        msg.exec_()
+    else:
+        msg.show()
 
 
 #-----------------------------------------------------------------------
@@ -2955,7 +2957,7 @@ class main_window(QMainWindow):                                    # main_window
             show_message(self, 'warning', text='No input-case selected')
             return False
         if not self.settings.get['iorsim']():
-            show_message(self, 'warning', text='IORSim program missing in Settings')
+            show_message(self, 'warning', text='IORSim program missing in Settings', wait=True)
             self.settings.open()
             return False
         # if self.mode != 'eclipse' and i['dtecl'] == 0:
