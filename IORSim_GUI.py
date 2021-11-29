@@ -1042,10 +1042,12 @@ class Settings(QDialog):
                                                         str(Path.cwd()), QFileDialog.ShowDirsOnly)
         if dirname:
             self._set['workdir'](dirname)
+            self.parent.update_casedir()
+            #self.parent.set_input_field()
             #self.save()
-            self.on_OK_click()
+            #self.on_OK_click()
             #self.parent.reboot()
-            self.restart_now()
+            #self.restart_now()
 
     #-----------------------------------------------------------------------
     def restart_now(self):
@@ -1158,26 +1160,36 @@ class main_window(QMainWindow):                                    # main_window
         self.view = False
         self.plot_ref = None
         self.progress = None
-        #self.vscroll = {}
-        #gui_dir.mkdir(exist_ok=True)
-        self.settings = Settings(self, file=str(settings_file))
-        self.casedir = Path(self.settings.get('workdir'))
-        self.casedir.mkdir(exist_ok=True)
+        self.casedir = None
+        self.input_file = None
         # User guide window
         guide = resource_path()/'IORSim 2021 User Guide.htm'
         browser = Editor(browser=True, space=200, search_width=500, refresh=False, end=False, top_name='Contents')
         browser.view_file(guide)
         self.user_guide = Window(widget=browser, title=guide.stem, size=(1000, 800))
         self.case = None
-        self.input_file = self.casedir/'.cache.txt' #input_file #gui_dir/'input.txt'
+        #self.input_file = self.casedir/'.cache.txt' #input_file #gui_dir/'input.txt'
         #self.input = {'root':None, 'ecl_days':None, 'dtecl':None, 'days':None, 'step':None, 'species':[], 'mode':None} #, 'case':None}
+        # self.input = {'root':None, 'ecl_days':None, 'days':None, 'step':None, 'species':[], 'mode':None}
+        # self.input_to_save = ['root','days','mode']
+        # self.load_input()
+        self.settings = Settings(self, file=str(settings_file))
+        self.initUI()
+        self.update_casedir()
+        #self.set_input_field()
+        self.threadpool = QThreadPool()
+        self.show()
+
+    #-----------------------------------------------------------------------
+    def update_casedir(self):
+    #-----------------------------------------------------------------------
+        self.casedir = Path(self.settings.get('workdir'))
+        self.casedir.mkdir(exist_ok=True)
+        self.input_file = self.casedir/'.cache.txt' #input_file #gui_dir/'input.txt'
         self.input = {'root':None, 'ecl_days':None, 'days':None, 'step':None, 'species':[], 'mode':None}
         self.input_to_save = ['root','days','mode']
         self.load_input()
-        self.initUI()
         self.set_input_field()
-        self.threadpool = QThreadPool()
-        self.show()
 
     #-----------------------------------------------------------------------
     def initUI(self):                                          # main_window
@@ -1543,12 +1555,12 @@ class main_window(QMainWindow):                                    # main_window
         self.ref_case.addItems(['None']+items)
         self.ref_case.setCurrentIndex(0)
         self.ref_case.blockSignals(False)
+        nr = 0
         if choose:
-            self.case_cb.setCurrentIndex(self.case_nr(choose))
-        else:
-            if len(items)>0:
-                self.case_cb.setCurrentIndex(1)
-    
+            nr = self.case_nr(choose)
+            if nr < 0:
+                nr = 0
+        self.case_cb.setCurrentIndex(nr)
 
     #-----------------------------------------------------------------------
     def missing_case_error(self, tag=''):
@@ -1644,6 +1656,13 @@ class main_window(QMainWindow):                                    # main_window
             for d in Path(self.casedir).glob('*'):
                 if d.is_dir():
                     cases.append(str(d/d.name))
+        else:
+            create = User_input(self, title='Missing case directory', head=f'The case directory {self.casedir} does not exist. Create now?')
+            def func():
+                Path(self.casedir).mkdir()
+            create.set_func(func)
+            create.open()
+            #show_message(self, 'error', text=f'The directory')
         return cases
 
     #-----------------------------------------------------------------------
@@ -1657,7 +1676,7 @@ class main_window(QMainWindow):                                    # main_window
             nr = cases.index(Path(case))
             return nr
         except ValueError:
-            show_message(self, 'warning', text="Case '{}' not found!".format(case))
+            #show_message(self, 'warning', text="Case '{}' not found!".format(case))
             return nr
             
     #-----------------------------------------------------------------------
