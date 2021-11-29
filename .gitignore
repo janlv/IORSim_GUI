@@ -183,3 +183,4 @@ satnum*.dat
 test_regex.py
 IORSim_GUI
 cases*
+IORSim_cases

@@ -1221,7 +1221,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
            stop_children=(not args['alive_children']), only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
-           check_input_kw=args['check_input_kw'])
+           check_input=args['check_input_kw'])
     os._exit(0)
 
 

@@ -4,15 +4,16 @@
 # importing libraries 
 #from enum import unique
 import os
+from PyQt5 import QtGui
 #from PySide6.QtWidgets import QStatusBar, QDialog, QTextEdit, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 #from PySide6.QtGui import  QAction, QActionGroup, QColor, QColorConstants, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
 #from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression
 #from PySide2.QtWidgets import QDialogButtonBox, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 #from PySide2.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QColor 
 #from PySide2.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegExp
-from PyQt5.QtWidgets import QStatusBar, QDialog, QTextBrowser, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-from PyQt5.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
-from PyQt5.QtCore import QObject, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
+from PyQt5.QtWidgets import QStatusBar, QDialog, QTextBrowser, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+from PyQt5.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor
+from PyQt5.QtCore import QCoreApplication, QObject, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
 import sys, traceback
 from time import sleep
 from pathlib import Path
@@ -34,10 +35,11 @@ from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_fi
 from IORlib.ECL import get_tsteps, unfmt_file
 import GUI_icons
 
-gui_dir = Path('GUI')
-case_dir = gui_dir/'cases'
-input_file = gui_dir/'input.txt'
-settings_file = gui_dir/'settings.txt'
+# settings_file = Path.home()/'.iorsim_settings.dat'
+# gui_dir = Path.cwd()
+# case_dir = gui_dir/'IORSim_cases'
+# input_file = case_dir/'.cache.txt'
+
 
 # class App_files:
 #     def __init__(self):
@@ -458,11 +460,12 @@ class Mpl_canvas(FigureCanvasQTAgg):
 class User_input(QDialog):                                              
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, parent=None, title=None, head=None, label=None, text=None, delete_src=False):
+    def __init__(self, parent=None, title=None, head=None, label=None, text=None, delete_src=False, size=(400, 150)):
     #-----------------------------------------------------------------------
         #super(User_input, self).__init__(*args, **kwargs)
         super(User_input, self).__init__(parent)
         self.setWindowTitle(title)
+        self.setMinimumSize(*size)
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
         self.func = None
@@ -471,15 +474,16 @@ class User_input(QDialog):
         intro.setWordWrap(True)
         self.layout.addWidget(intro)
         ### input
-        self.inp_layout = QHBoxLayout()
-        self.layout.addLayout(self.inp_layout)
-        self.lbl = QLabel(label)
-        self.lbl.setStyleSheet('padding: 20px')
-        self.var = QLineEdit(self)
-        self.var.setFixedWidth(250)
-        self.var.setText(text)
-        self.inp_layout.addWidget(self.lbl)
-        self.inp_layout.addWidget(self.var)
+        if label and text:
+            self.inp_layout = QHBoxLayout()
+            self.layout.addLayout(self.inp_layout)
+            self.lbl = QLabel(label)
+            self.lbl.setStyleSheet('padding: 20px')
+            self.var = QLineEdit(self)
+            self.var.setFixedWidth(250)
+            self.var.setText(text)
+            self.inp_layout.addWidget(self.lbl)
+            self.inp_layout.addWidget(self.var)
         ### buttons
         self.btn_layout = QHBoxLayout()
         self.layout.addLayout(self.btn_layout)
@@ -800,10 +804,13 @@ class Settings(QDialog):
         super(Settings, self).__init__(parent)
         self.setWindowTitle('Settings')
         self.setMinimumSize(400,300)
-        self.get = {}
-        self.set = {}
+        self.setObjectName('settings_window')
+        self.parent = parent
+        self._get = {}
+        self._set = {}
         self.required = []
         self.default = {'eclrun'         : 'eclrun', 
+                        'workdir'        : str(Path.cwd()),
                         'unrst'          : True, 
                         'rft'            : True, 
                         'convert'        : True,
@@ -817,7 +824,16 @@ class Settings(QDialog):
         self.file = Path(file) 
         self.load()
         
-        
+    #-----------------------------------------------------------------------
+    def get(self, kw):
+    #-----------------------------------------------------------------------
+        return self._get[kw]()
+
+    #-----------------------------------------------------------------------
+    def set(self, kw, value):
+    #-----------------------------------------------------------------------
+        return self._set[kw](value)
+
     #-----------------------------------------------------------------------
     def initUI(self):                                             # settings
     #-----------------------------------------------------------------------
@@ -859,26 +875,33 @@ class Settings(QDialog):
         grid.addWidget(widget[0] , n, 0)
         grid.addWidget(widget[1] , n, 1)
         grid.addWidget(widget[2] , n, 2)
-        #for w in widget[1:]:
         widget[1].setToolTip(tool_tip[var])
         self.eclrun = widget[1]
 
         ### Workdir        
         n += 1
         var, text = 'workdir', 'Case-folder'
-        text, line = self.new_line(var=var, text=text, required=False)
-        grid.addWidget(text , n, 0)
-        hbox = QHBoxLayout()
-        grid.addLayout(hbox, n, 1)
-        self.workdir = line
-        line.setText(str(Path.cwd()))
-        line.setAlignment(Qt.AlignRight)
-        line.setToolTip(tool_tip[var])
-        line.setEnabled(False)
-        casedir = QLabel()
-        casedir.setText(str(Path('/GUI/cases')))
-        hbox.addWidget(line)
-        hbox.addWidget(casedir)
+        widget = self.new_line(var=var, text=text, required=False, open_func=self.change_workdir, button_text='Change')
+        grid.addWidget(widget[0] , n, 0)
+        grid.addWidget(widget[1] , n, 1)
+        grid.addWidget(widget[2] , n, 2)
+        widget[1].setEnabled(False)
+        widget[1].setToolTip(tool_tip[var])
+        self.workdir = widget[1]
+        #print(self.get('workdir'))
+        # text, line = self.new_line(var=var, text=text, required=False)
+        # grid.addWidget(text , n, 0)
+        # hbox = QHBoxLayout()
+        # grid.addLayout(hbox, n, 1)
+        # self.workdir = line
+        # line.setText(str(Path.cwd()))
+        # line.setAlignment(Qt.AlignRight)
+        # line.setToolTip(tool_tip[var])
+        # line.setEnabled(False)
+        # casedir = QLabel()
+        # casedir.setText(str(Path('/GUI/cases')))
+        # hbox.addWidget(line)
+        # hbox.addWidget(casedir)
 
         ### Space
         n += 1
@@ -970,19 +993,20 @@ class Settings(QDialog):
         self.yes_no_btns.accepted.connect(self.on_OK_click)
         self.yes_no_btns.rejected.connect(self.reject)
         
+
     #-----------------------------------------------------------------------
     def new_box(self, var=None, text='', required=False):
     #-----------------------------------------------------------------------
         if required:
             self.required.append(var)
         box = QCheckBox(text)
-        self.get[var] = box.isChecked
-        self.set[var] = box.setChecked
+        self._get[var] = box.isChecked
+        self._set[var] = box.setChecked
         self.set_default(var)
         return box
 
     #-----------------------------------------------------------------------
-    def new_line(self, var=None, text='', required=False, open_func=None):
+    def new_line(self, var=None, text='', required=False, open_func=None, button_text='Open'):
     #-----------------------------------------------------------------------
         if required:
             self.required.append(var)
@@ -991,12 +1015,13 @@ class Settings(QDialog):
         line = QLineEdit()
         #line.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding )
         #line.setMinimumSize(100,25)
-        self.get[var] = line.text 
-        self.set[var] = line.setText
+        self._get[var] = line.text 
+        self._set[var] = line.setText
         self.set_default(var)
         button = False
         if open_func:
-            button = QDialogButtonBox(QDialogButtonBox.StandardButton.Open)
+            button = QPushButton(button_text)
+            #button = QDialogButtonBox(QDialogButtonBox.StandardButton.Open)
             button.clicked.connect(open_func)
         if button:
             return label, line, button
@@ -1008,8 +1033,28 @@ class Settings(QDialog):
     def set_default(self, var):
     #-----------------------------------------------------------------------
         if var in self.default:
-            self.set[var](self.default[var])
+            self._set[var](self.default[var])
         
+    #-----------------------------------------------------------------------
+    def change_workdir(self):
+    #-----------------------------------------------------------------------
+        dirname = QFileDialog.getExistingDirectory(self, 'Locate or create a directory for the case-files', 
+                                                        str(Path.cwd()), QFileDialog.ShowDirsOnly)
+        if dirname:
+            self._set['workdir'](dirname)
+            #self.save()
+            self.on_OK_click()
+            #self.parent.reboot()
+            self.restart_now()
+
+    #-----------------------------------------------------------------------
+    def restart_now(self):
+    #-----------------------------------------------------------------------
+        msg = f'The application must restart to apply the new case directory. Restart now?'
+        restart = User_input(self, title='Restart application?', head=msg)
+        restart.set_func(self.parent.reboot)
+        restart.open()
+
     #-----------------------------------------------------------------------
     def open_ior_prog(self):
     #-----------------------------------------------------------------------
@@ -1020,20 +1065,21 @@ class Settings(QDialog):
                     fname = str(Path(fname).relative_to(Path.cwd()))
                 except ValueError:
                     pass
-            self.set['iorsim'](fname)
+            self._set['iorsim'](fname)
             
     #-----------------------------------------------------------------------
     def open_ecl_prog(self):
     #-----------------------------------------------------------------------
         fname = open_file_dialog(self, 'Locate eclrun program', 'All Files (*)')
         if fname:
-            self.set['eclrun'](fname)
+            self._set['eclrun'](fname)
 
     #-----------------------------------------------------------------------
     def on_OK_click(self):
     #-----------------------------------------------------------------------
         if self.save():
             self.done(1)
+            #self.close()
         
     #-----------------------------------------------------------------------
     def save(self):                                      # settings
@@ -1041,12 +1087,11 @@ class Settings(QDialog):
         self.file.touch(exist_ok=True)
         with open(self.file, 'w') as f:
             f.write('# This is a settings-file for ior2ecl_GUI.py, do not edit.\n')
-            for var,val in self.get.items():
+            for var,val in self._get.items():
                 if var in self.required and len(val())==0:
                     show_message(self, 'error', text=var+' cannot be empty!')
                     return False
-                line = '{} {}'.format(var,val())
-                f.write(line+'\n')
+                f.write(f'{var} {val()}\n')
                 #print(line)
         return True
     
@@ -1065,7 +1110,7 @@ class Settings(QDialog):
                         val = ''
                     else:
                         try:
-                            self.set[var.strip()]( str_to_bool(val.strip()) )
+                            self._set[var.strip()]( str_to_bool(val.strip()) )
                         except KeyError:
                             pass
 
@@ -1074,15 +1119,25 @@ class Settings(QDialog):
 #===========================================================================
 class main_window(QMainWindow):                                    # main_window 
 #===========================================================================
+    EXIT_CODE_REBOOT = -123
 
     #-----------------------------------------------------------------------
-    def __init__(self, *args, **kwargs):                       # main_window
+    def reboot(self):                                          # main_window
+    #-----------------------------------------------------------------------
+        #for child in qApp.allWidgets():
+        #    if child.objectName()=='settings_window':
+        #        child.close()
+        QCoreApplication.exit(main_window.EXIT_CODE_REBOOT)
+
+    #-----------------------------------------------------------------------
+    def __init__(self, *args, settings_file=None, **kwargs):                       # main_window
     #-----------------------------------------------------------------------
         super(main_window, self).__init__(*args, **kwargs)
         self.setWindowTitle('IORSim') 
         self.setGeometry(300, 100, 1200, 800)
         self.setMinimumHeight(600)
         self.setMinimumWidth(800)
+        self.setObjectName('main_window')
         #self.setContentsMargins(2,2,2,2)
         self.setWindowIcon(QIcon(':program_icon'))
         self.font = QFont().defaultFamily()
@@ -1104,16 +1159,17 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_ref = None
         self.progress = None
         #self.vscroll = {}
-        gui_dir.mkdir(exist_ok=True)
+        #gui_dir.mkdir(exist_ok=True)
         self.settings = Settings(self, file=str(settings_file))
+        self.casedir = Path(self.settings.get('workdir'))
+        self.casedir.mkdir(exist_ok=True)
         # User guide window
         guide = resource_path()/'IORSim 2021 User Guide.htm'
         browser = Editor(browser=True, space=200, search_width=500, refresh=False, end=False, top_name='Contents')
         browser.view_file(guide)
         self.user_guide = Window(widget=browser, title=guide.stem, size=(1000, 800))
-        self.casedir = case_dir 
         self.case = None
-        self.input_file = input_file #gui_dir/'input.txt'
+        self.input_file = self.casedir/'.cache.txt' #input_file #gui_dir/'input.txt'
         #self.input = {'root':None, 'ecl_days':None, 'dtecl':None, 'days':None, 'step':None, 'species':[], 'mode':None} #, 'case':None}
         self.input = {'root':None, 'ecl_days':None, 'days':None, 'step':None, 'species':[], 'mode':None}
         self.input_to_save = ['root','days','mode']
@@ -1489,6 +1545,10 @@ class main_window(QMainWindow):                                    # main_window
         self.ref_case.blockSignals(False)
         if choose:
             self.case_cb.setCurrentIndex(self.case_nr(choose))
+        else:
+            if len(items)>0:
+                self.case_cb.setCurrentIndex(1)
+    
 
     #-----------------------------------------------------------------------
     def missing_case_error(self, tag=''):
@@ -2977,14 +3037,11 @@ class main_window(QMainWindow):                                    # main_window
             show_message(self, 'warning', text='The Eclipse output read by IORSim currently sets a limit of ' + str(self.max_days) + 
                                                ' days on the time interval. Run Eclipse with a higher TSTEP to increase the maximun time interval.')
             return False
-        # if not self.settings.get['dt']() or int(self.settings.get['dt']())==0:
-        #     show_message(self, 'warning', text='Timestep missing in settings')
-        #     self.settings.open()
-        #     return False
         if not i['root']:
             show_message(self, 'warning', text='No input-case selected')
             return False
-        if not self.settings.get['iorsim']():
+        #if not self.settings.get['iorsim']():
+        if not self.settings.get('iorsim'):
             show_message(self, 'warning', text='IORSim program missing in Settings', wait=True)
             self.settings.open()
             return False
@@ -3021,15 +3078,17 @@ class main_window(QMainWindow):                                    # main_window
         s = self.settings
         # backward mode
         if self.mode=='backward':
-            kwargs = {'mode':'backward', 'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':False}
+            #kwargs = {'mode':'backward', 'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':False}
+            kwargs = {'mode':'backward', 'check_unrst':s.get('unrst'), 'check_rft':s.get('rft'), 'rft_size':False}
         # forward mode
         elif self.mode in ('forward','eclipse','iorsim'):
             kwargs = {'mode':'forward', 'runs':self.run}
         # start simulation
         for opt in ('convert','del_convert','merge','del_merge','check_input_kw'):
-            kwargs[opt] = s.get[opt]()
-        self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get['iorsim'](), eclexe=s.get['eclrun'](), 
-                                 stop_children=s.get['stop_child'](), days_box=self.days_box, **kwargs)
+            #kwargs[opt] = s.get[opt]()
+            kwargs[opt] = s.get(opt)
+        self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get('iorsim'), eclexe=s.get('eclrun'), 
+                                 stop_children=s.get('stop_child'), days_box=self.days_box, **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)
@@ -3153,20 +3212,30 @@ class Highlighter(QSyntaxHighlighter):
 ###################################
 
 if __name__ == '__main__':
+
+    settings_file = Path.home()/'.iorsim_settings.dat'
+        
     # Need to set the locale under Linux to avoid datetime.strptime errors
     os.putenv("LC_ALL", "C")
     if len(sys.argv) > 1:
+        case_dir = str(Path.cwd()/'IORSim_cases')
+        workdir = get_keyword(settings_file, 'workdir', comment='#')[0]
+        if workdir:
+            case_dir = workdir[0]
         print()
         print('   This is the terminal-version of IORSim_GUI')
         print('   Start IORSim_GUI without arguments to open the GUI')
         print()
         ior2ecl_main(case_dir=case_dir, settings_file=settings_file)
     else:
-        app = QApplication(sys.argv) 
-        #app.setFont(QFont(default_font, pointSize=default_size, weight=default_weight))
-        window = main_window()
-        app.exec_()
-        os._exit(0)
-        #exit_without_atexit()
+        exit_code = main_window.EXIT_CODE_REBOOT
+        while exit_code == main_window.EXIT_CODE_REBOOT:
+            app = QApplication(sys.argv) 
+            window = main_window(settings_file=settings_file)
+            window.show()
+            exit_code = app.exec_()
+            window.close()
+            app = None
+
 
     
