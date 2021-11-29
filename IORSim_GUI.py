@@ -35,24 +35,8 @@ from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_fi
 from IORlib.ECL import get_tsteps, unfmt_file
 import GUI_icons
 
-# settings_file = Path.home()/'.iorsim_settings.dat'
-# gui_dir = Path.cwd()
-# case_dir = gui_dir/'IORSim_cases'
-# input_file = case_dir/'.cache.txt'
-
-
-# class App_files:
-#     def __init__(self):
-#         self.update()
-    
-#     def update(self, gui_dir='GUI'):
-#         self.case_dir = gui_dir/'cases'
-#         self.input = gui_dir/'input.txt'
-#         self.settings = gui_dir/'settings.txt'
-
-# app_file = App_files()
-
-default_font = 'default'
+default_casedir = Path.cwd()/'IORSim_cases'
+default_settings_file = Path.home()/'.iorsim_settings.dat'
 default_size = 10
 default_weight = 50
 
@@ -810,7 +794,7 @@ class Settings(QDialog):
         self._set = {}
         self.required = []
         self.default = {'eclrun'         : 'eclrun', 
-                        'workdir'        : str(Path.cwd()),
+                        'workdir'        : str(default_casedir),
                         'unrst'          : True, 
                         'rft'            : True, 
                         'convert'        : True,
@@ -885,23 +869,9 @@ class Settings(QDialog):
         grid.addWidget(widget[0] , n, 0)
         grid.addWidget(widget[1] , n, 1)
         grid.addWidget(widget[2] , n, 2)
-        widget[1].setEnabled(False)
+        widget[1].setReadOnly(True) #setEnabled(False)
         widget[1].setToolTip(tool_tip[var])
         self.workdir = widget[1]
-        #print(self.get('workdir'))
-        # text, line = self.new_line(var=var, text=text, required=False)
-        # grid.addWidget(text , n, 0)
-        # hbox = QHBoxLayout()
-        # grid.addLayout(hbox, n, 1)
-        # self.workdir = line
-        # line.setText(str(Path.cwd()))
-        # line.setAlignment(Qt.AlignRight)
-        # line.setToolTip(tool_tip[var])
-        # line.setEnabled(False)
-        # casedir = QLabel()
-        # casedir.setText(str(Path('/GUI/cases')))
-        # hbox.addWidget(line)
-        # hbox.addWidget(casedir)
 
         ### Space
         n += 1
@@ -1214,7 +1184,7 @@ class main_window(QMainWindow):                                    # main_window
                                       tip='IORSim User Guide', func=self.user_guide.show)
         self.exit_act = create_action(self, text='&Exit', icon='control-power', shortcut='Ctrl+Q',
                                       tip='Exit application', func=self.quit)
-        self.add_case_act = create_action(self, text='Add case...', icon='document--plus',
+        self.add_case_act = create_action(self, text='Import case...', icon='document--plus',
                                           func=self.add_case_from_file)
         self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy',
                                            func=self.duplicate_current_case)
@@ -1434,10 +1404,7 @@ class main_window(QMainWindow):                                    # main_window
         self.cases = self.read_case_dir()
         self.case = self.input.get('root')
         self.create_caselist(choose=self.case)
-        ### number of steps
-        #if self.input['nsteps']:
-        #    nsteps = self.input['nsteps']
-        #self.days_box.setText(str(nsteps))
+        ### number of days
         self.days_box.setText(str(self.input.get('days') or days))
         
         
@@ -1912,14 +1879,14 @@ class main_window(QMainWindow):                                    # main_window
             self.missing_case_error(tag='delete: ')
             #print('return')
             return False
-        self.delete_case(self.case)
+        #self.delete_case(self.case)
+        case = self.case
         self.input['root'] = self.case = None
         self.max_3_checked = []
-        #if self.current_view.objectName() in ('editor','log_viewer'):
         if self.current_view.name in ('editor','log_viewer'):
             self.view_file(None)
-        #self.prepare_case(None)
-        self.prepare_case()
+        self.delete_case(case)
+        #self.prepare_case()
 
 
         
@@ -3232,25 +3199,23 @@ class Highlighter(QSyntaxHighlighter):
 
 if __name__ == '__main__':
 
-    settings_file = Path.home()/'.iorsim_settings.dat'
-        
     # Need to set the locale under Linux to avoid datetime.strptime errors
     os.putenv("LC_ALL", "C")
     if len(sys.argv) > 1:
-        case_dir = str(Path.cwd()/'IORSim_cases')
-        workdir = get_keyword(settings_file, 'workdir', comment='#')[0]
+        case_dir = str(default_casedir)
+        workdir = get_keyword(default_settings_file, 'workdir', comment='#')[0]
         if workdir:
             case_dir = workdir[0]
         print()
         print('   This is the terminal-version of IORSim_GUI')
         print('   Start IORSim_GUI without arguments to open the GUI')
         print()
-        ior2ecl_main(case_dir=case_dir, settings_file=settings_file)
+        ior2ecl_main(case_dir=case_dir, settings_file=default_settings_file)
     else:
         exit_code = main_window.EXIT_CODE_REBOOT
         while exit_code == main_window.EXIT_CODE_REBOOT:
             app = QApplication(sys.argv) 
-            window = main_window(settings_file=settings_file)
+            window = main_window(settings_file=default_settings_file)
             window.show()
             exit_code = app.exec_()
             window.close()
