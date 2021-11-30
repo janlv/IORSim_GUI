@@ -3203,9 +3203,9 @@ if __name__ == '__main__':
     os.putenv("LC_ALL", "C")
     if len(sys.argv) > 1:
         case_dir = str(default_casedir)
-        workdir = get_keyword(default_settings_file, 'workdir', comment='#')[0]
-        if workdir:
-            case_dir = workdir[0]
+        workdir = get_keyword(default_settings_file, 'workdir', comment='#')
+        if workdir and workdir[0]:
+            case_dir = workdir[0][0]
         print()
         print('   This is the terminal-version of IORSim_GUI')
         print('   Start IORSim_GUI without arguments to open the GUI')
