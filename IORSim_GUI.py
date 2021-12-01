@@ -4,7 +4,7 @@
 # importing libraries 
 #from enum import unique
 import os
-from PyQt5 import QtGui
+#from PyQt5 import QtGui
 #from PySide6.QtWidgets import QStatusBar, QDialog, QTextEdit, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 #from PySide6.QtGui import  QAction, QActionGroup, QColor, QColorConstants, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
 #from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression
@@ -35,6 +35,16 @@ from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_fi
 from IORlib.ECL import get_tsteps, unfmt_file
 import GUI_icons
 
+#-----------------------------------------------------------------------
+def resource_path():
+#-----------------------------------------------------------------------
+    try:
+        path = Path(sys._MEIPASS)
+    except AttributeError:
+        path = Path.cwd()
+    return path
+
+user_guide = resource_path()/'IORSim_2021_User_Guide.htm'
 default_casedir = Path.cwd()/'IORSim_cases'
 default_settings_file = Path.home()/'.iorsim_settings.dat'
 default_size = 10
@@ -59,15 +69,6 @@ class color:
     yellow = GUI_color(188,189,34)  #bcbd22
     turq   = GUI_color(23,190,207)  #17becf
     as_tuple = (blue, orange, green, red, violet, brown, pink, gray, yellow, turq)
-
-#-----------------------------------------------------------------------
-def resource_path():
-#-----------------------------------------------------------------------
-    try:
-        path = Path(sys._MEIPASS)
-    except AttributeError:
-        path = Path.cwd()
-    return path
 
 
 #-----------------------------------------------------------------------
@@ -1133,10 +1134,10 @@ class main_window(QMainWindow):                                    # main_window
         self.casedir = None
         self.input_file = None
         # User guide window
-        guide = resource_path()/'IORSim 2021 User Guide.htm'
+        #guide = resource_path()/'IORSim_2021_User_Guide.htm'
         browser = Editor(browser=True, space=200, search_width=500, refresh=False, end=False, top_name='Contents')
-        browser.view_file(guide)
-        self.user_guide = Window(widget=browser, title=guide.stem, size=(1000, 800))
+        browser.view_file(user_guide)
+        self.user_guide = Window(widget=browser, title=user_guide.stem, size=(1000, 800))
         self.case = None
         self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 'species':[], 'mode':None}
         self.input_to_save = ['root','days','mode']
