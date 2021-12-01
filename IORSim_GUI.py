@@ -1138,15 +1138,11 @@ class main_window(QMainWindow):                                    # main_window
         browser.view_file(guide)
         self.user_guide = Window(widget=browser, title=guide.stem, size=(1000, 800))
         self.case = None
-        #self.input_file = self.casedir/'.cache.txt' #input_file #gui_dir/'input.txt'
-        #self.input = {'root':None, 'ecl_days':None, 'dtecl':None, 'days':None, 'step':None, 'species':[], 'mode':None} #, 'case':None}
-        # self.input = {'root':None, 'ecl_days':None, 'days':None, 'step':None, 'species':[], 'mode':None}
-        # self.input_to_save = ['root','days','mode']
-        # self.load_input()
+        self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 'species':[], 'mode':None}
+        self.input_to_save = ['root','days','mode']
         self.settings = Settings(self, file=str(settings_file))
         self.initUI()
         self.update_casedir()
-        #self.set_input_field()
         self.threadpool = QThreadPool()
         self.show()
 
@@ -1156,8 +1152,6 @@ class main_window(QMainWindow):                                    # main_window
         self.casedir = Path(self.settings.get('workdir'))
         self.casedir.mkdir(exist_ok=True)
         self.input_file = self.casedir/'.cache.txt' #input_file #gui_dir/'input.txt'
-        self.input = {'root':None, 'ecl_days':None, 'days':None, 'step':None, 'species':[], 'mode':None}
-        self.input_to_save = ['root','days','mode']
         self.load_input()
         self.set_input_field()
 
@@ -1730,6 +1724,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_input_change(self, text):                           # main_window
     #-----------------------------------------------------------------------
+        #print('on_input_change: ', text)
         name = self.sender().objectName()
         #var = {'dt':'Timestep', 'nsteps':'Number of steps'}
         #var = {'nsteps':'Number of steps'}
