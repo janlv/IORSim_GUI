@@ -2,19 +2,19 @@
 # -*- coding: utf-8 -*-
 
 # importing libraries 
-#from enum import unique
-import os
-#from PyQt5 import QtGui
-#from PySide6.QtWidgets import QStatusBar, QDialog, QTextEdit, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-#from PySide6.QtGui import  QAction, QActionGroup, QColor, QColorConstants, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
-#from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression
+#from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QTextBrowser, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+#from PySide6.QtGui import  QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
+#from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt
+
 #from PySide2.QtWidgets import QDialogButtonBox, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 #from PySide2.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QColor 
 #from PySide2.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegExp
-from PyQt5.QtWidgets import QStatusBar, QDialog, QTextBrowser, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-from PyQt5.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor
-from PyQt5.QtCore import QCoreApplication, QObject, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
-import sys, traceback
+
+from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
+from PyQt5.QtCore import QCoreApplication, QObject, QUrl, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
+from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
+import os, sys, traceback
 from time import sleep
 from pathlib import Path
 from matplotlib.colors import to_rgb as colors_to_rgb
@@ -26,15 +26,19 @@ import shutil
 import warnings
 import copy
 from functools import partial
-#from re import compile
-
-#from numpy.ma.core import masked_not_equal
 
 from ior2ecl import iorsim, simulation, main as ior2ecl_main
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, remove_comments, return_matching_string, delete_all, file_contains, safeopen, upper_and_lower, write_file
 from IORlib.ECL import get_tsteps, unfmt_file
 import GUI_icons
 
+class WebEngineView(QWebEngineView):
+    # This should remove the JavaScript messages printed to the terminal
+    # but it does not work... 
+    def javaScriptConsoleMessage(self, level, msg, line, sourceID):
+        pass
+
+#print(sys.path)
 #-----------------------------------------------------------------------
 def resource_path():
 #-----------------------------------------------------------------------
@@ -44,7 +48,12 @@ def resource_path():
         path = Path.cwd()
     return path
 
-user_guide = resource_path()/'IORSim_2021_User_Guide.htm'
+#user_guide = resource_path()/'IORSim_2021_User_Guide.htm'
+user_guide = "file:///"+str(resource_path()).replace('\\','/')+"/IORSim_2021_User_Guide.pdf"
+#print(user_guide)
+#user_guide = "file:///C:/Users/javi/codes/IORSim_GUI/IORSim_2021_User_Guide.pdf"
+#print(user_guide)
+#user_guide = "C:\Users\javi\codes\IORSim_GUI\IORSim_2021_User_Guide.pdf"
 default_casedir = Path.cwd()/'IORSim_cases'
 default_settings_file = Path.home()/'.iorsim_settings.dat'
 default_size = 10
@@ -511,13 +520,15 @@ class Plot(QGroupBox):
     #-----------------------------------------------------------------------
         return False
 
+
+
 #===========================================================================
 class Editor(QGroupBox):                                              
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, parent=None, name='', read_only=False, save_func=None, browser=False,
+    def __init__(self, parent=None, name='', read_only=False, save=True, save_func=None, browser=False,
                  top=True, top_name='Top', end=True, search=True, search_width=None,
-                 refresh=True, space=0):
+                 refresh=True, space=0, match_case=False):
     #-----------------------------------------------------------------------
         super(Editor, self).__init__(parent)
         self.btn_width = 60
@@ -525,73 +536,101 @@ class Editor(QGroupBox):
         self.vscroll = {}
         self.name = name
         self.file = None
+        self.search = search
+        self.browser = browser
+        self.refresh = refresh
+        self.read_only = read_only
+        self.save = save
+        self.save_func = save_func
+        self.top = top
+        self.top_name = top_name
+        self.end = end
+        self.search_width = search_width
+        self.space = space
+        self.match_case = match_case
+        self.init_UI()
+
+    #-----------------------------------------------------------------------
+    def init_editor(self, layout):                            # Editor
+    #-----------------------------------------------------------------------
+        self.editor_ = QPlainTextEdit()
+        self.editor_.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.set_text = self.editor_.setPlainText
+        layout.addWidget(self.editor_)
+
+    #-----------------------------------------------------------------------
+    def init_UI(self):                                           # Editor
+    #-----------------------------------------------------------------------
         layout = QVBoxLayout()
+        self.setLayout(layout)
         buttons = QHBoxLayout()
         layout.addLayout(buttons)
-        self.browser = browser
-        if browser:
-            self.editor_ = QTextBrowser()
-            self.set_text = self.editor_.setText
-        else:
-            self.editor_ = QPlainTextEdit()
-            self.editor_.setLineWrapMode(QPlainTextEdit.NoWrap)
-            self.set_text = self.editor_.setPlainText
-        layout.addWidget(self.editor_)
-        self.setLayout(layout)
-        if refresh:
+        self.init_editor(layout)
+        if self.refresh:
             ### Refresh button
-            self.refresh_btn = self.new_button(text='Refresh', func=self.refresh)
+            self.refresh_btn = self.new_button(text='Refresh', func=self.refresh_func)
             buttons.addWidget(self.refresh_btn)
-        if not browser:
-            if read_only:
-                self.editor_.setReadOnly(True)
+        if self.read_only:
+            self.editor_.setReadOnly(True)
+        if not self.read_only and self.save:
+            self.editor_.textChanged.connect(self.activate_save)
+            ### Save button
+            if self.save_func:
+                self.save_btn = self.new_button(text='Save', func=partial(self.save_text, save_func=self.save_func))            
             else:
-                self.editor_.textChanged.connect(self.activate_save)
-                ### Save button
-                if save_func:
-                    self.save_btn = self.new_button(text='Save', func=partial(self.save_text, save_func=save_func))            
-                else:
-                    self.save_btn = self.new_button(text='Save', func=self.save_text)
-                buttons.addWidget(self.save_btn)
-                ### Undo button
-                self.undo_btn = self.new_button(text='Undo', func=self.undo)
-                buttons.addWidget(self.undo_btn)
-                ### Redo button
-                self.redo_btn = self.new_button(text='Redo', func=self.redo)
-                buttons.addWidget(self.redo_btn)
-        if top:
+                self.save_btn = self.new_button(text='Save', func=self.save_text)
+            buttons.addWidget(self.save_btn)
+            ### Undo button
+            self.undo_btn = self.new_button(text='Undo', func=self.undo)
+            buttons.addWidget(self.undo_btn)
+            ### Redo button
+            self.redo_btn = self.new_button(text='Redo', func=self.redo)
+            buttons.addWidget(self.redo_btn)
+        if self.top:
             ### Top button
-            L = len(top_name)
+            L = len(self.top_name)
             width = self.btn_width
             if L > 6:
                 width = L*10
-            self.top_btn = self.new_button(text=top_name, width=width, func=self.goto_top)
+            self.top_btn = self.new_button(text=self.top_name, width=width, func=self.goto_top)
             buttons.addWidget(self.top_btn)
-        if end:
+        if self.end:
             ### End button
             self.end_btn = self.new_button(text='End', func=self.goto_end)
             buttons.addWidget(self.end_btn)
-        if space:
+        if self.space:
             lbl = QLabel(' ')
-            lbl.setFixedWidth(space)
+            lbl.setFixedWidth(self.space)
             buttons.addWidget(lbl)
-        if search:
+        if self.search:
             ### Search field
             self.search_pos = []
             self.search_field = QLineEdit()
             self.search_field.setFixedHeight(self.btn_height)
-            if search_width:
-                self.search_field.setFixedWidth(search_width)
+            if self.search_width:
+                self.search_field.setFixedWidth(self.search_width)
             self.search_field.setClearButtonEnabled(True) 
             self.search_field.setPlaceholderText('Search text')
             self.search_field.textChanged.connect(self.search_text)
             buttons.addWidget(self.search_field)
+            ### Match case
+            if self.match_case:
+                lbl = QLabel()
+                lbl.setText('Match case')
+                buttons.addWidget(lbl)
+                self.case_box = QCheckBox()
+                buttons.addWidget(self.case_box)
             ### Prev button
             self.prev_btn = self.new_button(text='Prev', func=self.search_prev)
             buttons.addWidget(self.prev_btn)
             ### Next button
             self.next_btn = self.new_button(text='Next', func=self.search_next)
             buttons.addWidget(self.next_btn)
+            ### Change cursor color
+            palette = self.editor_.palette()
+            palette.setColor(QPalette.Highlight, QColor(*[int(i*255) for i in (0,0,1,1)]))
+            palette.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
+            self.editor_.setPalette(palette)
 
     #-----------------------------------------------------------------------
     def update(self, file):
@@ -602,8 +641,6 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def file_is_open(self, filename):
     #-----------------------------------------------------------------------
-        #print(f'|{filename.lower()}|, |{self.objectName().lower()}|')
-        #if filename.lower() == self.objectName().lower():
         if str(filename).lower() == str(self.file).lower():
             return True
         return False
@@ -631,7 +668,7 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def goto_end(self):                                            # Editor
     #-----------------------------------------------------------------------
-        self.refresh()
+        self.refresh_func()
         self.editor_.moveCursor(QTextCursor.End)
 
     #-----------------------------------------------------------------------
@@ -733,20 +770,26 @@ class Editor(QGroupBox):
         self.view_file(None)
 
     #-----------------------------------------------------------------------
+    def clear_search(self):
+    #-----------------------------------------------------------------------
+        if self.search:
+            self.search_field.setText('')
+            self.search_field.setPlaceholderText('Search text')
+
+    #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                            # Editor
     #-----------------------------------------------------------------------
         curr_file = self.file
         if curr_file:
             self.vscroll[curr_file] = self.editor_.verticalScrollBar().value()
         # Clear search field
-        self.search_field.setText('')
+        self.clear_search()
         # Avoid re-opening file after it is saved
         if self.file_is_open(file):
             return
         #self.setObjectName(str(file))
         self.file = str(file)
         self.highlight = None
-        self.search_field.setPlaceholderText('Search text')
         text = ''
         if file and Path(file).is_file():
             text = read_file(file)
@@ -755,9 +798,8 @@ class Editor(QGroupBox):
         self.editor_.verticalScrollBar().setValue(vscroll)
         self.setTitle(title)
 
-
     #-----------------------------------------------------------------------
-    def refresh(self):                                           # Editor
+    def refresh_func(self):                                           # Editor
     #-----------------------------------------------------------------------
         #file = self.objectName()
         self.vscroll[self.file] = self.editor_.verticalScrollBar().value()
@@ -767,6 +809,57 @@ class Editor(QGroupBox):
         vscroll = self.vscroll.get(str(self.file)) or 0
         self.editor_.verticalScrollBar().setValue(vscroll)
 
+
+#===========================================================================
+class PDF_viewer(Editor):                                              
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, *args, **kwargs):
+    #-----------------------------------------------------------------------
+        super().__init__(*args, search=True, save=False, refresh=False, top=False, end=False, **kwargs)
+
+    #-----------------------------------------------------------------------
+    def init_editor(self, layout):                          # PDF_viewer
+    #-----------------------------------------------------------------------
+        self.editor_ = WebEngineView()
+        self.editor_.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
+        self.editor_.settings().setAttribute(QWebEngineSettings.PdfViewerEnabled, True)
+        layout.addWidget(self.editor_)
+
+    #-----------------------------------------------------------------------
+    def view_file(self, file, title=''):                    # PDF_viewer
+    #-----------------------------------------------------------------------
+        self.clear_search()
+        self.file = str(file)
+        self.editor_.setUrl(QUrl(file))
+        self.editor_.setWindowTitle(title)
+
+    #-----------------------------------------------------------------------
+    def search_text(self, string, start=0, ignore_case=True):    # PDF_viewer
+    #-----------------------------------------------------------------------
+        #flags = QWebEnginePage.FindFlag(0)
+        #if self.case_box.isChecked():
+        #    flags = QWebEnginePage.FindCaseSensitively
+        #print(flags)
+        self.editor_.findText(string)
+
+    #-----------------------------------------------------------------------
+    def search_next(self):                                      # PDF_viewer
+    #-----------------------------------------------------------------------
+        self.search_text(self.search_field.text())
+
+    #-----------------------------------------------------------------------
+    def search_prev(self):                                      # PDF_viewer
+    #-----------------------------------------------------------------------
+        flags = QWebEnginePage.FindBackward
+        #if self.case_box.isChecked():
+        #    flags = flags or QWebEnginePage.FindCaseSensitively
+        self.editor_.findText(self.search_field.text(), flags)
+
+    #-----------------------------------------------------------------------
+    def refresh_func(self):                                      # PDF_viewer
+    #-----------------------------------------------------------------------
+        pass
 
 #===========================================================================
 class Window(QMainWindow):                                              
@@ -1134,10 +1227,9 @@ class main_window(QMainWindow):                                    # main_window
         self.casedir = None
         self.input_file = None
         # User guide window
-        #guide = resource_path()/'IORSim_2021_User_Guide.htm'
-        browser = Editor(browser=True, space=200, search_width=500, refresh=False, end=False, top_name='Contents')
-        browser.view_file(user_guide)
-        self.user_guide = Window(widget=browser, title=user_guide.stem, size=(1000, 800))
+        pdf_view = PDF_viewer()
+        pdf_view.view_file(user_guide)
+        self.user_guide = Window(widget=pdf_view, title='IORSim User Guide', size=(1000, 800))
         self.case = None
         self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 'species':[], 'mode':None}
         self.input_to_save = ['root','days','mode']
@@ -3197,6 +3289,8 @@ if __name__ == '__main__':
 
     # Need to set the locale under Linux to avoid datetime.strptime errors
     os.putenv("LC_ALL", "C")
+    args = ['--enable-logging --log-level=3']
+
     if len(sys.argv) > 1:
         case_dir = str(default_casedir)
         workdir = get_keyword(default_settings_file, 'workdir', comment='#')
@@ -3210,7 +3304,7 @@ if __name__ == '__main__':
     else:
         exit_code = main_window.EXIT_CODE_REBOOT
         while exit_code == main_window.EXIT_CODE_REBOOT:
-            app = QApplication(sys.argv) 
+            app = QApplication(sys.argv + args) 
             window = main_window(settings_file=default_settings_file)
             window.show()
             exit_code = app.exec_()
