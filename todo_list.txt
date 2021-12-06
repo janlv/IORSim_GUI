@@ -1,5 +1,0 @@
-- Input sjekk av DATA-fil:
-    - må ha UNIFOUT
-    - hvis RESTART, må ha UNIFIN
-
-    
