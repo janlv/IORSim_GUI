@@ -15,6 +15,7 @@ def resource_path():
         path = Path.cwd()
     return path
 
+#this_file = Path(sys.argv[0]).name
 iorsim_guide = "file:///"+str(resource_path()).replace('\\','/')+"/guides/IORSim_2021_User_Guide.pdf"
 script_guide = "file:///"+str(resource_path()).replace('\\','/')+"/guides/IORSim_GUI_guide.pdf"
 latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest"
@@ -374,6 +375,9 @@ class base_worker(QRunnable):
         self.show_message = self.signals.show_message.emit
         self.update_progress = self.signals.progress.emit
         self.update_plot = self.signals.plot.emit
+        self.print_exception = self.kwargs.get('print_exception')
+        if self.print_exception is None:
+            self.print_exception = True
 
     @Slot()
     #-----------------------------------------------------------------------
@@ -382,7 +386,8 @@ class base_worker(QRunnable):
         try:
             result = self.runnable()
         except:
-            print_exc()
+            if self.print_exception:
+                print_exc()
             exctype, value = sys.exc_info()[:2]
             self.signals.error.emit((exctype, value, format_exc()))
         else:
@@ -399,7 +404,6 @@ class sim_worker(base_worker):
         self.sim = None
         self.signals.stop.connect(self.stop_sim)
         self.days_box = kwargs.get('days_box') or None
-        #print(self.kwargs)
 
     #-----------------------------------------------------------------------
     def current_run(self):
@@ -464,21 +468,23 @@ class download_worker(base_worker):
     #-----------------------------------------------------------------------
     def __init__(self, new_version):
     #-----------------------------------------------------------------------
-        super().__init__()
-        self.filename = 'IORSim_GUI'
-        if 'win' in sys.platform.lower():
-            self.filename += '.exe'
-        self.url = latest_release + '/download/' + self.filename
+        super().__init__(print_exception=False)
+        self.filename = Path(sys.argv[0]).name
+        # if 'win' in sys.platform.lower():
+        #     self.filename += '.exe'
+        self.url = latest_release + '/download/'
         self.new_version = new_version
 
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
-        resp = requests_get(self.url, stream=True, verify=False)
+        resp = requests_get(self.url+self.filename, stream=True, verify=False)
         tot_size = int(resp.headers.get('content-length', 0))
+        block_size = 1024
+        if tot_size < block_size:
+            raise SystemError(f'File {self.filename} not found at {self.url}')
         self.update_progress((-tot_size, None, None))
         self.status_message(f'Downloading version {self.new_version} of {self.filename}')
-        block_size = 1024
         with open(self.filename, 'wb') as file:
             size = 0
             for data in resp.iter_content(block_size):
@@ -489,7 +495,6 @@ class download_worker(base_worker):
         if tot_size != 0 and tot_size != size:
             msg = f'Size mismatch when downloading {self.filename}: got {size} bytes, expected {tot_size} bytes'
             raise SystemError(msg)
-            #self.show_message('ERROR ' + msg)
 
 #===========================================================================
 class Mpl_canvas(FigureCanvasQTAgg):                                              
@@ -1389,6 +1394,9 @@ class main_window(QMainWindow):                                    # main_window
         help_menu.addAction(self.script_guide_act)
         help_menu.addSeparator()
         help_menu.addAction(self.download_act)
+        # Only allow download if we are running the 'compiled' version
+        if Path(sys.argv[0]).suffix == '.py':
+            self.download_act.setEnabled(False)
         help_menu.addSeparator()
         help_menu.addAction(self.about_act)
         
@@ -1401,12 +1409,15 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def check_version(self):
     #-----------------------------------------------------------------------
-        r = requests_get(latest_release, verify=False)
+        r = requests_get(latest_release, verify=False, timeout=10)
         self.new_version = r.url.split('/')[-1].replace('v','')
         if float(self.new_version) > float(__version__):
             button = ('Update', self.download)
             msg = f'INFO The latest version is {self.new_version}, you are running {__version__}. Download latest version?'
             self.show_message_text(msg, button=button, ok_text='Not now')
+        else:
+            self.show_message_text(f'INFO No update available, {__version__} is the latest version')
+
 
     #-----------------------------------------------------------------------
     def download_finished(self):
@@ -1417,7 +1428,7 @@ class main_window(QMainWindow):                                    # main_window
     def download_error(self, values):
     #-----------------------------------------------------------------------
         exctype, value, trace = values
-        self.show_message_text(f'ERROR Download of version {self.new_version} failed!\n{trace}')
+        self.show_message_text(f'ERROR Download of version {self.new_version} failed!\n\n{value}')
 
     #-----------------------------------------------------------------------
     def download_success(self):
