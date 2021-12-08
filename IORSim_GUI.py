@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+__version__ = '2.15'
+__author__ = 'Jan Ludvig Vinningland'
+
 # importing libraries 
 #from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QTextBrowser, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 #from PySide6.QtGui import  QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
@@ -12,9 +15,11 @@
 
 from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
-from PyQt5.QtCore import QCoreApplication, QObject, QUrl, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
+from PyQt5.QtCore import QCoreApplication, QObject, QSize, QUrl, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
-import os, sys, traceback
+from traceback import format_exc, print_exc, format_exc
+from os import makedirs
+import sys
 from time import sleep
 from pathlib import Path
 from matplotlib.colors import to_rgb as colors_to_rgb
@@ -22,10 +27,15 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationTool
 from matplotlib.figure import Figure
 from numpy import genfromtxt, asarray 
 from collections import namedtuple
-import shutil
+from shutil import copy as shutil_copy
 import warnings
-import copy
+from copy import deepcopy 
 from functools import partial
+#from urllib import request
+from requests import get as requests_get
+#import requests
+from urllib3 import disable_warnings
+disable_warnings()
 
 from ior2ecl import iorsim, simulation, main as ior2ecl_main
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, remove_comments, return_matching_string, delete_all, file_contains, safeopen, upper_and_lower, write_file
@@ -33,6 +43,8 @@ from IORlib.ECL import get_tsteps, unfmt_file
 import GUI_icons
 
 class WebEngineView(QWebEngineView):
+    #def __init__(self, *args, **kwargs):
+    #    super().__init__(*args, **kwargs)
     # This should remove the JavaScript messages printed to the terminal
     # but it does not work... 
     def javaScriptConsoleMessage(self, level, msg, line, sourceID):
@@ -48,23 +60,26 @@ def resource_path():
         path = Path.cwd()
     return path
 
-#user_guide = resource_path()/'IORSim_2021_User_Guide.htm'
-user_guide = "file:///"+str(resource_path()).replace('\\','/')+"/IORSim_2021_User_Guide.pdf"
-#print(user_guide)
-#user_guide = "file:///C:/Users/javi/codes/IORSim_GUI/IORSim_2021_User_Guide.pdf"
-#print(user_guide)
-#user_guide = "C:\Users\javi\codes\IORSim_GUI\IORSim_2021_User_Guide.pdf"
+iorsim_guide = "file:///"+str(resource_path()).replace('\\','/')+"/IORSim_2021_User_Guide.pdf"
+script_guide = "file:///"+str(resource_path()).replace('\\','/')+"/IORSim_GUI_guide.pdf"
+#latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest/download/IORSim_GUI.exe"
+latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest"
 default_casedir = Path.cwd()/'IORSim_cases'
 default_settings_file = Path.home()/'.iorsim_settings.dat'
 default_size = 10
 default_weight = 50
 
+#===========================================================================
 class GUI_color(QColor):
+#===========================================================================
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
     def as_hex(self):
         return '#'+hex(self.rgb()).split('0xff')[-1]
+
+#===========================================================================
 class color:
+#===========================================================================
     black  = GUI_color(00,00,00)
     white  = GUI_color(255,255,255)
     blue   = GUI_color(31,119,180)  #1f77b4 
@@ -233,7 +248,7 @@ def get_eclipse_well_yaxis_fluid(root):
             
     
 #-----------------------------------------------------------------------
-def show_message(window, kind, text='', extra='', wait=False, detail=None):
+def show_message(window, kind, text='', extra='', ok_text=None, wait=False, detail=None, button=None):
 #-----------------------------------------------------------------------
     kind = kind.lower()
     if kind=='info':
@@ -252,17 +267,32 @@ def show_message(window, kind, text='', extra='', wait=False, detail=None):
         raise SystemError(f'Unrecognized kind-option in show_message(): {kind}')
     msg = QMessageBox(window)
     msg.setWindowTitle(title)
+    #if width:
+    #msg.setBaseSize(QSize(width, height))
+    #msg.setStyleSheet('QLabel{min-width: '+ str(width) +'px;}')
+    #msg.setMinimumWidth(width)
     msg.setIcon(icon)
     msg.setText(text)
     msg.setInformativeText(extra)
     if detail:
         msg.setdetailedText(detail)
-    msg.setStandardButtons(QMessageBox.Ok)  # | QMessageBox.Cancel)
+    msg.setStandardButtons(QMessageBox.Ok)
+    if ok_text:
+        ok_btn = msg.button(QMessageBox.Ok)
+        ok_btn.setText(ok_text)
+    if button:
+        btn_txt, btn_func = button
+        def func():
+            msg.done(1) # Better than msg.close()
+            btn_func()
+        btn = msg.addButton(btn_txt, QMessageBox.YesRole)
+        btn.clicked.disconnect()
+        btn.clicked.connect(func)
     if wait:
         msg.exec_()
     else:
         msg.show()
-
+    return msg
 
 #-----------------------------------------------------------------------
 def delete_all_widgets_in_layout(layout):
@@ -363,9 +393,9 @@ class base_worker(QRunnable):
         try:
             result = self.runnable()
         except:
-            traceback.print_exc()
+            print_exc()
             exctype, value = sys.exc_info()[:2]
-            self.signals.error.emit((exctype, value, traceback.format_exc()))
+            self.signals.error.emit((exctype, value, format_exc()))
         else:
             self.signals.result.emit(result)
         finally:
@@ -439,11 +469,45 @@ class sim_worker(base_worker):
         self.show_message(msg)
         return result
 
+#===========================================================================
+class download_worker(base_worker):
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, new_version):
+    #-----------------------------------------------------------------------
+        super().__init__()
+        self.filename = 'IORSim_GUI'
+        if 'win' in sys.platform.lower():
+            self.filename += '.exe'
+        self.url = latest_release + '/download/' + self.filename
+        self.new_version = new_version
+
+    #-----------------------------------------------------------------------
+    def runnable(self):
+    #-----------------------------------------------------------------------
+        resp = requests_get(self.url, stream=True, verify=False)
+        tot_size = int(resp.headers.get('content-length', 0))
+        self.update_progress((-tot_size, None, None))
+        self.status_message(f'Downloading version {self.new_version} of {self.filename}')
+        block_size = 1024
+        with open(self.filename, 'wb') as file:
+            size = 0
+            for data in resp.iter_content(block_size):
+                size += len(data)
+                #print(f'\r{size/tot_size:.2f}%', end='')
+                self.update_progress((size, None, None))
+                file.write(data)
+        if tot_size != 0 and tot_size != size:
+            msg = f'Size mismatch when downloading {self.filename}: got {size} bytes, expected {tot_size} bytes'
+            raise SystemError(msg)
+            #self.show_message('ERROR ' + msg)
 
 #===========================================================================
 class Mpl_canvas(FigureCanvasQTAgg):                                              
 #===========================================================================
+    #-----------------------------------------------------------------------
     def __init__(self, parent=None, width=5, height=4, dpi=100):
+    #-----------------------------------------------------------------------
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         #self.axes = fig.add_subplot(subplot)
         super(Mpl_canvas, self).__init__(self.fig)
@@ -1227,9 +1291,9 @@ class main_window(QMainWindow):                                    # main_window
         self.casedir = None
         self.input_file = None
         # User guide window
-        pdf_view = PDF_viewer()
-        pdf_view.view_file(user_guide)
-        self.user_guide = Window(widget=pdf_view, title='IORSim User Guide', size=(1000, 800))
+        self.pdf_view = PDF_viewer()
+        #self.pdf_view.view_file(user_guide)
+        self.user_guide = Window(widget=self.pdf_view, title='IORSim User Guide', size=(1000, 800))
         self.case = None
         self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 'species':[], 'mode':None}
         self.input_to_save = ['root','days','mode']
@@ -1267,8 +1331,14 @@ class main_window(QMainWindow):                                    # main_window
                                        tip='Run simulation', func=self.run_sim)
         self.stop_act = create_action(self, text=None, icon='stop', shortcut='Ctrl+E',
                                       tip='Stop simulation', func=self.killsim)
-        self.user_guide_act = create_action(self, text='IORSim User Guide', icon='help', shortcut='',
-                                      tip='IORSim User Guide', func=self.user_guide.show)
+        self.iorsim_guide_act = create_action(self, text='IORSim User Guide', icon='help', shortcut='',
+                                      tip='IORSim User Guide', func=self.show_iorsim_guide)
+        self.script_guide_act = create_action(self, text='GUI User Guide', icon='help', shortcut='',
+                                      tip='User guide for this program', func=self.show_script_guide)
+        self.download_act = create_action(self, text='Check for updates', icon='download', shortcut='',
+                                      tip='Check if a new version is avaliable', func=self.check_version)
+        self.about_act = create_action(self, text='About', icon='question', shortcut='',
+                                      tip='Application details', func=self.about_app)
         self.exit_act = create_action(self, text='&Exit', icon='control-power', shortcut='Ctrl+Q',
                                       tip='Exit application', func=self.quit)
         self.add_case_act = create_action(self, text='Import case...', icon='document--plus',
@@ -1287,8 +1357,6 @@ class main_window(QMainWindow):                                    # main_window
                                          func=self.view_eclipse_input, checkable=True)
         self.ior_inp_act = create_action(self, text='IORSim input file', icon='document-i',
                                          func=self.view_iorsim_input, checkable=True)
-        # self.chem_inp_act = create_action(self, text='IORSim geochem file', icon='document-g',
-        #                                   func=self.view_geochem_input, checkable=True)
         self.schedule_file_act = create_action(self, text='Schedule file', icon='document-s',
                                           func=self.view_schedule_file, checkable=True)
         self.ecl_log_act = create_action(self, text='Eclipse log', icon='script-e',
@@ -1297,16 +1365,6 @@ class main_window(QMainWindow):                                    # main_window
                                          func=self.view_iorsim_log, checkable=True)
         self.py_log_act = create_action(self, text='Program log', icon='script-p',
                                         func=self.view_program_log, checkable=True)
-        # fwd = create_action(self, text='Forward', icon='',
-        #                     func=self.mode_forward, checkable=True)
-        # back = create_action(self, text='Backward', icon='',
-        #                      func=self.mode_backward, checkable=True)
-        # ecl = create_action(self, text='Eclipse', icon='',
-        #                     func=self.mode_eclipse, checkable=True)
-        # ior = create_action(self, text='IORSim', icon='',
-        #                     func=self.mode_iorsim, checkable=True)
-        # self.mode_act = {'forward':fwd, 'backward':back, 'eclipse':ecl, 'iorsim':ior}
-        #self.show_manual_act = create_action(self, text='View user manual', icon='document', func=self.on_show_manual)
                 
         
     #-----------------------------------------------------------------------
@@ -1314,7 +1372,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         ### menu
         menu = self.menuBar()
-        #self.setStyleSheet('QMainWindow::menuBar { padding: 10px; }')
         file_menu = menu.addMenu('&File')
         file_menu.addAction(self.add_case_act)
         file_menu.addAction(self.dupl_case_act) 
@@ -1323,14 +1380,8 @@ class main_window(QMainWindow):                                    # main_window
         file_menu.addAction(self.delete_case_act)
         file_menu.addSeparator()
         file_menu.addAction(self.exit_act)
-        # mode_menu = menu.addMenu('&Mode')
-        # self.mode_ag = QActionGroup(self)
-        # for act in self.mode_act.values():
-        #     mode_menu.addAction(act)
-        #     self.mode_ag.addAction(act)
         edit_menu = menu.addMenu('&Edit')
         self.view_ag = QActionGroup(self)
-        #for act in (self.ecl_inp_act, self.ior_inp_act, self.chem_inp_act, self.schedule_file_act):
         for act in (self.ecl_inp_act, self.ior_inp_act, self.schedule_file_act):
             edit_menu.addAction(act)
             self.view_ag.addAction(act)
@@ -1343,12 +1394,75 @@ class main_window(QMainWindow):                                    # main_window
         view_menu.addSeparator()
         for act in (self.ecl_log_act, self.ior_log_act, self.py_log_act):
             view_menu.addAction(act)
-            self.view_ag.addAction(act)
-        
+            self.view_ag.addAction(act)        
         help_menu = menu.addMenu('&Help')
-        help_menu.addAction(self.user_guide_act)
+        help_menu.addAction(self.iorsim_guide_act)
+        help_menu.addAction(self.script_guide_act)
+        help_menu.addSeparator()
+        help_menu.addAction(self.download_act)
+        help_menu.addSeparator()
+        help_menu.addAction(self.about_act)
         
-        
+    #-----------------------------------------------------------------------
+    def about_app(self):
+    #-----------------------------------------------------------------------
+        about = f'IORSim brings chemistry-based IOR methods to existing reservoir simulators with minor modifications of the original input files. IORSim currently cooperate with Eclipse 100, but can be made available for other reservoir simulators with some adaptations.'
+        self.show_message_text('INFO ' + about, extra=f'Version : {__version__}')
+
+    #-----------------------------------------------------------------------
+    def check_version(self):
+    #-----------------------------------------------------------------------
+        r = requests_get(latest_release, verify=False)
+        self.new_version = r.url.split('/')[-1].replace('v','')
+        if float(self.new_version) > float(__version__):
+            button = ('Update', self.download)
+            msg = f'INFO The latest version is {self.new_version}, you are running {__version__}. Download latest version?'
+            self.show_message_text(msg, button=button, ok_text='Not now')
+
+    #-----------------------------------------------------------------------
+    def download_finished(self):
+    #-----------------------------------------------------------------------
+        self.download_worker = None
+
+    #-----------------------------------------------------------------------
+    def download_error(self, values):
+    #-----------------------------------------------------------------------
+        exctype, value, trace = values
+        self.show_message_text(f'ERROR Download of version {self.new_version} failed!\n{trace}')
+
+    #-----------------------------------------------------------------------
+    def download_success(self):
+    #-----------------------------------------------------------------------
+        self.update_message('Download complete')
+        button = ('Quit', self.close)
+        msg = f'INFO Download of version {self.new_version} completed, restart application to use it.'
+        self.show_message_text(msg, button=button, ok_text='Not now')
+
+    #-----------------------------------------------------------------------
+    def download(self):
+    #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
+        self.download_worker = download_worker(self.new_version)
+        self.download_worker.signals.status_message.connect(self.update_message)
+        self.download_worker.signals.show_message.connect(self.show_message_text)
+        self.download_worker.signals.progress.connect(self.update_progress)
+        self.download_worker.signals.finished.connect(self.download_finished) 
+        self.download_worker.signals.error.connect(self.download_error) 
+        self.download_worker.signals.result.connect(self.download_success) 
+        self.threadpool.start(self.download_worker)
+
+    #-----------------------------------------------------------------------
+    def show_iorsim_guide(self):
+    #-----------------------------------------------------------------------
+        self.pdf_view.view_file(iorsim_guide, title='IORSim User Guide')
+        self.user_guide.show()
+
+    #-----------------------------------------------------------------------
+    def show_script_guide(self):
+    #-----------------------------------------------------------------------
+        self.pdf_view.view_file(script_guide, title='GUI User Guide')
+        self.user_guide.show()
+
     #-----------------------------------------------------------------------
     def create_toolbar(self):                                  # main_window
     #-----------------------------------------------------------------------
@@ -1686,19 +1800,19 @@ class main_window(QMainWindow):                                    # main_window
             if ext in inp_ext+add_ext:
                 # Copy file
                 dst_fil = dst.parent/src_fil.relative_to(src.parent)
-                os.makedirs(dst_fil.parent, exist_ok=True)
+                makedirs(dst_fil.parent, exist_ok=True)
                 if ext in inp_ext:
                     # This is an input file, change name
                     dst_fil = dst_fil.parent/dst_fil.name.replace(src.stem,dst.stem)
                 #print(f'{src_fil} -> {dst_fil}')
-                shutil.copy(src_fil, dst_fil)
+                shutil_copy(src_fil, dst_fil)
         # Copy files given by the *CHEMFILE keyword in trcinp-file (may occur > 1)
         chemfiles = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
         for name in chemfiles:
             chfile = src.parent/name
             if chfile.is_file():
                 #print(f'{chfile} -> {dst.parent/chfile.name}')
-                shutil.copy(chfile, dst.parent/chfile.name)
+                shutil_copy(chfile, dst.parent/chfile.name)
 
 
         
@@ -1871,17 +1985,17 @@ class main_window(QMainWindow):                                    # main_window
         if nr>0:
             ior = ecl = False
             case = str(self.cases[nr-1])
-            data = copy.deepcopy(self.data)
+            data = deepcopy(self.data)
             #print('BEFORE')
             #print_dict(self.data)
             # Eclipse
             if self.read_ecl_data(case=case, reinit=True):
-                self.plot_ref_data['ecl'] = copy.deepcopy(self.data['ecl'])
+                self.plot_ref_data['ecl'] = deepcopy(self.data['ecl'])
                 ecl = True
             self.unsmry = None
             # IOR
             if self.read_ior_data(case=case):
-                self.plot_ref_data['ior'] = copy.deepcopy(self.data['ior'])
+                self.plot_ref_data['ior'] = deepcopy(self.data['ior'])
                 ior = True
             # copy original data back
             self.data = data
@@ -2970,6 +3084,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_remaining_time(self, text='0:00:00'):           # main_window
     #-----------------------------------------------------------------------
+        #print('update_remaining_time: ', text)
         #self.remaining_time.setText('Remaining time:  ' + text)
         self.remaining_time.setText(text)
         self.remaining_time.repaint()
@@ -3051,6 +3166,7 @@ class main_window(QMainWindow):                                    # main_window
     def update_progress(self, t_min_n0_tuple):
     #-----------------------------------------------------------------------
         t, min, n0 = t_min_n0_tuple
+        #print('update_progress, ',t, min, n0)
         if n0 is not None:
             self.progress and self.progress.reset_time(n=n0)
         if min is not None:
@@ -3172,7 +3288,7 @@ class main_window(QMainWindow):                                    # main_window
         
 
     #-----------------------------------------------------------------------
-    def show_message_text(self, text):
+    def show_message_text(self, text, **kwargs):
     #-----------------------------------------------------------------------
         if not text:
             return ''
@@ -3182,8 +3298,8 @@ class main_window(QMainWindow):                                    # main_window
             kind = text.split()[0]
             text = text.replace(kind,'').lstrip()
             kind = kind.lower()
-        show_message(self, kind, text=text)
-        return text
+        msg = show_message(self, kind, text=text, **kwargs)
+        return msg
         
     #-----------------------------------------------------------------------
     def show_message(self, par):
@@ -3286,9 +3402,10 @@ class Highlighter(QSyntaxHighlighter):
 ###################################
 
 if __name__ == '__main__':
+    from os import putenv
 
     # Need to set the locale under Linux to avoid datetime.strptime errors
-    os.putenv("LC_ALL", "C")
+    putenv("LC_ALL", "C")
     args = ['--enable-logging --log-level=3']
 
     if len(sys.argv) > 1:

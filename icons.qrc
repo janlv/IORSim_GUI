@@ -25,6 +25,8 @@
   <file alias="script-i">icons/script-attribute-i.png</file>
   <file alias="script-p">icons/script-attribute-p.png</file>
   <file alias="help">icons/lifebuoy.png</file>
+  <file alias="question">icons/question.png</file>
+  <file alias="download">icons/drive-download.png</file>
 </qresource>
 </RCC>
 
