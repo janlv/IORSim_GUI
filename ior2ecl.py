@@ -3,16 +3,15 @@
 
 from collections import Counter, namedtuple
 from mmap import ACCESS_READ, mmap
-import os
 from pathlib import Path
-import sys
+from sys import platform
 from argparse import ArgumentParser
 from datetime import datetime, timedelta
 from time import sleep
 from itertools import accumulate
 from psutil import NoSuchProcess
-import shutil
-import traceback
+from shutil import copy as shutil_copy 
+from traceback import print_exc as trace_print_exc, format_exc as  trace_format_exc
 from re import search, compile
 
 from IORlib.utils import get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
@@ -327,7 +326,7 @@ class iorsim(runner):                                                        # i
     #--------------------------------------------------------------------------------
         #print('iorsim.__init__: ',root, exe, args, kwargs)
         exe = str(exe)
-        if '.exe' not in exe and sys.platform == 'win32':
+        if '.exe' not in exe and 'win' in platform:
             exe += '.exe'
         # IORSim only accepts root relative to the current directory
         abs_root = str(root)
@@ -345,47 +344,50 @@ class iorsim(runner):                                                        # i
         self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
         self.unrst = self.funrst.with_suffix('.UNRST')
         self.inputfile = Path(abs_root+'.trcinp')
-        self.check_keywords = kwargs.get('check_input_kw') or False
+        self.check_input_kw = kwargs.get('check_input_kw') or False
         self.is_iorsim = True
         self.is_eclipse = False
 
     #--------------------------------------------------------------------------------
-    def check_input(self):                                                   # iorsim
+    def check_keywords(self):                                                   # iorsim
     #--------------------------------------------------------------------------------
+        # Check if required keywords are used, and if the order is correct 
         def raise_error(error):
             raise SystemError(f'ERROR Error in IORSim input file: {error}')    
+        text = remove_comments(self.inputfile, comment='#')
+        file_kw = [kw.upper() for kw in compile(r'(\*[A-Za-z_-]+)').findall(text)]
+        # Remove repeated keywords, i.e. make unique list
+        file_kw = list(dict.fromkeys(file_kw))
+        # Is this a species- or a solutions-case
+        if self.keywords.solution_key in file_kw:
+            required_kw = self.keywords.solution
+        elif self.keywords.specie_key in file_kw:
+            required_kw = self.keywords.specie
+        else:
+            raise_error(f"it must contain one of the keywords '{self.keywords.specie_key}' or '{self.keywords.solution_key}'")
+        # Check if required keyword is missing            
+        missing = [kw for kw in required_kw if kw not in file_kw]
+        if missing:
+            raise_error('required keyword' + (len(missing)>1 and f's {list2text(missing)} are' or f' {missing[0]} is') + ' missing')
+        # Remove ignored keywords
+        file_kw = [kw for kw in file_kw if kw not in self.keywords.ignored]
+        # Make ordered list of input-file keywords
+        ordered_kw = [o for o in self.keywords.keys if o in file_kw]
+        # Check keyword order
+        for o,f in zip(ordered_kw, file_kw):
+            if o != f:                        
+                raise_error(f'expected keyword {o} but got {f}')    
 
+    #--------------------------------------------------------------------------------
+    def check_input(self):                                                   # iorsim
+    #--------------------------------------------------------------------------------
         super().check_input()
-
         # Check if input-file exists
         if not self.inputfile.is_file():
             raise SystemError(f'ERROR Missing IORSim input file {self.inputfile.name}')
         # Check if required keywords are used, and if the order is correct 
-        if self.check_keywords:
-            text = remove_comments(self.inputfile, comment='#')
-            file_kw = [kw.upper() for kw in compile(r'(\*[A-Za-z_-]+)').findall(text)]
-            # Remove repeated keywords, i.e. make unique list
-            file_kw = list(dict.fromkeys(file_kw))
-            # Is this a species- or a solutions-case
-            if self.keywords.solution_key in file_kw:
-                required_kw = self.keywords.solution
-            elif self.keywords.specie_key in file_kw:
-                required_kw = self.keywords.specie
-            else:
-                raise_error(f"it must contain one of the keywords '{self.keywords.specie_key}' or '{self.keywords.solution_key}'")
-            # Check if required keyword is missing            
-            missing = [kw for kw in required_kw if kw not in file_kw]
-            if missing:
-                raise_error('required keyword' + (len(missing)>1 and f's {list2text(missing)} are' or f' {missing[0]} is') + ' missing')
-            # Remove ignored keywords
-            file_kw = [kw for kw in file_kw if kw not in self.keywords.ignored]
-            # Make ordered list of input-file keywords
-            ordered_kw = [o for o in self.keywords.keys if o in file_kw]
-            # Check keyword order
-            for o,f in zip(ordered_kw, file_kw):
-                if o != f:                        
-                    raise_error(f'expected keyword {o} but got {f}')    
-
+        if self.check_input_kw:
+            self.check_keywords()
 
     #--------------------------------------------------------------------------------
     def start(self):                                                         # iorsim
@@ -912,8 +914,8 @@ class simulation:
             self.cancel()
             msg = 'Simulation cancelled' 
         except:  # Catch all other exceptions 
-            traceback.print_exc()
-            msg = traceback.format_exc()
+            trace_print_exc()
+            msg = trace_format_exc()
         finally:
             # Kill possible remaining processes
             self.print2log('')
@@ -998,10 +1000,10 @@ class simulation:
             backup_ecl = Path(str(ecl.case)+'_ECLIPSE.UNRST')
             if backup_ecl.is_file():
                 # This is a pure IORSim run and backup already exists; restore backup
-                shutil.copy(backup_ecl, ecl.unrst)
+                shutil_copy(backup_ecl, ecl.unrst)
             else:
                 # No backup exists; create backup copy
-                shutil.copy(ecl.unrst, backup_ecl)
+                shutil_copy(ecl.unrst, backup_ecl)
         else:
             missing = [f.name for f in (ecl.unrst, ior.unrst) if not f.is_file()]
             return False, f'Unable to merge restart files due to missing files: {", ".join(missing)}'
@@ -1216,13 +1218,14 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
 #--------------------------------------------------------------------------------
 def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
 #--------------------------------------------------------------------------------
+    from os import _exit as os_exit
     args = parse_input(case_dir=case_dir, settings_file=settings_file)
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=args['rft_size'], 
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
            stop_children=(not args['alive_children']), only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
            check_input=args['check_input_kw'])
-    os._exit(0)
+    os_exit(0)
 
 
 ######################################################################################
