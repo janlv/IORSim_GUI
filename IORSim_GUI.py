@@ -4,14 +4,22 @@
 __version__ = '2.15'
 __author__ = 'Jan Ludvig Vinningland'
 
-# importing libraries 
-#from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QTextBrowser, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-#from PySide6.QtGui import  QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
-#from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt
+import sys
+from pathlib import Path
+#-----------------------------------------------------------------------
+def resource_path():
+#-----------------------------------------------------------------------
+    try:
+        path = Path(sys._MEIPASS)
+    except AttributeError:
+        path = Path.cwd()
+    return path
 
-#from PySide2.QtWidgets import QDialogButtonBox, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-#from PySide2.QtGui import QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QColor 
-#from PySide2.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegExp
+iorsim_guide = "file:///"+str(resource_path()).replace('\\','/')+"/guides/IORSim_2021_User_Guide.pdf"
+script_guide = "file:///"+str(resource_path()).replace('\\','/')+"/guides/IORSim_GUI_guide.pdf"
+latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest"
+default_casedir = Path.cwd()/'IORSim_cases'
+default_settings_file = Path.home()/'.iorsim_settings.dat'
 
 from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
@@ -19,9 +27,7 @@ from PyQt5.QtCore import QCoreApplication, QObject, QSize, QUrl, pyqtSignal as S
 from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
 from traceback import format_exc, print_exc, format_exc
 from os import makedirs
-import sys
 from time import sleep
-from pathlib import Path
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
@@ -51,23 +57,6 @@ class WebEngineView(QWebEngineView):
         pass
 
 #print(sys.path)
-#-----------------------------------------------------------------------
-def resource_path():
-#-----------------------------------------------------------------------
-    try:
-        path = Path(sys._MEIPASS)
-    except AttributeError:
-        path = Path.cwd()
-    return path
-
-iorsim_guide = "file:///"+str(resource_path()).replace('\\','/')+"/IORSim_2021_User_Guide.pdf"
-script_guide = "file:///"+str(resource_path()).replace('\\','/')+"/IORSim_GUI_guide.pdf"
-#latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest/download/IORSim_GUI.exe"
-latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest"
-default_casedir = Path.cwd()/'IORSim_cases'
-default_settings_file = Path.home()/'.iorsim_settings.dat'
-default_size = 10
-default_weight = 50
 
 #===========================================================================
 class GUI_color(QColor):
@@ -3430,3 +3419,7 @@ if __name__ == '__main__':
 
 
     
+# importing PySide6 libraries 
+#from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QTextBrowser, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+#from PySide6.QtGui import  QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
+#from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt
