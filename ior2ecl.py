@@ -349,7 +349,7 @@ class iorsim(runner):                                                        # i
         self.is_eclipse = False
 
     #--------------------------------------------------------------------------------
-    def check_keywords(self):                                                   # iorsim
+    def check_keywords(self):                                                # iorsim
     #--------------------------------------------------------------------------------
         # Check if required keywords are used, and if the order is correct 
         def raise_error(error):
@@ -368,7 +368,11 @@ class iorsim(runner):                                                        # i
         # Check if required keyword is missing            
         missing = [kw for kw in required_kw if kw not in file_kw]
         if missing:
-            raise_error('required keyword' + (len(missing)>1 and f's {list2text(missing)} are' or f' {missing[0]} is') + ' missing')
+            pos = [required_kw.index(kw) for kw in missing]
+            front = ['after '+required_kw[i-1] if i>0 else None for i in pos]
+            back = ['before '+required_kw[i+1] if i<len(required_kw)-1 else None for i in pos]
+            tips = [f"{required_kw[pos[i]]} ({front[i] or ''}{(', '+back[i]) or ''})" for i in range(len(pos))]
+            raise_error('required keyword' + (len(missing)>1 and f's {list2text(tips)} are' or f' {tips[0]} is') + ' missing')
         # Remove ignored keywords
         file_kw = [kw for kw in file_kw if kw not in self.keywords.ignored]
         # Make ordered list of input-file keywords
