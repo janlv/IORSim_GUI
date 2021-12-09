@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '2.18'
+__version__ = '2.19'
 __author__ = 'Jan Ludvig Vinningland'
 
 import sys
