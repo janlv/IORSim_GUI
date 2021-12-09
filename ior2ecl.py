@@ -14,7 +14,7 @@ from shutil import copy as shutil_copy
 from traceback import print_exc as trace_print_exc, format_exc as  trace_format_exc
 from re import search, compile
 
-from IORlib.utils import get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
 
@@ -77,7 +77,6 @@ class eclipse(runner):                                                      # ec
     #--------------------------------------------------------------------------------
     def unexpected_stop_error(self):                                        # eclipse
     #--------------------------------------------------------------------------------
-        print('eclipse')
         error = 'unexpectedly, check the log'
         # Check for license failure
         with open(str(self.case)+'.MSG') as file:
@@ -85,6 +84,10 @@ class eclipse(runner):                                                      # ec
                 if 'LICENSE FAILURE' in line:
                     error = 'due to a license failure'
                     break
+        ifile = self.interface_file('all').path()
+        ifiles = list(ifile.parent.glob(ifile.name))
+        if len(ifiles) == 1:
+            error = f'due to missing interface-files (last file is {ifiles[-1].name})'
         raise SystemError(f'ERROR {self.name} stopped {error}')
 
     #--------------------------------------------------------------------------------
@@ -217,7 +220,7 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
 
 
     #--------------------------------------------------------------------------------
-    def run_one_step(self, satnum_file):                               # ecl_backward
+    def run_one_step(self, satnum_file, delete_interface=True):        # ecl_backward
     #--------------------------------------------------------------------------------
         if self.rft_size:
             self.rft_start_size = self.rft.stat().st_size
@@ -234,6 +237,8 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
             else:
                 self.check_RFT_file(nwell_max=self.nwell)
         self.suspend()
+        if delete_interface:
+            self.interface_file(self.n).delete()
         self.n += 1
 
     #--------------------------------------------------------------------------------
@@ -807,14 +812,16 @@ class simulation:
         # Backward simulation
         if self.mode=='backward':
             time_ecl = sum(self.tsteps) + self.restart_days
+            ior_integration = get_keyword(str(self.root)+'.trcinp', '\*INTEGRATION', end='\*')[0]
+            ior_dt_min = ior_integration[4] 
             if time < time_ecl:
                 time = time_ecl + 1
                 self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
                 #print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
             self.T = time 
-            # We assume 1 day timesteps, and set total steps N larger than what is needed.
-            # The simulation is anyway ended when t == T. 
-            N = int(time) #- self.restart_days
+            # No problem if N is too large, the simulation automatically ends when t == T. 
+            N = int(time/ior_dt_min) + 1 + len(self.tsteps)
+            #N = int(time)+1
             kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
             # Init runs
             self.run_sim = self.backward
@@ -904,8 +911,6 @@ class simulation:
             self.print2log(f'\nLoop step {ecl.n}/{ecl.N}')
             self.update.status(run=ecl, mode=self.mode)
             ecl.run_one_step(ior.satnum)
-            # Need a short stop after Eclipse has finished, otherwise IORSim sometimes stops 
-            #sleep(self.pause)
             # Run IORSim to prepare satnum input for the next Eclipse run
             self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
@@ -1113,22 +1118,25 @@ class simulation:
 
 
 
-#--------------------------------------------------------------------------------
-def iorexe_from_settings(settings_file, iorexe):
-#--------------------------------------------------------------------------------
-    # Find iorexe in settings.txt if missing
-    settings_file = Path(settings_file)
-    if settings_file.is_file():
-        with open(settings_file) as f:
-            for line in f:
-                if line.strip().startswith('#'):
-                    continue
-                try: var, val = line.split()
-                except ValueError: break
-                if var=='iorsim':
-                    break 
-        return val
-    raise SystemError('\n   Missing IORSim executable: '+str(iorexe)+'\n')
+# #--------------------------------------------------------------------------------
+# def iorexe_from_settings(settings_file, iorexe):
+# #--------------------------------------------------------------------------------
+#     iorsim = get_keyword(settings_file, 'iorsim', with_space=False)
+#     print(iorsim)
+#     # Find iorexe in settings.txt if missing
+#     settings_file = Path(settings_file)
+#     if settings_file.is_file():
+#         with open(settings_file) as f:
+#             for line in f:
+#                 if line.strip().startswith('#'):
+#                     continue
+#                 try: var, val = line.split()
+#                 except ValueError: break
+#                 if var=='iorsim':
+#                     break 
+#         print(val)
+#         return val
+#     raise SystemError('\n   Missing IORSim executable: '+str(iorexe)+'\n')
 
 
 #--------------------------------------------------------------------------------
@@ -1139,7 +1147,6 @@ def case_from_casedir(case_dir, root):
     if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
         return case_dir/root/root
     raise SystemError('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
-    #raise SystemExit
 
 #--------------------------------------------------------------------------------
 def parse_input(case_dir=None, settings_file=None):
@@ -1172,7 +1179,11 @@ def parse_input(case_dir=None, settings_file=None):
     #print(args['root'])
     # Read iorexe from settings if argument is missing
     if settings_file and not args['iorexe']:
-        args['iorexe'] = iorexe_from_settings(settings_file, args['iorexe'])
+        iorsim = get_keyword(settings_file, 'iorsim', with_space=False)
+        if any(iorsim):
+            args['iorexe'] = iorsim[0][0]
+        else:
+            raise SystemError('IORSim executable is missing')    
     return args
 
 @print_error
