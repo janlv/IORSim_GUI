@@ -1397,6 +1397,7 @@ class main_window(QMainWindow):                                    # main_window
         # Only allow download if we are running the 'compiled' version
         if Path(sys.argv[0]).suffix == '.py':
             self.download_act.setEnabled(False)
+            self.download_act.setStatusTip(self.download_act.statusTip() + ' (only available for compiled version)')
         help_menu.addSeparator()
         help_menu.addAction(self.about_act)
         
