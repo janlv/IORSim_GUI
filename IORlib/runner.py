@@ -23,6 +23,16 @@ def catch_permission_error(func):
     return inner
 
 #--------------------------------------------------------------------------------
+def ignore_permission_error(func):
+#--------------------------------------------------------------------------------
+    def inner(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except PermissionError as e:
+            pass
+    return inner
+
+#--------------------------------------------------------------------------------
 def ignore_process_error(func):
 #--------------------------------------------------------------------------------
     def inner(*args, **kwargs):
@@ -96,7 +106,7 @@ class Control_file:
         with open(self._name, 'a') as f:
             f.write(f'{_ascii}\n')
 
-    @catch_permission_error
+    @ignore_permission_error
     #--------------------------------------------------------------------------------
     def delete(self):
     #--------------------------------------------------------------------------------
@@ -106,14 +116,17 @@ class Control_file:
             #print('deleting',f)
             f.unlink()
 
+    @ignore_permission_error
     #--------------------------------------------------------------------------------
     def is_deleted(self):
     #--------------------------------------------------------------------------------
-        try:
-            if not self._name.is_file():
-                return True
-        except PermissionError:
-            return None
+        if not self._name.is_file():
+            return True
+        # try:
+        #     if not self._name.is_file():
+        #         return True
+        # except PermissionError:
+        #     return None
 
 #====================================================================================
 class Process:                                                              # Process
