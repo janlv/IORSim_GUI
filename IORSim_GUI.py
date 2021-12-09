@@ -1328,7 +1328,7 @@ class main_window(QMainWindow):                                    # main_window
         self.iorsim_guide_act = create_action(self, text='IORSim User Guide', icon='help', shortcut='',
                                       tip='IORSim User Guide', func=self.show_iorsim_guide)
         self.script_guide_act = create_action(self, text='GUI User Guide', icon='help', shortcut='',
-                                      tip='User guide for this program', func=self.show_script_guide)
+                                      tip='User guide for this application', func=self.show_script_guide)
         self.download_act = create_action(self, text='Check for updates', icon='download', shortcut='',
                                       tip='Check if a new version is avaliable', func=self.check_version)
         self.about_act = create_action(self, text='About', icon='question', shortcut='',
@@ -1357,7 +1357,7 @@ class main_window(QMainWindow):                                    # main_window
                                          func=self.view_eclipse_log, checkable=True)
         self.ior_log_act = create_action(self, text='IORSim log', icon='script-i',
                                          func=self.view_iorsim_log, checkable=True)
-        self.py_log_act = create_action(self, text='Program log', icon='script-p',
+        self.py_log_act = create_action(self, text='Application log', icon='script-p',
                                         func=self.view_program_log, checkable=True)
                 
         
@@ -2700,7 +2700,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_program_log(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_log('ior2ecl.log', title='Program logfile')
+        self.view_log('ior2ecl.log', title='Application logfile')
     
     #-----------------------------------------------------------------------
     def update_log(self):                                # main_window

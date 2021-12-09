@@ -120,19 +120,30 @@ class Process:                                                              # Pr
 #====================================================================================
     
     #--------------------------------------------------------------------------------
-    def __init__(self, proc, app_name=None):                                # Process
+    def __init__(self, proc, app_name=None, error_func=None):               # Process
     #--------------------------------------------------------------------------------
-        self.proc = proc
+        self._process = proc
         self.pid = proc.pid
         self._name = proc.name()
         self.app_name = app_name
         self._suspend_errors = 0
+        self._error_func = error_func or self.raise_error
         #self.name = proc.name()
+
+    #--------------------------------------------------------------------------------
+    def raise_error(self):                                                      # Process
+    #--------------------------------------------------------------------------------
+        raise SystemError(f'ERROR {self.app_name} stopped unexpectedly, check the log')
 
     #--------------------------------------------------------------------------------
     def process(self):                                                      # Process
     #--------------------------------------------------------------------------------
-        return self.proc
+        return self._process
+
+    #--------------------------------------------------------------------------------
+    def kill(self):                                                         # Process
+    #--------------------------------------------------------------------------------
+        self._process.kill()
 
     #--------------------------------------------------------------------------------
     def name(self):                                                         # Process
@@ -148,7 +159,7 @@ class Process:                                                              # Pr
     def suspend(self):                                                      # Process
     #--------------------------------------------------------------------------------
         try:
-            self.proc.suspend()
+            self._process.suspend()
             return True
         except psutil.AccessDenied:
             self._suspend_errors += 1
@@ -160,7 +171,7 @@ class Process:                                                              # Pr
     def resume(self):                                                       # Process
     #--------------------------------------------------------------------------------
         try:
-            self.proc.resume()
+            self._process.resume()
             return True
         except (psutil.AccessDenied, psutil.NoSuchProcess, ProcessLookupError):
             return False
@@ -170,7 +181,7 @@ class Process:                                                              # Pr
     #--------------------------------------------------------------------------------
     def current_status(self):                                               # Process
     #--------------------------------------------------------------------------------
-        return f'{self.proc.name()} {self.proc.status()}'
+        return f'{self._process.name()} {self._process.status()}'
     
 
     #--------------------------------------------------------------------------------
@@ -184,21 +195,22 @@ class Process:                                                              # Pr
     def is_running(self, raise_error=False):                                # Process
     #--------------------------------------------------------------------------------
         try:
-            if self.proc.is_running() and self.proc.status() != psutil.STATUS_ZOMBIE:
+            if self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE:
                 return True
             if raise_error:
-                raise SystemError(f'ERROR {self.app_name} is not running ({self._name} is {self.proc.status()})')
+                raise SystemError(f'ERROR {self.app_name} is not running ({self._name} is {self._process.status()})')
         except (psutil.NoSuchProcess, ProcessLookupError):
             if raise_error:
-                msg = ', check the log'
-                if raise_error is not True:
-                    msg = raise_error
-                raise SystemError(f'ERROR {self.app_name} stopped unexpectedly' + msg)        
+                #msg = ', check the log'
+                #if raise_error is not True:
+                #    msg = raise_error
+                #raise SystemError(f'ERROR {self.app_name} stopped unexpectedly' + msg)        
+                self._error_func()
             else:
                 return False
         except AttributeError:
             if raise_error:
-                raise SystemError(f'ERROR {self.app_name} process is {self.proc}')        
+                raise SystemError(f'ERROR {self.app_name} process is {self._process}')        
             else:
                 return True
             
@@ -206,7 +218,7 @@ class Process:                                                              # Pr
     def is_not_running(self):                                               # Process
     #--------------------------------------------------------------------------------
         try:
-            if not self.proc or not self.proc.is_running() or self.proc.status() == psutil.STATUS_ZOMBIE:
+            if not self._process or not self._process.is_running() or self._process.status() == psutil.STATUS_ZOMBIE:
                 return True
         except (psutil.NoSuchProcess, ProcessLookupError):
             return True
@@ -215,17 +227,39 @@ class Process:                                                              # Pr
     def is_sleeping(self):                                                  # Process
     #--------------------------------------------------------------------------------
         try:
-            if self.proc.status() in (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED): 
+            if self._process.status() in (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED): 
                 return True
-            elif not self.proc.is_running() or self.proc.status() == psutil.STATUS_ZOMBIE:
+            elif not self._process.is_running() or self._process.status() == psutil.STATUS_ZOMBIE:
                 raise SystemError(f'ERROR Process {self.name()} disappeared while trying to sleep')
         except (psutil.NoSuchProcess, ProcessLookupError, AttributeError):
-            raise SystemError(f'ERROR Process {self.proc} disappeared while trying to sleep')
+            raise SystemError(f'ERROR Process {self._process} disappeared while trying to sleep')
                 
     #--------------------------------------------------------------------------------
     def assert_running(self, raise_error=True):                             # Process
     #--------------------------------------------------------------------------------
         return self.is_running(raise_error=raise_error)
+
+    #--------------------------------------------------------------------------------
+    def get_children(self, raise_error=True):           # Process
+    #--------------------------------------------------------------------------------
+        # looking for child-processes with a name that match the app_name 
+        if not self._process:
+            if raise_error:
+                raise SystemError('Parent-process missing, unable to look for child-processes')
+            else:  
+                return [] 
+        name = self.app_name.lower()
+        #print(self._process.name().lower(), name)
+        if self._process.name().lower().startswith(name):
+            return []
+        for i in range(100):
+            sleep(0.5)
+            children = self._process.children(recursive=True)
+            #print(children)
+            # Stop if named child process is found
+            if any([p.name().lower().startswith(name) for p in children]):
+                break
+        return children
 
 
 #====================================================================================
@@ -261,6 +295,7 @@ class runner:                                                               # ru
         self.runlog = runlog
         self.ext_iface = ext_iface
         self.ext_OK = ext_OK
+        self.popen = None
         self.parent = None
         self.children = []
         self.stop_children = stop_children
@@ -308,38 +343,38 @@ class runner:                                                               # ru
         return Control_file(ext=self.ext_OK, root=self.case)
 
     #--------------------------------------------------------------------------------
-    def start(self, check=None, remove_cmdexe=False):                        # runner
+    def unexpected_stop_error(self):                                       # runner
     #--------------------------------------------------------------------------------
-        pid = None
+        raise SystemError(f'ERROR {self.name} stopped unexpectedly, check the log')
+
+    #--------------------------------------------------------------------------------
+    def start(self, error_func=None):                        # runner
+    #--------------------------------------------------------------------------------
         self.starttime = datetime.now()
         if self.pipe:
             self._print(f"Starting in PIPE-mode", v=1)
-            P = Popen(self.cmd, stdin=PIPE, stdout=self.log, stderr=STDOUT)
+            self.popen = Popen(self.cmd, stdin=PIPE, stdout=self.log, stderr=STDOUT)
+            self.stdin = self.popen.stdin
         else:
-            #self._print(f"Starting \'{' '.join(self.cmd)}\' in {Path.cwd()}", v=1)
             self._print(f"Starting \'{' '.join(self.cmd)}\'", v=1)
-            P = Popen(self.cmd, stdout=self.log, stderr=STDOUT)      
-        self.P = P
-        pid = P.pid
-        self.parent = Process(psutil.Process(pid=pid), app_name=self.name)
-        # check if we need to look for child processes
-        if not self.parent.name().lower().startswith(self.name.lower()):
-            # looking for child-processes
-            for i in range(100):
-                sleep(0.5)
-                self.children = self.parent.process().children(recursive=True)
-                if any([p.name().lower().startswith(self.name.lower()) for p in self.children]):
-                    break
-        if remove_cmdexe:
-            self.children = [child for child in self.children if child.name != 'cmd.exe']
-        self.children = [Process(c, app_name=self.name) for c in self.children]
+            self.popen = Popen(self.cmd, stdout=self.log, stderr=STDOUT)      
+        self.set_processes(error_func=error_func)
+
+    #--------------------------------------------------------------------------------
+    def set_processes(self, error_func=None):                                 # runner
+    #--------------------------------------------------------------------------------
+        if error_func is None:
+            error_func = self.unexpected_stop_error
+        # Parent process
+        kwargs = {'app_name':self.name, 'error_func':error_func}
+        self.parent = Process(psutil.Process(pid=self.popen.pid), **kwargs)
         self.parent.assert_running()
-        #self.cmdline = '\'' + ' '.join(self.parent.cmdline()) + '\''
         self._print(f'Parent process: {self.parent.name_pid()}')
+        # Child processes (if they exists)
+        children = self.parent.get_children()
+        self.children = [Process(c, **kwargs) for c in children]
         self._print(f'Child process{len(self.children)>1 and "es" or ""}: {", ".join([p.name_pid() for p in self.children])}')
-        #self._print(self.process_info(), tag='')
-        
-        
+
     #--------------------------------------------------------------------------------
     def get_logfile(self):                                                   # runner
     #--------------------------------------------------------------------------------
@@ -384,13 +419,12 @@ class runner:                                                               # ru
     def kill(self):                                                     # runner
     #--------------------------------------------------------------------------------
         # terminate children before parent
-        #self._print('\n', tag='')
         procs = self.children + (self.parent and [self.parent] or []) 
-        #self._print([p.proc.name() for p in procs])
         try:
             for p in procs:
                 self._print(f'Killing {p.name()}, ', end='')
-                p.proc.kill()
+                #p.proc.kill()
+                p.kill()
                 self._print('done', tag='')
         except (psutil.NoSuchProcess, ProcessLookupError):
                 self._print('process already gone', tag='')            

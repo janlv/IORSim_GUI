@@ -4,7 +4,7 @@
 from collections import Counter, namedtuple
 from mmap import ACCESS_READ, mmap
 from pathlib import Path
-from sys import platform
+from sys import exc_info, platform
 from argparse import ArgumentParser
 from datetime import datetime, timedelta
 from time import sleep
@@ -73,6 +73,24 @@ class eclipse(runner):                                                      # ec
         inp_file = str(self.case)+'.DATA'
         if not Path(inp_file).is_file():
             raise SystemError(msg + 'missing input file ' + inp_file)
+
+    #--------------------------------------------------------------------------------
+    def unexpected_stop_error(self):                                        # eclipse
+    #--------------------------------------------------------------------------------
+        print('eclipse')
+        error = 'unexpectedly, check the log'
+        # Check for license failure
+        with open(str(self.case)+'.MSG') as file:
+            for line in file:
+                if 'LICENSE FAILURE' in line:
+                    error = 'due to a license failure'
+                    break
+        raise SystemError(f'ERROR {self.name} stopped {error}')
+
+    #--------------------------------------------------------------------------------
+    def start(self):                                                        # eclipse
+    #--------------------------------------------------------------------------------
+        super().start(error_func=self.unexpected_stop_error)
 
 
 #====================================================================================
@@ -434,7 +452,6 @@ class iorsim(runner):                                                        # i
         delete_files_matching(case+'*.trcconc', raise_error=True)
         delete_files_matching(case+'*.trcprd', raise_error=True)
         silentdelete(self.funrst)
-
 
 
 #====================================================================================
@@ -854,7 +871,9 @@ class simulation:
             run.t = run.time_and_step()[0]
             #print(run.name, t, run.T)
             if run.t < run.T:
-                raise SystemError('ERROR ' + run.name + ' stopped unexpectedly, check the log')
+                run.unexpected_stop_error()
+                #msg = 'ERROR ' + run.name + ' stopped unexpectedly, check the log'
+                #raise SystemError(msg)
             run_time += run.run_time()
             ret = run.complete_msg(run_time=run_time)
         return ret
@@ -918,8 +937,9 @@ class simulation:
             self.cancel()
             msg = 'Simulation cancelled' 
         except:  # Catch all other exceptions 
-            trace_print_exc()
-            msg = trace_format_exc()
+            self.print2log(f'\nAn exception occured:\n{trace_format_exc()}')
+            e = exc_info()
+            msg = f'{e[0].__name__}: {e[1]}, check the application log for details'
         finally:
             # Kill possible remaining processes
             self.print2log('')
