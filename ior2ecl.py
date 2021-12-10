@@ -13,6 +13,7 @@ from psutil import NoSuchProcess
 from shutil import copy as shutil_copy 
 from traceback import print_exc as trace_print_exc, format_exc as  trace_format_exc
 from re import search, compile
+from os.path import relpath
 
 from IORlib.utils import get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
@@ -355,14 +356,10 @@ class iorsim(runner):                                                        # i
             exe += '.exe'
         # IORSim only accepts root relative to the current directory
         abs_root = str(root)
-        cwd = Path().cwd()
         if relative_root:
-            if str(cwd) in str(root):
-                root = Path(root).relative_to(cwd)
+            root = Path(relpath(root))
         else:
             root = Path(root).absolute()
-        #print(root)
-        #cmd = [exe, '-root_name='+str(root)] + args.split()
         cmd = [exe, str(root)] + args.split()
         super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, **kwargs)
         self.trcconc = None
