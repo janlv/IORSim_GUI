@@ -15,12 +15,17 @@ def resource_path():
         path = Path.cwd()
     return path
 
-#this_file = Path(sys.argv[0]).name
-iorsim_guide = "file:///"+str(resource_path()).replace('\\','/')+"/guides/IORSim_2021_User_Guide.pdf"
-script_guide = "file:///"+str(resource_path()).replace('\\','/')+"/guides/IORSim_GUI_guide.pdf"
-latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest"
+this_file = Path(sys.argv[0])
+update_dir = Path('.iorsim_update')
 default_casedir = Path.cwd()/'IORSim_cases'
 default_settings_file = Path.home()/'.iorsim_settings.dat'
+# Guide files
+iorsim_guide = "file:///"+str(resource_path()).replace('\\','/')+"/guides/IORSim_2021_User_Guide.pdf"
+script_guide = "file:///"+str(resource_path()).replace('\\','/')+"/guides/IORSim_GUI_guide.pdf"
+# GitHub
+latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest"
+download_url = latest_release + '/download/'
+
 
 from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
@@ -389,11 +394,11 @@ class base_worker(QRunnable):
             if self.print_exception:
                 print_exc()
             exctype, value = sys.exc_info()[:2]
-            self.signals.error.emit((exctype, value, format_exc()))
+            self.signals and self.signals.error.emit((exctype, value, format_exc()))
         else:
-            self.signals.result.emit(result)
+            self.signals and self.signals.result.emit(result)
         finally:
-            self.signals.finished.emit()
+            self.signals and self.signals.finished.emit()
 
 
 #===========================================================================
@@ -465,29 +470,36 @@ class sim_worker(base_worker):
 #===========================================================================
 class download_worker(base_worker):
 #===========================================================================
+    #
+    #  Download updated executable in update_dir as a separate process
+    #
     #-----------------------------------------------------------------------
     def __init__(self, new_version):
     #-----------------------------------------------------------------------
         super().__init__(print_exception=False)
-        self.filename = Path(sys.argv[0]).name
-        # if 'win' in sys.platform.lower():
-        #     self.filename += '.exe'
-        self.url = latest_release + '/download/'
+        self.filename = this_file.name
         self.new_version = new_version
+        self.running = False         
 
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
-        resp = requests_get(self.url+self.filename, stream=True, verify=False)
+        self.running = True                     # Set to False to abort download
+        if update_dir.is_dir():
+            delete_all(update_dir)
+        update_dir.mkdir()
+        resp = requests_get(download_url+self.filename, stream=True, verify=False)
         tot_size = int(resp.headers.get('content-length', 0))
         block_size = 1024
         if tot_size < block_size:
-            raise SystemError(f'File {self.filename} not found at {self.url}')
+            raise SystemError(f'File {self.filename} not found at {download_url}')
         self.update_progress((-tot_size, None, None))
         self.status_message(f'Downloading version {self.new_version} of {self.filename}')
-        with open(self.filename, 'wb') as file:
+        with open(update_dir/self.filename, 'wb') as file:
             size = 0
             for data in resp.iter_content(block_size):
+                if not self.running:
+                    return
                 size += len(data)
                 #print(f'\r{size/tot_size:.2f}%', end='')
                 self.update_progress((size, None, None))
@@ -1276,6 +1288,7 @@ class main_window(QMainWindow):                                    # main_window
         self.log_file = None
         self.unsmry = None
         self.worker = None
+        self.download_worker = None
         self.convert = None
         self.max_3_checked = []
         self.plot_prop = {}
@@ -1395,7 +1408,7 @@ class main_window(QMainWindow):                                    # main_window
         help_menu.addSeparator()
         help_menu.addAction(self.download_act)
         # Only allow download if we are running the 'compiled' version
-        if Path(sys.argv[0]).suffix == '.py':
+        if this_file.suffix == '.py':
             self.download_act.setEnabled(False)
             self.download_act.setStatusTip(self.download_act.statusTip() + ' (only available for compiled version)')
         help_menu.addSeparator()
@@ -1413,7 +1426,7 @@ class main_window(QMainWindow):                                    # main_window
         r = requests_get(latest_release, verify=False, timeout=10)
         self.new_version = r.url.split('/')[-1].replace('v','')
         if float(self.new_version) > float(__version__):
-            button = ('Update', self.download)
+            button = ('Download', self.download)
             msg = f'INFO The latest version is {self.new_version}, you are running {__version__}. Download latest version?'
             self.show_message_text(msg, button=button, ok_text='Not now')
         else:
@@ -3335,10 +3348,8 @@ class main_window(QMainWindow):                                    # main_window
     def quit(self):                                            # main_window
     #-----------------------------------------------------------------------
         self.killsim()
-        #self.settings.close()
-        #self.help_win.close()
-        #self.write_casefile()
-        #self.write_case_dir()
+        if self.download_worker:
+            self.download_worker.running = False
         self.save_input()
         QApplication.quit()
                 
@@ -3403,7 +3414,9 @@ class Highlighter(QSyntaxHighlighter):
 ###################################
 
 if __name__ == '__main__':
-    from os import putenv
+    from os import putenv, execlp
+    from subprocess import Popen
+    #from iorsim_updater import update
 
     # Need to set the locale under Linux to avoid datetime.strptime errors
     putenv("LC_ALL", "C")
@@ -3428,8 +3441,13 @@ if __name__ == '__main__':
             exit_code = app.exec_()
             window.close()
             app = None
-
-
+    
+    if update_dir.is_dir():
+        # Compiled python script that waits 1 sec before it moves the 
+        # IORSim_GUI.exe to the working directory, i.e. overwriting this file
+        # The update_dir is deleted
+        Popen(['iorsim_updater.exe', '1', update_dir, this_file.name])
+        
     
 # importing PySide6 libraries 
 #from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QTextBrowser, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox

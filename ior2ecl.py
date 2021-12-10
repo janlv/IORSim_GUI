@@ -163,6 +163,7 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', **kwargs)
         self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
         self.update = kwargs.get('update') or None
+        self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps) 
         self.check_unrst = check_unrst
         self.check_rft = check_rft
@@ -220,7 +221,7 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
 
 
     #--------------------------------------------------------------------------------
-    def run_one_step(self, satnum_file, delete_interface=True):        # ecl_backward
+    def run_one_step(self, satnum_file):                               # ecl_backward
     #--------------------------------------------------------------------------------
         if self.rft_size:
             self.rft_start_size = self.rft.stat().st_size
@@ -237,12 +238,13 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
             else:
                 self.check_RFT_file(nwell_max=self.nwell)
         self.suspend()
-        if delete_interface:
+        if self.delete_interface:
             self.interface_file(self.n).delete()
         self.n += 1
 
+
     #--------------------------------------------------------------------------------
-    def check_unformatted_file(self, file, print_block=False):             # ecl_backward
+    def check_unformatted_file(self, file, print_block=False):         # ecl_backward
     #--------------------------------------------------------------------------------
         print(f'{file} size: {file.stat().st_size}')
         for block in unfmt_file(file).blocks(only_new=True):
@@ -252,7 +254,7 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
 
 
     #--------------------------------------------------------------------------------
-    def check_UNRST_file(self, nblocks=1, pause=0.01):   # ecl_backward
+    def check_UNRST_file(self, nblocks=1, pause=0.01):                 # ecl_backward
     #--------------------------------------------------------------------------------
         self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info, pause=pause )
 
@@ -474,6 +476,7 @@ class ior_backward(backward_mixin, iorsim):                             # ior_ba
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', **kwargs)
         self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
         self.update = kwargs.get('update') or None
+        self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
         self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
         self.endtag = '-- IORSimX done.'
@@ -555,6 +558,9 @@ class ior_backward(backward_mixin, iorsim):                             # ior_ba
         self.wait_for(self.satnum_flushed)
         warn_empty_file(self.satnum, comment='--')
         self.suspend()
+        if self.delete_interface:
+            [self.interface_file(n).delete() for n in range(N)] 
+
 
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ior_backward
@@ -820,7 +826,7 @@ class simulation:
                 #print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
             self.T = time 
             # No problem if N is too large, the simulation automatically ends when t == T. 
-            N = int(time/ior_dt_min) + 1 + len(self.tsteps)
+            N = int(time/ior_dt_min) + 2 + len(self.tsteps)
             #N = int(time)+1
             kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
             # Init runs

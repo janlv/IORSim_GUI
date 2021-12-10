@@ -184,3 +184,7 @@ test_regex.py
 IORSim_GUI
 cases*
 IORSim_cases
+IORSim_splash*
+dist
+*.docx
+*.exe
