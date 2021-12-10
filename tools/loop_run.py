@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../IORSim_GUI')
 from ior2ecl import runsim
 from pathlib import Path
 
@@ -16,5 +18,7 @@ def loop_run(cases, times):
 if __name__ == '__main__':
     cases = 1*['L18']+['KURS-07A', 'SNORRE-IORSIM-OLD', 'GEOCHEM_BACK', 'GEOCHEM_FWD']
     times = 1*[1100 ]+[2000      , 3700               , 1000          , 1000]
-    loop_run(cases, times)
-
+    try:
+        loop_run(cases, times)
+    except KeyboardInterrupt:
+        pass
