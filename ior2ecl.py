@@ -274,7 +274,9 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
                 break
             if nblocks==nwell_min:
                 if nwell_min == 0:
-                    self._print('WARNING! No TIME blocks found in the RFT-file. Are all wells closed?')
+                    msg = 'WARNING No TIME blocks found in the RFT-file. Are all wells closed?'    
+                    self.update.message(msg)
+                    self._print(msg)
                 else:
                     self._print(f'WARNING! Only {nwell_min} TIME blocks found in the RFT-file')
         return nblocks
@@ -679,9 +681,10 @@ class Schedule:
         if use_dates:
             regex = compile(r'\n?\s*\bDATES\b\s+(\d+)\s+\'?(\w+)\'?\s+(\d+)\s*/\s+/')
         else:
-            regex = compile(r'\n?\s*\bTSTEP\b\s+([0-9.* ]+)\s*/\s+')
+            regex = compile(r'\n?\s*\bTSTEP\b\s+([0-9 *.]+)\s*/\s+')
         # Create list of (time, (start, end))-tuple
         date_span = [(' '.join(m.groups()), m.span()) for m in regex.finditer(schfile)]
+        #print(date_span)
         pos = [s for d,s in date_span] + [(len(schfile), 0)]
         # Extract actions
         actions = [schfile[pos[i][1]:pos[i+1][0]].rstrip() for i in range(len(pos)-1)]
@@ -727,8 +730,8 @@ class Schedule:
         with open(self.ifacefile, 'r') as f:
             lines = f.readlines()
         print(self.ifacefile, ': ', ''.join(lines[-10:]))
-        #print('Schedule:')
-        #print(self._schedule)
+        print('Schedule:')
+        print(self._schedule)
 
     #--------------------------------------------------------------------------------
     def update(self):                                               # schedule
@@ -918,7 +921,7 @@ class simulation:
             self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
             ecl.t = ior.t = self.schedule.update()
-            self.print2log(f'days = {ior.t}/{ior.T}')
+            self.print2log(f'days = {ior.t:.3f}/{ior.T}')
             self.update.progress(value=ior.t)
             self.update.plot()
         # Timestep loop finished

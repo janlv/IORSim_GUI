@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from datetime import datetime
-from subprocess import Popen, PIPE, STDOUT
+from subprocess import DEVNULL, Popen, PIPE, STDOUT
 import psutil
 from shutil import which
 from time import sleep
@@ -116,17 +116,17 @@ class Control_file:
             #print('deleting',f)
             f.unlink()
 
-    @ignore_permission_error
+    #@ignore_permission_error
     #--------------------------------------------------------------------------------
     def is_deleted(self):
     #--------------------------------------------------------------------------------
-        if not self._name.is_file():
-            return True
-        # try:
-        #     if not self._name.is_file():
-        #         return True
-        # except PermissionError:
-        #     return None
+        # if not self._name.is_file():
+        #     return True
+        try:
+            if not self._name.is_file():
+                return True
+        except PermissionError:
+            return None
 
 #====================================================================================
 class Process:                                                              # Process
@@ -371,6 +371,7 @@ class runner:                                                               # ru
         else:
             self._print(f"Starting \'{' '.join(self.cmd)}\'", v=1)
             self.popen = Popen(self.cmd, stdout=self.log, stderr=STDOUT)      
+            #self.popen = Popen(self.cmd, stdin=DEVNULL, stdout=self.log, stderr=DEVNULL)      
         self.set_processes(error_func=error_func)
 
     #--------------------------------------------------------------------------------

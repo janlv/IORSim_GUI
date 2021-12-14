@@ -20,8 +20,8 @@ update_dir = Path('.iorsim_update')
 default_casedir = Path.cwd()/'IORSim_cases'
 default_settings_file = Path.home()/'.iorsim_settings.dat'
 # Guide files
-iorsim_guide = "file:///"+str(resource_path()).replace('\\','/')+"/guides/IORSim_2021_User_Guide.pdf"
-script_guide = "file:///"+str(resource_path()).replace('\\','/')+"/guides/IORSim_GUI_guide.pdf"
+iorsim_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_2021_User_Guide.pdf"
+script_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_GUI_guide.pdf"
 # GitHub
 latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest"
 download_url = latest_release + '/download/'
@@ -2408,6 +2408,8 @@ class main_window(QMainWindow):                                    # main_window
         varnames = measure = None
         #try:
         for block in smspec.blocks():
+            #block.print(details=True)
+            #print(block.data())
             if block.key() == 'KEYWORDS':
                 varnames = get_substrings(block.data()[0], 8)
             elif block.key() == 'WGNAMES':
@@ -2415,7 +2417,7 @@ class main_window(QMainWindow):                                    # main_window
             elif block.key() == 'MEASRMNT':
                 data = block.data()[0].lower()
                 width = len(data)/max(len(varnames), 1)
-                measure = get_substrings(data, width)
+                measure = get_substrings(data, width or 1)
             elif block.key() == 'UNITS':
                 ecl_data.units = get_substrings(block.data()[0], 8)                
         #except (SystemError,TypeError) as e:
