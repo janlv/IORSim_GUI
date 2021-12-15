@@ -19,7 +19,8 @@ from IORlib.utils import get_keyword, get_python_version, list2text, print_error
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
 
-
+__version__ = '2.21'
+__author__ = 'Jan Ludvig Vinningland'
 
 #====================================================================================
 class eclipse(runner):                                                      # eclipse
@@ -779,7 +780,8 @@ class simulation:
         if root and not to_screen:
             self.runlog = safeopen(Path(root).parent/(self.name+'.log'), 'w')
         self.print2log = lambda txt: print(txt, file=self.runlog, flush=True)
-        self.print2log(get_python_version())
+        self.print2log(f'Python version: {get_python_version()}')
+        self.print2log(f'Application version: {__version__}')
         self.current_run = None
         self.runs = runs
         self.run_sim = None
@@ -1185,7 +1187,7 @@ def parse_input(case_dir=None, settings_file=None):
     #print(args['root'])
     # Read iorexe from settings if argument is missing
     if settings_file and not args['iorexe']:
-        iorsim = get_keyword(settings_file, 'iorsim', with_space=False)
+        iorsim = get_keyword(settings_file, 'iorsim', end=' ')
         if any(iorsim):
             args['iorexe'] = iorsim[0][0]
         else:

@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '2.21'
-__author__ = 'Jan Ludvig Vinningland'
-
 import sys
 from pathlib import Path
 #-----------------------------------------------------------------------
@@ -49,14 +46,11 @@ from requests import get as requests_get
 from urllib3 import disable_warnings
 disable_warnings()
 
-from ior2ecl import iorsim, simulation, main as ior2ecl_main
+from ior2ecl import iorsim, simulation, main as ior2ecl_main, __version__
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, remove_comments, return_matching_string, delete_all, file_contains, safeopen, upper_and_lower, write_file
-from IORlib.ECL import get_tsteps, unfmt_file
+from IORlib.ECL import get_included_files, get_tsteps, unfmt_file
 import GUI_icons
-
 class WebEngineView(QWebEngineView):
-    #def __init__(self, *args, **kwargs):
-    #    super().__init__(*args, **kwargs)
     # This should remove the JavaScript messages printed to the terminal
     # but it does not work... 
     def javaScriptConsoleMessage(self, level, msg, line, sourceID):
@@ -1802,31 +1796,46 @@ class main_window(QMainWindow):                                    # main_window
         Copy case input-files and files included by the input-files.
         The file suffix match is not sensitive to case.
         '''
-        inp_ext = ('.data','.trcinp')
-        add_ext = ('.inc','.dat','.grdecl','.egrid','.vfp','.sch')
-        exclude = 'file_satnum.dat'
         src = Path(from_root)
         dst = Path(to_root)
-        src_files = [f for f in src.parent.glob('**/*') if not exclude in f.name]        
-        # Loop recursively over all files in case-dir, except for files in exclude
-        for src_fil in src_files:
-            ext = src_fil.suffix.lower()
-            if ext in inp_ext+add_ext:
-                # Copy file
-                dst_fil = dst.parent/src_fil.relative_to(src.parent)
-                makedirs(dst_fil.parent, exist_ok=True)
-                if ext in inp_ext:
-                    # This is an input file, change name
-                    dst_fil = dst_fil.parent/dst_fil.name.replace(src.stem,dst.stem)
-                #print(f'{src_fil} -> {dst_fil}')
+        # Input files, change name
+        inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.data','.trcinp')]
+        data_files = get_included_files(src.with_suffix('.DATA'))
+        ior_files = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
+        inc_files = [(src.parent/file, dst.parent/file) for file in data_files+ior_files]
+        for src_fil, dst_fil in inp_files+inc_files:
+            if src_fil.is_file():
+                print(f'{src_fil} -> {dst_fil}')
                 shutil_copy(src_fil, dst_fil)
+
+        # # Included files, keep name
+        # for file in inc_files:
+        #     src_fil = src.parent/file
+        #     if src_fil.is_file():
+        #         dst_fil = dst.parent/file
+        #         print(f'{src_fil} -> {dst_fil}')
+        #         shutil_copy(src_fil, dst_fil)
+
+
+        #src_files = [f for f in src.parent.glob('**/*') if not exclude in f.name]        
+        # for src_fil in src_files:
+        #     ext = src_fil.suffix.lower()
+        #     if ext in inp_ext+add_ext:
+        #         # Copy file
+        #         dst_fil = dst.parent/src_fil.relative_to(src.parent)
+        #         makedirs(dst_fil.parent, exist_ok=True)
+        #         if ext in inp_ext:
+        #             # This is an input file, change name
+        #             dst_fil = dst_fil.parent/dst_fil.name.replace(src.stem,dst.stem)
+        #         #print(f'{src_fil} -> {dst_fil}')
+        #         shutil_copy(src_fil, dst_fil)
         # Copy files given by the *CHEMFILE keyword in trcinp-file (may occur > 1)
-        chemfiles = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
-        for name in chemfiles:
-            chfile = src.parent/name
-            if chfile.is_file():
-                #print(f'{chfile} -> {dst.parent/chfile.name}')
-                shutil_copy(chfile, dst.parent/chfile.name)
+        # chemfiles = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
+        # for name in chemfiles:
+        #     chfile = src.parent/name
+        #     if chfile.is_file():
+        #         #print(f'{chfile} -> {dst.parent/chfile.name}')
+        #         shutil_copy(chfile, dst.parent/chfile.name)
 
 
         
