@@ -24,37 +24,45 @@ latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest"
 download_url = latest_release + '/download/'
 
 
-from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
-from PyQt5.QtCore import QCoreApplication, QObject, QSize, QUrl, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
-from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
-from traceback import format_exc, print_exc, format_exc
-from os import makedirs
-from time import sleep
+# from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+# from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
+# from PyQt5.QtCore import QCoreApplication, QObject, QSize, QUrl, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
+# from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
+# from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
+# from matplotlib.colors import to_rgb as colors_to_rgb
+# from matplotlib.figure import Figure
+from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+from PySide6.QtGui import QScreen, QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
+from PySide6.QtCore import QDir, QCoreApplication, QRegularExpressionMatch, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression
+from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+#from matplotlib.backends.qt_compat import QtWidgets
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.colors import to_rgb as colors_to_rgb
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
+
+from traceback import format_exc, print_exc, format_exc
+from time import sleep
 from numpy import genfromtxt, asarray 
 from collections import namedtuple
 from shutil import copy as shutil_copy
 import warnings
 from copy import deepcopy 
 from functools import partial
-#from urllib import request
 from requests import get as requests_get
-#import requests
 from urllib3 import disable_warnings
 disable_warnings()
 
 from ior2ecl import iorsim, simulation, main as ior2ecl_main, __version__
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, remove_comments, return_matching_string, delete_all, file_contains, safeopen, upper_and_lower, write_file
 from IORlib.ECL import get_included_files, get_tsteps, unfmt_file
-import GUI_icons
-class WebEngineView(QWebEngineView):
-    # This should remove the JavaScript messages printed to the terminal
-    # but it does not work... 
-    def javaScriptConsoleMessage(self, level, msg, line, sourceID):
-        pass
+#import GUI_icons
+
+QDir.addSearchPath('icons', 'icons/')
+
+# class WebEngineView(QWebEngineView):
+#     def javaScriptConsoleMessage(self, level, msg, line, sourceID):
+#         pass
 
 #print(sys.path)
 
@@ -101,8 +109,8 @@ def create_action(win, text=None, shortcut=None, tip=None, func=None, icon=None,
     if tip:
         act.setStatusTip(tip)
     if icon:
-        #act.setIcon(QIcon(str(icon_path/Path(icon))))
-        act.setIcon(QIcon(':'+icon)) #QIcon(str(icon_path/Path(icon))))
+        #act.setIcon(QIcon(':'+icon))
+        act.setIcon(QIcon(f'icons:{icon}'))
     act.triggered.connect(func)
     #act.changed.connect(func)
     return act
@@ -719,7 +727,8 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
         btn = None
         if icon:
-            btn = QPushButton(icon=QIcon(':'+icon))
+            #btn = QPushButton(icon=QIcon(':'+icon))
+            btn = QPushButton(icon=QIcon(f'icons:{icon}'))
         else:
             btn = QPushButton(text=text)
         if not width:
@@ -885,9 +894,11 @@ class PDF_viewer(Editor):
     #-----------------------------------------------------------------------
     def init_editor(self, layout):                          # PDF_viewer
     #-----------------------------------------------------------------------
-        self.editor_ = WebEngineView()
+        #print('AAAA')
+        self.editor_ = QWebEngineView(self)
         self.editor_.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
         self.editor_.settings().setAttribute(QWebEngineSettings.PdfViewerEnabled, True)
+        #print('BBBB')
         layout.addWidget(self.editor_)
 
     #-----------------------------------------------------------------------
@@ -1269,7 +1280,8 @@ class main_window(QMainWindow):                                    # main_window
         self.setMinimumWidth(800)
         self.setObjectName('main_window')
         #self.setContentsMargins(2,2,2,2)
-        self.setWindowIcon(QIcon(':program_icon'))
+        #self.setWindowIcon(QIcon(':program_icon'))
+        self.setWindowIcon(QIcon('icons:program_icon.png'))
         self.font = QFont().defaultFamily()
         self.menu_fontsize = 7
         self.plot_lines = None
@@ -1326,45 +1338,45 @@ class main_window(QMainWindow):                                    # main_window
     def create_actions(self):                                  # main_window
     #-----------------------------------------------------------------------
         ### actions
-        self.set_act = create_action(self, text='&Settings', icon='gear', shortcut='Ctrl+S',
+        self.set_act = create_action(self, text='&Settings', icon='gear.png', shortcut='Ctrl+S',
                                      tip='Edit settings', func=self.settings.open)
-        self.start_act = create_action(self, text=None, icon='start', shortcut='Ctrl+R',
+        self.start_act = create_action(self, text=None, icon='start.svg', shortcut='Ctrl+R',
                                        tip='Run simulation', func=self.run_sim)
-        self.stop_act = create_action(self, text=None, icon='stop', shortcut='Ctrl+E',
+        self.stop_act = create_action(self, text=None, icon='stop.svg', shortcut='Ctrl+E',
                                       tip='Stop simulation', func=self.killsim)
-        self.iorsim_guide_act = create_action(self, text='IORSim User Guide', icon='help', shortcut='',
+        self.iorsim_guide_act = create_action(self, text='IORSim User Guide', icon='lifebuoy.png', shortcut='',
                                       tip='IORSim User Guide', func=self.show_iorsim_guide)
-        self.script_guide_act = create_action(self, text='GUI User Guide', icon='help', shortcut='',
+        self.script_guide_act = create_action(self, text='GUI User Guide', icon='lifebuoy.png', shortcut='',
                                       tip='User guide for this application', func=self.show_script_guide)
-        self.download_act = create_action(self, text='Check for updates', icon='download', shortcut='',
+        self.download_act = create_action(self, text='Check for updates', icon='drive-download.png', shortcut='',
                                       tip='Check if a new version is avaliable', func=self.check_version)
-        self.about_act = create_action(self, text='About', icon='question', shortcut='',
+        self.about_act = create_action(self, text='About', icon='question.png', shortcut='',
                                       tip='Application details', func=self.about_app)
-        self.exit_act = create_action(self, text='&Exit', icon='control-power', shortcut='Ctrl+Q',
+        self.exit_act = create_action(self, text='&Exit', icon='control-power.png', shortcut='Ctrl+Q',
                                       tip='Exit application', func=self.quit)
-        self.add_case_act = create_action(self, text='Import case...', icon='document--plus',
+        self.add_case_act = create_action(self, text='Import case...', icon='document--plus.png',
                                           func=self.add_case_from_file)
-        self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy',
+        self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy.png',
                                            func=self.duplicate_current_case)
-        self.rename_case_act = create_action(self, text='Rename current case...', icon='document-rename',
+        self.rename_case_act = create_action(self, text='Rename current case...', icon='document-rename.png',
                                              func=self.rename_current_case)
-        self.clear_case_act = create_action(self, text='Clear current case', icon='document',
+        self.clear_case_act = create_action(self, text='Clear current case', icon='document.png',
                                             func=self.clear_current_case)
-        self.delete_case_act = create_action(self, text='Delete current case', icon='document--minus',
+        self.delete_case_act = create_action(self, text='Delete current case', icon='document--minus.png',
                                              func=self.delete_current_case)
-        self.plot_act = create_action(self, text='Plot', icon='guide', func=self.view_plot, checkable=True)
+        self.plot_act = create_action(self, text='Plot', icon='guide.png', func=self.view_plot, checkable=True)
         self.plot_act.setChecked(True)
-        self.ecl_inp_act = create_action(self, text='Eclipse input file', icon='document-e',
+        self.ecl_inp_act = create_action(self, text='Eclipse input file', icon='document-attribute-e.png',
                                          func=self.view_eclipse_input, checkable=True)
-        self.ior_inp_act = create_action(self, text='IORSim input file', icon='document-i',
+        self.ior_inp_act = create_action(self, text='IORSim input file', icon='document-attribute-i.png',
                                          func=self.view_iorsim_input, checkable=True)
-        self.schedule_file_act = create_action(self, text='Schedule file', icon='document-s',
+        self.schedule_file_act = create_action(self, text='Schedule file', icon='document-attribute-s.png',
                                           func=self.view_schedule_file, checkable=True)
-        self.ecl_log_act = create_action(self, text='Eclipse log', icon='script-e',
+        self.ecl_log_act = create_action(self, text='Eclipse log', icon='script-attribute-e.png',
                                          func=self.view_eclipse_log, checkable=True)
-        self.ior_log_act = create_action(self, text='IORSim log', icon='script-i',
+        self.ior_log_act = create_action(self, text='IORSim log', icon='script-attribute-i.png',
                                          func=self.view_iorsim_log, checkable=True)
-        self.py_log_act = create_action(self, text='Application log', icon='script-p',
+        self.py_log_act = create_action(self, text='Application log', icon='script-attribute.png',
                                         func=self.view_program_log, checkable=True)
                 
         
@@ -1386,7 +1398,8 @@ class main_window(QMainWindow):                                    # main_window
         for act in (self.ecl_inp_act, self.ior_inp_act, self.schedule_file_act):
             edit_menu.addAction(act)
             self.view_ag.addAction(act)
-        self.chem_menu = edit_menu.addMenu(QIcon(':documents-stack'), 'Chemistry files')
+        #self.chem_menu = edit_menu.addMenu(QIcon(':documents-stack'), 'Chemistry files')
+        self.chem_menu = edit_menu.addMenu(QIcon('icons:documents-stack.png'), 'Chemistry files')
         edit_menu.addSeparator()
         edit_menu.addAction(self.set_act)
         view_menu = menu.addMenu('&View')
@@ -1477,6 +1490,7 @@ class main_window(QMainWindow):                                    # main_window
         ### toolbar
         self.toolbar = QToolBar('Toolbar')
         self.toolbar.setStyleSheet('QToolBar{spacing:15px; padding:5px;}')
+        self.toolbar.setIconSize(QSize(32, 32))
         self.addToolBar(self.toolbar)
         #self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -2607,14 +2621,17 @@ class main_window(QMainWindow):                                    # main_window
         if self.current_view and self.current_view.file_is_open(self.input['root']+ext):
             return
         # Sections
-        sections = [color.red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
+        #sections = [color.red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
+        sections = [color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
                     'SOLUTION','SUMMARY','SCHEDULE','OPTIMIZE']
         # Global keywords
-        globals = [color.blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','COLUMNS','DEBUG','DEBUG3','ECHO','END',
+        #globals = [color.blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','COLUMNS','DEBUG','DEBUG3','ECHO','END',
+        globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b','COLUMNS','DEBUG','DEBUG3','ECHO','END',
                     'ENDINC','ENDSKIP','SKIP','SKIP100','SKIP300','EXTRAPMS','FORMFEED','GETDATA',
                     'INCLUDE','MESSAGES','NOECHO','NOWARN','WARN']
         # Common keywords
-        common = [color.green, QFont.Normal, Qt.CaseSensitive, r"\b",r'\b','TITLE','CART','DIMENS','FMTIN','FMTOUT',
+        #common = [color.green, QFont.Normal, Qt.CaseSensitive, r"\b",r'\b','TITLE','CART','DIMENS','FMTIN','FMTOUT',
+        common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b','TITLE','CART','DIMENS','FMTIN','FMTOUT',
                     'FMTOUT','UNIFOUT','UNIFIN','OIL','WATER','GAS','VAPOIL','DISGAS','FIELD','METRIC','LAB','START','WELLDIMS','REGDIMS','TRACERS',
                     'NSTACK','TABDIMS','NOSIM','GRIDFILE','DX','DY','DZ','PORO','BOX','PERMX','PERMY','PERMZ','TOPS',
                     'INIT','RPTGRID','PVCDO','PVTW','DENSITY','PVDG','ROCK','SPECROCK','SPECHEAT','TRACER','TRACERKP',
@@ -2643,9 +2660,11 @@ class main_window(QMainWindow):                                    # main_window
         if self.current_view and self.current_view.file_is_open(name):
             return
         # Mandatory keywords
-        mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.required
+        #mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.required
+        mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + iorsim.keywords.required
         # Optional keywords
-        optional = [color.green, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.optional
+        #optional = [color.green, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.optional
+        optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + iorsim.keywords.optional
         self.view_input_file(name=name, title=title, comment=comment, keywords=[mandatory, optional])
 
 
@@ -2657,8 +2676,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        globals = [color.blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','END']
-        common = [color.green, QFont.Normal, Qt.CaseSensitive, r"\b",r'\b','TSTEP','DATES','WCONINJE','WCONHIST']
+        #globals = [color.blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','END']
+        #common = [color.green, QFont.Normal, Qt.CaseSensitive, r"\b",r'\b','TSTEP','DATES','WCONINJE','WCONHIST']
+        globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b','END']
+        common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b','TSTEP','DATES','WCONINJE','WCONHIST']
         self.view_input_file(ext='.SCH', title='Schedule file for backward runs', comment='--', keywords=[globals, common])
         
     #-----------------------------------------------------------------------
@@ -3343,7 +3364,6 @@ class main_window(QMainWindow):                                    # main_window
 ###
 class Highlighter(QSyntaxHighlighter):
     def __init__(self, parent=None, comment='#', color=Qt.gray, keywords=[]):
-#    def __init__(self, parent=None, comment='#', color=QColorConstants.Gray, keywords=[]):
         super(Highlighter, self).__init__(parent)
 
         self.highlightingRules = []
@@ -3353,30 +3373,22 @@ class Highlighter(QSyntaxHighlighter):
             keywordFormat = QTextCharFormat()
             keywordFormat.setForeground(kword.pop(0))
             keywordFormat.setFontWeight(kword.pop(0))
-            case_sens = kword.pop(0)
+            option = kword.pop(0)
             front = kword.pop(0)
             back = kword.pop(0)
-            keywordPatterns = [front + kw + back for kw in kword]
-            #keywordPatterns = kword
-            #print(keywordPatterns)
-            #keywordPatterns = ["\\b*TEMPERATURE\\b", "\\b*INTEGRATION\\b", "\\b*MODELTYPE\\b"]
-            
-            self.highlightingRules.extend( [(QRegExp(pattern, cs=case_sens), keywordFormat) for pattern in keywordPatterns] )
-            #self.highlightingRules.extend( [(QRegularExpression(pattern, cs=case_sens), keywordFormat) for pattern in keywordPatterns] )
+            keywordPatterns = [front + kw + back for kw in kword]            
+            self.highlightingRules.extend( [(QRegularExpression(pattern, option), keywordFormat) for pattern in keywordPatterns] )
         singleLineCommentFormat = QTextCharFormat()
         singleLineCommentFormat.setForeground(color)
-        self.highlightingRules.append((QRegExp(comment+'[^\n]*'), singleLineCommentFormat))
-        #self.highlightingRules.append((QRegularExpression(comment+'[^\n]*'), singleLineCommentFormat))
+        self.highlightingRules.append((QRegularExpression(comment+'[^\n]*'), singleLineCommentFormat))
 
     def highlightBlock(self, text):
         for pattern, format in self.highlightingRules:
-            expression = QRegExp(pattern)
-            #expression = QRegularExpression(pattern)
-            index = expression.indexIn(text)
-            while index >= 0:
-                length = expression.matchedLength()
-                self.setFormat(index, length, format)
-                index = expression.indexIn(text, index + length)
+            expression = QRegularExpression(pattern)
+            match = expression.globalMatch(text)
+            while match.hasNext():
+                m = match.next()
+                self.setFormat(m.capturedStart(), m.capturedLength(), format)
 
 
                 
@@ -3393,7 +3405,8 @@ if __name__ == '__main__':
 
     # Need to set the locale under Linux to avoid datetime.strptime errors
     putenv("LC_ALL", "C")
-    args = ['--enable-logging --log-level=3']
+    #args = ['--enable-logging --log-level=3']
+    args = []
 
     if len(sys.argv) > 1:
         case_dir = str(default_casedir)
@@ -3409,9 +3422,13 @@ if __name__ == '__main__':
         exit_code = main_window.EXIT_CODE_REBOOT
         while exit_code == main_window.EXIT_CODE_REBOOT:
             app = QApplication(sys.argv + args) 
+            #for s in app.screens():
+            #    print(s.availableGeometry(), s.availableVirtualGeometry())
+            app.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Floor)
             window = main_window(settings_file=default_settings_file)
             window.show()
-            exit_code = app.exec_()
+            #exit_code = app.exec_()
+            exit_code = app.exec()
             window.close()
             app = None
     
@@ -3422,7 +3439,3 @@ if __name__ == '__main__':
         Popen(['iorsim_updater.exe', '1', update_dir, this_file.name])
         
     
-# importing PySide6 libraries 
-#from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QTextBrowser, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-#from PySide6.QtGui import  QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
-#from PySide6.QtCore import QObject, Signal, Slot, QRunnable, QThreadPool, Qt
