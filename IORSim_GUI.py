@@ -2056,14 +2056,6 @@ class main_window(QMainWindow):                                    # main_window
             show_message(self, 'error', text='Unable to clear case, '+str(e))
             return False
 
-    #-----------------------------------------------------------------------
-    def delete_case(self, case):                              # main_window
-    #-----------------------------------------------------------------------
-        #print('Deleting ' + str(case))
-        delete_all(Path(case).parent)
-        # remove case from caselist
-        self.create_caselist(remove=str(case))
-
 
     #-----------------------------------------------------------------------
     def delete_current_case(self):                              # main_window
@@ -2072,16 +2064,16 @@ class main_window(QMainWindow):                                    # main_window
         #print(self.case)
         if not self.case:
             self.missing_case_error(tag='delete: ')
-            #print('return')
             return False
-        #self.delete_case(self.case)
         case = self.case
         self.input['root'] = self.case = None
         self.max_3_checked = []
         if self.current_view.name in ('editor','log_viewer'):
             self.view_file(None)
-        self.delete_case(case)
-        #self.prepare_case()
+        # Delete case folder
+        delete_all(Path(case).parent)
+        # Remove case from caselist
+        self.create_caselist(remove=str(case))
 
 
         
