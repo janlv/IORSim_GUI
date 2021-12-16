@@ -1800,44 +1800,14 @@ class main_window(QMainWindow):                                    # main_window
         dst = Path(to_root)
         # Input files, change name
         inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.data','.trcinp')]
+        # Included files, keep name and path
         data_files = get_included_files(src.with_suffix('.DATA'))
         ior_files = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
         inc_files = [(src.parent/file, dst.parent/file) for file in data_files+ior_files]
-        for src_fil, dst_fil in inp_files+inc_files:
+        for src_fil, dst_fil in inp_files + inc_files:
             if src_fil.is_file():
-                print(f'{src_fil} -> {dst_fil}')
+                #print(f'{src_fil} -> {dst_fil}')
                 shutil_copy(src_fil, dst_fil)
-
-        # # Included files, keep name
-        # for file in inc_files:
-        #     src_fil = src.parent/file
-        #     if src_fil.is_file():
-        #         dst_fil = dst.parent/file
-        #         print(f'{src_fil} -> {dst_fil}')
-        #         shutil_copy(src_fil, dst_fil)
-
-
-        #src_files = [f for f in src.parent.glob('**/*') if not exclude in f.name]        
-        # for src_fil in src_files:
-        #     ext = src_fil.suffix.lower()
-        #     if ext in inp_ext+add_ext:
-        #         # Copy file
-        #         dst_fil = dst.parent/src_fil.relative_to(src.parent)
-        #         makedirs(dst_fil.parent, exist_ok=True)
-        #         if ext in inp_ext:
-        #             # This is an input file, change name
-        #             dst_fil = dst_fil.parent/dst_fil.name.replace(src.stem,dst.stem)
-        #         #print(f'{src_fil} -> {dst_fil}')
-        #         shutil_copy(src_fil, dst_fil)
-        # Copy files given by the *CHEMFILE keyword in trcinp-file (may occur > 1)
-        # chemfiles = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
-        # for name in chemfiles:
-        #     chfile = src.parent/name
-        #     if chfile.is_file():
-        #         #print(f'{chfile} -> {dst.parent/chfile.name}')
-        #         shutil_copy(chfile, dst.parent/chfile.name)
-
-
         
     #-----------------------------------------------------------------------
     def read_case_dir(self):
@@ -2058,6 +2028,7 @@ class main_window(QMainWindow):                                    # main_window
     def clear_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
+        dirname = '.clear_current_case_tmp'
         try:
             if not self.case:
                 self.missing_case_error(tag='clear_case: ')
@@ -2065,26 +2036,25 @@ class main_window(QMainWindow):                                    # main_window
             case = Path(self.case)
             for fil in case.parent.glob('*UNRST'):
                 fil.unlink()
-            clean_dir = case.parent/'CLEAN'
-            # copy case-files to the CLEAN-folder
+            clean_dir = case.parents[1]/dirname
+            # Make sure the tmp-folder is deleted
+            delete_all(clean_dir)
+            # Create folder
+            clean_dir.mkdir()
+            # Copy case-files to the tmp-folder
             self.copy_case_files(case, clean_dir/case.stem)
-            # delete all files in case-folder
-            for fil in case.parent.glob('*'):
-                if fil.is_file():
-                    fil.unlink()
-            # copy case-files back from CLEAN-folder
+            # Delete all files and folders in the case-folder
+            delete_all(case.parent, keep_folder=True)
+            # Copy case-files back from tmp-folder
             self.copy_case_files(clean_dir/case.stem, case)
-            # delete all sub-folders and their files 
-            for d in case.parent.iterdir():
-                if d.is_dir():
-                    delete_all(d)
+            # Delete tmp-folder
+            delete_all(clean_dir)
             self.data = {}
             self.unsmry = None # read again
             self.create_plot()
         except PermissionError as e:
             show_message(self, 'error', text='Unable to clear case, '+str(e))
             return False
-        #self.prepare_case(self.case)
 
     #-----------------------------------------------------------------------
     def delete_case(self, case):                              # main_window
@@ -3436,7 +3406,7 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         case_dir = str(default_casedir)
         workdir = get_keyword(default_settings_file, 'workdir', comment='#')
-        if workdir and workdir[0]:
+        if any(workdir):
             case_dir = workdir[0][0]
         print()
         print('   This is the terminal-version of IORSim_GUI')
