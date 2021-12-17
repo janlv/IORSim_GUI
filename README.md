@@ -5,6 +5,6 @@ Eclipse simulations.
 ### Requirements
 Install requred libriaries by running
 
-`python -m pip install PyQt5, matplotlib, psutil`
+`python -m pip install PySide6, matplotlib, psutil`
 
 
