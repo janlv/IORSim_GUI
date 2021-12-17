@@ -23,7 +23,6 @@ script_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IO
 latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest"
 download_url = latest_release + '/download/'
 
-
 # from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 # from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 # from PyQt5.QtCore import QCoreApplication, QObject, QSize, QUrl, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
@@ -32,11 +31,14 @@ download_url = latest_release + '/download/'
 # from matplotlib.colors import to_rgb as colors_to_rgb
 # from matplotlib.figure import Figure
 from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-from PySide6.QtGui import QScreen, QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
-from PySide6.QtCore import QDir, QCoreApplication, QRegularExpressionMatch, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression
-from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
+from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression
+# Next two lines are neccessary for the pyinstalled version
+# Can probably be removed when pyinstaller is updated
+import PySide6.QtPrintSupport
+import PySide6.QtWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
-#from matplotlib.backends.qt_compat import QtWidgets
+from PySide6.QtWebEngineWidgets import QWebEngineView
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
@@ -56,9 +58,8 @@ disable_warnings()
 from ior2ecl import iorsim, simulation, main as ior2ecl_main, __version__
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, remove_comments, return_matching_string, delete_all, file_contains, safeopen, upper_and_lower, write_file
 from IORlib.ECL import get_included_files, get_tsteps, unfmt_file
-#import GUI_icons
 
-QDir.addSearchPath('icons', 'icons/')
+QDir.addSearchPath('icons', resource_path()/'icons/')
 
 # class WebEngineView(QWebEngineView):
 #     def javaScriptConsoleMessage(self, level, msg, line, sourceID):
@@ -1281,7 +1282,7 @@ class main_window(QMainWindow):                                    # main_window
         self.setObjectName('main_window')
         #self.setContentsMargins(2,2,2,2)
         #self.setWindowIcon(QIcon(':program_icon'))
-        self.setWindowIcon(QIcon('icons:program_icon.png'))
+        self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
         self.font = QFont().defaultFamily()
         self.menu_fontsize = 7
         self.plot_lines = None
@@ -1304,9 +1305,8 @@ class main_window(QMainWindow):                                    # main_window
         self.casedir = None
         self.input_file = None
         # User guide window
-        self.pdf_view = PDF_viewer()
-        #self.pdf_view.view_file(user_guide)
-        self.user_guide = Window(widget=self.pdf_view, title='IORSim User Guide', size=(1000, 800))
+        self.pdf_view = None #PDF_viewer()
+        self.user_guide = None #Window(widget=self.pdf_view, title='IORSim User Guide', size=(1000, 800))
         self.case = None
         self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 'species':[], 'mode':None}
         self.input_to_save = ['root','days','mode']
@@ -1432,6 +1432,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         r = requests_get(latest_release, verify=False, timeout=10)
         self.new_version = r.url.split('/')[-1].replace('v','')
+        if self.new_version[0] == '.':
+            self.new_version = self.new_version[1:]
         if float(self.new_version) > float(__version__):
             button = ('Download', self.download)
             msg = f'INFO The latest version is {self.new_version}, you are running {__version__}. Download latest version?'
@@ -1473,16 +1475,24 @@ class main_window(QMainWindow):                                    # main_window
         self.threadpool.start(self.download_worker)
 
     #-----------------------------------------------------------------------
+    def show_guide(self, guide, title=''):
+    #-----------------------------------------------------------------------
+        if not self.pdf_view:
+            self.pdf_view = PDF_viewer()
+        self.pdf_view.view_file(guide, title=title)
+        if not self.user_guide:
+            self.user_guide = Window(widget=self.pdf_view, title='IORSim User Guide', size=(1000, 800))
+        self.user_guide.show()
+    
+    #-----------------------------------------------------------------------
     def show_iorsim_guide(self):
     #-----------------------------------------------------------------------
-        self.pdf_view.view_file(iorsim_guide, title='IORSim User Guide')
-        self.user_guide.show()
+        self.show_guide(iorsim_guide, title='IORSim User Guide')
 
     #-----------------------------------------------------------------------
     def show_script_guide(self):
     #-----------------------------------------------------------------------
-        self.pdf_view.view_file(script_guide, title='GUI User Guide')
-        self.user_guide.show()
+        self.show_guide(script_guide, title='GUI User Guide')
 
     #-----------------------------------------------------------------------
     def create_toolbar(self):                                  # main_window
@@ -1490,7 +1500,8 @@ class main_window(QMainWindow):                                    # main_window
         ### toolbar
         self.toolbar = QToolBar('Toolbar')
         self.toolbar.setStyleSheet('QToolBar{spacing:15px; padding:5px;}')
-        self.toolbar.setIconSize(QSize(32, 32))
+        #self.toolbar.setIconSize(QSize(32, 32))
+        self.toolbar.setIconSize(QSize(24, 24))
         self.addToolBar(self.toolbar)
         #self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -3399,13 +3410,13 @@ class Highlighter(QSyntaxHighlighter):
 ###################################
 
 if __name__ == '__main__':
-    from os import putenv, execlp
+    import os
+    #from os import putent
     from subprocess import Popen
-    #from iorsim_updater import update
 
     # Need to set the locale under Linux to avoid datetime.strptime errors
-    putenv("LC_ALL", "C")
-    #args = ['--enable-logging --log-level=3']
+    os.putenv('LC_ALL', 'C')
+    #os.putenv('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-logging')
     args = []
 
     if len(sys.argv) > 1:
