@@ -12,13 +12,19 @@ def resource_path():
         path = Path.cwd()
     return path
 
-this_file = Path(sys.argv[0])
-update_dir = Path('.iorsim_update')
+# Default settings
 default_casedir = Path.cwd()/'IORSim_cases'
 default_settings_file = Path.home()/'.iorsim_settings.dat'
+
+# Update files
+this_file = Path(sys.argv[0])
+update_dir = Path('.iorsim_update').absolute()
+update_cmd = [str(resource_path()/'iorsim_updater.exe'), '1', update_dir, this_file]
+
 # Guide files
 iorsim_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_2021_User_Guide.pdf"
 script_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_GUI_guide.pdf"
+
 # GitHub
 latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest"
 download_url = latest_release + '/download/'
@@ -33,8 +39,8 @@ download_url = latest_release + '/download/'
 from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
 from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression
-# Next two lines are neccessary for the pyinstalled version
-# Can probably be removed when pyinstaller is updated
+# The next two lines are neccessary for the pyinstalled version to find the 
+# neccessary qtwebenigne-libs. This is probably fixed in a future release
 import PySide6.QtPrintSupport
 import PySide6.QtWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
@@ -3447,6 +3453,7 @@ if __name__ == '__main__':
         # Compiled python script that waits 1 sec before it moves the 
         # IORSim_GUI.exe to the working directory, i.e. overwriting this file
         # The update_dir is deleted
-        Popen(['iorsim_updater.exe', '1', update_dir, this_file.name])
+        #Popen(['iorsim_updater.exe', '1', update_dir, this_file.name])
+        Popen(update_cmd)
         
     
