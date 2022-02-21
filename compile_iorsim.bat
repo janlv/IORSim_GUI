@@ -1,0 +1,4 @@
+
+pyinstaller --onefile --clean --add-data "guides;guides" --add-data "icons;icons" --add-binary "dist/iorsim_updater.exe;." --add-binary "C:\Users\javi\AppData\Local\Programs\Python\Python39\Lib\site-packages\PySide6\QtWebEngineProcess.exe;PySide6\." --add-data "C:\Users\javi\AppData\Local\Programs\Python\Python39\Lib\site-packages\PySide6\translations\qtwebengine_locales;PySide6\translations\qtwebengine_locales" --add-data "C:\Users\javi\AppData\Local\Programs\Python\Python39\Lib\site-packages\PySide6\resources;PySide6\resources" --upx-exclude "iorsim_updater.exe" --upx-dir "C:\Users\javi\Downloads\upx-3.96-win64" .\IORSim_GUI.py 
+                
+                

@@ -747,7 +747,7 @@ class Schedule:
         self.tstep = get_tsteps(self.ifacefile)[0]
         #print(f'START: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         # Check arrival of next event and adjust tstep if neccessary
-        if self._schedule and self.days + self.tstep > self._schedule[0][0]:
+        if self._schedule and self.days + self.tstep + 1e-8 > self._schedule[0][0]:
             self.tstep = new_tstep = self._schedule[0][0] - self.days
         self.append(action=action, tstep=new_tstep)
         #self.check()

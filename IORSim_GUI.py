@@ -18,8 +18,8 @@ default_settings_file = Path.home()/'.iorsim_settings.dat'
 
 # Update files
 this_file = Path(sys.argv[0])
-update_dir = Path('.iorsim_update').absolute()
-update_cmd = [str(resource_path()/'iorsim_updater.exe'), '1', update_dir, this_file]
+#update_dir = Path('.iorsim_update').absolute()
+#update_cmd = [str(resource_path()/'iorsim_updater.exe'), '1', update_dir, this_file]
 
 # Guide files
 iorsim_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_2021_User_Guide.pdf"
@@ -488,15 +488,16 @@ class download_worker(base_worker):
         super().__init__(print_exception=False)
         self.filename = this_file.name
         self.new_version = new_version
+        self.update_dir = Path(f'update_version_{new_version}').absolute()
         self.running = False         
 
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
         self.running = True                     # Set to False to abort download
-        if update_dir.is_dir():
-            delete_all(update_dir)
-        update_dir.mkdir()
+        if self.update_dir.is_dir():
+            delete_all(self.update_dir)
+        self.update_dir.mkdir()
         resp = requests_get(download_url+self.filename, stream=True, verify=False)
         tot_size = int(resp.headers.get('content-length', 0))
         block_size = 1024
@@ -504,7 +505,7 @@ class download_worker(base_worker):
             raise SystemError(f'File {self.filename} not found at {download_url}')
         self.update_progress((-tot_size, None, None))
         self.status_message(f'Downloading version {self.new_version} of {self.filename}')
-        with open(update_dir/self.filename, 'wb') as file:
+        with open(self.update_dir/self.filename, 'wb') as file:
             size = 0
             for data in resp.iter_content(block_size):
                 if not self.running:
@@ -1464,7 +1465,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.update_message('Download complete')
         button = ('Quit', self.close)
-        msg = f'INFO Download of version {self.new_version} completed, restart application to use it.'
+        #msg = f'INFO Download of version {self.new_version} completed, restart application to use it.'
+        self.update_dir = self.download_worker.update_dir
+        msg = f'INFO Version {self.new_version} is now available in the folder {self.update_dir}. Stop the application, copy the new version over the current one, and start again.'
         self.show_message_text(msg, button=button, ok_text='Not now')
 
     #-----------------------------------------------------------------------
@@ -1830,7 +1833,7 @@ class main_window(QMainWindow):                                    # main_window
         src = Path(from_root)
         dst = Path(to_root)
         # Input files, change name
-        inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.data','.trcinp')]
+        inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.DATA','.trcinp')]
         # Included files, keep name and path
         data_files = get_included_files(src.with_suffix('.DATA'))
         ior_files = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
@@ -3187,7 +3190,6 @@ class main_window(QMainWindow):                                    # main_window
         #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
 
     #-----------------------------------------------------------------------
-    #def update_progress(self, t=None, min=None):
     def update_progress(self, t_min_n0_tuple):
     #-----------------------------------------------------------------------
         t, min, n0 = t_min_n0_tuple
@@ -3449,11 +3451,11 @@ if __name__ == '__main__':
             window.close()
             app = None
     
-    if update_dir.is_dir():
-        # Compiled python script that waits 1 sec before it moves the 
-        # IORSim_GUI.exe to the working directory, i.e. overwriting this file
-        # The update_dir is deleted
-        #Popen(['iorsim_updater.exe', '1', update_dir, this_file.name])
-        Popen(update_cmd)
+    # if update_dir.is_dir():
+    #     # Compiled python script that waits 1 sec before it moves the 
+    #     # IORSim_GUI.exe to the working directory, i.e. overwriting this file
+    #     # The update_dir is deleted
+    #     #Popen(['iorsim_updater.exe', '1', update_dir, this_file.name])
+    #     #Popen(update_cmd)
         
     
