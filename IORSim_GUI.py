@@ -26,8 +26,8 @@ iorsim_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IO
 script_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_GUI_guide.pdf"
 
 # GitHub
-latest_release = "https://github.com/janlv/IORSim_GUI/releases/latest"
-download_url = latest_release + '/download/'
+github_url = "https://github.com/janlv/IORSim_GUI/"
+latest_release = github_url +"releases/latest"
 
 # from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 # from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
@@ -38,11 +38,11 @@ download_url = latest_release + '/download/'
 # from matplotlib.figure import Figure
 from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
-from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression
+from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression, QRect, QPoint
 # The next two lines are neccessary for the pyinstalled version to find the 
 # neccessary qtwebenigne-libs. This is probably fixed in a future release
-import PySide6.QtPrintSupport
-import PySide6.QtWebChannel
+#import PySide6.QtPrintSupport
+#import PySide6.QtWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
@@ -483,29 +483,38 @@ class download_worker(base_worker):
     #  Download updated executable in update_dir as a separate process
     #
     #-----------------------------------------------------------------------
-    def __init__(self, new_version):
+    def __init__(self, new_version, folder):
     #-----------------------------------------------------------------------
         super().__init__(print_exception=False)
-        self.filename = this_file.name
+        if this_file.suffix == '.py':
+            #self.download_url = github_url + 'archive/refs/tags/v' + new_version + '.zip'
+            self.url = 'https://api.github.com/repos/janlv/IORSim_GUI/zipball/v' + new_version
+        else:
+            self.url = github_url + 'releases/download/v' + new_version + '/' + this_file.name 
+        print(self.url)
         self.new_version = new_version
-        self.update_dir = Path(f'update_version_{new_version}').absolute()
+        self.folder = Path(folder) 
         self.running = False         
 
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
+        headers = {
+            "Authorization" : 'token ghp_r5***',
+            "Accept": 'application/vnd.github.v3+json'
+        }
         self.running = True                     # Set to False to abort download
-        if self.update_dir.is_dir():
-            delete_all(self.update_dir)
-        self.update_dir.mkdir()
-        resp = requests_get(download_url+self.filename, stream=True, verify=False)
+        if self.folder.is_dir():
+            delete_all(self.folder)
+        self.folder.mkdir()
+        resp = requests_get(self.url, stream=True, verify=False)
         tot_size = int(resp.headers.get('content-length', 0))
         block_size = 1024
         if tot_size < block_size:
-            raise SystemError(f'File {self.filename} not found at {download_url}')
+            raise SystemError(f'{self.url} not found!')
         self.update_progress((-tot_size, None, None))
-        self.status_message(f'Downloading version {self.new_version} of {self.filename}')
-        with open(self.update_dir/self.filename, 'wb') as file:
+        self.status_message(f'Downloading version {self.new_version} of {this_file}')
+        with open(self.folder/self.filename, 'wb') as file:
             size = 0
             for data in resp.iter_content(block_size):
                 if not self.running:
@@ -522,7 +531,7 @@ class download_worker(base_worker):
 class Mpl_canvas(FigureCanvasQTAgg):                                              
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, parent=None, width=5, height=4, dpi=100):
+    def __init__(self, parent=None, width=5, height=4, dpi=80):
     #-----------------------------------------------------------------------
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         #self.axes = fig.add_subplot(subplot)
@@ -964,7 +973,7 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         super(Settings, self).__init__(parent)
         self.setWindowTitle('Settings')
-        self.setMinimumSize(400,300)
+        self.setMinimumSize(400,400)
         self.setObjectName('settings_window')
         self.parent = parent
         self._get = {}
@@ -972,6 +981,7 @@ class Settings(QDialog):
         self.required = []
         self.default = {'eclrun'         : 'eclrun', 
                         'workdir'        : str(default_casedir),
+                        'savedir'        : None,
                         'unrst'          : True, 
                         'rft'            : True, 
                         'convert'        : True,
@@ -1007,6 +1017,7 @@ class Settings(QDialog):
         tool_tip = {'iorsim'         : 'Path to the IORSim executable',
                     'eclrun'         : "Eclipse command, default is 'eclrun'",
                     'workdir'        : 'Path to GUI-folder',
+                    'savedir'        : 'Download location for updates',
                     'unrst'          : 'Check that the UNRST-file is properly flushed before suspending Eclipse',
                     'rft'            : 'Check that the RFT-file is properly flushed before suspending Eclipse',
                     'convert'        : 'Convert IORSim formatted output to unformatted format (readable by ResInsight)',
@@ -1046,9 +1057,20 @@ class Settings(QDialog):
         grid.addWidget(widget[0] , n, 0)
         grid.addWidget(widget[1] , n, 1)
         grid.addWidget(widget[2] , n, 2)
-        widget[1].setReadOnly(True) #setEnabled(False)
+        widget[1].setReadOnly(True) 
         widget[1].setToolTip(tool_tip[var])
         self.workdir = widget[1]
+
+        ### Savedir        
+        n += 1
+        var, text = 'savedir', 'Download-folder'
+        widget = self.new_line(var=var, text=text, required=False, open_func=self.change_savedir, button_text='Change')
+        grid.addWidget(widget[0] , n, 0)
+        grid.addWidget(widget[1] , n, 1)
+        grid.addWidget(widget[2] , n, 2)
+        widget[1].setReadOnly(True) 
+        widget[1].setToolTip(tool_tip[var])
+        self.savedir = widget[1]
 
         ### Space
         n += 1
@@ -1197,6 +1219,15 @@ class Settings(QDialog):
             #self.restart_now()
 
     #-----------------------------------------------------------------------
+    def change_savedir(self):
+    #-----------------------------------------------------------------------
+        title = 'Choose a download location for the new version'
+        default = self.get('savedir') or str(Path.cwd())
+        folder = QFileDialog.getExistingDirectory(self, title, default, QFileDialog.ShowDirsOnly)
+        if folder:
+            self._set['savedir'](folder)
+
+    #-----------------------------------------------------------------------
     def restart_now(self):
     #-----------------------------------------------------------------------
         msg = f'The application must restart to apply the new case directory. Restart now?'
@@ -1282,10 +1313,15 @@ class main_window(QMainWindow):                                    # main_window
     def __init__(self, *args, settings_file=None, **kwargs):                       # main_window
     #-----------------------------------------------------------------------
         super(main_window, self).__init__(*args, **kwargs)
+        size = QSize(900, 600)
         self.setWindowTitle('IORSim') 
-        self.setGeometry(300, 100, 1200, 800)
-        self.setMinimumHeight(600)
-        self.setMinimumWidth(800)
+        screen = self.screen().size()
+        #offset = screen - self.screen().availableSize()
+        position = QPoint(int(0.5*(screen.width()-size.width())), int(0.5*(screen.height()-size.height())))
+        self.setGeometry(QRect(position, size))
+        # self.setGeometry(int(0.5*(screen.width()-900)),  200, 50, 900, 600)
+        #self.setMinimumHeight(600)
+        #self.setMinimumWidth(800)
         self.setObjectName('main_window')
         #self.setContentsMargins(2,2,2,2)
         #self.setWindowIcon(QIcon(':program_icon'))
@@ -1421,10 +1457,10 @@ class main_window(QMainWindow):                                    # main_window
         help_menu.addAction(self.script_guide_act)
         help_menu.addSeparator()
         help_menu.addAction(self.download_act)
-        # Only allow download if we are running the 'compiled' version
-        if this_file.suffix == '.py':
-            self.download_act.setEnabled(False)
-            self.download_act.setStatusTip(self.download_act.statusTip() + ' (only available for compiled version)')
+        # # Only allow download if we are running the 'compiled' version
+        # if this_file.suffix == '.py':
+        #     self.download_act.setEnabled(False)
+        #     self.download_act.setStatusTip(self.download_act.statusTip() + ' (only available for compiled version)')
         help_menu.addSeparator()
         help_menu.addAction(self.about_act)
         
@@ -1466,15 +1502,18 @@ class main_window(QMainWindow):                                    # main_window
         self.update_message('Download complete')
         button = ('Quit', self.close)
         #msg = f'INFO Download of version {self.new_version} completed, restart application to use it.'
-        self.update_dir = self.download_worker.update_dir
-        msg = f'INFO Version {self.new_version} is now available in the folder {self.update_dir}. Stop the application, copy the new version over the current one, and start again.'
+        msg = f'INFO Version {self.new_version} is now available in {self.download_worker.folder}. Stop the application, copy the new version over the current one, and start again.'
         self.show_message_text(msg, button=button, ok_text='Not now')
 
     #-----------------------------------------------------------------------
     def download(self):
     #-----------------------------------------------------------------------
+        self.settings.change_savedir()
+        folder = self.settings.get('savedir')
+        if folder is None:
+            return None
         self.reset_progress_and_message()
-        self.download_worker = download_worker(self.new_version)
+        self.download_worker = download_worker(self.new_version, folder)
         self.download_worker.signals.status_message.connect(self.update_message)
         self.download_worker.signals.show_message.connect(self.show_message_text)
         self.download_worker.signals.progress.connect(self.update_progress)
@@ -1509,8 +1548,8 @@ class main_window(QMainWindow):                                    # main_window
         ### toolbar
         self.toolbar = QToolBar('Toolbar')
         self.toolbar.setStyleSheet('QToolBar{spacing:15px; padding:5px;}')
-        #self.toolbar.setIconSize(QSize(32, 32))
-        self.toolbar.setIconSize(QSize(24, 24))
+        #self.toolbar.setIconSize(QSize(24, 24))
+        self.toolbar.setIconSize(QSize(20, 20))
         self.addToolBar(self.toolbar)
         #self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
@@ -1568,17 +1607,17 @@ class main_window(QMainWindow):                                    # main_window
         self.mode_cb.currentIndexChanged[int].connect(self.on_mode_select)
         # case
         self.case_cb = widgets['case']
-        self.case_cb.setStyleSheet('QComboBox {min-width: 200px;}')
+        self.case_cb.setStyleSheet('QComboBox {min-width: 100px;}')
         self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
         # steps
         self.days_box = widgets['days']
-        self.days_box.setFixedWidth(80)
+        self.days_box.setFixedWidth(60)
         self.days_box.setObjectName('days')
         self.days_box.textChanged[str].connect(self.on_input_change)
         # reference
         self.ref_case = widgets['compare']
         self.ref_case.setObjectName('compare')
-        self.ref_case.setStyleSheet('QComboBox {min-width: 200px;}')
+        self.ref_case.setStyleSheet('QComboBox {min-width: 100px;}')
         self.ref_case.currentIndexChanged[int].connect(self.on_compare_select)
         self.ref_case.setProperty('lastitem',0)    
 
@@ -3441,12 +3480,8 @@ if __name__ == '__main__':
         exit_code = main_window.EXIT_CODE_REBOOT
         while exit_code == main_window.EXIT_CODE_REBOOT:
             app = QApplication(sys.argv + args) 
-            #for s in app.screens():
-            #    print(s.availableGeometry(), s.availableVirtualGeometry())
-            app.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.Floor)
             window = main_window(settings_file=default_settings_file)
             window.show()
-            #exit_code = app.exec_()
             exit_code = app.exec()
             window.close()
             app = None
