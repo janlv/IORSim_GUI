@@ -486,40 +486,31 @@ class download_worker(base_worker):
     def __init__(self, new_version, folder):
     #-----------------------------------------------------------------------
         super().__init__(print_exception=False)
+        self.running = False         
+        self.new_version = new_version
         folder = Path(folder)
         if this_file.suffix == '.py':
+            # Download a zip archive 
+            ext = '.zip'
             self.url = 'https://api.github.com/repos/janlv/IORSim_GUI/zipball/v' + new_version
-            self.savename = folder/this_file.stem + '_v' + self.new_version + '.zip'
         else:
+            #vDownload the compiled executable
+            ext = this_file.suffix
             self.url = github_url + 'releases/download/v' + new_version + '/' + this_file.name 
-            self.savename = folder/this_file.stem + '_v' + self.new_version + this_file.suffix
-        print(self.url)
-        self.new_version = new_version
-        #self.folder = Path(folder) 
-        self.running = False         
+        self.savename = folder/(this_file.stem + '_v' + new_version + ext)
 
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
         self.running = True                     # Set to False to abort download
-        # if self.folder.is_dir():
-        #     delete_all(self.folder)
-        # self.folder.mkdir()
         resp = requests_get(self.url, stream=True, verify=False)
         if not resp.status_code == 200:
             raise SystemError(f'{self.url} not found!')
-        # print(resp)
-        # print(resp.headers)
-        #tot_size = int(resp.headers.get('content-length', 0))
-        # print(tot_size)
-        # print(len(resp.content))
-        tot_size = len(resp.content)
+        tot_size = int(resp.headers.get('content-length', 0)) or len(resp.content)
         block_size = 1024
         self.update_progress((-tot_size, None, None))
         self.status_message(f'Downloading version {self.new_version} of {this_file}')
-        # savename = this_file.stem + '_v' + self.new_version + self.ext
         size = 0
-        # with open(self.folder/savename, 'wb') as file:
         with open(self.savename, 'wb') as file:
             for data in resp.iter_content(block_size):
                 if not self.running:
@@ -1277,7 +1268,7 @@ class Settings(QDialog):
                     show_message(self, 'error', text=var+' cannot be empty!')
                     return False
                 f.write(f'{var} {val()}\n')
-                #print(line)
+                #print(f'{var} {val()}')
         return True
     
     #-----------------------------------------------------------------------
@@ -1507,17 +1498,21 @@ class main_window(QMainWindow):                                    # main_window
         self.update_message('Download complete')
         button = ('Quit', self.close)
         #msg = f'INFO Download of version {self.new_version} completed, restart application to use it.'
-        msg = f'INFO Version {self.new_version} is now available in {self.download_worker.folder}. Stop the application, copy the new version over the current one, and start again.'
+        dest = self.download_worker.savename
+        msg = f'INFO {dest.name} is now available in {dest.parent}.\nStop the application, copy the new version over the current one, and start again.'
         self.show_message_text(msg, button=button, ok_text='Not now')
 
     #-----------------------------------------------------------------------
     def download(self):
     #-----------------------------------------------------------------------
+        old_folder = self.settings.get('savedir')
         self.settings.change_savedir()
         folder = self.settings.get('savedir')
         if not folder:
             self.show_message_text('INFO Download aborted due to missing save location')
             return None
+        if folder != old_folder:
+            self.settings.save()
         self.reset_progress_and_message()
         self.download_worker = download_worker(self.new_version, folder)
         self.download_worker.signals.status_message.connect(self.update_message)
@@ -3408,6 +3403,7 @@ class main_window(QMainWindow):                                    # main_window
         self.killsim()
         if self.download_worker:
             self.download_worker.running = False
+            sleep(0.1)
         self.save_input()
         QApplication.quit()
                 
