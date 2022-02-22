@@ -486,36 +486,41 @@ class download_worker(base_worker):
     def __init__(self, new_version, folder):
     #-----------------------------------------------------------------------
         super().__init__(print_exception=False)
+        folder = Path(folder)
         if this_file.suffix == '.py':
-            #self.download_url = github_url + 'archive/refs/tags/v' + new_version + '.zip'
             self.url = 'https://api.github.com/repos/janlv/IORSim_GUI/zipball/v' + new_version
+            self.savename = folder/this_file.stem + '_v' + self.new_version + '.zip'
         else:
             self.url = github_url + 'releases/download/v' + new_version + '/' + this_file.name 
+            self.savename = folder/this_file.stem + '_v' + self.new_version + this_file.suffix
         print(self.url)
         self.new_version = new_version
-        self.folder = Path(folder) 
+        #self.folder = Path(folder) 
         self.running = False         
 
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
-        headers = {
-            "Authorization" : 'token ghp_r5***',
-            "Accept": 'application/vnd.github.v3+json'
-        }
         self.running = True                     # Set to False to abort download
-        if self.folder.is_dir():
-            delete_all(self.folder)
-        self.folder.mkdir()
+        # if self.folder.is_dir():
+        #     delete_all(self.folder)
+        # self.folder.mkdir()
         resp = requests_get(self.url, stream=True, verify=False)
-        tot_size = int(resp.headers.get('content-length', 0))
-        block_size = 1024
-        if tot_size < block_size:
+        if not resp.status_code == 200:
             raise SystemError(f'{self.url} not found!')
+        # print(resp)
+        # print(resp.headers)
+        #tot_size = int(resp.headers.get('content-length', 0))
+        # print(tot_size)
+        # print(len(resp.content))
+        tot_size = len(resp.content)
+        block_size = 1024
         self.update_progress((-tot_size, None, None))
         self.status_message(f'Downloading version {self.new_version} of {this_file}')
-        with open(self.folder/self.filename, 'wb') as file:
-            size = 0
+        # savename = this_file.stem + '_v' + self.new_version + self.ext
+        size = 0
+        # with open(self.folder/savename, 'wb') as file:
+        with open(self.savename, 'wb') as file:
             for data in resp.iter_content(block_size):
                 if not self.running:
                     return
@@ -1510,7 +1515,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.settings.change_savedir()
         folder = self.settings.get('savedir')
-        if folder is None:
+        if not folder:
+            self.show_message_text('INFO Download aborted due to missing save location')
             return None
         self.reset_progress_and_message()
         self.download_worker = download_worker(self.new_version, folder)
