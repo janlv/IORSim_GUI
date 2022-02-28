@@ -18,8 +18,6 @@ default_settings_file = Path.home()/'.iorsim_settings.dat'
 
 # Update files
 this_file = Path(sys.argv[0])
-#update_dir = Path('.iorsim_update').absolute()
-#update_cmd = [str(resource_path()/'iorsim_updater.exe'), '1', update_dir, this_file]
 
 # Guide files
 iorsim_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_2021_User_Guide.pdf"
@@ -29,40 +27,33 @@ script_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IO
 github_url = "https://github.com/janlv/IORSim_GUI/"
 latest_release = github_url +"releases/latest"
 
-# from PyQt5.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QAction, QActionGroup, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-# from PyQt5.QtGui import QColor, QFont, QIcon, QPalette, QSyntaxHighlighter, QTextCharFormat, QTextCursor
-# from PyQt5.QtCore import QCoreApplication, QObject, QSize, QUrl, pyqtSignal as Signal, pyqtSlot as Slot, QRunnable, QThreadPool, Qt, QRegExp
-# from PyQt5.QtWebEngineWidgets import QWebEnginePage, QWebEngineSettings, QWebEngineView
-# from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
-# from matplotlib.colors import to_rgb as colors_to_rgb
-# from matplotlib.figure import Figure
+# External libraries
 from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
 from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression, QRect, QPoint
-# The next two lines are neccessary for the pyinstalled version to find the 
-# neccessary qtwebenigne-libs. This is probably fixed in a future release
-#import PySide6.QtPrintSupport
-#import PySide6.QtWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
+from numpy import genfromtxt, asarray 
 
+# Python libraries
 from traceback import format_exc, print_exc, format_exc
 from time import sleep
-from numpy import genfromtxt, asarray 
 from collections import namedtuple
 from shutil import copy as shutil_copy
 import warnings
 from copy import deepcopy 
 from functools import partial
 from requests import get as requests_get
+# Suppress warnings about using verify=False in requests_get
 from urllib3 import disable_warnings
 disable_warnings()
 
+# Local libraries
 from ior2ecl import iorsim, simulation, main as ior2ecl_main, __version__
-from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, remove_comments, return_matching_string, delete_all, file_contains, safeopen, upper_and_lower, write_file
+from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, return_matching_string, delete_all, file_contains, write_file
 from IORlib.ECL import get_included_files, get_tsteps, unfmt_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -494,7 +485,7 @@ class download_worker(base_worker):
             ext = '.zip'
             self.url = 'https://api.github.com/repos/janlv/IORSim_GUI/zipball/v' + new_version
         else:
-            #vDownload the compiled executable
+            # Download the compiled executable
             ext = this_file.suffix
             self.url = github_url + 'releases/download/v' + new_version + '/' + this_file.name 
         self.savename = folder/(this_file.stem + '_v' + new_version + ext)
@@ -605,6 +596,23 @@ class Plot(QGroupBox):
     #-----------------------------------------------------------------------
         return False
 
+#===========================================================================
+class Menu(QGroupBox):                                              
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, parent=None, title='', ncol=2):
+    #-----------------------------------------------------------------------
+        super(Menu, self).__init__(parent)
+        self.setTitle(title)
+        self.setLayout(QHBoxLayout())
+        for i in range(ncol):
+            self.layout().addLayout(QVBoxLayout())
+            self.layout().itemAt(i).setAlignment(Qt.AlignTop)
+
+    #-----------------------------------------------------------------------
+    def column(self, nr):
+    #-----------------------------------------------------------------------
+        return self.layout().itemAt(nr)
 
 
 #===========================================================================
@@ -1312,15 +1320,12 @@ class main_window(QMainWindow):                                    # main_window
         size = QSize(900, 600)
         self.setWindowTitle('IORSim') 
         screen = self.screen().size()
-        #offset = screen - self.screen().availableSize()
         position = QPoint(int(0.5*(screen.width()-size.width())), int(0.5*(screen.height()-size.height())))
         self.setGeometry(QRect(position, size))
-        # self.setGeometry(int(0.5*(screen.width()-900)),  200, 50, 900, 600)
         #self.setMinimumHeight(600)
         #self.setMinimumWidth(800)
         self.setObjectName('main_window')
         #self.setContentsMargins(2,2,2,2)
-        #self.setWindowIcon(QIcon(':program_icon'))
         self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
         self.font = QFont().defaultFamily()
         self.menu_fontsize = 7
@@ -1329,7 +1334,7 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_ref_data = {}
         self.ecl_boxes = {}
         self.ior_boxes = {}
-        self.current_view = None
+        #self.current_view = None
         self.days = None
         self.log_file = None
         self.unsmry = None
@@ -1338,6 +1343,8 @@ class main_window(QMainWindow):                                    # main_window
         self.convert = None
         self.max_3_checked = []
         self.plot_prop = {}
+        self.checked_boxes = {}
+        self.plotted_lines = {}
         self.view = False
         self.plot_ref = None
         self.progress = None
@@ -1645,12 +1652,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_central_widget(self):                                          # main_window
     #-----------------------------------------------------------------------
-        ### central widget
-        # layout given as (row, col, rowspan, colspan)
-        # self.position = {'input'       : (0, 0),
-        #                  'ior_menu': (1, 0),
-        #                  'ecl_menu': (2, 0),
-        #                  'plot'        : (0, 1, 3, 1)}
+        ### Central widget
+        # Layout position given as (row, col, rowspan, colspan)
         self.position = {'ior_menu' : (0, 0),
                          'ecl_menu' : (1, 0),
                          'plot'     : (0, 1, 2, 1)}
@@ -1661,20 +1664,22 @@ class main_window(QMainWindow):                                    # main_window
         self.layout.setColumnStretch(1,75)
         self.layout.setRowStretch(0,50)
         self.layout.setRowStretch(1,50)
-        #self.layout.setRowStretch(2,35)
         widget = QWidget()
         #widget.setStyleSheet('QWidget {border: 1px solid black}')
         widget.setLayout(self.layout)
         self.setCentralWidget(widget)
-        # iorplot menu
-        self.create_ior_menu()
-        # eclplot menu
-        self.create_ecl_menu()
-        # plot
-        self.create_plot_field()
-        #self.create_editor_field()
+        # Create IORSim plot menu
+        self.ior_menu = Menu(title='IORSim plot options') 
+        self.layout.addWidget(self.ior_menu, *self.position['ior_menu']) # 
+        # Create ECLIPSE plot menu
+        self.ecl_menu = Menu(title='ECLIPSE plot options')
+        self.layout.addWidget(self.ecl_menu, *self.position['ecl_menu']) # 
+        # Create plot- and file-view area
+        self.plot = Plot() 
         self.editor = Editor(name='editor', save_func=self.prepare_case)
         self.log_viewer = Editor(name='log_viewer', read_only=True)
+        # Plot is the default view at startup
+        self.layout.addWidget(self.plot, *self.position['plot'])
 
 
 
@@ -1731,17 +1736,10 @@ class main_window(QMainWindow):                                    # main_window
     def set_variables_from_casefiles(self):                # main_window
     #-----------------------------------------------------------------------
         inp = self.input
-        #inp['dtecl'] = inp['ecl_days'] = inp['species'] = None
         inp['ecl_days'] = inp['species'] = inp['tracers'] = None
         if inp['root']:
-            #inp['dtecl']   = ior_input(var='dtecl', root=inp['root'])
-            #inp['ecl_days'] = ECL_input_days_and_steps(inp['root'])[0]
             tsteps = get_tsteps(inp['root']+'.DATA')
-            # if tsteps == [0]:
-            #     tsteps = get_tsteps_from_schedule_files(inp['root'])
             inp['ecl_days'] = int(sum(tsteps))
-            #if self.get_current_mode().lower() != 'eclipse':
-            #if not self.is_eclipse_mode():
             inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
             inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
             inp['species'] += inp['tracers']
@@ -1750,11 +1748,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def set_plot_properties(self):                # main_window
     #-----------------------------------------------------------------------
-        #colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-        #colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-        #          '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
         colors = color.as_tuple
-
         species = enumerate(self.input['species'] or [])
         prop = {}
         prop['color'] = {} #None
@@ -2130,6 +2124,13 @@ class main_window(QMainWindow):                                    # main_window
             show_message(self, 'error', text='Unable to clear case, '+str(e))
             return False
 
+    #-----------------------------------------------------------------------
+    def current_viewer(self):                              # main_window
+    #-----------------------------------------------------------------------
+        item = self.layout.itemAtPosition(0,1)
+        if item:
+            return item.widget()
+        return None
 
     #-----------------------------------------------------------------------
     def delete_current_case(self):                              # main_window
@@ -2142,7 +2143,7 @@ class main_window(QMainWindow):                                    # main_window
         case = self.case
         self.input['root'] = self.case = None
         self.max_3_checked = []
-        if self.current_view.name in ('editor','log_viewer'):
+        if self.current_viewer() in (self.editor, self.log_viewer):
             self.view_file(None)
         # Delete case folder
         delete_all(Path(case).parent)
@@ -2275,21 +2276,6 @@ class main_window(QMainWindow):                                    # main_window
             self.chem_menu.addAction(act)
             #self.chemfile_act.append(act)
 
-
-    #-----------------------------------------------------------------------
-    def create_ecl_menu(self):                                # main_window
-    #-----------------------------------------------------------------------
-        self.ecl_menu = QGroupBox()
-        self.ecl_menu.setTitle('ECLIPSE plot options')
-        self.layout.addWidget(self.ecl_menu, *self.position['ecl_menu']) # 
-        self.ecl_menu_layout = QHBoxLayout()
-        self.ecl_menu.setLayout(self.ecl_menu_layout)
-        self.ecl_menu_col = []
-        for i in range(2):
-            c = QVBoxLayout()
-            c.setAlignment(Qt.AlignTop)
-            self.ecl_menu_col.append(c)
-            self.ecl_menu_layout.addLayout(c)
         
     #-----------------------------------------------------------------------
     def on_ecl_var_click(self):
@@ -2303,20 +2289,6 @@ class main_window(QMainWindow):                                    # main_window
             self.update_plot_line(name, is_checked, lines=self.ref_plot_lines, set_data=False)
         self.plot.canvas.draw()
 
-    #-----------------------------------------------------------------------
-    def create_ior_menu(self):                                # main_window
-    #-----------------------------------------------------------------------
-        self.ior_menu_group = QGroupBox()
-        self.ior_menu_group.setTitle('IORSim plot options')
-        self.layout.addWidget(self.ior_menu_group, *self.position['ior_menu']) # 
-        self.ior_menu_layout = QHBoxLayout()
-        self.ior_menu_group.setLayout(self.ior_menu_layout)
-        self.ior_menu_col = []
-        for i in range(2):
-            c = QVBoxLayout()
-            c.setAlignment(Qt.AlignTop)
-            self.ior_menu_col.append(c)
-            self.ior_menu_layout.addLayout(c)
 
     #-----------------------------------------------------------------------
     def new_box_with_line_layout(self, name, boxname=None, func=None, linestyle='solid', color=None):
@@ -2359,47 +2331,47 @@ class main_window(QMainWindow):                                    # main_window
     def update_ior_menu(self, checked=True):                   # main_window
     #-----------------------------------------------------------------------
         #print('update_ior_menu')
-        delete_all_widgets_in_layout(self.ior_menu_layout)
+        menu = self.ior_menu
+        delete_all_widgets_in_layout(menu.layout())
         if not self.input['root'] or not self.input['species']:
             return False
-        col = self.ior_menu_col
         self.ior_boxes = {}
         # Add conc / prod boxes
         lbl = QLabel()
         lbl.setText('Y-axis')
         lbl.setStyleSheet('padding-left: 10px')
-        col[0].addWidget(lbl)
+        menu.column(0).addWidget(lbl)
         self.ior_boxes['yaxis'] = {}
         for text in ('Prod', 'Conc'):
             box = self.new_checkbox(text=text+'.', name='yaxis '+text.lower()+' ior', func=self.on_ior_menu_click)
-            col[0].addWidget(box, alignment=Qt.AlignTop)
+            menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['yaxis'][text.lower()] = box
         # Add well boxes
         lbl = QLabel()
         lbl.setText('Wells')
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
-        col[0].addWidget(lbl)
+        menu.column(0).addWidget(lbl)
         self.ior_boxes['well'] = {}
         for i,well in enumerate(self.out_wells or []):
             box = self.new_checkbox(text=well, name='well '+well+' ior', func=self.on_ior_menu_click)
-            col[0].addWidget(box, alignment=Qt.AlignTop)
+            menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['well'][well] = box
         # Add specie boxes
         box = QCheckBox('Variables')
         box.setChecked(True)
         box.stateChanged.connect(self.set_ior_variable_boxes)
         box.setStyleSheet('padding-left: 15px')
-        col[1].addWidget(box)
+        menu.column(1).addWidget(box)
         self.ior_var_box = box
         self.ior_boxes['var'] = {}
         for i,specie in enumerate(self.input['species'] or []):
             layout, box = self.new_box_with_line_layout(specie, func=self.on_specie_click)
             self.ior_boxes['var'][specie] = box
-            col[1].addLayout(layout)
+            menu.column(1).addLayout(layout)
         # Add temperature box
         layout, box = self.new_box_with_line_layout('Temp', linestyle='dotted', color='#707070', func=self.on_specie_click)
         self.ior_boxes['var']['Temp'] = box
-        col[1].addLayout(layout)
+        menu.column(1).addLayout(layout)
         # Set default checked boxes and add them to the checked list
         if checked:
             self.update_menu_boxes('ior')
@@ -2546,62 +2518,62 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_ecl_menu(self, case=None, checked=False):         # main_window
     #-----------------------------------------------------------------------
+        menu = self.ecl_menu
         root = self.input['root']
         if case:
             root = case
-        # delete checkboxes before creating new
-        delete_all_widgets_in_layout(self.ecl_menu_layout)
-        if not root: # or not self.ecl_yaxis:
+        # Delete checkboxes before creating new
+        delete_all_widgets_in_layout(menu.layout())
+        if not root: 
             return False
         try:
             wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root)
         except SystemError as e:
             lbl = QLabel()
             lbl.setText(str(e))
-            self.ecl_menu_layout.addWidget(lbl)
+            menu.layout().addWidget(lbl)
             return
         #print(wells, yaxis, fluids)
-        col = self.ecl_menu_col
         self.ecl_boxes = {}
         # prod/rate
         lbl = QLabel()
         lbl.setText('Y-axis')
         lbl.setStyleSheet('padding-left: 10px')
-        col[0].addWidget(lbl)
+        menu.column(0).addWidget(lbl)
         self.ecl_boxes['yaxis'] = {}
         for i,name in enumerate(yaxis): 
             box = self.new_checkbox(text=name.capitalize(), name='yaxis '+name+' ecl',
                                     func=self.on_ecl_plot_click)
             self.ecl_boxes['yaxis'][name] = box
-            col[0].addWidget(box, alignment=Qt.AlignTop)
+            menu.column(0).addWidget(box, alignment=Qt.AlignTop)
         # wells
         lbl = QLabel()
         lbl.setText('Wells')
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
-        col[0].addWidget(lbl)
+        menu.column(0).addWidget(lbl)
         self.ecl_boxes['well'] = {}
         for i,well in enumerate(wells):
             box = self.new_checkbox(text=well, name='well '+well+' ecl', func=self.on_ecl_plot_click)
             if well=='Field':
                 box.setObjectName('well FIELD ecl')
-            col[0].addWidget(box, alignment=Qt.AlignTop)
+            menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ecl_boxes['well'][well] = box
         # variables
         box = QCheckBox('Variables')
         box.setChecked(True)
         box.stateChanged.connect(self.set_ecl_variable_boxes)
         box.setStyleSheet('padding-left: 15px')
-        col[1].addWidget(box)
+        menu.column(1).addWidget(box)
         self.ecl_var_box = box
         self.ecl_boxes['var'] = {}
         for var in fluids: 
             layout, box = self.new_box_with_line_layout(var, func=self.on_ecl_var_click)
             self.ecl_boxes['var'][var] = box
-            col[1].addLayout(layout)
+            menu.column(1).addLayout(layout)
         layout, box = self.new_box_with_line_layout('Temp', boxname='Temp_ecl', linestyle='dotted',
                                                     color='#707070', func=self.on_ecl_var_click)
         self.ecl_boxes['var']['Temp_ecl'] = box
-        self.ecl_menu_col[1].addLayout(layout)
+        menu.column(1).addLayout(layout)
         if checked:
             self.update_menu_boxes('ecl')
 
@@ -2621,24 +2593,13 @@ class main_window(QMainWindow):                                    # main_window
 
                     
     #-----------------------------------------------------------------------
-    def create_plot_field(self):                                # main_window
-    #-----------------------------------------------------------------------
-        self.plot = Plot() 
-        self.current_view = self.plot
-        self.layout.addWidget(self.plot, *self.position['plot'])
-        self.checked_boxes = {}
-        self.plotted_lines = {}
-
-        
-    #-----------------------------------------------------------------------
     def view_file(self, file, viewer=None, title='', reset=True):           # main_window
     #-----------------------------------------------------------------------
         if not viewer:
             viewer = self.editor
         viewer.view_file(file, title=title)
-        self.current_view.setParent(None)
+        self.current_viewer().setParent(None)
         self.layout.addWidget(viewer, *self.position['plot'])
-        self.current_view = viewer
         if reset:
             self.reset_progress_and_message()
 
@@ -2650,7 +2611,8 @@ class main_window(QMainWindow):                                    # main_window
         if self.input['root']:
             if not name:
                 name = self.input['root']+ext
-            if self.current_view and self.current_view.file_is_open(name):
+            # if self.current_view and self.current_view.file_is_open(name):
+            if self.current_viewer().file_is_open(name):
                 return
             fil = is_file_ignore_suffix_case(name)
             if fil: 
@@ -2678,7 +2640,8 @@ class main_window(QMainWindow):                                    # main_window
         comment='--'
         # Avoid re-opening file after it is saved
         #if self.editor.file_is_open(self.input['root']+ext):
-        if self.current_view and self.current_view.file_is_open(self.input['root']+ext):
+        # if self.current_view and self.current_view.file_is_open(self.input['root']+ext):
+        if self.current_viewer().file_is_open(self.input['root']+ext):
             return
         # Sections
         #sections = [color.red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
@@ -2717,7 +2680,8 @@ class main_window(QMainWindow):                                    # main_window
         comment='#'
         name = self.input['root']+ext
         #if self.editor.file_is_open(name):
-        if self.current_view and self.current_view.file_is_open(name):
+        # if self.current_view and self.current_view.file_is_open(name):
+        if self.current_viewer().file_is_open(name):
             return
         # Mandatory keywords
         #mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.required
@@ -2774,14 +2738,7 @@ class main_window(QMainWindow):                                    # main_window
     def update_log(self):                                # main_window
     #-----------------------------------------------------------------------
         if self.log_file:
-            #self.editor.update(self.log_file)
             self.log_viewer.update(self.log_file)
-            # #print('update_log:',self.log_file)
-            # text = read_file(self.log_file)
-            # self.editor.setPlainText(text)
-            # #self.editor.setPlainText(open(self.log_file).read())
-            # self.editor.moveCursor(QTextCursor.End)
-            # self.editor.save_btn.setEnabled(False)
     
     #-----------------------------------------------------------------------
     def view_plot(self):                                # main_window
@@ -2791,10 +2748,10 @@ class main_window(QMainWindow):                                    # main_window
             return False
         self.log_file = None
         self.editor.setObjectName('')
-        if self.current_view:
-            self.current_view.setParent(None)
+        # if self.current_view:
+        #     self.current_view.setParent(None)
+        self.current_viewer().setParent(None)
         self.layout.addWidget(self.plot, *self.position['plot'])
-        self.current_view = self.plot
         if not self.worker:# and self.case:
             self.read_ior_data()
             self.read_ecl_data()
@@ -3272,11 +3229,11 @@ class main_window(QMainWindow):                                    # main_window
                 run = 'ior'
             if self.data.get(run):
                 self.days = (self.data[run]).get('days')
-        view = self.current_view.name
+        view = self.current_viewer() #.name
         #print('view:', view)
-        if view=='plot':
+        if view == self.plot: #'plot':
             self.update_all_plot_lines()
-        elif view=='log_viewer':
+        elif view == self.log_viewer: #'log_viewer':
             self.update_log()
 
     #-----------------------------------------------------------------------
@@ -3460,8 +3417,6 @@ class Highlighter(QSyntaxHighlighter):
 
 if __name__ == '__main__':
     import os
-    #from os import putent
-    from subprocess import Popen
 
     # Need to set the locale under Linux to avoid datetime.strptime errors
     os.putenv('LC_ALL', 'C')
@@ -3488,11 +3443,6 @@ if __name__ == '__main__':
             window.close()
             app = None
     
-    # if update_dir.is_dir():
-    #     # Compiled python script that waits 1 sec before it moves the 
-    #     # IORSim_GUI.exe to the working directory, i.e. overwriting this file
-    #     # The update_dir is deleted
-    #     #Popen(['iorsim_updater.exe', '1', update_dir, this_file.name])
-    #     #Popen(update_cmd)
+
         
     
