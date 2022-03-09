@@ -15,12 +15,15 @@ from traceback import print_exc as trace_print_exc, format_exc as  trace_format_
 from re import search, compile
 from os.path import relpath
 
-from IORlib.utils import get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
-from IORlib.ECL import check_blocks, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
+from IORlib.ECL import check_blocks, get_included_files, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
 
 __version__ = '2.23'
 __author__ = 'Jan Ludvig Vinningland'
+
+# Constants
+MAX_ITERATIONS = 1e5
 
 #====================================================================================
 class eclipse(runner):                                                      # eclipse
@@ -70,11 +73,18 @@ class eclipse(runner):                                                      # ec
     def check_input(self):                                                  # eclipse
     #--------------------------------------------------------------------------------
         super().check_input()
-        msg = 'WARNING Unable to start ' + self.name + ': '
-        ### check root.DATA exists
-        inp_file = str(self.case)+'.DATA'
-        if not Path(inp_file).is_file():
-            raise SystemError(msg + 'missing input file ' + inp_file)
+        msg = f'WARNING Unable to start {self.name}:'
+
+        # Check if root.DATA exists
+        inp_file = Path(str(self.case)+'.DATA')
+        if not inp_file.is_file():
+            raise SystemError(f'{msg} missing input file {inp_file}')
+
+        # Check if included files exists
+        for file in get_included_files(inp_file):
+            if not inp_file.with_name(file).is_file():
+                raise SystemError(f"{msg} '{file}' included from {inp_file} is missing")
+
 
     #--------------------------------------------------------------------------------
     def unexpected_stop_error(self):                                        # eclipse
@@ -407,16 +417,27 @@ class iorsim(runner):                                                        # i
             if o != f:                        
                 raise_error(f'expected keyword {o} but got {f}')    
 
+
     #--------------------------------------------------------------------------------
     def check_input(self):                                                   # iorsim
     #--------------------------------------------------------------------------------
         super().check_input()
+        msg = f'WARNING Unable to start {self.name}:'
+
         # Check if input-file exists
         if not self.inputfile.is_file():
-            raise SystemError(f'ERROR Missing IORSim input file {self.inputfile.name}')
+            raise SystemError(f'{msg} missing input file {self.inputfile.name}')
+
+        # Check if included files exists
+        include = flat_list(get_keyword(self.inputfile, '\*CHEMFILE', end='\*'))
+        for file in include:
+            if not self.inputfile.with_name(file).is_file():
+                raise SystemError(f"{msg} '{file}' included from {self.inputfile.name} is missing")
+
         # Check if required keywords are used, and if the order is correct 
         if self.check_input_kw:
             self.check_keywords()
+
 
     #--------------------------------------------------------------------------------
     def start(self):                                                         # iorsim
@@ -827,9 +848,12 @@ class simulation:
                 self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
                 #print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
             self.T = time 
-            # No problem if N is too large, the simulation automatically ends when t == T. 
+            # No problem if N yields a too large t, the simulation automatically ends when t == T. 
             N = int(time/ior_dt_min) + 2 + len(self.tsteps)
-            #N = int(time)+1
+            if N > MAX_ITERATIONS:
+                self.update.message(f'ERROR Too many iterations: time/timestep = {time}/{ior_dt_min} = {time/ior_dt_min:.0f}')
+                self.run_sim = None
+                return
             kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
             # Init runs
             self.run_sim = self.backward
