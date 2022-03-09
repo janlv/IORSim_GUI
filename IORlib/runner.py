@@ -253,7 +253,7 @@ class Process:                                                              # Pr
         return self.is_running(raise_error=raise_error)
 
     #--------------------------------------------------------------------------------
-    def get_children(self, raise_error=True):           # Process
+    def get_children(self, raise_error=True, log_file=None):                               # Process
     #--------------------------------------------------------------------------------
         # looking for child-processes with a name that match the app_name 
         if not self._process:
@@ -265,9 +265,12 @@ class Process:                                                              # Pr
         #print(self._process.name().lower(), name)
         if self._process.name().lower().startswith(name):
             return []
+        log_file and print('child-search: ', file=log_file)
         for i in range(100):
             sleep(0.5)
+            self.assert_running()
             children = self._process.children(recursive=True)
+            log_file and print(children, file=log_file)
             #print(children)
             # Stop if named child process is found
             if any([p.name().lower().startswith(name) for p in children]):
@@ -385,7 +388,7 @@ class runner:                                                               # ru
         self.parent.assert_running()
         self._print(f'Parent process: {self.parent.name_pid()}')
         # Child processes (if they exists)
-        children = self.parent.get_children()
+        children = self.parent.get_children(log_file=self.runlog)
         self.children = [Process(c, **kwargs) for c in children]
         self._print(f'Child process{len(self.children)>1 and "es" or ""}: {", ".join([p.name_pid() for p in self.children])}')
 

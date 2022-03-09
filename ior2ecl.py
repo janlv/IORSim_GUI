@@ -9,7 +9,7 @@ from argparse import ArgumentParser
 from datetime import datetime, timedelta
 from time import sleep
 from itertools import accumulate
-from psutil import NoSuchProcess
+from psutil import NoSuchProcess, __version__ as psutil_version
 from shutil import copy as shutil_copy 
 from traceback import print_exc as trace_print_exc, format_exc as  trace_format_exc
 from re import search, compile
@@ -801,8 +801,6 @@ class simulation:
         if root and not to_screen:
             self.runlog = safeopen(Path(root).parent/(self.name+'.log'), 'w')
         self.print2log = lambda txt: print(txt, file=self.runlog, flush=True)
-        self.print2log(f'Python version: {get_python_version()}')
-        self.print2log(f'Application version: {__version__}')
         self.current_run = None
         self.runs = runs
         self.run_sim = None
@@ -814,6 +812,14 @@ class simulation:
         if root:
             kwargs.update({'root':str(root), 'runlog':self.runlog})
             self.prepare_mode(**kwargs)
+
+    #-----------------------------------------------------------------------
+    def versions(self):
+    #-----------------------------------------------------------------------
+        txt = f'Python: {get_python_version()}\n'
+        txt += f'psutil: {psutil_version}\n'
+        txt += f'Application: {__version__}\n'
+        return txt
 
     #-----------------------------------------------------------------------
     def ready(self):
@@ -886,10 +892,7 @@ class simulation:
             self.run_sim = None  # => ready() returns False
             self.update.message(f'{e}')
             return
-        # Print simulation data
-        self.print2log(self.info_header())
-        #if self.schedule:
-        #    self.print2log(self.schedule.info())            
+
 
 
     #-----------------------------------------------------------------------
@@ -959,6 +962,9 @@ class simulation:
     #-----------------------------------------------------------------------
     def run(self):
     #-----------------------------------------------------------------------
+        # Print header
+        self.print2log(self.versions())
+        self.print2log(self.info_header())
         msg = ''
         success = False
         try:
