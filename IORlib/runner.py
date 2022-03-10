@@ -128,6 +128,33 @@ class Control_file:
         except PermissionError:
             return None
 
+
+#--------------------------------------------------------------------------------
+def search_for_named_children(process, name, log=False, limit=10):        
+#--------------------------------------------------------------------------------
+    found = False
+    for i in range(limit):
+        sleep(0.5)
+        children = process.children(recursive=True)
+        log is not False and print(children, file=log)
+        # Stop if named child process is found
+        if any([p.name().lower().startswith(name) for p in children]):
+            found = True
+            break
+    return found, children
+
+#--------------------------------------------------------------------------------
+def search_for_named_process(name, log=False, limit=10):         
+#--------------------------------------------------------------------------------
+    procs = []
+    name = name.lower()
+    for p in psutil.process_iter(['name', 'exe']):
+        #print(p.info['name'], p.info['exe'])
+        if p.info['exe'] and Path(p.info['exe']).stem.lower() == name:
+            procs.append(p)
+    return procs
+
+
 #====================================================================================
 class Process:                                                              # Process
 #====================================================================================
@@ -246,36 +273,42 @@ class Process:                                                              # Pr
                 raise SystemError(f'ERROR Process {self.name()} disappeared while trying to sleep')
         except (psutil.NoSuchProcess, ProcessLookupError, AttributeError):
             raise SystemError(f'ERROR Process {self._process} disappeared while trying to sleep')
+
                 
     #--------------------------------------------------------------------------------
     def assert_running(self, raise_error=True):                             # Process
     #--------------------------------------------------------------------------------
         return self.is_running(raise_error=raise_error)
 
+
     #--------------------------------------------------------------------------------
-    def get_children(self, raise_error=True, log_file=None):                               # Process
+    def get_children(self, raise_error=True, log=False):                               # Process
     #--------------------------------------------------------------------------------
         # looking for child-processes with a name that match the app_name 
         if not self._process:
             if raise_error:
                 raise SystemError('Parent-process missing, unable to look for child-processes')
             else:  
-                return [] 
+                return False, [] 
         name = self.app_name.lower()
-        #print(self._process.name().lower(), name)
+        # Return if this is the main process
         if self._process.name().lower().startswith(name):
-            return []
-        log_file and print('child-search: ', file=log_file)
-        for i in range(100):
-            sleep(0.5)
-            self.assert_running()
-            children = self._process.children(recursive=True)
-            log_file and print(children, file=log_file)
-            #print(children)
-            # Stop if named child process is found
-            if any([p.name().lower().startswith(name) for p in children]):
-                break
-        return children
+            return True, []
+        log is not False and print('child-search: ', file=log)
+        # Search for main process among children
+        found, children = search_for_named_children(self._process, name, log=log)
+        # If main process not found, search among children of children
+        if not found:
+            procs = []
+            for child in children:
+                log is not False and print(f'child-of-{child.name()}-search: ', file=log)
+                found, p = search_for_named_children(child, name, log=log)
+                procs.extend(p)
+            hash_children = [hash(p) for p in children]
+            for p in procs:
+                if hash(p) not in hash_children:
+                    children.append(p)
+        return found, children
 
 
 #====================================================================================
@@ -329,10 +362,12 @@ class runner:                                                               # ru
         self.N = int(N)   # Max number of steps
         self.starttime = None
 
+
     #-----------------------------------------------------------------------
     def set_time(self, time):
     #-----------------------------------------------------------------------
         self.T = int(time)
+
 
     #--------------------------------------------------------------------------------
     def check_input(self):                                                   # runner
@@ -358,10 +393,12 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
         return Control_file(ext=self.ext_OK, root=self.case)
 
+
     #--------------------------------------------------------------------------------
     def unexpected_stop_error(self):                                       # runner
     #--------------------------------------------------------------------------------
         raise SystemError(f'ERROR {self.name} stopped unexpectedly, check the log')
+
 
     #--------------------------------------------------------------------------------
     def start(self, error_func=None):                        # runner
@@ -377,6 +414,7 @@ class runner:                                                               # ru
             #self.popen = Popen(self.cmd, stdin=DEVNULL, stdout=self.log, stderr=DEVNULL)      
         self.set_processes(error_func=error_func)
 
+
     #--------------------------------------------------------------------------------
     def set_processes(self, error_func=None):                                 # runner
     #--------------------------------------------------------------------------------
@@ -388,9 +426,23 @@ class runner:                                                               # ru
         self.parent.assert_running()
         self._print(f'Parent process: {self.parent.name_pid()}')
         # Child processes (if they exists)
-        children = self.parent.get_children(log_file=self.runlog)
+        found, children = self.parent.get_children(log=self.runlog)
+        # If main process is not in children, search system for main process 
+        if not found:
+            proc = search_for_named_process(self.name, log=self.runlog)
+            if proc:
+                found = True
+                # Add process to children if it is not already there
+                if hash(proc[0]) not in [hash(p) for p in children]:
+                    children.append(proc[0])
+                self._print(f'Found {proc}')
+                self._print(f'Parents: {proc[0].parents()}')
+        if not found:
+            self._print(f'WARNING! Unable to find main process! Simulation may stop unexpectedly!')
         self.children = [Process(c, **kwargs) for c in children]
         self._print(f'Child process{len(self.children)>1 and "es" or ""}: {", ".join([p.name_pid() for p in self.children])}')
+
+
 
     #--------------------------------------------------------------------------------
     def get_logfile(self):                                                   # runner
