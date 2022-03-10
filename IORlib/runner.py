@@ -150,6 +150,7 @@ def search_for_named_process(name, log=False, limit=10):
     name = name.lower()
     for p in psutil.process_iter(['name', 'exe']):
         #print(p.info['name'], p.info['exe'])
+            print(p, file=log)
         if p.info['exe'] and Path(p.info['exe']).stem.lower() == name:
             procs.append(p)
     return procs
@@ -429,7 +430,8 @@ class runner:                                                               # ru
         found, children = self.parent.get_children(log=self.runlog)
         # If main process is not in children, search system for main process 
         if not found:
-            proc = search_for_named_process(self.name, log=self.runlog)
+            self._print(f'Searching for {self.name.lower()} in system')
+            proc = search_for_named_process(self.name.lower(), log=self.runlog)
             if proc:
                 found = True
                 # Add process to children if it is not already there
