@@ -289,31 +289,31 @@ class Process:                                                              # Pr
 
 
     #--------------------------------------------------------------------------------
-    def get_children(self, raise_error=True, log=False, wait=0.5, limit=100):          # Process
+    def get_children(self, raise_error=True, log=False, wait=0.5, limit=500):      # Process
     #--------------------------------------------------------------------------------
         # looking for child-processes with a name that match the app_name 
         if not self._process:
             if raise_error:
                 raise SystemError('Parent-process missing, unable to look for child-processes')
             else:  
-                return False, [] 
+                return [] 
         name = self.app_name.lower()
         # Return if this is the main process
         if self._process.name().lower().startswith(name):
-            return True, []
-        #log is not False and print('child-search: ', file=log)
-        # Search for main process among children
-        #found, children = search_for_named_children(self._process, name, log=log)
+            return []
         found = False
         for i in range(limit):
             sleep(wait)
             children = self._process.children(recursive=True)
-            log is not False and print(children, file=log)
+            log is not False and log(children)
             # Stop if named child process is found
             if any([p.name().lower().startswith(name) for p in children]):
+                log is not False and log(f'Child process found in {wait*i:.1f} seconds')
                 found = True
                 break
-        return found, children
+        if not found and raise_error:
+            raise SystemError(f'Unable to find child process of {self._name} in {wait*limit:.1f} seconds, aborting...')
+        return children
 
 
 #====================================================================================
@@ -431,20 +431,7 @@ class runner:                                                               # ru
         self.parent.assert_running()
         self._print(f'Parent process: {self.parent.info()}')
         # Child processes (if they exists)
-        found, children = self.parent.get_children(log=self.runlog)
-        # # If main process is not in children, search system for main process 
-        # if not found:
-        #     self._print(f'Searching for {self.name.lower()} in system')
-        #     proc = search_for_named_process(self.name.lower(), log=self.runlog)
-        #     if proc:
-        #         found = True
-        #         # Add process to children if it is not already there
-        #         if hash(proc[0]) not in [hash(p) for p in children]:
-        #             children.append(proc[0])
-        #         self._print(f'Found {proc}')
-        #         self._print(f'Parents: {proc[0].parents()}')
-        if not found:
-            self._print(f'WARNING! Unable to find main process! Simulation may stop unexpectedly!')
+        children = self.parent.get_children(log=self._print)
         self.children = [Process(c, **kwargs) for c in children]
         self._print(f'Child process{len(self.children)>1 and "es" or ""}: {", ".join([p.info() for p in self.children])}')
 

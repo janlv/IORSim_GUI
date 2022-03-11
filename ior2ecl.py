@@ -19,7 +19,7 @@ from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, 
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks, get_included_files, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
 
-__version__ = '2.24'
+__version__ = '2.25'
 __author__ = 'Jan Ludvig Vinningland'
 
 # Constants
