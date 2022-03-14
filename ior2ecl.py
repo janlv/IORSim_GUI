@@ -24,6 +24,10 @@ __author__ = 'Jan Ludvig Vinningland'
 
 # Constants
 MAX_ITERATIONS = 1e5
+LOG_LEVEL_MAX = 3
+LOG_LEVEL_MIN = 1
+LOG_LEVEL = 3
+
 
 #====================================================================================
 class eclipse(runner):                                                      # eclipse
@@ -1200,7 +1204,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-rft_size',       help='Backward mode: Only check size of RFT-file, default is full check', action='store_true')
     parser.add_argument('-iorsim',         help="Run only iorsim", action='store_true')
     parser.add_argument('-eclipse',        help="Run only eclipse", action='store_true')
-    parser.add_argument('-v',              default=3, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
+    parser.add_argument('-v',              default=LOG_LEVEL, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
     parser.add_argument('-keep_files',     help='Interface-files are not deleted after completion', action='store_true')
     parser.add_argument('-to_screen',      help='Print program log to screen', action='store_true')
     parser.add_argument('-only_convert',   help='Only convert+merge and exit', action='store_true')
@@ -1229,7 +1233,8 @@ def parse_input(case_dir=None, settings_file=None):
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
            check_unrst=True, check_rft=True, rft_size=False, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
-           stop_children=True, only_eclipse=False, only_iorsim=False, check_input=False):
+           stop_children=True, only_eclipse=False, only_iorsim=False, check_input=False, 
+           verbose=LOG_LEVEL):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1271,7 +1276,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
                      check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size,  
                      keep_files=keep_files, progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert, merge=merge, delete=delete, stop_children=stop_children,
-                     runs=runs, mode=mode, check_input_kw=check_input)
+                     runs=runs, mode=mode, check_input_kw=check_input, verbose=verbose)
 
     if not sim.ready():
         return 
@@ -1297,7 +1302,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
            stop_children=(not args['alive_children']), only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
-           check_input=args['check_input_kw'])
+           check_input=args['check_input_kw'], verbose=args['v'])
     os_exit(0)
 
 

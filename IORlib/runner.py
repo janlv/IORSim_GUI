@@ -305,10 +305,10 @@ class Process:                                                              # Pr
         for i in range(limit):
             sleep(wait)
             children = self._process.children(recursive=True)
-            log is not False and log(children)
+            log is not False and log(children, v=3)
             # Stop if named child process is found
             if any([p.name().lower().startswith(name) for p in children]):
-                log is not False and log(f'Child process found in {wait*i:.1f} seconds')
+                log is not False and log(f'Child process found in {wait*i:.1f} seconds', v=2)
                 found = True
                 break
         if not found and raise_error:
@@ -444,9 +444,8 @@ class runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def suspend(self, check=False, status=True, v=1):          # runner
+    def suspend(self, check=False, v=1):          # runner
     #--------------------------------------------------------------------------------
-        #self._print(f'Suspending {self.name} ({self.parent._pid})', v=v)
         self._print(f'Suspending {self.parent.info()}', v=v)
         # Suspend children
         if self.stop_children:
@@ -457,14 +456,13 @@ class runner:                                                               # ru
         self.parent.suspend()
         if check:
             self.wait_for(self.parent.is_sleeping, limit=100)
-        if status:
-            self.print_process_status()
+        self.print_process_status()
         self.timer and self.timer.stop()
 
+
     #--------------------------------------------------------------------------------
-    def resume(self, check=False, status=True, v=1):                       # runner
+    def resume(self, check=False, v=1):                       # runner
     #--------------------------------------------------------------------------------
-        #self._print(f'Resuming {self.name} ({self.parent._pid})', v=v)
         self._print(f'Resuming {self.parent.info()}', v=v)
         # Resume parent
         self.parent.resume()
@@ -474,8 +472,7 @@ class runner:                                                               # ru
         [p.resume() for p in self.children]
         if check:
             [self.wait_for(p.is_running) for p in self.children]
-        if status:
-            self.print_process_status()
+        self.print_process_status()
         self.timer and self.timer.start()
 
 
@@ -487,7 +484,6 @@ class runner:                                                               # ru
         try:
             for p in procs:
                 self._print(f'Killing {p.name()}, ', end='')
-                #p.proc.kill()
                 p.kill()
                 self._print('done', tag='')
         except (psutil.NoSuchProcess, ProcessLookupError):
@@ -498,31 +494,30 @@ class runner:                                                               # ru
             self.children = []
             self.parent = None
 
+
     #--------------------------------------------------------------------------------
     def process_list(self):
     #--------------------------------------------------------------------------------
         return (self.parent and [self.parent] or []) + self.children
 
+
     #--------------------------------------------------------------------------------
-    def print_process_status(self, v=1):
+    def print_process_status(self, v=2):
     #--------------------------------------------------------------------------------
         self._print(', '.join( [str(p.current_status()) for p in self.process_list()] ), v=v)
+
 
     #--------------------------------------------------------------------------------
     def print_suspend_errors(self, v=1):
     #--------------------------------------------------------------------------------
         self._print(', '.join([p.suspend_errors() for p in self.process_list() if p.suspend_errors()]), v=v)
-        # val = []
-        # for p in [self.parent]+self.children:
-        #     stat = p.suspend_errors()
-        #     if stat:
-        #         val.append(stat)        
-        # self._print(', '.join(val), v=v)
+
 
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                 # runner
     #--------------------------------------------------------------------------------
         return 0, 0
+
 
     #--------------------------------------------------------------------------------
     def stop_if_canceled(self, step='days'):
@@ -541,21 +536,25 @@ class runner:                                                               # ru
             self._print(' ', tag='')
             raise SystemError('INFO Run stopped after ' + str(c) + ' ' + step)    
 
+
     #--------------------------------------------------------------------------------
     def assert_running_and_stop_if_canceled(self, raise_error=True):
     #--------------------------------------------------------------------------------
         self.parent.assert_running(raise_error=raise_error)
         self.stop_if_canceled()
 
+
     #--------------------------------------------------------------------------------
     def time_and_step(self):
     #--------------------------------------------------------------------------------
         return None, None
 
+
     #--------------------------------------------------------------------------------
     def run_time(self):
     #--------------------------------------------------------------------------------
         return datetime.now()-self.starttime
+
 
     #--------------------------------------------------------------------------------
     def complete_msg(self, run_time=None):
@@ -563,6 +562,7 @@ class runner:                                                               # ru
         if not run_time:
             run_time = self.run_time()
         return 'INFO Simulation complete, run-time was ' + str(run_time).split('.')[0]
+
 
     #--------------------------------------------------------------------------------
     def stop_if_limit_reached(self, limit='time', value=None): 
@@ -581,8 +581,9 @@ class runner:                                                               # ru
             raise SystemError(self.complete_msg())
         return value
 
+
     #--------------------------------------------------------------------------------
-    def wait_for(self, func, *args, limit=None, pause=0.01, v=3, error=None, raise_error=False, log=None, loop_func=None, **kwargs):
+    def wait_for(self, func, *args, limit=None, pause=0.01, v=2, error=None, raise_error=False, log=None, loop_func=None, **kwargs):
     #--------------------------------------------------------------------------------
         if not loop_func:
             # Default checks during loop
@@ -602,7 +603,7 @@ class runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def wait_for_process_to_finish(self, v=1, limit=None, pause=None, loop_func=None, msg=None):      # runner
+    def wait_for_process_to_finish(self, v=2, limit=None, pause=None, loop_func=None, msg=None):      # runner
     #--------------------------------------------------------------------------------
         msg = msg or 'waiting for parent process to finish'
         self._print(msg, v=v)
@@ -626,6 +627,7 @@ class runner:                                                               # ru
         self.resume()
         self.wait_for_process_to_finish(msg='waiting for process to quit', limit=6000, pause=0.01, loop_func=loop_func)
         self.log.close()
+        self._print('Finished', v=v)
 
     #--------------------------------------------------------------------------------
     def clean_up(self):

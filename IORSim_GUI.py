@@ -29,14 +29,14 @@ latest_release = github_url +"releases/latest"
 
 # External libraries
 from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor 
+from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QContextMenuEvent 
 from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression, QRect, QPoint
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
-from numpy import genfromtxt, asarray 
+from numpy import False_, genfromtxt, asarray, iterable 
 
 # Python libraries
 from traceback import format_exc, print_exc, format_exc
@@ -52,7 +52,7 @@ from urllib3 import disable_warnings
 disable_warnings()
 
 # Local libraries
-from ior2ecl import iorsim, simulation, main as ior2ecl_main, __version__
+from ior2ecl import iorsim, simulation, main as ior2ecl_main, __version__, LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, return_matching_string, delete_all, file_contains, write_file
 from IORlib.ECL import get_included_files, get_tsteps, unfmt_file
 
@@ -62,7 +62,6 @@ QDir.addSearchPath('icons', resource_path()/'icons/')
 #     def javaScriptConsoleMessage(self, level, msg, line, sourceID):
 #         pass
 
-#print(sys.path)
 
 #===========================================================================
 class GUI_color(QColor):
@@ -615,6 +614,39 @@ class Menu(QGroupBox):
         return self.layout().itemAt(nr)
 
 
+# #===========================================================================
+# class Log_viewer_with_level(QPlainTextEdit):
+# #===========================================================================
+#     #-----------------------------------------------------------------------
+#     def contextMenuEvent(self, e: QContextMenuEvent) -> None:
+#     #-----------------------------------------------------------------------
+#         menu = self.createStandardContextMenu(e.globalPos())
+#         menu.addSeparator()
+#         level = menu.addMenu('Log level')
+#         actions = [QAction(str(l+1), self) for l in range(3)]
+#         group = QActionGroup(self)
+#         for act in actions:
+#             level.addAction(act)
+#             group.addAction(act)
+#         actions[0].triggered.connect(lambda: print(1))
+#         actions[1].triggered.connect(lambda: print(2))
+#         actions[2].triggered.connect(lambda: print(3))
+#         actions[2].setChecked(True)
+#         menu.popup(e.globalPos())
+#         # if group.checkedAction():
+#         #    group.checkedAction().trigger()
+
+#     def set_log_value_getter(self, func):
+#         self.get_log_value = func
+
+#     # def change_log_level(self):
+#     #     win = QDialog()
+#     #     layout = QVBoxLayout()
+#     #     win.setLayout(layout)
+#     #     text = QLabel(f'Log level is {self.get_log_value()}')
+#     #     layout.addWidget(text)
+#     #     win.open()
+
 #===========================================================================
 class Editor(QGroupBox):                                              
 #===========================================================================
@@ -641,15 +673,13 @@ class Editor(QGroupBox):
         self.search_width = search_width
         self.space = space
         self.match_case = match_case
-        self.init_UI()
-
-    #-----------------------------------------------------------------------
-    def init_editor(self, layout):                            # Editor
-    #-----------------------------------------------------------------------
+        # if name == 'app_log_viewer':
+        #     self.editor_ = Log_viewer_with_level()
+        # else:
         self.editor_ = QPlainTextEdit()
         self.editor_.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.set_text = self.editor_.setPlainText
-        layout.addWidget(self.editor_)
+        self.init_UI()
 
     #-----------------------------------------------------------------------
     def init_UI(self):                                           # Editor
@@ -658,7 +688,7 @@ class Editor(QGroupBox):
         self.setLayout(layout)
         buttons = QHBoxLayout()
         layout.addLayout(buttons)
-        self.init_editor(layout)
+        layout.addWidget(self.editor_)
         if self.refresh:
             ### Refresh button
             self.refresh_btn = self.new_button(text='Refresh', func=self.refresh_func)
@@ -973,243 +1003,208 @@ class Window(QMainWindow):
 class Settings(QDialog):                                              
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, parent=None, file=None):
+    def __init__(self, parent=None, file=None):                   # settings
     #-----------------------------------------------------------------------
         super(Settings, self).__init__(parent)
         self.setWindowTitle('Settings')
-        self.setMinimumSize(400,400)
+        #self.setMinimumSize(400,400)
         self.setObjectName('settings_window')
         self.parent = parent
+        self.line = -1
         self._get = {}
         self._set = {}
-        self.required = []
-        self.default = {'eclrun'         : 'eclrun', 
-                        'workdir'        : str(default_casedir),
-                        'savedir'        : None,
-                        'unrst'          : True, 
-                        'rft'            : True, 
-                        'convert'        : True,
-                        'del_convert'    : True,
-                        'merge'          : True,
-                        'del_merge'      : True,
-                        'stop_child'     : True,
-                        'check_input_kw' : False}
+        variable = namedtuple('variable',        'text              default tip                            required')
+        self.vars = {'iorsim'         : variable('IORSim program' , None, 'Path to the IORSim executable', True),
+                     'eclrun'         : variable('Eclipse program', 'eclrun', "Eclipse command, default is 'eclrun'", True), 
+                     'workdir'        : variable('Case-folder', str(default_casedir),'Path to GUI-folder', True),
+                     'savedir'        : variable('Download-folder', None, 'Download location for updates', False),
+                     'check_input_kw' : variable('Check IORSim input file', False, 'Check IORSim input file keywords', False),
+                     'convert'        : variable('Convert to unformatted output', True, 'Convert IORSim formatted output to unformatted format (readable by ResInsight)', False),
+                     'del_convert'    : variable('Delete original after convert', True, 'Delete the FUNRST-file if it is successfully converted to an UNRST-file', False),
+                     'merge'          : variable('Merge Eclipse and IORSim output', True, 'Merge the unformatted output from Eclipse and IORSim into one file', False),
+                     'del_merge'      : variable('Delete originals after merge', True, 'Delete the original UNRST-files from Elipse and IORSim if successfully merged', False),
+                     'unrst'          : variable('Confirm flushed UNRST-file before suspending Eclipse', True, 'Check that the UNRST-file is properly flushed before suspending Eclipse', False), 
+                     'rft'            : variable('Confirm flushed RFT-file before suspending Eclipse', True, 'Check that the RFT-file is properly flushed before suspending Eclipse', False),
+                     'stop_child'     : variable('Supend all child processes', True, 'Stop both Eclipse parent and child process to increase stability (~5% performance drop)', False),
+                     'log_level'      : variable('Verbosity level of the application log', str(LOG_LEVEL), 'A higher value gives more detailed information in the application log', False)}
+        self.required = [k for k,v in self.vars.items() if v.required]
+        self.expert = []
         self.abs_path = False
         self.initUI()
+        self.set_expert_mode(False)
+        self.set_default()
         self.file = Path(file) 
         self.load()
-        
+
+
     #-----------------------------------------------------------------------
-    def get(self, kw):
+    def set_expert_mode(self, enabled):
+    #-----------------------------------------------------------------------
+        self.expert_mode = enabled
+        [var.setEnabled(self.expert_mode) for var in self.expert]
+
+
+    #-----------------------------------------------------------------------
+    def keyPressEvent(self, event):
+    #-----------------------------------------------------------------------
+        """ Press e-key to enable/disable expert settings """
+        if not event.isAutoRepeat() and event.key() == Qt.Key_E:
+            self.set_expert_mode(not self.expert_mode)
+
+
+    #-----------------------------------------------------------------------
+    def get(self, kw):                                            # settings
     #-----------------------------------------------------------------------
         return self._get[kw]()
 
     #-----------------------------------------------------------------------
-    def set(self, kw, value):
+    def set(self, kw, value):                                     # settings
     #-----------------------------------------------------------------------
         return self._set[kw](value)
+
+
+    #-----------------------------------------------------------------------
+    def add_heading(self, text=''):
+    #-----------------------------------------------------------------------
+        self.line += 1
+        self.grid.addWidget(QLabel(text), self.line, 0)
+
 
     #-----------------------------------------------------------------------
     def initUI(self):                                             # settings
     #-----------------------------------------------------------------------
-        grid = QGridLayout()
-        self.setLayout(grid)
-        grid.setColumnStretch(0,15) 
-        grid.setColumnStretch(1,70) 
-        grid.setColumnStretch(2,15) 
-
-        tool_tip = {'iorsim'         : 'Path to the IORSim executable',
-                    'eclrun'         : "Eclipse command, default is 'eclrun'",
-                    'workdir'        : 'Path to GUI-folder',
-                    'savedir'        : 'Download location for updates',
-                    'unrst'          : 'Check that the UNRST-file is properly flushed before suspending Eclipse',
-                    'rft'            : 'Check that the RFT-file is properly flushed before suspending Eclipse',
-                    'convert'        : 'Convert IORSim formatted output to unformatted format (readable by ResInsight)',
-                    'del_convert'    : 'Delete the FUNRST-file if it is successfully converted to an UNRST-file',
-                    'merge'          : 'Merge the unformatted output from Eclipse and IORSim into one file',
-                    'del_merge'      : 'Delete the original UNRST-files from Elipse and IORSim if successfully merged',
-                    'stop_child'     : 'Stop both Eclipse parent and child process to increase stability (~5% performance drop)',
-                    'check_input_kw' : 'Check IORSim input file keywords'}
-
+        self.grid = QGridLayout()
+        self.setLayout(self.grid)
+        self.grid.setColumnStretch(0,15) 
+        self.grid.setColumnStretch(1,70) 
+        self.grid.setColumnStretch(2,15) 
 
         ### IORSim executable
-        n = 0
-        var, text = 'iorsim', 'IORSim program'
-        # label, setting, button = self.new_line()
-        widget = self.new_line(var=var, text=text, required=True, open_func=self.open_ior_prog)
-        grid.addWidget(widget[0] , n, 0)
-        # layout given as (row, col, rowspan, colspan)
-        grid.addWidget(widget[1] , n, 1)
-        grid.addWidget(widget[2] , n, 2)
-        widget[1].setToolTip(tool_tip[var])
-        self.iorsim = widget[1]
-            
+        self.iorsim = self.add_line(var='iorsim', open_func=self.open_ior_prog)
         ### Eclipse executable
-        n += 1
-        var, text = 'eclrun', 'Eclipse program'
-        widget = self.new_line(var=var, text=text, required=True, open_func=self.open_ecl_prog)
-        grid.addWidget(widget[0] , n, 0)
-        grid.addWidget(widget[1] , n, 1)
-        grid.addWidget(widget[2] , n, 2)
-        widget[1].setToolTip(tool_tip[var])
-        self.eclrun = widget[1]
-
+        self.eclrun = self.add_line(var='eclrun', open_func=self.open_ecl_prog)
         ### Workdir        
-        n += 1
-        var, text = 'workdir', 'Case-folder'
-        widget = self.new_line(var=var, text=text, required=False, open_func=self.change_workdir, button_text='Change')
-        grid.addWidget(widget[0] , n, 0)
-        grid.addWidget(widget[1] , n, 1)
-        grid.addWidget(widget[2] , n, 2)
-        widget[1].setReadOnly(True) 
-        widget[1].setToolTip(tool_tip[var])
-        self.workdir = widget[1]
-
+        self.workdir = self.add_line(var='workdir', open_func=self.open_ecl_prog)
+        self.workdir.setReadOnly(True)
         ### Savedir        
-        n += 1
-        var, text = 'savedir', 'Download-folder'
-        widget = self.new_line(var=var, text=text, required=False, open_func=self.change_savedir, button_text='Change')
-        grid.addWidget(widget[0] , n, 0)
-        grid.addWidget(widget[1] , n, 1)
-        grid.addWidget(widget[2] , n, 2)
-        widget[1].setReadOnly(True) 
-        widget[1].setToolTip(tool_tip[var])
-        self.savedir = widget[1]
-
-        ### Space
-        n += 1
-        grid.addWidget(QLabel(), n, 0)
+        self.savedir = self.add_line(var='savedir', open_func=self.change_savedir, button_text='Change')
+        self.savedir.setReadOnly(True)
 
         ### Input options
-        n += 1
-        label = QLabel()
-        label.setText('Input options')
-        grid.addWidget(label, n, 0)
+        self.add_heading()
+        self.add_heading('Input options')
         ### Check IORSim input format
-        n += 1
-        layout = QGridLayout()
-        grid.addLayout(layout, n, 1)
-        var, text = 'check_input_kw', 'Check IORSim input file'
-        self.check_ior = self.new_box(var=var, text=text)
-        self.check_ior.setToolTip(tool_tip[var])
-        layout.addWidget(self.check_ior, 0, 0)
-
-        ### Space
-        n += 1
-        grid.addWidget(QLabel(), n, 0)
+        self.check_ior = self.new_checkbox('check_input_kw')
+        self.add_items((self.check_ior,))
 
         ### Output options
-        n += 1
-        label = QLabel()
-        label.setText('Output options')
-        grid.addWidget(label, n, 0)
-        ### Convert
-        n += 1
-        layout = QGridLayout()
-        grid.addLayout(layout, n, 1)
-        var, text = 'convert', 'Convert to unformatted output'
-        self.convert = self.new_box(var=var, text=text)
-        self.convert.setToolTip(tool_tip[var])
-        layout.addWidget(self.convert, 0, 0)
-        var, text = 'del_convert', 'Delete original after convert'
-        self.del_convert = self.new_box(var=var, text=text)
-        self.del_convert.setToolTip(tool_tip[var])
-        layout.addWidget(self.del_convert, 0, 1)
-        ### Merge
-        var, text = 'merge', 'Merge Eclipse and IORSim output'
-        self.merge = self.new_box(var=var, text=text)
-        self.merge.setToolTip(tool_tip[var])
-        layout.addWidget(self.merge, 1, 0)
-        var, text = 'del_merge', 'Delete originals after merge'
-        self.del_merge = self.new_box(var=var, text=text)
-        self.del_merge.setToolTip(tool_tip[var])
-        layout.addWidget(self.del_merge, 1, 1)
-
-        ### Space
-        n += 1
-        grid.addWidget(QLabel(), n, 0)
+        self.add_heading()
+        self.add_heading('Output options')
+        ### Convert and merge
+        boxes = [self.new_checkbox(var) for var in ('convert', 'del_convert', 'merge', 'del_merge')]
+        self.add_items(boxes, nrow=2)
+        self.convert, self.del_convert, self.merge, self.del_merge = boxes
 
         ### Backward options
-        n += 1
-        label = QLabel()
-        label.setText('Backward options')
-        grid.addWidget(label, n, 0)
-        ### Check UNRST
-        n += 1
-        layout = QGridLayout()
-        grid.addLayout(layout, n, 1)
-        var, text = 'unrst', 'Confirm flushed UNRST-file before suspending Eclipse'
-        self.unrst = self.new_box(var=var, text=text)
-        self.unrst.setToolTip(tool_tip[var])
-        layout.addWidget(self.unrst, 0, 0)
-        ### Check RFT
-        var, text = 'rft', 'Confirm flushed RFT-file before suspending Eclipse'
-        self.rft = self.new_box(var=var, text=text)
-        self.rft.setToolTip(tool_tip[var])
-        layout.addWidget(self.rft, 1, 0)
-        ### Stop child processes
-        var, text = 'stop_child', 'Supend all child processes'
-        self.stop_child = self.new_box(var=var, text=text)
-        self.stop_child.setToolTip(tool_tip[var])
-        self.stop_child.setEnabled(False)
-        layout.addWidget(self.stop_child, 2, 0)
+        self.add_heading()
+        self.add_heading('Backward options')
+        ### Check UNRST, check RFT, stop child processes
+        boxes = [self.new_checkbox(var) for var in ('unrst', 'rft', 'stop_child')]
+        self.add_items(boxes, nrow=3)
+        self.unrst, self.rft, self.stop_child = boxes
+        self.expert.append(self.stop_child)
+
+        ### Log options
+        self.add_heading()
+        self.add_heading('Log options')
+        ### Log verbosity level 
+        var = 'log_level'
+        self.log_level = self.new_combobox(var=var, width=50, values=[str(i) for i in range(LOG_LEVEL_MIN, LOG_LEVEL_MAX+1)])
+        self.add_items((self.log_level,))
 
         # Space
-        n += 1
-        grid.addWidget(QLabel(), n, 0)
-
+        self.add_heading()
         ### OK / Cancel buttons
-        n += 1
+        self.line += 1
         yes_no = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         self.yes_no_btns = QDialogButtonBox(yes_no)
-        grid.addWidget(self.yes_no_btns, n, 0, 1, 3)
+        self.grid.addWidget(self.yes_no_btns, self.line, 0, 1, 3)
         self.yes_no_btns.accepted.connect(self.on_OK_click)
         self.yes_no_btns.rejected.connect(self.reject)
+        self.yes_no_btns.setFocus()
         
+    #-----------------------------------------------------------------------
+    def add_items(self, items, nrow=1):
+    #-----------------------------------------------------------------------
+        self.line += 1
+        layout = QGridLayout()
+        self.grid.addLayout(layout, self.line, 1)
+        ncol = int(len(items)/nrow)
+        for i,item in enumerate(items):
+            col, row = i%ncol, int(i/ncol)
+            if item.isWidgetType():
+                layout.addWidget(item, row, col)
+            else:
+                layout.addLayout(item, row, col)
+
 
     #-----------------------------------------------------------------------
-    def new_box(self, var=None, text='', required=False):
+    def new_combobox(self, width=None, var=None, values=[]):             # settings
     #-----------------------------------------------------------------------
-        if required:
-            self.required.append(var)
-        box = QCheckBox(text)
+        v = self.vars[var]
+        layout = QHBoxLayout()
+        box = QComboBox()
+        box.setToolTip(v.tip)
+        width and box.setFixedWidth(width)
+        layout.addWidget(box)
+        label = QLabel(v.text)
+        label.setToolTip(v.tip)
+        layout.addWidget(label)
+        box.addItems(values)
+        self._get[var] = box.currentText
+        self._set[var] = box.setCurrentText
+        return layout
+
+    #-----------------------------------------------------------------------
+    def new_checkbox(self, var=None):             # settings
+    #-----------------------------------------------------------------------
+        v = self.vars[var]
+        box = QCheckBox(v.text)
+        box.setToolTip(v.tip)
         self._get[var] = box.isChecked
         self._set[var] = box.setChecked
-        self.set_default(var)
         return box
 
+
     #-----------------------------------------------------------------------
-    def new_line(self, var=None, text='', required=False, open_func=None, button_text='Open'):
+    def add_line(self, var=None, open_func=None, button_text='Open'):    # settings
     #-----------------------------------------------------------------------
-        if required:
-            self.required.append(var)
+        self.line += 1
+        v = self.vars[var]
         label = QLabel()
-        label.setText(text)
+        self.grid.addWidget(label, self.line, 0)
+        label.setText(v.text)
+        label.setToolTip(v.tip)
         line = QLineEdit()
-        #line.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding )
-        #line.setMinimumSize(100,25)
+        self.grid.addWidget(line, self.line, 1)
+        line.setToolTip(v.tip)
         self._get[var] = line.text 
         self._set[var] = line.setText
-        self.set_default(var)
-        button = False
         if open_func:
             button = QPushButton(button_text)
-            #button = QDialogButtonBox(QDialogButtonBox.StandardButton.Open)
+            self.grid.addWidget(button, self.line, 2)
             button.clicked.connect(open_func)
-        if button:
-            return label, line, button
-        else:
-            return label, line
+        return line
 
         
     #-----------------------------------------------------------------------
-    def set_default(self, var):
+    def set_default(self):                                # settings
     #-----------------------------------------------------------------------
-        if var in self.default:
-            self._set[var](self.default[var])
+        for k,v in self.vars.items():
+            self._set[k](v.default)
         
     #-----------------------------------------------------------------------
-    def change_workdir(self):
+    def change_workdir(self):                                  # settings
     #-----------------------------------------------------------------------
         dirname = QFileDialog.getExistingDirectory(self, 'Locate or create a directory for the case-files', 
                                                         str(Path.cwd()), QFileDialog.ShowDirsOnly)
@@ -1223,7 +1218,7 @@ class Settings(QDialog):
             #self.restart_now()
 
     #-----------------------------------------------------------------------
-    def change_savedir(self):
+    def change_savedir(self):                             # settings
     #-----------------------------------------------------------------------
         title = 'Choose a download location for the new version'
         default = self.get('savedir') or str(Path.cwd())
@@ -1232,7 +1227,7 @@ class Settings(QDialog):
             self._set['savedir'](folder)
 
     #-----------------------------------------------------------------------
-    def restart_now(self):
+    def restart_now(self):                                 # settings
     #-----------------------------------------------------------------------
         msg = f'The application must restart to apply the new case directory. Restart now?'
         restart = User_input(self, title='Restart application?', head=msg)
@@ -1240,7 +1235,7 @@ class Settings(QDialog):
         restart.open()
 
     #-----------------------------------------------------------------------
-    def open_ior_prog(self):
+    def open_ior_prog(self):                                 # settings
     #-----------------------------------------------------------------------
         fname = open_file_dialog(self, 'Locate IORSim program', 'All Files (*)')
         if fname:
@@ -1252,19 +1247,26 @@ class Settings(QDialog):
             self._set['iorsim'](fname)
             
     #-----------------------------------------------------------------------
-    def open_ecl_prog(self):
+    def open_ecl_prog(self):                                  # settings
     #-----------------------------------------------------------------------
         fname = open_file_dialog(self, 'Locate eclrun program', 'All Files (*)')
         if fname:
             self._set['eclrun'](fname)
 
     #-----------------------------------------------------------------------
-    def on_OK_click(self):
+    def on_OK_click(self):                                # settings
     #-----------------------------------------------------------------------
-        if self.save():
-            self.done(1)
-            #self.close()
-        
+        self.done(1)
+        if not self.save():
+            self.parent.show_message_text(f"WARNING Unable to save settings-file {self.file}")
+
+
+    #-----------------------------------------------------------------------
+    def done(self, value):                                # settings
+    #-----------------------------------------------------------------------
+        self.set_expert_mode(False)
+        super().done(value)
+
     #-----------------------------------------------------------------------
     def save(self):                                      # settings
     #-----------------------------------------------------------------------
@@ -1424,6 +1426,11 @@ class main_window(QMainWindow):                                    # main_window
                                          func=self.view_iorsim_log, checkable=True)
         self.py_log_act = create_action(self, text='Application log', icon='script-attribute.png',
                                         func=self.view_program_log, checkable=True)
+        #self.log_level_act = [create_action(self, text=str(i), func=lambda o=self: print(o.text()), checkable=True) for i in range(3)]
+        #self.log_level_act = []
+        #self.log_level_act.append( create_action(self, text='1', func=lambda: print(1), checkable=True) )
+        #self.log_level_act.append( create_action(self, text='2', func=lambda: print(2), checkable=True) )
+        #self.log_level_act.append( create_action(self, text='3', func=lambda: print(3), checkable=True) )
                 
         
     #-----------------------------------------------------------------------
@@ -1454,7 +1461,13 @@ class main_window(QMainWindow):                                    # main_window
         view_menu.addSeparator()
         for act in (self.ecl_log_act, self.ior_log_act, self.py_log_act):
             view_menu.addAction(act)
-            self.view_ag.addAction(act)        
+            self.view_ag.addAction(act) 
+        # view_menu.addSeparator()
+        # log_level_menu = view_menu.addMenu('Log level')
+        # self.log_level_group = QActionGroup(self)
+        # for act in self.log_level_act:
+        #     log_level_menu.addAction(act)
+        #     self.log_level_group.addAction(act)
         help_menu = menu.addMenu('&Help')
         help_menu.addAction(self.iorsim_guide_act)
         help_menu.addAction(self.script_guide_act)
@@ -1466,7 +1479,8 @@ class main_window(QMainWindow):                                    # main_window
         #     self.download_act.setStatusTip(self.download_act.statusTip() + ' (only available for compiled version)')
         help_menu.addSeparator()
         help_menu.addAction(self.about_act)
-        
+
+
     #-----------------------------------------------------------------------
     def about_app(self):
     #-----------------------------------------------------------------------
@@ -1678,6 +1692,8 @@ class main_window(QMainWindow):                                    # main_window
         self.plot = Plot() 
         self.editor = Editor(name='editor', save_func=self.prepare_case)
         self.log_viewer = Editor(name='log_viewer', read_only=True)
+        #self.app_log_viewer = Editor(name='app_log_viewer', read_only=True)
+        #self.app_log_viewer.editor_.set_log_value_getter(self.settings._get['log_level'])
         # Plot is the default view at startup
         self.layout.addWidget(self.plot, *self.position['plot'])
 
@@ -1697,9 +1713,11 @@ class main_window(QMainWindow):                                    # main_window
         
         
     #-----------------------------------------------------------------------
-    def save_input(self):                                   # main_window
+    def save_input_values(self):                                   # main_window
     #-----------------------------------------------------------------------
+        """ Save the current input values in a cache-file """
         self.input_file.touch(exist_ok=True)
+        #print(self.input_file)
         with open(self.input_file, 'w') as f:
             f.write('# This is an input-file for ior2ecl_GUI.py, do not edit.\n')
             #for var,val in self.input.items():
@@ -2143,6 +2161,7 @@ class main_window(QMainWindow):                                    # main_window
         case = self.case
         self.input['root'] = self.case = None
         self.max_3_checked = []
+        # if self.current_viewer() in (self.editor, self.log_viewer, self.app_log_viewer):
         if self.current_viewer() in (self.editor, self.log_viewer):
             self.view_file(None)
         # Delete case folder
@@ -2707,14 +2726,14 @@ class main_window(QMainWindow):                                    # main_window
         self.view_input_file(ext='.SCH', title='Schedule file for backward runs', comment='--', keywords=[globals, common])
         
     #-----------------------------------------------------------------------
-    def view_log(self, logfile, title=None):                   # main_window
+    def view_log(self, logfile, title=None, viewer=None):       # main_window
     #-----------------------------------------------------------------------
         if not self.case:
             self.sender().setChecked(False)
             self.sender().parent().missing_case_error(tag='log: ')
             return False
         self.log_file = Path(self.case).parent/logfile
-        self.view_file(self.log_file, viewer=self.log_viewer, title=title)
+        self.view_file(self.log_file, viewer=viewer, title=title)
         #self.editor.save_btn.setEnabled(False)
         #self.editor.undo_btn.setEnabled(False)
         #self.editor.redo_btn.setEnabled(False)
@@ -2722,23 +2741,25 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_eclipse_log(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_log('eclipse.log', title='ECLIPSE logfile')
+        self.view_log('eclipse.log', title='ECLIPSE logfile', viewer=self.log_viewer)
         
     #-----------------------------------------------------------------------
     def view_iorsim_log(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_log('iorsim.log', title='IORSim logfile')
+        self.view_log('iorsim.log', title='IORSim logfile', viewer=self.log_viewer)
     
     #-----------------------------------------------------------------------
     def view_program_log(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_log('ior2ecl.log', title='Application logfile')
+        #self.view_log('ior2ecl.log', title='Application logfile', viewer=self.app_log_viewer)
+        self.view_log('ior2ecl.log', title='Application logfile', viewer=self.log_viewer)
     
     #-----------------------------------------------------------------------
-    def update_log(self):                                # main_window
+    def update_log(self, viewer):                                # main_window
     #-----------------------------------------------------------------------
         if self.log_file:
-            self.log_viewer.update(self.log_file)
+            # self.log_viewer.update(self.log_file)
+            viewer.update(self.log_file)
     
     #-----------------------------------------------------------------------
     def view_plot(self):                                # main_window
@@ -3233,8 +3254,9 @@ class main_window(QMainWindow):                                    # main_window
         #print('view:', view)
         if view == self.plot: #'plot':
             self.update_all_plot_lines()
-        elif view == self.log_viewer: #'log_viewer':
-            self.update_log()
+        #elif view in (self.log_viewer, self.app_log_viewer) : #'log_viewer':
+        elif view == self.log_viewer:
+            self.update_log(view)
 
     #-----------------------------------------------------------------------
     def input_OK(self):
@@ -3302,7 +3324,8 @@ class main_window(QMainWindow):                                    # main_window
             #kwargs[opt] = s.get[opt]()
             kwargs[opt] = s.get(opt)
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get('iorsim'), eclexe=s.get('eclrun'), 
-                                 stop_children=s.get('stop_child'), days_box=self.days_box, **kwargs)
+                                 stop_children=s.get('stop_child'), days_box=self.days_box, verbose=int(s.get('log_level')),
+                                 **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
         self.worker.signals.progress.connect(self.update_progress)
@@ -3361,7 +3384,7 @@ class main_window(QMainWindow):                                    # main_window
         if self.download_worker:
             self.download_worker.running = False
             sleep(0.1)
-        self.save_input()
+        self.save_input_values()
         QApplication.quit()
                 
 
