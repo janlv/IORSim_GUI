@@ -1007,13 +1007,16 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         super(Settings, self).__init__(parent)
         self.setWindowTitle('Settings')
+        
+        self.setWindowFlag(Qt.WindowTitleHint)
+        #self.set hatsThis(f'Settings are saved to {file}')
         #self.setMinimumSize(400,400)
         self.setObjectName('settings_window')
         self.parent = parent
         self.line = -1
         self._get = {}
         self._set = {}
-        variable = namedtuple('variable',        'text              default tip                            required')
+        variable = namedtuple('variable',        'text              default tip                            required ')
         self.vars = {'iorsim'         : variable('IORSim program' , None, 'Path to the IORSim executable', True),
                      'eclrun'         : variable('Eclipse program', 'eclrun', "Eclipse command, default is 'eclrun'", True), 
                      'workdir'        : variable('Case-folder', str(default_casedir),'Path to GUI-folder', True),
@@ -1025,8 +1028,8 @@ class Settings(QDialog):
                      'del_merge'      : variable('Delete originals after merge', True, 'Delete the original UNRST-files from Elipse and IORSim if successfully merged', False),
                      'unrst'          : variable('Confirm flushed UNRST-file before suspending Eclipse', True, 'Check that the UNRST-file is properly flushed before suspending Eclipse', False), 
                      'rft'            : variable('Confirm flushed RFT-file before suspending Eclipse', True, 'Check that the RFT-file is properly flushed before suspending Eclipse', False),
-                     'stop_child'     : variable('Supend all child processes', True, 'Stop both Eclipse parent and child process to increase stability (~5% performance drop)', False),
-                     'log_level'      : variable('Verbosity level of the application log', str(LOG_LEVEL), 'A higher value gives more detailed information in the application log', False)}
+                     'stop_child'     : variable("Supend all child processes (Make editable with 'e'-key)", True, 'Stop Eclipse parent and child process to increase stability (~5% performance drop)', False),
+                     'log_level'      : variable('Detail level of the application log', str(LOG_LEVEL), 'A higher value gives a more detailed application log', False)}
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
         self.abs_path = False
@@ -1047,27 +1050,22 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
     def keyPressEvent(self, event):
     #-----------------------------------------------------------------------
-        """ Press e-key to enable/disable expert settings """
+        """ Catch pressed e-key to enable/disable expert settings """
         if not event.isAutoRepeat() and event.key() == Qt.Key_E:
             self.set_expert_mode(not self.expert_mode)
-
+        #if event.key() == Qt.Key_F:
+        #    self.parent.show_message_text(f'INFO Settings are saved in {self.file}')
 
     #-----------------------------------------------------------------------
     def get(self, kw):                                            # settings
     #-----------------------------------------------------------------------
         return self._get[kw]()
 
+
     #-----------------------------------------------------------------------
     def set(self, kw, value):                                     # settings
     #-----------------------------------------------------------------------
         return self._set[kw](value)
-
-
-    #-----------------------------------------------------------------------
-    def add_heading(self, text=''):
-    #-----------------------------------------------------------------------
-        self.line += 1
-        self.grid.addWidget(QLabel(text), self.line, 0)
 
 
     #-----------------------------------------------------------------------
@@ -1080,51 +1078,40 @@ class Settings(QDialog):
         self.grid.setColumnStretch(2,15) 
 
         ### IORSim executable
-        self.iorsim = self.add_line(var='iorsim', open_func=self.open_ior_prog)
+        self.add_line_with_button(var='iorsim', open_func=self.open_ior_prog)
         ### Eclipse executable
-        self.eclrun = self.add_line(var='eclrun', open_func=self.open_ecl_prog)
+        self.add_line_with_button(var='eclrun', open_func=self.open_ecl_prog)
         ### Workdir        
-        self.workdir = self.add_line(var='workdir', open_func=self.open_ecl_prog)
-        self.workdir.setReadOnly(True)
+        self.add_line_with_button(var='workdir', open_func=self.open_ecl_prog)
         ### Savedir        
-        self.savedir = self.add_line(var='savedir', open_func=self.change_savedir, button_text='Change')
-        self.savedir.setReadOnly(True)
+        self.add_line_with_button(var='savedir', open_func=self.change_savedir)
 
         ### Input options
         self.add_heading()
         self.add_heading('Input options')
         ### Check IORSim input format
-        self.check_ior = self.new_checkbox('check_input_kw')
-        self.add_items((self.check_ior,))
+        self.add_items([self.new_checkbox('check_input_kw')])
 
         ### Output options
         self.add_heading()
         self.add_heading('Output options')
         ### Convert and merge
-        boxes = [self.new_checkbox(var) for var in ('convert', 'del_convert', 'merge', 'del_merge')]
-        self.add_items(boxes, nrow=2)
-        self.convert, self.del_convert, self.merge, self.del_merge = boxes
+        self.add_items([self.new_checkbox(var) for var in ('convert', 'del_convert', 'merge', 'del_merge')], nrow=2)
 
         ### Backward options
         self.add_heading()
         self.add_heading('Backward options')
-        ### Check UNRST, check RFT, stop child processes
-        boxes = [self.new_checkbox(var) for var in ('unrst', 'rft', 'stop_child')]
-        self.add_items(boxes, nrow=3)
-        self.unrst, self.rft, self.stop_child = boxes
-        self.expert.append(self.stop_child)
+        boxes = self.add_items([self.new_checkbox(var) for var in ('unrst', 'rft', 'stop_child')], nrow=3)
+        self.expert.append(boxes[2]) # Set 'stop_child' to expert-mode 
 
         ### Log options
         self.add_heading()
         self.add_heading('Log options')
         ### Log verbosity level 
-        var = 'log_level'
-        self.log_level = self.new_combobox(var=var, width=50, values=[str(i) for i in range(LOG_LEVEL_MIN, LOG_LEVEL_MAX+1)])
-        self.add_items((self.log_level,))
+        self.add_items([self.new_combobox(var='log_level', width=30, values=[str(i) for i in range(LOG_LEVEL_MIN, LOG_LEVEL_MAX+1)])])
 
-        # Space
-        self.add_heading()
         ### OK / Cancel buttons
+        self.add_heading()
         self.line += 1
         yes_no = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         self.yes_no_btns = QDialogButtonBox(yes_no)
@@ -1132,7 +1119,15 @@ class Settings(QDialog):
         self.yes_no_btns.accepted.connect(self.on_OK_click)
         self.yes_no_btns.rejected.connect(self.reject)
         self.yes_no_btns.setFocus()
-        
+
+
+    #-----------------------------------------------------------------------
+    def add_heading(self, text=''):
+    #-----------------------------------------------------------------------
+        self.line += 1
+        self.grid.addWidget(QLabel(text), self.line, 0)
+
+
     #-----------------------------------------------------------------------
     def add_items(self, items, nrow=1):
     #-----------------------------------------------------------------------
@@ -1146,7 +1141,7 @@ class Settings(QDialog):
                 layout.addWidget(item, row, col)
             else:
                 layout.addLayout(item, row, col)
-
+        return items
 
     #-----------------------------------------------------------------------
     def new_combobox(self, width=None, var=None, values=[]):             # settings
@@ -1177,17 +1172,17 @@ class Settings(QDialog):
 
 
     #-----------------------------------------------------------------------
-    def add_line(self, var=None, open_func=None, button_text='Open'):    # settings
+    def add_line_with_button(self, var=None, open_func=None, button_text='Change', read_only=True):    # settings
     #-----------------------------------------------------------------------
         self.line += 1
         v = self.vars[var]
-        label = QLabel()
+        label = QLabel(v.text)
         self.grid.addWidget(label, self.line, 0)
-        label.setText(v.text)
         label.setToolTip(v.tip)
         line = QLineEdit()
         self.grid.addWidget(line, self.line, 1)
         line.setToolTip(v.tip)
+        line.setReadOnly(read_only)
         self._get[var] = line.text 
         self._set[var] = line.setText
         if open_func:
@@ -1211,11 +1206,6 @@ class Settings(QDialog):
         if dirname:
             self._set['workdir'](dirname)
             self.parent.update_casedir()
-            #self.parent.set_input_field()
-            #self.save()
-            #self.on_OK_click()
-            #self.parent.reboot()
-            #self.restart_now()
 
     #-----------------------------------------------------------------------
     def change_savedir(self):                             # settings

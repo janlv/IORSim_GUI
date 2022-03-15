@@ -10,6 +10,9 @@ from pathlib import Path
 from shutil import copy
 from .utils import loop_until, safeopen, Timer, silentdelete
 
+CHILD_SEARCH_WAIT = 0.5
+CHILD_SEARCH_LIMIT = 500
+
 #--------------------------------------------------------------------------------
 def catch_permission_error(func):
 #--------------------------------------------------------------------------------
@@ -289,31 +292,32 @@ class Process:                                                              # Pr
 
 
     #--------------------------------------------------------------------------------
-    def get_children(self, raise_error=True, log=False, wait=0.5, limit=500):      # Process
+    def get_children(self, raise_error=True, log=False, wait=CHILD_SEARCH_WAIT, limit=CHILD_SEARCH_LIMIT):      # Process
     #--------------------------------------------------------------------------------
         # looking for child-processes with a name that match the app_name 
         if not self._process:
             if raise_error:
                 raise SystemError('Parent-process missing, unable to look for child-processes')
             else:  
-                return [] 
+                return [], 0
         name = self.app_name.lower()
         # Return if this is the main process
         if self._process.name().lower().startswith(name):
-            return []
+            return [], 0
         found = False
+        time = 0
         for i in range(limit):
             sleep(wait)
             children = self._process.children(recursive=True)
             log is not False and log(children, v=3)
             # Stop if named child process is found
             if any([p.name().lower().startswith(name) for p in children]):
-                log is not False and log(f'Child process found in {wait*i:.1f} seconds', v=2)
                 found = True
+                time = wait*i
                 break
         if not found and raise_error:
             raise SystemError(f'Unable to find child process of {self._name} in {wait*limit:.1f} seconds, aborting...')
-        return children
+        return children, time
 
 
 #====================================================================================
@@ -350,10 +354,10 @@ class runner:                                                               # ru
         self.ext_iface = ext_iface
         self.ext_OK = ext_OK
         self.popen = None
-        self.parent = None
+        self.parent = self.main = None
         self.children = []
+        self.active = []
         self.stop_children = stop_children
-        #print(f'stop_children: {stop_children}')
         self.pipe = pipe
         self.verbose = verbose
         self.timer = timer
@@ -427,14 +431,19 @@ class runner:                                                               # ru
             error_func = self.unexpected_stop_error
         # Parent process
         kwargs = {'app_name':self.name, 'error_func':error_func}
-        self.parent = Process(psutil.Process(pid=self.popen.pid), **kwargs)
-        self.parent.assert_running()
-        self._print(f'Parent process: {self.parent.info()}')
+        self.parent = self.main = Process(psutil.Process(pid=self.popen.pid), **kwargs)
+        self._print(f'Parent process: {self.parent.info()}, ')
+        #self.parent.assert_running()
         # Child processes (if they exists)
-        children = self.parent.get_children(log=self._print)
+        children, time = self.parent.get_children(log=self._print)
         self.children = [Process(c, **kwargs) for c in children]
-        self._print(f'Child process{len(self.children)>1 and "es" or ""}: {", ".join([p.info() for p in self.children])}')
-
+        self._print(f'Child process{len(self.children)>1 and "es" or ""} ({time:.1f} sec): {", ".join([p.info() for p in self.children])}')
+        # Set active and main processes
+        if self.children:
+            self.main = self.children[-1]
+        self.active = [self.parent]
+        if self.stop_children:
+            self.active = self.children + [self.parent]
 
 
     #--------------------------------------------------------------------------------
@@ -442,20 +451,20 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
         return self.log.name
 
+    #--------------------------------------------------------------------------------
+    def log_message(self, msg):                       # runner
+    #--------------------------------------------------------------------------------
+        self._print(msg, v=1, end='')
+        self._print(f' {", ".join([p.info() for p in self.active])}', v=2, end='', tag='')
+        self._print('', v=1, tag='')
 
     #--------------------------------------------------------------------------------
     def suspend(self, check=False, v=1):          # runner
     #--------------------------------------------------------------------------------
-        self._print(f'Suspending {self.parent.info()}', v=v)
-        # Suspend children
-        if self.stop_children:
-            [p.suspend() for p in self.children]
-            if check:
-                [self.wait_for(p.is_sleeping, limit=100) for p in self.children]
-        # Suspend parent
-        self.parent.suspend()
+        self.log_message('Suspend')
+        [p.suspend() for p in self.active]
         if check:
-            self.wait_for(self.parent.is_sleeping, limit=100)
+            [self.wait_for(p.is_sleeping, limit=100) for p in self.active]
         self.print_process_status()
         self.timer and self.timer.stop()
 
@@ -463,15 +472,10 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def resume(self, check=False, v=1):                       # runner
     #--------------------------------------------------------------------------------
-        self._print(f'Resuming {self.parent.info()}', v=v)
-        # Resume parent
-        self.parent.resume()
+        self.log_message('Resume')
+        [p.resume() for p in self.active]
         if check:
-            self.wait_for(self.parent.is_running)
-        # Resume children
-        [p.resume() for p in self.children]
-        if check:
-            [self.wait_for(p.is_running) for p in self.children]
+            [self.wait_for(p.is_running, limit=100) for p in self.active]
         self.print_process_status()
         self.timer and self.timer.start()
 
@@ -480,9 +484,10 @@ class runner:                                                               # ru
     def kill(self):                                                     # runner
     #--------------------------------------------------------------------------------
         # terminate children before parent
-        procs = self.children + (self.parent and [self.parent] or []) 
+        #procs = self.children + (self.parent and [self.parent] or []) 
         try:
-            for p in procs:
+            #for p in procs:
+            for p in self.active:
                 self._print(f'Killing {p.name()}, ', end='')
                 p.kill()
                 self._print('done', tag='')
@@ -492,13 +497,14 @@ class runner:                                                               # ru
                 self._print('access denied!!!', tag='')            
         finally:
             self.children = []
+            self.active = []
             self.parent = None
 
 
-    #--------------------------------------------------------------------------------
-    def process_list(self):
-    #--------------------------------------------------------------------------------
-        return (self.parent and [self.parent] or []) + self.children
+    # #--------------------------------------------------------------------------------
+    # def process_list(self):
+    # #--------------------------------------------------------------------------------
+    #     return (self.parent and [self.parent] or []) + self.children
 
 
     #--------------------------------------------------------------------------------
@@ -540,7 +546,9 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def assert_running_and_stop_if_canceled(self, raise_error=True):
     #--------------------------------------------------------------------------------
-        self.parent.assert_running(raise_error=raise_error)
+        #self.parent.assert_running(raise_error=raise_error)
+        #self.main.assert_running(raise_error=raise_error)
+        [p.assert_running(raise_error=raise_error) for p in self.active]
         self.stop_if_canceled()
 
 
@@ -605,7 +613,7 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def wait_for_process_to_finish(self, v=2, limit=None, pause=None, loop_func=None, msg=None):      # runner
     #--------------------------------------------------------------------------------
-        msg = msg or 'waiting for parent process to finish'
+        msg = msg or 'Waiting for parent process to finish'
         self._print(msg, v=v)
         success = self.wait_for(self.parent.is_not_running, raise_error=False, pause=pause, limit=limit, loop_func=loop_func)
         if not success:
@@ -625,7 +633,7 @@ class runner:                                                               # ru
         self._print(f' ', tag='', v=v)
         self._print('Quitting', v=v)
         self.resume()
-        self.wait_for_process_to_finish(msg='waiting for process to quit', limit=6000, pause=0.01, loop_func=loop_func)
+        self.wait_for_process_to_finish(msg='Waiting for process to quit', limit=6000, pause=0.01, loop_func=loop_func)
         self.log.close()
         self._print('Finished', v=v)
 
@@ -656,12 +664,13 @@ class runner:                                                               # ru
 
         
     #--------------------------------------------------------------------------------
-    def _print(self, txt, v=1, tag=None, **kwargs):                         # runner
+    def _print(self, txt, v=1, tag=True, flush=True, **kwargs):                         # runner
     #--------------------------------------------------------------------------------
-        if txt and v <= self.verbose:
-            if tag==None:
-                tag = self.name + ': '
-            print(tag, txt, file=self.runlog, flush=True, **kwargs)
+        #if txt and v <= self.verbose:
+        if v <= self.verbose:
+            if tag is True:
+                tag = f'{self.name}: '
+            print(tag+txt, file=self.runlog, flush=flush, **kwargs)
 
 
     #--------------------------------------------------------------------------------
