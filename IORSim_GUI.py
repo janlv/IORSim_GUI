@@ -1009,7 +1009,6 @@ class Settings(QDialog):
         self.setWindowTitle('Settings')
         
         self.setWindowFlag(Qt.WindowTitleHint)
-        #self.set hatsThis(f'Settings are saved to {file}')
         #self.setMinimumSize(400,400)
         self.setObjectName('settings_window')
         self.parent = parent
@@ -1108,7 +1107,7 @@ class Settings(QDialog):
         self.add_heading()
         self.add_heading('Log options')
         ### Log verbosity level 
-        self.add_items([self.new_combobox(var='log_level', width=30, values=[str(i) for i in range(LOG_LEVEL_MIN, LOG_LEVEL_MAX+1)])])
+        self.add_items([self.new_combobox(var='log_level', width=50, values=[str(i) for i in range(LOG_LEVEL_MIN, LOG_LEVEL_MAX+1)])])
 
         ### OK / Cancel buttons
         self.add_heading()
@@ -1249,13 +1248,15 @@ class Settings(QDialog):
         self.done(1)
         if not self.save():
             self.parent.show_message_text(f"WARNING Unable to save settings-file {self.file}")
-
+        else:
+            self.parent.update_message(f'Settings saved in {self.file}')
 
     #-----------------------------------------------------------------------
     def done(self, value):                                # settings
     #-----------------------------------------------------------------------
         self.set_expert_mode(False)
         super().done(value)
+
 
     #-----------------------------------------------------------------------
     def save(self):                                      # settings
@@ -1264,13 +1265,14 @@ class Settings(QDialog):
         with open(self.file, 'w') as f:
             f.write('# This is a settings-file for ior2ecl_GUI.py, do not edit.\n')
             for var,val in self._get.items():
-                if var in self.required and len(val())==0:
-                    show_message(self, 'error', text=var+' cannot be empty!')
-                    return False
+                # if var in self.required and len(val())==0:
+                #     show_message(self, 'error', text=var+' cannot be empty!')
+                #     return False
                 f.write(f'{var} {val()}\n')
                 #print(f'{var} {val()}')
         return True
     
+
     #-----------------------------------------------------------------------
     def load(self):                                      # settings
     #-----------------------------------------------------------------------

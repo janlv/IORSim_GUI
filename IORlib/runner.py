@@ -510,13 +510,16 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def print_process_status(self, v=2):
     #--------------------------------------------------------------------------------
-        self._print(', '.join( [str(p.current_status()) for p in self.process_list()] ), v=v)
+        #self._print(', '.join( [str(p.current_status()) for p in self.process_list()] ), v=v)
+        self._print(', '.join( [str(p.current_status()) for p in self.active] ), v=v)
 
 
     #--------------------------------------------------------------------------------
     def print_suspend_errors(self, v=1):
     #--------------------------------------------------------------------------------
-        self._print(', '.join([p.suspend_errors() for p in self.process_list() if p.suspend_errors()]), v=v)
+        #self._print(', '.join([p.suspend_errors() for p in self.process_list() if p.suspend_errors()]), v=v)
+        errors = (p.suspend_errors() for p in self.active)
+        self._print(', '.join([e for e in errors if e]), v=v)
 
 
     #--------------------------------------------------------------------------------
