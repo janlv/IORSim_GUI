@@ -14,8 +14,9 @@ from shutil import copy as shutil_copy
 from traceback import print_exc as trace_print_exc, format_exc as  trace_format_exc
 from re import search, compile
 from os.path import relpath
+from threading import Thread, Timer as th_timer
 
-from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, timer_thread, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import runner
 from IORlib.ECL import check_blocks, get_included_files, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
 
@@ -23,10 +24,11 @@ __version__ = '2.25'
 __author__ = 'Jan Ludvig Vinningland'
 
 # Constants
-MAX_ITERATIONS = 1e5
+MAX_ITERATIONS = 1e5   # Limit iterations to avoid time consuming creation of interface-files
 LOG_LEVEL_MAX = 3
 LOG_LEVEL_MIN = 1
 LOG_LEVEL = 3
+ECL_ALIVE_LIMIT = 90 # Seconds to wait before Eclipse is suspended (if option is on)
 
 
 #====================================================================================
@@ -169,12 +171,11 @@ class backward_mixin:
 
 
 
-
 #====================================================================================
 class ecl_backward(backward_mixin, eclipse):                           # ecl_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, check_unrst=True, check_rft=True, rft_size=False, **kwargs):
+    def __init__(self, check_unrst=True, check_rft=True, rft_size=False, keep_alive=True, **kwargs):
     #--------------------------------------------------------------------------------
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', **kwargs)
         self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
@@ -184,6 +185,10 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
         self.check_unrst = check_unrst
         self.check_rft = check_rft
         self.rft_size = rft_size
+        self.delayed_suspend = False
+        if keep_alive:
+            self.delayed_suspend = timer_thread(limit=ECL_ALIVE_LIMIT, func=super().resume)
+        # self.keep_alive = keep_alive
         self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
         self.rft_start_size = 0
@@ -235,16 +240,48 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
         if self.rft_size:
             self.init_RFT_size_check(rft_wells, nwell_max)
 
+    #--------------------------------------------------------------------------------
+    def resume(self):
+    #--------------------------------------------------------------------------------
+        # if self.delayed_suspend and self.delayed_suspend.is_alive():
+        #     self.delayed_suspend.cancel()
+        #     self._print('Delayed suspend cancelled', v=2)
+        if self.delayed_suspend and self.delayed_suspend.is_alive():
+            #self.delayed_suspend.cancel()
+            self._print('Delayed suspend cancelled', v=2)
+        else:
+            # Only resume if already suspended
+            super().resume()
+
+    #--------------------------------------------------------------------------------
+    def suspend(self):
+    #--------------------------------------------------------------------------------
+        # if self.keep_alive:
+        #     self.delayed_suspend = th_timer(ECL_ALIVE_LIMIT, super().suspend)
+        #     self.delayed_suspend.start()
+        #     self._print(f'Suspend delayed {ECL_ALIVE_LIMIT} seconds', v=2)
+        if self.delayed_suspend:
+            self.delayed_suspend.start()
+            self._print(f'Suspend delayed {ECL_ALIVE_LIMIT} seconds', v=2)
+        else:
+            super().suspend()
 
     #--------------------------------------------------------------------------------
     def run_one_step(self, satnum_file):                               # ecl_backward
     #--------------------------------------------------------------------------------
         if self.rft_size:
             self.rft_start_size = self.rft.stat().st_size
-        ### run Eclipse
+        # Run Eclipse
         self.interface_file(self.n).copy(satnum_file, delete=True)
         self.OK_file().create_empty()
         self.resume()
+        # # Stop delayed suspend if keep_alive is True
+        # if self.delayed_suspend and self.delayed_suspend.is_alive():
+        #     self.delayed_suspend.cancel()
+        #     self._print('Delayed suspend cancelled', v=2)
+        # else:
+        #     # Only resume if already suspended
+        #     self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
         if self.check_unrst:
             self.check_UNRST_file()
@@ -254,6 +291,12 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
             else:
                 self.check_RFT_file(nwell_max=self.nwell)
         self.suspend()
+        # if self.keep_alive:
+        #     self.delayed_suspend = th_timer(ECL_ALIVE_LIMIT, self.suspend)
+        #     self.delayed_suspend.start()
+        #     self._print(f'Suspend delayed {ECL_ALIVE_LIMIT} seconds', v=2)
+        # else:
+        #     self.suspend()
         if self.delete_interface:
             self.interface_file(self.n).delete()
         self.n += 1
@@ -333,6 +376,13 @@ class ecl_backward(backward_mixin, eclipse):                           # ecl_bac
         self.interface_file(self.n).create_from_string('END')
         self.OK_file().create_empty()
         super().quit()
+        self.delayed_suspend and self.delayed_suspend.stop()
+
+    #--------------------------------------------------------------------------------
+    def kill(self):                                                    # ecl_backward
+    #--------------------------------------------------------------------------------
+        super().kill()
+        self.delayed_suspend and self.delayed_suspend.stop()
 
 
 
@@ -952,6 +1002,12 @@ class simulation:
             ecl.run_one_step(ior.satnum)
             # Run IORSim to prepare satnum input for the next Eclipse run
             self.update.status(run=ior, mode=self.mode)
+            # for i in range(120):
+            #     sleep(1)
+            #     if ecl.main.is_not_running():
+            #         #raise SystemError(f'ECLIPSE stopped after {i} seconds!')
+            #         print(f'ECLIPSE stopped after {i} seconds!')
+            #         break
             ior.run_one_step()
             ecl.t = ior.t = self.schedule.update()
             self.print2log(f'days = {ior.t:.3f}/{ior.T}')
@@ -1210,7 +1266,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-only_convert',   help='Only convert+merge and exit', action='store_true')
     parser.add_argument('-only_merge',     help='Only merge and exit', action='store_true')
     parser.add_argument('-delete',         help='Delete obsolete output files after convert and merge has finished', action='store_true')
-    parser.add_argument('-alive_children', help='Only stop parent-processes (approx. 5%% faster, but might be more unstable)', action='store_true')
+    parser.add_argument('-keep_alive',     help=f'Stop Eclipse only if idle for more than {ECL_ALIVE_LIMIT} seconds (approx. 5%% faster if not stopped)', action='store_true')
     parser.add_argument('-check_input',    help='Check IORSim input file keywords', action='store_true', dest='check_input_kw')
     args = vars(parser.parse_args())
     # Look for case in case_dir if root is not a file
@@ -1233,7 +1289,7 @@ def parse_input(case_dir=None, settings_file=None):
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
            check_unrst=True, check_rft=True, rft_size=False, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
-           stop_children=True, only_eclipse=False, only_iorsim=False, check_input=False, 
+           keep_alive=True, only_eclipse=False, only_iorsim=False, check_input=False, 
            verbose=LOG_LEVEL):
 #--------------------------------------------------------------------------------
     #----------------------------------------
@@ -1275,7 +1331,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
     sim = simulation(root=root, time=time, iorexe=iorexe, eclexe=eclexe, 
                      check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size,  
                      keep_files=keep_files, progress=progress, status=status, message=message, to_screen=to_screen,
-                     convert=convert, merge=merge, delete=delete, stop_children=stop_children,
+                     convert=convert, merge=merge, delete=delete, keep_alive=keep_alive,
                      runs=runs, mode=mode, check_input_kw=check_input, verbose=verbose)
 
     if not sim.ready():
@@ -1301,7 +1357,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=args['rft_size'], 
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
-           stop_children=(not args['alive_children']), only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
+           keep_alive=(args['keep_alive']), only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
            check_input=args['check_input_kw'], verbose=args['v'])
     os_exit(0)
 

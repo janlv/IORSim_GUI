@@ -42,7 +42,7 @@ def ignore_process_error(func):
         try:
             return func(*args, **kwargs)
         except (psutil.NoSuchProcess, ProcessLookupError):
-            return False
+            return f'{args[0]._name} is missing'
     return inner
 
 #--------------------------------------------------------------------------------
@@ -299,23 +299,23 @@ class Process:                                                              # Pr
             if raise_error:
                 raise SystemError('Parent-process missing, unable to look for child-processes')
             else:  
-                return [], 0
+                return [], None
         name = self.app_name.lower()
         # Return if this is the main process
         if self._process.name().lower().startswith(name):
-            return [], 0
-        found = False
-        time = 0
+            return [], None
+        #found = False
+        time = None
         for i in range(limit):
             sleep(wait)
             children = self._process.children(recursive=True)
             log is not False and log(children, v=3)
             # Stop if named child process is found
             if any([p.name().lower().startswith(name) for p in children]):
-                found = True
+                #found = True
                 time = wait*i
                 break
-        if not found and raise_error:
+        if time is None and raise_error:
             raise SystemError(f'Unable to find child process of {self._name} in {wait*limit:.1f} seconds, aborting...')
         return children, time
 
@@ -354,9 +354,6 @@ class runner:                                                               # ru
         self.ext_iface = ext_iface
         self.ext_OK = ext_OK
         self.popen = None
-        self.parent = self.main = None
-        self.children = []
-        self.active = []
         self.stop_children = stop_children
         self.pipe = pipe
         self.verbose = verbose
@@ -370,12 +367,21 @@ class runner:                                                               # ru
         self.T = int(T)   # Max time
         self.N = int(N)   # Max number of steps
         self.starttime = None
+        self.reset_processes()
 
 
     #-----------------------------------------------------------------------
     def set_time(self, time):
     #-----------------------------------------------------------------------
         self.T = int(time)
+
+    #-----------------------------------------------------------------------
+    def reset_processes(self):
+    #-----------------------------------------------------------------------
+        self.parent = None
+        self.main = None
+        self.children = []
+        self.active = []
 
 
     #--------------------------------------------------------------------------------
@@ -432,12 +438,12 @@ class runner:                                                               # ru
         # Parent process
         kwargs = {'app_name':self.name, 'error_func':error_func}
         self.parent = self.main = Process(psutil.Process(pid=self.popen.pid), **kwargs)
-        self._print(f'Parent process: {self.parent.info()}, ')
+        self._print(f'Parent process : {self.parent.info()}, ')
         #self.parent.assert_running()
         # Child processes (if they exists)
         children, time = self.parent.get_children(log=self._print)
         self.children = [Process(c, **kwargs) for c in children]
-        self._print(f'Child process{len(self.children)>1 and "es" or ""} ({time:.1f} sec): {", ".join([p.info() for p in self.children])}')
+        self._print('Child process' + (len(self.children)>1 and 'es' or '') + (time is not None and f' ({time:.1f} sec)' or '') + f' : {", ".join([p.info() for p in self.children])}')
         # Set active and main processes
         if self.children:
             self.main = self.children[-1]
@@ -452,14 +458,14 @@ class runner:                                                               # ru
         return self.log.name
 
     #--------------------------------------------------------------------------------
-    def log_message(self, msg):                       # runner
+    def log_message(self, msg):                                              # runner
     #--------------------------------------------------------------------------------
         self._print(msg, v=1, end='')
         self._print(f' {", ".join([p.info() for p in self.active])}', v=2, end='', tag='')
         self._print('', v=1, tag='')
 
     #--------------------------------------------------------------------------------
-    def suspend(self, check=False, v=1):          # runner
+    def suspend(self, check=False, v=1):                                     # runner
     #--------------------------------------------------------------------------------
         self.log_message('Suspend')
         [p.suspend() for p in self.active]
@@ -470,7 +476,7 @@ class runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def resume(self, check=False, v=1):                       # runner
+    def resume(self, check=False, v=1):                                      # runner
     #--------------------------------------------------------------------------------
         self.log_message('Resume')
         [p.resume() for p in self.active]
@@ -481,24 +487,24 @@ class runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def kill(self):                                                     # runner
+    def kill(self, v=2):                                                     # runner
     #--------------------------------------------------------------------------------
         # terminate children before parent
         #procs = self.children + (self.parent and [self.parent] or []) 
-        try:
-            #for p in procs:
-            for p in self.active:
-                self._print(f'Killing {p.name()}, ', end='')
+        for p in self.active:
+            try:
+                self._print(f'Killing {p.name()}...', end='', v=v)
                 p.kill()
-                self._print('done', tag='')
-        except (psutil.NoSuchProcess, ProcessLookupError):
-                self._print('process already gone', tag='')            
-        except psutil.AccessDenied:
-                self._print('access denied!!!', tag='')            
-        finally:
-            self.children = []
-            self.active = []
-            self.parent = None
+                self._print('done', tag='', v=v)
+            except (psutil.NoSuchProcess, ProcessLookupError):
+                self._print('process already gone', tag='', v=v)            
+            except psutil.AccessDenied:
+                self._print('access denied!!!', tag='', v=v)            
+        self.reset_processes()
+        #finally:
+        # self.children = []
+        # self.active = []
+        # self.parent = None
 
 
     # #--------------------------------------------------------------------------------
@@ -512,13 +518,15 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
         #self._print(', '.join( [str(p.current_status()) for p in self.process_list()] ), v=v)
         self._print(', '.join( [str(p.current_status()) for p in self.active] ), v=v)
+        # status = [str(p.current_status()) for p in self.active if p]
+        # self._print(', '.join( [s for s in status if s] ), v=v)
 
 
     #--------------------------------------------------------------------------------
     def print_suspend_errors(self, v=1):
     #--------------------------------------------------------------------------------
         #self._print(', '.join([p.suspend_errors() for p in self.process_list() if p.suspend_errors()]), v=v)
-        errors = (p.suspend_errors() for p in self.active)
+        errors = (p.suspend_errors() for p in self.active if p)
         self._print(', '.join([e for e in errors if e]), v=v)
 
 
@@ -623,11 +631,14 @@ class runner:                                                               # ru
             time = (limit or 0)*(pause or 0)/60
             self._print(' ', tag='')
             self._print(f'process did not finish within {time:.2f} minutes and will be killed', v=v)
-            self._print([p.proc.name() for p in self.process_list()])
+            # self._print([p.proc.name() for p in self.process_list()])
+            self._print([p.proc.name() for p in self.active if p])
             self.kill()
         else:
-            self.parent = None
-            self.children = []
+            self.reset_processes()
+            # self.parent = None
+            # self.children = []
+            # self.active = []
 
 
     #--------------------------------------------------------------------------------
@@ -672,8 +683,8 @@ class runner:                                                               # ru
         #if txt and v <= self.verbose:
         if v <= self.verbose:
             if tag is True:
-                tag = f'{self.name}: '
-            print(tag+txt, file=self.runlog, flush=flush, **kwargs)
+                tag = f'{self.name}:'
+            print(tag, txt, file=self.runlog, flush=flush, **kwargs)
 
 
     #--------------------------------------------------------------------------------
