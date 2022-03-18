@@ -12,7 +12,8 @@ def loop_run(cases, times):
     n = 0
     for case,time in zip(cases, times):
         print(f'CASE {n} : {case}\n--------------------------')
-        runsim(root=cdir/case/case, time=time, iorexe=iorexe)
+        runsim(root=cdir/case/case, time=time, iorexe=iorexe, to_screen=False, 
+               verbose=1, ecl_alive=False, ior_alive=False)
         n += 1
 
 if __name__ == '__main__':

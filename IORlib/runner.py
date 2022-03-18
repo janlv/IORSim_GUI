@@ -1,6 +1,13 @@
 
 # -*- coding: utf-8 -*-
 
+# Constants
+CHILD_SEARCH_WAIT = 0.5    # Seconds to sleep during child process search
+CHILD_SEARCH_LIMIT = 500   # Total number of iterations in child process search 
+SUSPEND_TIMER_PRECICION = 0.1 # Precision of the delayed-suspend-timer in seconds
+
+DEBUG = False
+
 from datetime import datetime
 from subprocess import DEVNULL, Popen, PIPE, STDOUT
 import psutil
@@ -8,10 +15,7 @@ from shutil import which
 from time import sleep
 from pathlib import Path 
 from shutil import copy
-from .utils import loop_until, safeopen, Timer, silentdelete
-
-CHILD_SEARCH_WAIT = 0.5
-CHILD_SEARCH_LIMIT = 500
+from .utils import loop_until, safeopen, Timer, silentdelete, timer_thread
 
 #--------------------------------------------------------------------------------
 def catch_permission_error(func):
@@ -132,31 +136,6 @@ class Control_file:
             return None
 
 
-# #--------------------------------------------------------------------------------
-# def search_for_named_children(process, name, log=False, limit=10):        
-# #--------------------------------------------------------------------------------
-#     found = False
-#     for i in range(limit):
-#         sleep(0.5)
-#         children = process.children(recursive=True)
-#         log is not False and print(children, file=log)
-#         # Stop if named child process is found
-#         if any([p.name().lower().startswith(name) for p in children]):
-#             found = True
-#             break
-#     return found, children
-
-# #--------------------------------------------------------------------------------
-# def search_for_named_process(name, log=False, limit=10):         
-# #--------------------------------------------------------------------------------
-#     procs = []
-#     for p in psutil.process_iter(['name', 'exe', 'username']):
-#         if log is not False and 'ecl' in p.info['name'].lower():
-#             print(f"{p}, username={p.info['username']}", file=log)
-#         if p.info['exe'] and Path(p.info['exe']).stem.lower() == name:
-#             procs.append(p)
-#     return procs
-
 
 #====================================================================================
 class Process:                                                              # Process
@@ -169,15 +148,28 @@ class Process:                                                              # Pr
         self._pid = proc.pid
         #self._user = proc.username()
         self._name = proc.name()
-        self.app_name = app_name
+        self._app_name = app_name
         self._suspend_errors = 0
         self._error_func = error_func or self.raise_error
         #self.name = proc.name()
+        DEBUG and print(f'Creating {self}')
 
     #--------------------------------------------------------------------------------
-    def raise_error(self):                                                      # Process
+    def __str__(self):                                                      # Process
     #--------------------------------------------------------------------------------
-        raise SystemError(f'ERROR {self.app_name} stopped unexpectedly, check the log')
+        return f'<Process(name={self._name}, pid={self._pid}>'
+
+
+    #--------------------------------------------------------------------------------
+    def __del__(self):                                                      # Process
+    #--------------------------------------------------------------------------------
+        DEBUG and print(f'Deleting {self}')
+
+
+    #--------------------------------------------------------------------------------
+    def raise_error(self):                                                  # Process
+    #--------------------------------------------------------------------------------
+        raise SystemError(f'ERROR {self._app_name} stopped unexpectedly, check the log')
 
     #--------------------------------------------------------------------------------
     def process(self):                                                      # Process
@@ -248,7 +240,7 @@ class Process:                                                              # Pr
             if self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE:
                 return True
             if raise_error:
-                raise SystemError(f'ERROR {self.app_name} is not running ({self._name} is {self._process.status()})')
+                raise SystemError(f'ERROR {self._app_name} is not running ({self._name} is {self._process.status()})')
         except (psutil.NoSuchProcess, ProcessLookupError):
             if raise_error:
                 #msg = ', check the log'
@@ -260,7 +252,7 @@ class Process:                                                              # Pr
                 return False
         except AttributeError:
             if raise_error:
-                raise SystemError(f'ERROR {self.app_name} process is {self._process}')        
+                raise SystemError(f'ERROR {self._app_name} process is {self._process}')        
             else:
                 return True
             
@@ -300,7 +292,7 @@ class Process:                                                              # Pr
                 raise SystemError('Parent-process missing, unable to look for child-processes')
             else:  
                 return [], None
-        name = self.app_name.lower()
+        name = self._app_name.lower()
         # Return if this is the main process
         if self._process.name().lower().startswith(name):
             return [], None
@@ -321,7 +313,7 @@ class Process:                                                              # Pr
 
 
 #====================================================================================
-class runner:                                                               # runner
+class Runner:                                                               # runner
 #====================================================================================
     """
 
@@ -342,9 +334,10 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def __init__(self, N=0, T=0, name=None, case=None, exe=None, cmd=None, pipe=False,
                  verbose=3, timer=None, runlog=None, ext_iface=None, ext_OK=None,
-                 keep_files=False, stop_children=True, **kwargs):           # runner
+                 keep_files=False, stop_children=True, keep_alive=False, **kwargs):           # runner
     #--------------------------------------------------------------------------------
-        #print('runner.__init__: ',N,T,name,case,exe,cmd,ext_iface,ext_OK)
+        #print('runner.__init__: ',keep_alive, N,T,name,case,exe,cmd,ext_iface,ext_OK)
+        self.reset_processes()
         self.name = name
         self.case = Path(case)
         self.exe = exe
@@ -367,8 +360,19 @@ class runner:                                                               # ru
         self.T = int(T)   # Max time
         self.N = int(N)   # Max number of steps
         self.starttime = None
-        self.reset_processes()
+        self.keep_alive = keep_alive
+        self.suspend_timer = None
+        DEBUG and print(f'Creating {self}')
 
+    #-----------------------------------------------------------------------
+    def __str__(self):
+    #-----------------------------------------------------------------------
+        return f'<Runner(name={self.name}, cmd={self.cmd})>'
+
+    #-----------------------------------------------------------------------
+    def __del__(self):
+    #-----------------------------------------------------------------------
+        DEBUG and print(f'Deleting {self}')
 
     #-----------------------------------------------------------------------
     def set_time(self, time):
@@ -416,7 +420,7 @@ class runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def start(self, error_func=None):                        # runner
+    def start(self, error_func=None):                                        # runner
     #--------------------------------------------------------------------------------
         self.starttime = datetime.now()
         if self.pipe:
@@ -428,6 +432,8 @@ class runner:                                                               # ru
             self.popen = Popen(self.cmd, stdout=self.log, stderr=STDOUT)      
             #self.popen = Popen(self.cmd, stdin=DEVNULL, stdout=self.log, stderr=DEVNULL)      
         self.set_processes(error_func=error_func)
+        if self.keep_alive:
+            self.suspend_timer = timer_thread(limit=self.keep_alive, prec=SUSPEND_TIMER_PRECICION, func=self.suspend_active)
 
 
     #--------------------------------------------------------------------------------
@@ -465,69 +471,62 @@ class runner:                                                               # ru
         self._print('', v=1, tag='')
 
     #--------------------------------------------------------------------------------
+    def suspend_active(self):                                                # runner
+    #--------------------------------------------------------------------------------
+        return all([p.suspend() for p in self.active])
+
+    #--------------------------------------------------------------------------------
+    def resume_active(self):                                                # runner
+    #--------------------------------------------------------------------------------
+        return all([p.resume() for p in self.active])
+
+
+    #--------------------------------------------------------------------------------
     def suspend(self, check=False, v=1):                                     # runner
     #--------------------------------------------------------------------------------
-        self.log_message('Suspend')
-        [p.suspend() for p in self.active]
-        if check:
-            [self.wait_for(p.is_sleeping, limit=100) for p in self.active]
-        self.print_process_status()
-        self.timer and self.timer.stop()
+        if self.keep_alive:
+            self.log_message('Delayed suspend')
+            self.suspend_timer.start()
+        else:
+            self.log_message('Suspend')
+            #[p.suspend() for p in self.active]
+            self.suspend_active()
+            if check:
+                [self.wait_for(p.is_sleeping, limit=100) for p in self.active]
+            self.print_process_status()
+            self.timer and self.timer.stop()
 
 
     #--------------------------------------------------------------------------------
     def resume(self, check=False, v=1):                                      # runner
     #--------------------------------------------------------------------------------
-        self.log_message('Resume')
-        [p.resume() for p in self.active]
-        if check:
-            [self.wait_for(p.is_running, limit=100) for p in self.active]
+        if self.suspend_timer and self.suspend_timer.cancel_if_alive():
+            self.log_message('No resume (delayed suspend active)')
+        else:
+            if self.suspend_timer and not self.suspend_timer.is_alive():
+                self.log_message('Resume (delayed suspend expired)')
+            else:
+                self.log_message('Resume')
+            #[p.resume() for p in self.active]
+            self.resume_active()
+            if check:
+                [self.wait_for(p.is_running, limit=100) for p in self.active]
+            self.timer and self.timer.start()
         self.print_process_status()
-        self.timer and self.timer.start()
-
-
-    #--------------------------------------------------------------------------------
-    def kill(self, v=2):                                                     # runner
-    #--------------------------------------------------------------------------------
-        # terminate children before parent
-        #procs = self.children + (self.parent and [self.parent] or []) 
-        for p in self.active:
-            try:
-                self._print(f'Killing {p.name()}...', end='', v=v)
-                p.kill()
-                self._print('done', tag='', v=v)
-            except (psutil.NoSuchProcess, ProcessLookupError):
-                self._print('process already gone', tag='', v=v)            
-            except psutil.AccessDenied:
-                self._print('access denied!!!', tag='', v=v)            
-        self.reset_processes()
-        #finally:
-        # self.children = []
-        # self.active = []
-        # self.parent = None
-
-
-    # #--------------------------------------------------------------------------------
-    # def process_list(self):
-    # #--------------------------------------------------------------------------------
-    #     return (self.parent and [self.parent] or []) + self.children
 
 
     #--------------------------------------------------------------------------------
     def print_process_status(self, v=2):
     #--------------------------------------------------------------------------------
-        #self._print(', '.join( [str(p.current_status()) for p in self.process_list()] ), v=v)
         self._print(', '.join( [str(p.current_status()) for p in self.active] ), v=v)
-        # status = [str(p.current_status()) for p in self.active if p]
-        # self._print(', '.join( [s for s in status if s] ), v=v)
 
 
     #--------------------------------------------------------------------------------
     def print_suspend_errors(self, v=1):
     #--------------------------------------------------------------------------------
-        #self._print(', '.join([p.suspend_errors() for p in self.process_list() if p.suspend_errors()]), v=v)
-        errors = (p.suspend_errors() for p in self.active if p)
-        self._print(', '.join([e for e in errors if e]), v=v)
+        errors = [p.suspend_errors() for p in self.active if p]
+        text = ', '.join([e for e in errors if e])
+        text and self._print(text, v=v)
 
 
     #--------------------------------------------------------------------------------
@@ -550,7 +549,7 @@ class runner:                                                               # ru
                 c = int(self.n)
                 if c == 0:
                     c = self.time_and_step()[1]
-            self._print(' ', tag='')
+            self._print('', tag='')
             raise SystemError('INFO Run stopped after ' + str(c) + ' ' + step)    
 
 
@@ -629,43 +628,69 @@ class runner:                                                               # ru
         success = self.wait_for(self.parent.is_not_running, raise_error=False, pause=pause, limit=limit, loop_func=loop_func)
         if not success:
             time = (limit or 0)*(pause or 0)/60
-            self._print(' ', tag='')
+            self._print('', tag='')
             self._print(f'process did not finish within {time:.2f} minutes and will be killed', v=v)
-            # self._print([p.proc.name() for p in self.process_list()])
             self._print([p.proc.name() for p in self.active if p])
             self.kill()
-        else:
-            self.reset_processes()
-            # self.parent = None
-            # self.children = []
-            # self.active = []
+
+
+    #--------------------------------------------------------------------------------
+    def close(self):
+    #--------------------------------------------------------------------------------
+        self.reset_processes()
+        # Close log-file
+        self.log.close()
+        # Stop and delete the suspend-timer-thread
+        self.suspend_timer and self.suspend_timer.close()
+        self.suspend_timer = None # For garbage collector (__del__)
+        # Delete interface-files 
+        if self.ext_iface and not self.keep_files:
+            self.interface_file('all').delete()
 
 
     #--------------------------------------------------------------------------------
     def quit(self, v=1, loop_func=lambda:None):
     #--------------------------------------------------------------------------------
-        self._print(f' ', tag='', v=v)
+        self._print('', tag='', v=v)
         self._print('Quitting', v=v)
         self.resume()
         self.wait_for_process_to_finish(msg='Waiting for process to quit', limit=6000, pause=0.01, loop_func=loop_func)
-        self.log.close()
+        self.close()
         self._print('Finished', v=v)
 
+
     #--------------------------------------------------------------------------------
-    def clean_up(self):
+    def kill(self, v=2):                                                     # runner
     #--------------------------------------------------------------------------------
-        if self.ext_iface and not self.keep_files:
-            self.interface_file('all').delete()
+        # terminate children before parent
+        #procs = self.children + (self.parent and [self.parent] or []) 
+        for p in self.active:
+            try:
+                self._print(f'Killing {p.name()}...', end='', v=v)
+                p.kill()
+                self._print('done', tag='', v=v)
+            except (psutil.NoSuchProcess, ProcessLookupError):
+                self._print('process already gone', tag='', v=v)            
+            except psutil.AccessDenied:
+                self._print('access denied!!!', tag='', v=v)            
+        self.close()
+
+
+    # #@pass_KeyboardInterrupt
+    # #--------------------------------------------------------------------------------
+    # def kill_and_clean(self):
+    # #--------------------------------------------------------------------------------
+    #     self.kill()
+    #     self.log.close()
+    #     self.clean_up()
+
+    # #--------------------------------------------------------------------------------
+    # def clean_up(self):
+    # #--------------------------------------------------------------------------------
+    #     if self.ext_iface and not self.keep_files:
+    #         self.interface_file('all').delete()
 
     
-    #@pass_KeyboardInterrupt
-    #--------------------------------------------------------------------------------
-    def kill_and_clean(self):
-    #--------------------------------------------------------------------------------
-        self.kill()
-        self.log.close()
-        self.clean_up()
-
     #--------------------------------------------------------------------------------
     def write_to_stdin(self, i):                                             # runner
     #--------------------------------------------------------------------------------
@@ -680,7 +705,6 @@ class runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def _print(self, txt, v=1, tag=True, flush=True, **kwargs):                         # runner
     #--------------------------------------------------------------------------------
-        #if txt and v <= self.verbose:
         if v <= self.verbose:
             if tag is True:
                 tag = f'{self.name}:'

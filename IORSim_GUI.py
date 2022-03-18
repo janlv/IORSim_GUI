@@ -52,7 +52,7 @@ from urllib3 import disable_warnings
 disable_warnings()
 
 # Local libraries
-from ior2ecl import ECL_ALIVE_LIMIT, iorsim, simulation, main as ior2ecl_main, __version__, LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
+from ior2ecl import ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, return_matching_string, delete_all, file_contains, write_file
 from IORlib.ECL import get_included_files, get_tsteps, unfmt_file
 
@@ -459,7 +459,7 @@ class sim_worker(base_worker):
             self.show_message(text)
 
         result, msg = False, ''
-        self.sim = simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
+        self.sim = Simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
         if self.sim.ready():
             self.days_box.setText(str(int(self.sim.get_time())))
             result, msg = self.sim.run()
@@ -945,11 +945,9 @@ class PDF_viewer(Editor):
     #-----------------------------------------------------------------------
     def init_editor(self, layout):                          # PDF_viewer
     #-----------------------------------------------------------------------
-        #print('AAAA')
         self.editor_ = QWebEngineView(self)
         self.editor_.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
         self.editor_.settings().setAttribute(QWebEngineSettings.PdfViewerEnabled, True)
-        #print('BBBB')
         layout.addWidget(self.editor_)
 
     #-----------------------------------------------------------------------
@@ -1027,7 +1025,9 @@ class Settings(QDialog):
                      'del_merge'      : variable('Delete originals after merge', True, 'Delete the original UNRST-files from Elipse and IORSim if successfully merged', False),
                      'unrst'          : variable('Confirm flushed UNRST-file before suspending Eclipse', True, 'Check that the UNRST-file is properly flushed before suspending Eclipse', False), 
                      'rft'            : variable('Confirm flushed RFT-file before suspending Eclipse', True, 'Check that the RFT-file is properly flushed before suspending Eclipse', False),
-                     'keep_alive'     : variable(f'Keep Eclipse alive for up to {ECL_ALIVE_LIMIT} seconds between runs', False, f'Only suspend Eclipse between timesteps if IORSim does not complete in {ECL_ALIVE_LIMIT} seconds (~5% performance increase)', False),
+                     'ecl_keep_alive' : variable(f'Eclipse is paused after', False, f'Keep Eclipse running while waiting for input to improve performance', False),
+                     'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT), f'Eclipse will stop if new input is not ready within 100 seconds', False),
+                     'ior_keep_alive' : variable(f'IORSim is never paused', False, f'Keep IORSim running while waiting for input', False),
                      'log_level'      : variable('Detail level of the application log', str(LOG_LEVEL), 'A higher value gives a more detailed application log', False)}
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
@@ -1100,8 +1100,15 @@ class Settings(QDialog):
         ### Backward options
         self.add_heading()
         self.add_heading('Backward options')
-        boxes = self.add_items([self.new_checkbox(var) for var in ('unrst', 'rft', 'keep_alive')], nrow=3)
-        #self.expert.append(boxes[2]) # Add 'keep_alive' to expert-mode list
+        #self.add_items([self.new_checkbox(var) for var in ('unrst', 'rft', 'ecl_keep_alive', 'ior_keep_alive')], nrow=4)
+        self.add_items([self.new_checkbox(var) for var in ('unrst', 'rft')], nrow=2)
+        cb = [self.new_checkbox(var) for var in ('ecl_keep_alive', 'ior_keep_alive')]
+        le = self.new_lineedit('ecl_alive_limit', width=30)
+        #le = [self.new_lineedit(var, width=30) for var in ('ecl_alive_limit', 'ior_alive_limit')]
+        # Add widget in layout to expert mode
+        self.expert.append(le.itemAt(0).widget())
+        self.add_items([cb[0], le])
+        self.add_items([cb[1]])
 
         ### Log options
         self.add_heading()
@@ -1169,6 +1176,19 @@ class Settings(QDialog):
         self._set[var] = box.setChecked
         return box
 
+    #-----------------------------------------------------------------------
+    def new_lineedit(self, var=None, width=None):             # settings
+    #-----------------------------------------------------------------------
+        v = self.vars[var]
+        layout = QHBoxLayout()
+        line = QLineEdit()
+        width and line.setFixedWidth(width)
+        line.setToolTip(v.tip)
+        layout.addWidget(line)
+        layout.addWidget(QLabel(v.text))
+        self._get[var] = line.text
+        self._set[var] = line.setText
+        return layout
 
     #-----------------------------------------------------------------------
     def add_line_with_button(self, var=None, open_func=None, button_text='Change', read_only=True):    # settings
@@ -2696,10 +2716,10 @@ class main_window(QMainWindow):                                    # main_window
             return
         # Mandatory keywords
         #mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.required
-        mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + iorsim.keywords.required
+        mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.required
         # Optional keywords
         #optional = [color.green, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.optional
-        optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + iorsim.keywords.optional
+        optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.optional
         self.view_input_file(name=name, title=title, comment=comment, keywords=[mandatory, optional])
 
 
@@ -3316,7 +3336,8 @@ class main_window(QMainWindow):                                    # main_window
             #kwargs[opt] = s.get[opt]()
             kwargs[opt] = s.get(opt)
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get('iorsim'), eclexe=s.get('eclrun'), 
-                                 keep_alive=s.get('keep_alive'), days_box=self.days_box, verbose=int(s.get('log_level')),
+                                 ecl_keep_alive=s.get('ecl_keep_alive'), ior_keep_alive=s.get('ior_keep_alive'), 
+                                 days_box=self.days_box, verbose=int(s.get('log_level')),
                                  **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
