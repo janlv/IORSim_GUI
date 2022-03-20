@@ -432,7 +432,7 @@ class Runner:                                                               # ru
             self.popen = Popen(self.cmd, stdout=self.log, stderr=STDOUT)      
             #self.popen = Popen(self.cmd, stdin=DEVNULL, stdout=self.log, stderr=DEVNULL)      
         self.set_processes(error_func=error_func)
-        if self.keep_alive:
+        if self.keep_alive > 0:
             self.suspend_timer = timer_thread(limit=self.keep_alive, prec=SUSPEND_TIMER_PRECICION, func=self.suspend_active)
 
 
@@ -484,7 +484,7 @@ class Runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def suspend(self, check=False, v=1):                                     # runner
     #--------------------------------------------------------------------------------
-        if self.keep_alive:
+        if self.suspend_timer:
             self.log_message('Delayed suspend')
             self.suspend_timer.start()
         else:
@@ -501,10 +501,10 @@ class Runner:                                                               # ru
     def resume(self, check=False, v=1):                                      # runner
     #--------------------------------------------------------------------------------
         if self.suspend_timer and self.suspend_timer.cancel_if_alive():
-            self.log_message('No resume (delayed suspend active)')
+            self.log_message(f'No resume (suspend delayed {self.suspend_timer.endtime():.0f} sec)')
         else:
             if self.suspend_timer and not self.suspend_timer.is_alive():
-                self.log_message('Resume (delayed suspend expired)')
+                self.log_message(f'Resume (delayed suspend expired by {self.suspend_timer.uptime():.0f} sec)')
             else:
                 self.log_message('Resume')
             #[p.resume() for p in self.active]
@@ -577,7 +577,7 @@ class Runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def complete_msg(self, run_time=None):
     #--------------------------------------------------------------------------------
-        if not run_time:
+        if run_time is None:
             run_time = self.run_time()
         return 'INFO Simulation complete, run-time was ' + str(run_time).split('.')[0]
 

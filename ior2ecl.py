@@ -10,7 +10,7 @@ LOG_LEVEL_MAX = 3
 LOG_LEVEL_MIN = 1
 LOG_LEVEL = 3
 ECL_ALIVE_LIMIT = 90 # Seconds to wait before Eclipse is suspended (if option is on)
-IOR_ALIVE_LIMIT = 9000 # Seconds to wait before IORSim is suspended (if option is on)
+IOR_ALIVE_LIMIT = -1 # Seconds to wait before IORSim is suspended (if option is on)
 
 DEBUG = False
 
@@ -180,7 +180,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     #--------------------------------------------------------------------------------
     def __init__(self, check_unrst=True, check_rft=True, rft_size=False, keep_alive=False, **kwargs):
     #--------------------------------------------------------------------------------
-        keep_alive = keep_alive and ECL_ALIVE_LIMIT or False
+        #keep_alive = keep_alive and ECL_ALIVE_LIMIT or False
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', keep_alive=keep_alive, **kwargs)
         self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
         self.update = kwargs.get('update') or None
@@ -509,7 +509,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
     def __init__(self, keep_alive=False, **kwargs):
     #--------------------------------------------------------------------------------
-        keep_alive = keep_alive and IOR_ALIVE_LIMIT or False
+        #keep_alive = keep_alive and IOR_ALIVE_LIMIT or False
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
         self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
         self.update = kwargs.get('update') or None
@@ -831,7 +831,7 @@ class Simulation:
         self.runlog = None
         if root and not to_screen:
             self.runlog = safeopen(Path(root).parent/(self.name+'.log'), 'w')
-        self.print2log = lambda txt: print(txt, file=self.runlog, flush=True)
+        self.print2log = lambda txt, **kwargs: print(txt, file=self.runlog, flush=True, **kwargs)
         self.current_run = None
         self.runs = runs
         self.run_sim = None
@@ -1332,7 +1332,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=args['rft_size'], 
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
-           ecl_alive=(args['ecl_alive']), ior_alive=(args['ior_alive']), only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
+           ecl_alive=args['ecl_alive'] and ECL_ALIVE_LIMIT, ior_alive=args['ior_alive'] and IOR_ALIVE_LIMIT, only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
            check_input=args['check_input_kw'], verbose=args['v'])
     os_exit(0)
 

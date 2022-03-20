@@ -1025,9 +1025,9 @@ class Settings(QDialog):
                      'del_merge'      : variable('Delete originals after merge', True, 'Delete the original UNRST-files from Elipse and IORSim if successfully merged', False),
                      'unrst'          : variable('Confirm flushed UNRST-file before suspending Eclipse', True, 'Check that the UNRST-file is properly flushed before suspending Eclipse', False), 
                      'rft'            : variable('Confirm flushed RFT-file before suspending Eclipse', True, 'Check that the RFT-file is properly flushed before suspending Eclipse', False),
-                     'ecl_keep_alive' : variable(f'Eclipse is paused after', False, f'Keep Eclipse running while waiting for input to improve performance', False),
-                     'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT), f'Eclipse will stop if new input is not ready within 100 seconds', False),
-                     'ior_keep_alive' : variable(f'IORSim is never paused', False, f'Keep IORSim running while waiting for input', False),
+                     'ecl_keep_alive' : variable(f'Wait up to', False, f'Keep Eclipse running while waiting for input to improve performance', False),
+                     'ecl_alive_limit': variable(f'seconds before Eclipse is paused during IORSim runs', str(ECL_ALIVE_LIMIT), f'Eclipse will stop if new input is not ready within 100 seconds', False),
+                     'ior_keep_alive' : variable(f'Do not pause IORSim during Eclipse runs', False, f'Keep IORSim running while waiting for input', False),
                      'log_level'      : variable('Detail level of the application log', str(LOG_LEVEL), 'A higher value gives a more detailed application log', False)}
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
@@ -3336,7 +3336,8 @@ class main_window(QMainWindow):                                    # main_window
             #kwargs[opt] = s.get[opt]()
             kwargs[opt] = s.get(opt)
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get('iorsim'), eclexe=s.get('eclrun'), 
-                                 ecl_keep_alive=s.get('ecl_keep_alive'), ior_keep_alive=s.get('ior_keep_alive'), 
+                                 ecl_keep_alive=s.get('ecl_keep_alive') and float(s.get('ecl_alive_limit')), 
+                                 ior_keep_alive=s.get('ior_keep_alive') and IOR_ALIVE_LIMIT, 
                                  days_box=self.days_box, verbose=int(s.get('log_level')),
                                  **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
