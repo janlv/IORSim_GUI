@@ -127,8 +127,6 @@ class Control_file:
     #--------------------------------------------------------------------------------
     def is_deleted(self):
     #--------------------------------------------------------------------------------
-        # if not self._name.is_file():
-        #     return True
         try:
             if not self._name.is_file():
                 return True
@@ -367,7 +365,7 @@ class Runner:                                                               # ru
     #-----------------------------------------------------------------------
     def __str__(self):
     #-----------------------------------------------------------------------
-        return f'<Runner(name={self.name}, cmd={self.cmd})>'
+        return f'<Runner(name={self.name}, cmd={self.cmd}, verbose={self.verbose})>'
 
     #-----------------------------------------------------------------------
     def __del__(self):
@@ -463,12 +461,12 @@ class Runner:                                                               # ru
     #--------------------------------------------------------------------------------
         return self.log.name
 
-    #--------------------------------------------------------------------------------
-    def log_message(self, msg):                                              # runner
-    #--------------------------------------------------------------------------------
-        self._print(msg, v=1, end='')
-        self._print(f' {", ".join([p.info() for p in self.active])}', v=2, end='', tag='')
-        self._print('', v=1, tag='')
+    # #--------------------------------------------------------------------------------
+    # def process_info(self):                                # runner
+    # #--------------------------------------------------------------------------------
+    #     #self._print(msg, v=1, end='')
+    #     self._print(f' {", ".join([p.info() for p in self.active])}', v=2, end='', tag='')
+    #     #self._print('', v=1, tag='')
 
     #--------------------------------------------------------------------------------
     def suspend_active(self):                                                # runner
@@ -484,30 +482,32 @@ class Runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def suspend(self, check=False, v=1):                                     # runner
     #--------------------------------------------------------------------------------
-        if self.suspend_timer:
-            self.log_message('Delayed suspend')
+        if self.keep_alive > 0:
+            self._print('Delayed suspend', v=2)
             self.suspend_timer.start()
+        elif self.keep_alive < 0:
+            self._print('No suspend', v=2)
         else:
-            self.log_message('Suspend')
-            #[p.suspend() for p in self.active]
+            self._print('Suspend', v=2)
             self.suspend_active()
             if check:
                 [self.wait_for(p.is_sleeping, limit=100) for p in self.active]
-            self.print_process_status()
             self.timer and self.timer.stop()
+        self.print_process_status()
 
 
     #--------------------------------------------------------------------------------
     def resume(self, check=False, v=1):                                      # runner
     #--------------------------------------------------------------------------------
-        if self.suspend_timer and self.suspend_timer.cancel_if_alive():
-            self.log_message(f'No resume (suspend delayed {self.suspend_timer.endtime():.0f} sec)')
+        if self.keep_alive > 0 and self.suspend_timer.cancel_if_alive():
+            self._print(f'No resume (suspend delayed {self.suspend_timer.endtime():.0f} sec)', v=2)
+        elif self.keep_alive < 0:
+            self._print('No resume (never suspended)', v=2)
         else:
+            msg = 'Resume'
             if self.suspend_timer and not self.suspend_timer.is_alive():
-                self.log_message(f'Resume (delayed suspend expired by {self.suspend_timer.uptime():.0f} sec)')
-            else:
-                self.log_message('Resume')
-            #[p.resume() for p in self.active]
+                msg += f' (suspended {-self.suspend_timer.uptime():.0f} sec ago)'
+            self._print(msg, v=2)
             self.resume_active()
             if check:
                 [self.wait_for(p.is_running, limit=100) for p in self.active]
