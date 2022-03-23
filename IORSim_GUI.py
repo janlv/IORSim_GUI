@@ -2942,7 +2942,10 @@ class main_window(QMainWindow):                                    # main_window
             well, yaxis = file.name.split('_W_')[-1].split('.trc')
             if yaxis=='prd':
                 yaxis = 'prod'
-            data = genfromtxt(str(file))
+            try:
+                data = genfromtxt(str(file))
+            except FileNotFoundError:
+                return False
             try:
                 ior['days'] = data[1:,0]
                 #print(ior['days'])
