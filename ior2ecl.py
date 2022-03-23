@@ -5,12 +5,12 @@ __version__ = '2.25'
 __author__ = 'Jan Ludvig Vinningland'
 
 # Constants
-MAX_ITERATIONS = 1e5   # Limit iterations to avoid time consuming creation of interface-files
+MAX_ITERATIONS = 1e5   # Iteration limit (avoid time consuming creation of interface-files)
+ECL_ALIVE_LIMIT = 90   # Seconds to wait before Eclipse is suspended (if option is on)
+IOR_ALIVE_LIMIT = -1   # Negative value = never suspended
 LOG_LEVEL_MAX = 3
 LOG_LEVEL_MIN = 1
-LOG_LEVEL = 3
-ECL_ALIVE_LIMIT = 90 # Seconds to wait before Eclipse is suspended (if option is on)
-IOR_ALIVE_LIMIT = -1 # Seconds to wait before IORSim is suspended (if option is on)
+LOG_LEVEL = 3          # Default log level
 
 DEBUG = False
 
@@ -31,7 +31,7 @@ from threading import Thread, Timer as th_timer
 
 from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
-from IORlib.ECL import check_blocks, get_included_files, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
+from IORlib.ECL import UNRST_file, check_blocks, get_included_files, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
 
 
 #====================================================================================
@@ -48,6 +48,7 @@ class Eclipse(Runner):                                                      # ec
         exe = str(exe)
         super().__init__(name='Eclipse', case=root, exe=exe, cmd=[exe, 'eclipse', root], **kwargs)                        
         self.unrst = Path(root+'.UNRST')
+        self.unrst_file = UNRST_file(self.unrst)
         #self.unsmry = unfmt_file(root+'.UNSMRY')
         self.unsmry = Path(root+'.UNSMRY')
         self.rft = Path(root+'.RFT')
@@ -189,7 +190,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.check_unrst = check_unrst
         self.check_rft = check_rft
         self.rft_size = rft_size
-        self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
+        # self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
+        self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL')
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
         self.rft_start_size = 0
 
@@ -233,7 +235,11 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             if i > 0:
                 self.update_function(progress=not restart, plot=True)
             self.check_UNRST_file() 
-        self.nwell = self.unrst_check.var('nwell')
+        #self.nwell = self.unrst_check.var('nwell')
+        #unrst = UNRST_file(self.unrst)
+        #print(self.nwell, unrst.var(['nwell']))
+        self.nwell = self.unrst_file.var(['nwell'])[0]
+        self._print(f'nwell = {self.nwell}')
         nwell_max = nblocks*self.nwell
         rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell)
         self.suspend()
@@ -242,7 +248,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
 
 
     #--------------------------------------------------------------------------------
-    def run_one_step(self, satnum_file):                               # ecl_backward
+    def run_one_step(self, satnum_file, log=True):                               # ecl_backward
     #--------------------------------------------------------------------------------
         if self.rft_size:
             self.rft_start_size = self.rft.stat().st_size
@@ -262,6 +268,10 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         if self.delete_interface:
             self.interface_file(self.n).delete()
         self.n += 1
+        if log:
+            y, m, d = self.unrst_file.var(['year','month','day'])
+            self._print(f' Restart at {y}-{m:02d}-{d:02d} saved')
+
 
 
     #--------------------------------------------------------------------------------
@@ -649,21 +659,26 @@ class Schedule:
         DEBUG and print(f'Creating {self}')
 
 
-    #-----------------------------------------------------------------------
-    def __str__(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def __str__(self):                                                     # Schedule
+    #--------------------------------------------------------------------------------
         return f'<Schedule(file={self.file}, start={self.start}, days={self.days}, length={len(self._schedule)})>'
 
 
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
     def __del__(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
         DEBUG and print(f'Deleting {self}')
 
 
-    #-----------------------------------------------------------------------
-    def info(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def now(self):                                                         # Schedule
+    #--------------------------------------------------------------------------------
+        return self.start+timedelta(days=self.days)
+
+    #--------------------------------------------------------------------------------
+    def info(self):                                                        # Schedule
+    #--------------------------------------------------------------------------------
         s =   'Schedule\n'
         s += f'  file   : {self.file}\n'
         s += f'  start  : {self.start}\n'
@@ -672,9 +687,9 @@ class Schedule:
         return s
 
 
-    #-----------------------------------------------------------------------
-    def insert(self, index=None, days=None, action='', remove=False):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def insert(self, index=None, days=None, action='', remove=False):      # Schedule
+    #--------------------------------------------------------------------------------
         if action:
             # Add newline
             action += '\n'
@@ -686,9 +701,9 @@ class Schedule:
         else:
             self._schedule.append([days, action])
 
-    #-----------------------------------------------------------------------
-    def get_type(self, string):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def get_type(self, string):                                            # Schedule
+    #--------------------------------------------------------------------------------
         # Determine if schedule file contains DATES or TSTEP
         regex = compile(r'\n?\s*(\bDATES|TSTEP\b)')
         tstep_or_dates = [m.group(1) for m in regex.finditer(string)]
@@ -702,9 +717,9 @@ class Schedule:
             raise SystemError('WARNING Schedule-file contains a mix of TSTEP and DATES')
         return use_dates
 
-    #-----------------------------------------------------------------------
-    def days_and_actions(self, remove_end=True):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def days_and_actions(self, remove_end=True):                           # Schedule
+    #--------------------------------------------------------------------------------
         '''
         Use regexp to extract DATES or TSTEP values from the .SCH-file together
         with the file-positions (span) of these keywords. The file-positions are used
@@ -752,7 +767,7 @@ class Schedule:
         return [[float(d), a+'\n'] for (d,a) in zip(days, actions) if a]
 
     #--------------------------------------------------------------------------------
-    def append(self, action=None, tstep=None, append_line=-4):             # schedule
+    def append(self, action=None, tstep=None, append_line=-4):             # Schedule
     #--------------------------------------------------------------------------------
         '''
         line : line number of TSTEP
@@ -776,7 +791,7 @@ class Schedule:
                 f.write(''.join(lines))
 
     #--------------------------------------------------------------------------------
-    def check(self):                                               # schedule
+    def check(self):                                                       # Schedule
     #--------------------------------------------------------------------------------
         # just a check...
         print(f'{self.days}, {self.start+timedelta(days=self.days)}')
@@ -787,7 +802,7 @@ class Schedule:
         print(self._schedule)
 
     #--------------------------------------------------------------------------------
-    def update(self):                                               # schedule
+    def update(self):                                                      # Schedule
     #--------------------------------------------------------------------------------        
         action = new_tstep = None
         # Update days from previous step
@@ -805,6 +820,7 @@ class Schedule:
         #self.check()
         #print(f'END: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         return self.days
+
 
 #====================================================================================
 class Simulation:
@@ -979,14 +995,14 @@ class Simulation:
             self.update.progress(value=ior.t, n0=ior.t)
         # Start timestep loop
         while ior.t < ior.T:
-            self.print2log(f'\nLoop step {ecl.n}/{ecl.N}')
+            self.print2log(f'\nStep {ecl.n+1}/{ecl.N}')
             self.update.status(run=ecl, mode=self.mode)
             ecl.run_one_step(ior.satnum)
             # Run IORSim to prepare satnum input for the next Eclipse run
             self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
             ecl.t = ior.t = self.schedule.update()
-            self.print2log(f'days = {ior.t:.3f}/{ior.T}')
+            self.print2log(f'days = {ior.t:.3f}/{ior.T} ({self.schedule.now()})')
             self.update.progress(value=ior.t)
             self.update.plot()
         # Timestep loop finished
