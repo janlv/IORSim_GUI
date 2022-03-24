@@ -47,8 +47,8 @@ class Eclipse(Runner):                                                      # ec
         #print(exe)
         exe = str(exe)
         super().__init__(name='Eclipse', case=root, exe=exe, cmd=[exe, 'eclipse', root], **kwargs)                        
-        self.unrst = Path(root+'.UNRST')
-        self.unrst_file = UNRST_file(self.unrst)
+        #self.unrst = Path(root+'.UNRST')
+        self.unrst = UNRST_file(root+'.UNRST')
         #self.unsmry = unfmt_file(root+'.UNSMRY')
         self.unsmry = Path(root+'.UNSMRY')
         self.rft = Path(root+'.RFT')
@@ -67,15 +67,15 @@ class Eclipse(Runner):                                                      # ec
             t, n = get_time_step_UNSMRY(file=self.unsmry)
         elif self.msg.is_file():
             t, n = get_time_step_MSG(file=self.msg) 
-        elif self.unrst.is_file():
-            t, n = get_time_step_UNRST(file=self.unrst, end=True)
+        elif self.unrst.file().is_file():
+            t, n = get_time_step_UNRST(file=self.unrst.file(), end=True)
         #print('{}: time = {}, step = {}'.format(self.name, t, n))
         return int(t), int(n)        
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                          # eclipse
     #--------------------------------------------------------------------------------
-        silentdelete( [self.unrst, self.rft] )
+        silentdelete( [self.unrst.file(), self.rft] )
         silentdelete( [str(self.case)+ext for ext in ('.SMSPEC','.UNSMRY','.RTELOG','.RTEMSG','_ECLIPSE.UNRST')] )
         delete_files_matching( [str(self.case)+fil for fil in ('*.session*', '*.dbprtx.lock', '*.dbprtx.lock-journal')] )
 
@@ -191,7 +191,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.check_rft = check_rft
         self.rft_size = rft_size
         # self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
-        self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL')
+        #self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL')
         self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
         self.rft_start_size = 0
 
@@ -226,7 +226,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         [self.interface_file(i).create_empty() for i in range(self.n, self.N)] 
         self.OK_file().delete()
         super().start()  
-        self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
+        self.wait_for( self.unrst.file().exists, error=self.unrst.file().name+' not created')
         self.wait_for( self.rft.exists, error=self.rft.name+' not created')
         self.update.status(value=f'{self.name} running...')
         # Check if restart-file (UNRST) is flushed   
@@ -238,7 +238,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         #self.nwell = self.unrst_check.var('nwell')
         #unrst = UNRST_file(self.unrst)
         #print(self.nwell, unrst.var(['nwell']))
-        self.nwell = self.unrst_file.var(['nwell'])[0]
+        self.nwell = self.unrst.var(['nwell'])[0]
         self._print(f'nwell = {self.nwell}')
         nwell_max = nblocks*self.nwell
         rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell)
@@ -269,8 +269,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             self.interface_file(self.n).delete()
         self.n += 1
         if log:
-            y, m, d = self.unrst_file.var(['year','month','day'])
-            self._print(f' Restart at {y}-{m:02d}-{d:02d} saved')
+            y, m, d = self.unrst.var(['year','month','day'])
+            self._print(f' Restart at {y}-{m:02d}-{d:02d}')
 
 
 
@@ -287,7 +287,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     #--------------------------------------------------------------------------------
     def check_UNRST_file(self, nblocks=1, pause=0.01):                 # ecl_backward
     #--------------------------------------------------------------------------------
-        self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info, pause=pause )
+        #self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info, pause=pause )
+        self.wait_for( self.unrst.is_complete, nblocks=nblocks, log=self.unrst.log, pause=pause )
 
     #--------------------------------------------------------------------------------
     def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=100):        # ecl_backward
@@ -387,7 +388,7 @@ class Iorsim(Runner):                                                        # i
         solution_key = '*SOLUTION'
 
     #--------------------------------------------------------------------------------
-    def __init__(self, root=None, exe='IORSimX', args='', relative_root=True, **kwargs):
+    def __init__(self, root=None, exe='IORSimX', args='', relative_root=True, **kwargs):     # iorsim
     #--------------------------------------------------------------------------------
         #print('iorsim.__init__: ',root, exe, args, kwargs)
         exe = str(exe)
@@ -1113,21 +1114,21 @@ class Simulation:
         self.update.progress(value=0)   # Reset progress time
         ecl = self.ecl or Eclipse(root=case)   
         ior = self.ior or Iorsim(root=case)   
-        if ecl.unrst.is_file() and ior.unrst.is_file():
+        if ecl.unrst.file().is_file() and ior.unrst.is_file():
             backup_ecl = Path(str(ecl.case)+'_ECLIPSE.UNRST')
             if backup_ecl.is_file():
                 # This is a pure IORSim run and backup already exists; restore backup
-                shutil_copy(backup_ecl, ecl.unrst)
+                shutil_copy(backup_ecl, ecl.unrst.file())
             else:
                 # No backup exists; create backup copy
-                shutil_copy(ecl.unrst, backup_ecl)
+                shutil_copy(ecl.unrst.file(), backup_ecl)
         else:
-            missing = [f.name for f in (ecl.unrst, ior.unrst) if not f.is_file()]
+            missing = [f.name for f in (ecl.unrst.file(), ior.unrst) if not f.is_file()]
             return False, f'Unable to merge restart files due to missing files: {", ".join(missing)}'
         start = datetime.now()
         try:
             # Define the sections in the restart files where the stitching is done
-            ecl_sec = Section(ecl.unrst, start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
+            ecl_sec = Section(ecl.unrst.file(), start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
             ior_sec = Section(ior.unrst, start_after='DOUBHEAD', end_before='SEQNUM')
             fname =  Path(str(ecl.case)+'_MERGED.UNRST') 
             merged_file = unfmt_file(fname).create(ecl_sec, ior_sec, 
@@ -1135,9 +1136,9 @@ class Simulation:
                                                    cancel=ior.stop_if_canceled)
             # Rename merged UNRST-file to original Eclipse restart file
             if merged_file and merged_file.is_file():
-                merged_file.replace(ecl.unrst)
+                merged_file.replace(ecl.unrst.file())
             else:
-                return False, f'Unable to merge {ecl.unrst} and {ior.unrst}'
+                return False, f'Unable to merge {ecl.unrst.file()} and {ior.unrst}'
         except OSError as e:
             return False, str(e)
         if self.output.del_merge:
