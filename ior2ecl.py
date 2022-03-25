@@ -31,7 +31,7 @@ from threading import Thread, Timer as th_timer
 
 from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
-from IORlib.ECL import UNRST_file, check_blocks, get_included_files, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
+from IORlib.ECL import RFT_file, UNRST_file, check_blocks, get_included_files, get_restart_file_step, get_start_UNRST, get_time_step_MSG, get_restart_time_step, get_start, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
 
 
 #====================================================================================
@@ -41,17 +41,15 @@ class Eclipse(Runner):                                                      # ec
     def __init__(self, root=None, exe='eclrun', **kwargs):
     #--------------------------------------------------------------------------------
         #print('eclipse.__init__: ',root, exe, kwargs)
-        #root = kwargs.pop('root', None)
         root = str(root)        
-        #exe = kwargs.pop('exe', None) or 'eclrun' # Default executable
-        #print(exe)
         exe = str(exe)
         super().__init__(name='Eclipse', case=root, exe=exe, cmd=[exe, 'eclipse', root], **kwargs)                        
-        #self.unrst = Path(root+'.UNRST')
-        self.unrst = UNRST_file(root+'.UNRST')
-        #self.unsmry = unfmt_file(root+'.UNSMRY')
+        self.update = kwargs.get('update') or None
+        self.unrst = UNRST_file(root+'.UNRST', wait_func=self.wait_for)
+        self.rft = RFT_file(root+'.RFT', wait_func=self.wait_for)
+        # self.unrst = Path(root+'.UNRST')
+        # self.rft = Path(root+'.RFT')
         self.unsmry = Path(root+'.UNSMRY')
-        self.rft = Path(root+'.RFT')
         self.msg = Path(root+'.MSG')
         self.inputfile = Path(root+'.DATA')
         self.is_iorsim = False
@@ -60,22 +58,20 @@ class Eclipse(Runner):                                                      # ec
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                # eclipse
     #--------------------------------------------------------------------------------
-        #for block in self.unsmry.blocks(only_new=True):
         t = n = 0
-        # 
         if self.unsmry.is_file():
             t, n = get_time_step_UNSMRY(file=self.unsmry)
         elif self.msg.is_file():
             t, n = get_time_step_MSG(file=self.msg) 
-        elif self.unrst.file().is_file():
-            t, n = get_time_step_UNRST(file=self.unrst.file(), end=True)
+        elif self.unrst.is_file():
+            t, n = get_time_step_UNRST(file=self.unrst.file, end=True)
         #print('{}: time = {}, step = {}'.format(self.name, t, n))
         return int(t), int(n)        
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                          # eclipse
     #--------------------------------------------------------------------------------
-        silentdelete( [self.unrst.file(), self.rft] )
+        silentdelete( [self.unrst.file, self.rft.file] )
         silentdelete( [str(self.case)+ext for ext in ('.SMSPEC','.UNSMRY','.RTELOG','.RTEMSG','_ECLIPSE.UNRST')] )
         delete_files_matching( [str(self.case)+fil for fil in ('*.session*', '*.dbprtx.lock', '*.dbprtx.lock-journal')] )
 
@@ -184,16 +180,15 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         #keep_alive = keep_alive and ECL_ALIVE_LIMIT or False
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', keep_alive=keep_alive, **kwargs)
         self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
-        self.update = kwargs.get('update') or None
+        #self.update = kwargs.get('update') or None
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps) 
         self.check_unrst = check_unrst
         self.check_rft = check_rft
-        self.rft_size = rft_size
-        # self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL', var='nwell')
-        #self.unrst_check = check_blocks(self.unrst, start='SEQNUM', end='ENDSOL')
-        self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
-        self.rft_start_size = 0
+        self.rft.check_size = rft_size
+        #self.rft_size = rft_size
+        # self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
+        #self.rft_start_size = 0
 
 
     #--------------------------------------------------------------------------------
@@ -226,120 +221,123 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         [self.interface_file(i).create_empty() for i in range(self.n, self.N)] 
         self.OK_file().delete()
         super().start()  
-        self.wait_for( self.unrst.file().exists, error=self.unrst.file().name+' not created')
-        self.wait_for( self.rft.exists, error=self.rft.name+' not created')
+        self.unrst.wait_for_file()
+        self.rft.wait_for_file()
+        # self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
+        # self.wait_for( self.rft.exists, error=self.rft.name+' not created')
         self.update.status(value=f'{self.name} running...')
         # Check if restart-file (UNRST) is flushed   
         nblocks = 1 + self.init_tsteps # 1 for 0'th SEQNUM
         for i in range(nblocks):
             if i > 0:
                 self.update_function(progress=not restart, plot=True)
-            self.check_UNRST_file() 
-        #self.nwell = self.unrst_check.var('nwell')
-        #unrst = UNRST_file(self.unrst)
-        #print(self.nwell, unrst.var(['nwell']))
-        self.nwell = self.unrst.var(['nwell'])[0]
-        self._print(f'nwell = {self.nwell}')
-        nwell_max = nblocks*self.nwell
-        rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell)
+            #self.check_UNRST_file()
+            self.unrst.wait_for_complete_file(nblocks=1, pause=0.01) 
+        self.rft.wait_for_complete_file(nblocks=nblocks, nwell=self.unrst.var(['nwell'])[0])
+        # self.rft.nwell, = self.unrst.var(['nwell'])
+        self._print(f' nwell = {self.rft.nwell}')
+        #nwell_max = nblocks*self.nwell
+        #rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell)
         self.suspend()
-        if self.rft_size:
-            self.init_RFT_size_check(rft_wells, nwell_max)
+        # if self.rft.check_size:
+        #     self.rft.init_size_check()
 
 
     #--------------------------------------------------------------------------------
     def run_one_step(self, satnum_file, log=True):                               # ecl_backward
     #--------------------------------------------------------------------------------
-        if self.rft_size:
-            self.rft_start_size = self.rft.stat().st_size
+        # if self.rft_size:
+        #     self.rft_start_size = self.rft.stat().st_size
         # Run Eclipse
         self.interface_file(self.n).copy(satnum_file, delete=True)
         self.OK_file().create_empty()
         self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
         if self.check_unrst:
-            self.check_UNRST_file()
+            self.unrst.wait_for_complete_file(nblocks=1, pause=0.01) 
+            # self.check_UNRST_file()
         if self.check_rft:
-            if self.rft_size:
-                self.wait_for( self.check_RFT_size )
-            else:
-                self.check_RFT_file(nwell_max=self.nwell)
+            self.rft.wait_for_complete_file(nblocks=1, pause=0.01) 
+            # if self.rft_size:
+            #     self.wait_for( self.check_RFT_size )
+            # else:
+            #     self.check_RFT_file(nwell_max=self.nwell)
         self.suspend()
         if self.delete_interface:
             self.interface_file(self.n).delete()
         self.n += 1
         if log:
             y, m, d = self.unrst.var(['year','month','day'])
-            self._print(f' Restart at {y}-{m:02d}-{d:02d}')
+            self._print(f' UNRST-file at {y}-{m:02d}-{d:02d}')
 
 
 
-    #--------------------------------------------------------------------------------
-    def check_unformatted_file(self, file, print_block=False):         # ecl_backward
-    #--------------------------------------------------------------------------------
-        print(f'{file} size: {file.stat().st_size}')
-        for block in unfmt_file(file).blocks(only_new=True):
-            if block.key() in ('SEQNUM','TIME'):
-                print(f'{block.key()} : {block.data()}')
-            print_block and block.print()
+    # #--------------------------------------------------------------------------------
+    # def check_unformatted_file(self, file, print_block=False):         # ecl_backward
+    # #--------------------------------------------------------------------------------
+    #     print(f'{file} size: {file.stat().st_size}')
+    #     for block in unfmt_file(file).blocks(only_new=True):
+    #         if block.key() in ('SEQNUM','TIME'):
+    #             print(f'{block.key()} : {block.data()}')
+    #         print_block and block.print()
 
 
-    #--------------------------------------------------------------------------------
-    def check_UNRST_file(self, nblocks=1, pause=0.01):                 # ecl_backward
-    #--------------------------------------------------------------------------------
-        #self.wait_for( self.unrst_check.blocks_complete, nblocks=nblocks, log=self.unrst_check.info, pause=pause )
-        self.wait_for( self.unrst.is_complete, nblocks=nblocks, log=self.unrst.log, pause=pause )
+    # #--------------------------------------------------------------------------------
+    # def check_UNRST_file(self, nblocks=1, pause=0.01):                 # ecl_backward
+    # #--------------------------------------------------------------------------------
+    #     self.wait_for( self.unrst.is_complete, nblocks=nblocks, log=self.unrst.log, pause=pause )
 
-    #--------------------------------------------------------------------------------
-    def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=100):        # ecl_backward
-    #--------------------------------------------------------------------------------
-        ###
-        ###  cannot always require nblocks=2*nwell in the initial RFT-check. In some situations
-        ###  all wells may not be ready after the TSTEP in the DATA-file. The RFT-check
-        ###  starts to look for 2*nwell blocks. If the check fails, the check is repeated
-        ###  with nblocks-1, and so on until nblocks==nwell.
-        ###
-        for nblocks in range(nwell_max, nwell_min-1, -1):
-            passed = self.wait_for( self.rft_check.blocks_complete, nblocks=nblocks, log=self.rft_check.info, limit=limit)
-            if passed:
-                break
-            if nblocks==nwell_min:
-                if nwell_min == 0:
-                    msg = 'WARNING No TIME blocks found in the RFT-file. Are all wells closed?'    
-                    self.update.message(msg)
-                    self._print(msg)
-                else:
-                    self._print(f'WARNING! Only {nwell_min} TIME blocks found in the RFT-file')
-        return nblocks
-
-
-    #--------------------------------------------------------------------------------
-    def init_RFT_size_check(self, init_wells, total_wells):            # ecl_backward
-    #--------------------------------------------------------------------------------
-        #print(init_wells, total_wells)
-        if init_wells != total_wells:
-            # Turn off simple RFT-file size check if some wells are missing in initial RFT-file 
-            self.rft_size = False
-            info = 'Turned on full RFT-check due to missing wells in initial file' 
-            self._print(info)
-        if self.rft_size: 
-            # Check size of initial RFT file
-            self.rft_size = int(0.5*self.rft.stat().st_size)
-            if 2*self.rft_size != self.rft.stat().st_size:
-                self.print2log('\nWARNING! Initial size of RFT size not even!\n')
+    # #--------------------------------------------------------------------------------
+    # def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=100):     # ecl_backward
+    # #--------------------------------------------------------------------------------
+    #     self.rft.wait_until_complete(nwell_max=nwell_max, nwell_min=nwell_min, limit=limit, wait_func=self.wait_for)
+    #     # ###
+    #     # ###  cannot always require nblocks=2*nwell in the initial RFT-check. In some situations
+    #     # ###  all wells may not be ready after the TSTEP in the DATA-file. The RFT-check
+    #     # ###  starts to look for 2*nwell blocks. If the check fails, the check is repeated
+    #     # ###  with nblocks-1, and so on until nblocks==nwell.
+    #     # ###
+    #     # for nblocks in range(nwell_max, nwell_min-1, -1):
+    #     #     passed = self.wait_for( self.rft_check.blocks_complete, nblocks=nblocks, log=self.rft_check.info, limit=limit)
+    #     #     if passed:
+    #     #         break
+    #     #     if nblocks==nwell_min:
+    #     #         if nwell_min == 0:
+    #     #             msg = 'WARNING No TIME blocks found in the RFT-file. Are all wells closed?'    
+    #     #             self.update.message(msg)
+    #     #             self._print(msg)
+    #     #         else:
+    #     #             self._print(f'WARNING! Only {nwell_min} TIME blocks found in the RFT-file')
+    #     # return nblocks
 
 
-    #--------------------------------------------------------------------------------
-    def check_RFT_size(self):                                          # ecl_backward
-    #--------------------------------------------------------------------------------
-        diff = self.rft.stat().st_size-self.rft_start_size
-        if diff==self.rft_size:
-            #if self.rft_check.file.tail_block_is('CONNXT'):
-            return True
-            #else:
-            #    return False
-        else:
-            return False
+    # #--------------------------------------------------------------------------------
+    # def init_RFT_size_check(self, init_wells, total_wells):            # ecl_backward
+    # #--------------------------------------------------------------------------------
+    #     #print(init_wells, total_wells)
+    #     if init_wells != total_wells:
+    #         # Turn off simple RFT-file size check if some wells are missing in initial RFT-file 
+    #         self.rft_size = False
+    #         info = 'Turned on full RFT-check due to missing wells in initial file' 
+    #         self._print(info)
+    #     if self.rft_size: 
+    #         # Check size of initial RFT file
+    #         self.rft_size = int(0.5*self.rft.stat().st_size)
+    #         if 2*self.rft_size != self.rft.stat().st_size:
+    #             self.print2log('\nWARNING! Initial size of RFT size not even!\n')
+
+
+    # #--------------------------------------------------------------------------------
+    # def check_RFT_size(self):                                          # ecl_backward
+    # #--------------------------------------------------------------------------------
+    #     diff = self.rft.stat().st_size-self.rft_start_size
+    #     if diff==self.rft_size:
+    #         #if self.rft_check.file.tail_block_is('CONNXT'):
+    #         return True
+    #         #else:
+    #         #    return False
+    #     else:
+    #         return False
 
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ecl_backward
@@ -402,6 +400,7 @@ class Iorsim(Runner):                                                        # i
             root = Path(root).absolute()
         cmd = [exe, str(root)] + args.split()
         super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, **kwargs)
+        self.update = kwargs.get('update') or None
         self.trcconc = None
         self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
         self.unrst = self.funrst.with_suffix('.UNRST')
@@ -523,7 +522,6 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         #keep_alive = keep_alive and IOR_ALIVE_LIMIT or False
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
         self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
-        self.update = kwargs.get('update') or None
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
         self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
@@ -1114,21 +1112,21 @@ class Simulation:
         self.update.progress(value=0)   # Reset progress time
         ecl = self.ecl or Eclipse(root=case)   
         ior = self.ior or Iorsim(root=case)   
-        if ecl.unrst.file().is_file() and ior.unrst.is_file():
+        if ecl.unrst.is_file() and ior.unrst.is_file():
             backup_ecl = Path(str(ecl.case)+'_ECLIPSE.UNRST')
             if backup_ecl.is_file():
                 # This is a pure IORSim run and backup already exists; restore backup
-                shutil_copy(backup_ecl, ecl.unrst.file())
+                shutil_copy(backup_ecl, ecl.unrst.file)
             else:
                 # No backup exists; create backup copy
-                shutil_copy(ecl.unrst.file(), backup_ecl)
+                shutil_copy(ecl.unrst.file, backup_ecl)
         else:
-            missing = [f.name for f in (ecl.unrst.file(), ior.unrst) if not f.is_file()]
+            missing = [f.name for f in (ecl.unrst.file, ior.unrst) if not f.is_file()]
             return False, f'Unable to merge restart files due to missing files: {", ".join(missing)}'
         start = datetime.now()
         try:
             # Define the sections in the restart files where the stitching is done
-            ecl_sec = Section(ecl.unrst.file(), start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
+            ecl_sec = Section(ecl.unrst.file, start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
             ior_sec = Section(ior.unrst, start_after='DOUBHEAD', end_before='SEQNUM')
             fname =  Path(str(ecl.case)+'_MERGED.UNRST') 
             merged_file = unfmt_file(fname).create(ecl_sec, ior_sec, 
@@ -1136,9 +1134,9 @@ class Simulation:
                                                    cancel=ior.stop_if_canceled)
             # Rename merged UNRST-file to original Eclipse restart file
             if merged_file and merged_file.is_file():
-                merged_file.replace(ecl.unrst.file())
+                merged_file.replace(ecl.unrst.file)
             else:
-                return False, f'Unable to merge {ecl.unrst.file()} and {ior.unrst}'
+                return False, f'Unable to merge {ecl.unrst.file} and {ior.unrst}'
         except OSError as e:
             return False, str(e)
         if self.output.del_merge:
