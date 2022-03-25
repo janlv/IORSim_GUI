@@ -11,6 +11,7 @@ IOR_ALIVE_LIMIT = -1   # Negative value = never suspended
 LOG_LEVEL_MAX = 3
 LOG_LEVEL_MIN = 1
 LOG_LEVEL = 3          # Default log level
+LOOP_PAUSE = 0.01
 
 DEBUG = False
 
@@ -175,20 +176,15 @@ class Backward_mixin:
 class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, check_unrst=True, check_rft=True, rft_size=False, keep_alive=False, **kwargs):
+    def __init__(self, check_unrst=True, check_rft=True, keep_alive=False, **kwargs):
     #--------------------------------------------------------------------------------
-        #keep_alive = keep_alive and ECL_ALIVE_LIMIT or False
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', keep_alive=keep_alive, **kwargs)
         self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
-        #self.update = kwargs.get('update') or None
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps) 
         self.check_unrst = check_unrst
         self.check_rft = check_rft
-        self.rft.check_size = rft_size
-        #self.rft_size = rft_size
-        # self.rft_check = check_blocks(self.rft, start='TIME', end='CONNXT')
-        #self.rft_start_size = 0
+        self.nwell = 0
 
 
     #--------------------------------------------------------------------------------
@@ -220,124 +216,47 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         # Need to create all interface files in advance to avoid Eclipse termination        
         [self.interface_file(i).create_empty() for i in range(self.n, self.N)] 
         self.OK_file().delete()
-        super().start()  
-        self.unrst.wait_for_file()
-        self.rft.wait_for_file()
-        # self.wait_for( self.unrst.exists, error=self.unrst.name+' not created')
-        # self.wait_for( self.rft.exists, error=self.rft.name+' not created')
+        # Start Eclipse
+        super().start()
         self.update.status(value=f'{self.name} running...')
-        # Check if restart-file (UNRST) is flushed   
-        nblocks = 1 + self.init_tsteps # 1 for 0'th SEQNUM
+        # Wait for output-files to appear  
+        self.unrst.wait_for_file(pause=LOOP_PAUSE)
+        self.rft.wait_for_file(pause=LOOP_PAUSE)
+        # Wait for flushed UNRST-file   
+        nblocks = 1 + self.init_tsteps # Add 1 for 0'th SEQNUM
         for i in range(nblocks):
             if i > 0:
                 self.update_function(progress=not restart, plot=True)
-            #self.check_UNRST_file()
-            self.unrst.wait_for_complete_file(nblocks=1, pause=0.01) 
-        self.rft.wait_for_complete_file(nblocks=nblocks, nwell=self.unrst.var(['nwell'])[0])
-        # self.rft.nwell, = self.unrst.var(['nwell'])
-        self._print(f' nwell = {self.rft.nwell}')
-        #nwell_max = nblocks*self.nwell
-        #rft_wells = self.check_RFT_file(nwell_max=nwell_max, nwell_min=self.nwell)
+            self.unrst.wait_for_complete_file(nblocks=1, pause=LOOP_PAUSE)
+        # Get number of wells from UNRST-file
+        self.nwell, = self.unrst.var(['nwell'], end=True)
+        self._print(f' nwell = {self.nwell}')
+        # Wait for flushed RFT-file
+        self.rft.wait_for_complete_file(nblocks=nblocks*self.nwell, pause=LOOP_PAUSE)
         self.suspend()
-        # if self.rft.check_size:
-        #     self.rft.init_size_check()
 
 
     #--------------------------------------------------------------------------------
-    def run_one_step(self, satnum_file, log=True):                               # ecl_backward
+    def run_one_step(self, satnum_file, log=True):                     # ecl_backward
     #--------------------------------------------------------------------------------
-        # if self.rft_size:
-        #     self.rft_start_size = self.rft.stat().st_size
-        # Run Eclipse
         self.interface_file(self.n).copy(satnum_file, delete=True)
         self.OK_file().create_empty()
         self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
         if self.check_unrst:
-            self.unrst.wait_for_complete_file(nblocks=1, pause=0.01) 
-            # self.check_UNRST_file()
+            self.unrst.wait_for_complete_file(nblocks=1, pause=LOOP_PAUSE) 
         if self.check_rft:
-            self.rft.wait_for_complete_file(nblocks=1, pause=0.01) 
-            # if self.rft_size:
-            #     self.wait_for( self.check_RFT_size )
-            # else:
-            #     self.check_RFT_file(nwell_max=self.nwell)
+            self.rft.wait_for_complete_file(nblocks=self.nwell, pause=LOOP_PAUSE) 
         self.suspend()
         if self.delete_interface:
             self.interface_file(self.n).delete()
         self.n += 1
         if log:
-            y, m, d = self.unrst.var(['year','month','day'])
-            self._print(f' UNRST-file at {y}-{m:02d}-{d:02d}')
+            # y, m, d = self.unrst.var(['year','month','day'])
+            # self._print(f' UNRST-file at {y}-{m:02d}-{d:02d}')
+            self._print(f' UNRST-file now at {self.unrst.date(end=True)}')
 
 
-
-    # #--------------------------------------------------------------------------------
-    # def check_unformatted_file(self, file, print_block=False):         # ecl_backward
-    # #--------------------------------------------------------------------------------
-    #     print(f'{file} size: {file.stat().st_size}')
-    #     for block in unfmt_file(file).blocks(only_new=True):
-    #         if block.key() in ('SEQNUM','TIME'):
-    #             print(f'{block.key()} : {block.data()}')
-    #         print_block and block.print()
-
-
-    # #--------------------------------------------------------------------------------
-    # def check_UNRST_file(self, nblocks=1, pause=0.01):                 # ecl_backward
-    # #--------------------------------------------------------------------------------
-    #     self.wait_for( self.unrst.is_complete, nblocks=nblocks, log=self.unrst.log, pause=pause )
-
-    # #--------------------------------------------------------------------------------
-    # def check_RFT_file(self, nwell_max=0, nwell_min=0, limit=100):     # ecl_backward
-    # #--------------------------------------------------------------------------------
-    #     self.rft.wait_until_complete(nwell_max=nwell_max, nwell_min=nwell_min, limit=limit, wait_func=self.wait_for)
-    #     # ###
-    #     # ###  cannot always require nblocks=2*nwell in the initial RFT-check. In some situations
-    #     # ###  all wells may not be ready after the TSTEP in the DATA-file. The RFT-check
-    #     # ###  starts to look for 2*nwell blocks. If the check fails, the check is repeated
-    #     # ###  with nblocks-1, and so on until nblocks==nwell.
-    #     # ###
-    #     # for nblocks in range(nwell_max, nwell_min-1, -1):
-    #     #     passed = self.wait_for( self.rft_check.blocks_complete, nblocks=nblocks, log=self.rft_check.info, limit=limit)
-    #     #     if passed:
-    #     #         break
-    #     #     if nblocks==nwell_min:
-    #     #         if nwell_min == 0:
-    #     #             msg = 'WARNING No TIME blocks found in the RFT-file. Are all wells closed?'    
-    #     #             self.update.message(msg)
-    #     #             self._print(msg)
-    #     #         else:
-    #     #             self._print(f'WARNING! Only {nwell_min} TIME blocks found in the RFT-file')
-    #     # return nblocks
-
-
-    # #--------------------------------------------------------------------------------
-    # def init_RFT_size_check(self, init_wells, total_wells):            # ecl_backward
-    # #--------------------------------------------------------------------------------
-    #     #print(init_wells, total_wells)
-    #     if init_wells != total_wells:
-    #         # Turn off simple RFT-file size check if some wells are missing in initial RFT-file 
-    #         self.rft_size = False
-    #         info = 'Turned on full RFT-check due to missing wells in initial file' 
-    #         self._print(info)
-    #     if self.rft_size: 
-    #         # Check size of initial RFT file
-    #         self.rft_size = int(0.5*self.rft.stat().st_size)
-    #         if 2*self.rft_size != self.rft.stat().st_size:
-    #             self.print2log('\nWARNING! Initial size of RFT size not even!\n')
-
-
-    # #--------------------------------------------------------------------------------
-    # def check_RFT_size(self):                                          # ecl_backward
-    # #--------------------------------------------------------------------------------
-    #     diff = self.rft.stat().st_size-self.rft_start_size
-    #     if diff==self.rft_size:
-    #         #if self.rft_check.file.tail_block_is('CONNXT'):
-    #         return True
-    #         #else:
-    #         #    return False
-    #     else:
-    #         return False
 
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ecl_backward
@@ -347,13 +266,6 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.interface_file(self.n).create_from_string('END')
         self.OK_file().create_empty()
         super().quit()
-        # self.delayed_suspend and self.delayed_suspend.close()
-
-    # #--------------------------------------------------------------------------------
-    # def kill(self):                                                    # ecl_backward
-    # #--------------------------------------------------------------------------------
-    #     super().kill()
-    #     self.delayed_suspend and self.delayed_suspend.close()
 
 
 
@@ -384,6 +296,7 @@ class Iorsim(Runner):                                                        # i
         solution = [k for k,v in all_.items() if v>0 and v!=2]
         specie_key = '*SPECIES'
         solution_key = '*SOLUTION'
+
 
     #--------------------------------------------------------------------------------
     def __init__(self, root=None, exe='IORSimX', args='', relative_root=True, **kwargs):     # iorsim
@@ -673,7 +586,7 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def now(self):                                                         # Schedule
     #--------------------------------------------------------------------------------
-        return self.start+timedelta(days=self.days)
+        return self.start+timedelta(days=self.days) #).strftime('%d %b %Y')
 
     #--------------------------------------------------------------------------------
     def info(self):                                                        # Schedule
@@ -1246,7 +1159,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-iorexe',         help="Name of IORSim executable, default is 'IORSimX'"                  )
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
-    parser.add_argument('-rft_size',       help='Backward mode: Only check size of RFT-file, default is full check', action='store_true')
+    # parser.add_argument('-rft_size',       help='Backward mode: Only check size of RFT-file, default is full check', action='store_true')
     parser.add_argument('-iorsim',         help="Run only iorsim", action='store_true')
     parser.add_argument('-eclipse',        help="Run only eclipse", action='store_true')
     parser.add_argument('-v',              default=LOG_LEVEL, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
@@ -1277,7 +1190,7 @@ def parse_input(case_dir=None, settings_file=None):
 @print_error
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
-           check_unrst=True, check_rft=True, rft_size=False, keep_files=False, 
+           check_unrst=True, check_rft=True, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
            ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, check_input=False, 
            verbose=LOG_LEVEL):
@@ -1319,8 +1232,8 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         runs = only_eclipse and ['eclipse'] or ['iorsim']
 
     sim = Simulation(root=root, time=time, iorexe=iorexe, eclexe=eclexe, 
-                     check_unrst=check_unrst, check_rft=check_rft, rft_size=rft_size,  
-                     keep_files=keep_files, progress=progress, status=status, message=message, to_screen=to_screen,
+                     check_unrst=check_unrst, check_rft=check_rft, keep_files=keep_files, 
+                     progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert, merge=merge, delete=delete, ecl_keep_alive=ecl_alive,
                      ior_keep_alive=ior_alive, runs=runs, mode=mode, check_input_kw=check_input, verbose=verbose)
 
@@ -1344,7 +1257,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
 #--------------------------------------------------------------------------------
     from os import _exit as os_exit
     args = parse_input(case_dir=case_dir, settings_file=settings_file)
-    runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']), rft_size=args['rft_size'], 
+    runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']),  
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
            ecl_alive=args['ecl_alive'] and ECL_ALIVE_LIMIT, ior_alive=args['ior_alive'] and IOR_ALIVE_LIMIT, only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],

@@ -1081,7 +1081,7 @@ class Settings(QDialog):
         ### Eclipse executable
         self.add_line_with_button(var='eclrun', open_func=self.open_ecl_prog)
         ### Workdir        
-        self.add_line_with_button(var='workdir', open_func=self.open_ecl_prog)
+        self.add_line_with_button(var='workdir', open_func=self.change_workdir)
         ### Savedir        
         self.add_line_with_button(var='savedir', open_func=self.change_savedir)
 
@@ -3329,8 +3329,7 @@ class main_window(QMainWindow):                                    # main_window
         s = self.settings
         # backward mode
         if self.mode=='backward':
-            #kwargs = {'mode':'backward', 'check_unrst':s.get['unrst'](), 'check_rft':s.get['rft'](), 'rft_size':False}
-            kwargs = {'mode':'backward', 'check_unrst':s.get('unrst'), 'check_rft':s.get('rft'), 'rft_size':False}
+            kwargs = {'mode':'backward', 'check_unrst':s.get('unrst'), 'check_rft':s.get('rft')}
         # forward mode
         elif self.mode in ('forward','eclipse','iorsim'):
             kwargs = {'mode':'forward', 'runs':self.run}
