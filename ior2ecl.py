@@ -229,7 +229,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
                 self.update_function(progress=not restart, plot=True)
             self.unrst.wait_for_complete_file(nblocks=1, pause=LOOP_PAUSE)
         # Get number of wells from UNRST-file
-        self.nwell, = self.unrst.var(['nwell'], end=True)
+        # self.nwell, = self.unrst.var(['nwell'], end=True)
+        self.nwell = self.unrst.var(['nwell'])[-1]
         self._print(f' nwell = {self.nwell}')
         # Wait for flushed RFT-file
         self.rft.wait_for_complete_file(nblocks=nblocks*self.nwell, pause=LOOP_PAUSE)
@@ -254,7 +255,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         if log:
             # y, m, d = self.unrst.var(['year','month','day'])
             # self._print(f' UNRST-file at {y}-{m:02d}-{d:02d}')
-            self._print(f' UNRST-file now at {self.unrst.date(end=True)}')
+            self._print(f' UNRST-file now at {self.unrst.date(N=-1)[0]}')
 
 
 
