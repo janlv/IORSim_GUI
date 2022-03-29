@@ -330,7 +330,7 @@ class Runner:                                                               # ru
     """
     
     #--------------------------------------------------------------------------------
-    def __init__(self, N=0, T=0, name=None, case=None, exe=None, cmd=None, pipe=False,
+    def __init__(self, N=0, T=0, n=0, t=0, name=None, case=None, exe=None, cmd=None, pipe=False,
                  verbose=3, timer=None, runlog=None, ext_iface=None, ext_OK=None,
                  keep_files=False, stop_children=True, keep_alive=False, **kwargs):           # runner
     #--------------------------------------------------------------------------------
@@ -353,9 +353,9 @@ class Runner:                                                               # ru
             self.timer = Timer(name.lower())
         self.keep_files = keep_files
         self.canceled = False
-        self.t = 0  
-        self.n = 0
-        self.T = int(T)   # Max time
+        self.t = t  
+        self.n = int(n)
+        self.T = T   # Max time
         self.N = int(N)   # Max number of steps
         self.starttime = None
         self.keep_alive = keep_alive
