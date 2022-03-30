@@ -29,7 +29,6 @@ from shutil import copy as shutil_copy
 from traceback import print_exc as trace_print_exc, format_exc as  trace_format_exc
 from re import search, compile
 from os.path import relpath
-#from threading import Thread, Timer as th_timer
 
 from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
@@ -49,13 +48,8 @@ class Eclipse(Runner):                                                      # ec
         self.update = kwargs.get('update') or None
         self.unrst = UNRST_file(root, wait_func=self.wait_for)
         self.rft = RFT_file(root, wait_func=self.wait_for)
-        # self.unrst = Path(root+'.UNRST')
-        # self.rft = Path(root+'.RFT')
-        # self.unsmry = Path(root+'.UNSMRY')
-        # self.msg = Path(root+'.MSG')
         self.unsmry = UNSMRY_file(root)
         self.msg = MSG_file(root)
-        #self.inputfile = Path(root+'.DATA')
         self.inputfile = ECL_input(root+'.DATA')
         self.is_iorsim = False
         self.is_eclipse = True
@@ -66,23 +60,12 @@ class Eclipse(Runner):                                                      # ec
         t = n = 0
         for output in (self.unsmry, self.msg, self.unrst):
             if output.file.is_file() and output.size() > 0:
+                #print(output)
                 t, n = output.var(['time', 'step'], N=-1, raise_error=False)
                 if t and n:
                     break
-        print(f'{self.name}: time = {t}, step = {n}')
+        #print(f'{self.name}: time = {t}, step = {n}')
         return t[0], n[0]
-        # if self.unsmry.is_file():
-        #     t, n = get_time_step_UNSMRY(file=self.unsmry)
-        # elif self.msg.is_file():
-        #     t, n = get_time_step_MSG(file=self.msg) 
-        # elif self.unrst.is_file():
-        # t, n = self.unrst.var(['time', 'step'], N=-1, raise_error=False)
-        # #t, n = get_time_step_UNRST(file=self.unrst.file, end=True)
-        # t, n  = [i and int(i[0]) or 0 for i in (t, n)]
-        # print(f'{self.name}: time = {t}, step = {n}')
-        # return t, n
-        # t, n = self.unrst.var(['time', 'step'], N=-1)
-        # return int(t[-1]), int(n[-1])        
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                          # eclipse
@@ -227,11 +210,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.update.status(value=f'Starting {self.name}...')
         if self.n > 0 or self.t > 0:
             self._print(f'Starting at {self.t} days (step {self.n})')
-        # If RESTART in DATA, add time and step from restart-file
-        # self.t, self.n = get_restart_time_step(self.case.with_suffix('.DATA'))
-        #self.t, self.n = self.inputfile.restart_time_and_step()
-        # if self.n:
-        #     self._print(f'Restarting from step {self.n}')
+        # self.n is not 0 if RESTART option is in use
         self.n += self.init_tsteps  
         self.interface_file('all').delete()
         # Need to create all interface files in advance to avoid Eclipse termination        
@@ -240,21 +219,16 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         # Start Eclipse
         super().start()
         self.update.status(value=f'{self.name} running...')
-        # Wait for output-files to appear  
-        #self.unrst.wait_for_file(pause=LOOP_PAUSE)
-        #self.rft.wait_for_file(pause=LOOP_PAUSE)
         # Wait for flushed UNRST-file   
         nblocks = 1 + self.init_tsteps # Add 1 for 0'th SEQNUM
         for i in range(nblocks):
             if i > 0:
                 self.update_function(progress=not restart, plot=True)
-            # self.unrst.wait_for_complete_file(nblocks=1, pause=LOOP_PAUSE)
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
         # Get number of wells from UNRST-file
         self.nwell = self.unrst.var(['nwell'])[0][-1]
         self._print(f' nwell = {self.nwell}')
         # Wait for flushed RFT-file
-        # self.rft.wait_for_complete_file(nblocks=nblocks*self.nwell, pause=LOOP_PAUSE)
         self.rft.check.data_saved_maxmin(max=nblocks*self.nwell, min=1, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
         self.suspend()
 
@@ -267,18 +241,14 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
         if self.check_unrst:
-            # self.unrst.wait_for_complete_file(nblocks=1, pause=LOOP_PAUSE) 
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE) 
         if self.check_rft:
-            # self.rft.wait_for_complete_file(nblocks=self.nwell, pause=LOOP_PAUSE) 
             self.rft.check.data_saved_maxmin(max=self.nwell, min=1, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE) 
         self.suspend()
         if self.delete_interface:
             self.interface_file(self.n).delete()
         self.n += 1
         if log:
-            # y, m, d = self.unrst.var(['year','month','day'])
-            # self._print(f' UNRST-file at {y}-{m:02d}-{d:02d}')
             self._print(f' UNRST-file now at {self.unrst.date(N=-1)}')
 
 
@@ -459,7 +429,6 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
         #keep_alive = keep_alive and IOR_ALIVE_LIMIT or False
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
-        # self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
         self.tsteps = kwargs.get('tsteps') or ECL_input(f'{self.case}.DATA').tsteps() 
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
@@ -573,14 +542,13 @@ class Schedule:
         '''
         self.case = Path(case)
         self.comment = comment
-        # self.ifacefile = interface_file
         self.ifacefile = ECL_input(interface_file, read=False)
         self.days = init_days 
         ECL_inp = ECL_input(f'{self.case}.DATA')
         self.start = ECL_inp.start()
         # Read start-date from restart file if RESTART in DATA-file
         self.restart_file = ECL_inp.restart_file_and_step()[0]
-        if self.restart_file: # and self.restart_file.is_file():
+        if self.restart_file: 
             self.start = UNRST_file(self.restart_file).date(N=1)
         self.tstep = 0
         self._schedule = []
@@ -746,7 +714,6 @@ class Schedule:
         if self.days >= self._schedule[0][0]:
             action = self._schedule.pop(0)[1]
         # Get tstep for next step (given by IORSim in satnum.dat)
-        #self.tstep = get_tsteps(self.ifacefile)[0]
         self.tstep = self.ifacefile.tsteps()[0]
         #print(f'START: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         # Check arrival of next event and adjust tstep if neccessary
@@ -773,9 +740,6 @@ class Simulation:
         self.name = 'ior2ecl'
         self.root = root
         self.ECL_inp = ECL_input(f'{root}.DATA')
-        # DATA_file = Path(str(self.root)+'.DATA') 
-        # if not DATA_file.is_file():
-        #     raise SystemError(f'ERROR No DATA-file found in {DATA_file.parent}')
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
         if delete:
@@ -822,20 +786,14 @@ class Simulation:
             return False
 
     #-----------------------------------------------------------------------
-    # def prepare_mode(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, tsteps=None, restart_days=None, **kwargs):
     def prepare_mode(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, tsteps=None, **kwargs):
     #-----------------------------------------------------------------------
-        #DATA_file = Path(self.root).with_suffix('.DATA')
         try:
-            # self.restart_days = int( restart_days or get_restart_time_step(DATA_file)[0] )
-            #self.restart_days = int( restart_days or self.ECL_inp.restart_time_and_step()[0] )
             self.restart_days, self.restart_step = self.ECL_inp.restart_time_and_step()
-            #print(self.restart_days, self.restart_step)
         except SystemError as e:
             self.update.message(f'{e}')
             return
         self.restart = self.restart_days > 0
-        # self.tsteps = tsteps or get_tsteps(DATA_file)
         self.tsteps = tsteps or self.ECL_inp.tsteps()
         if self.tsteps == [0]:
             self.tsteps = get_tsteps_from_schedule_files(self.root)
@@ -894,7 +852,6 @@ class Simulation:
     #-----------------------------------------------------------------------
     def forward(self): 
     #-----------------------------------------------------------------------
-        #print('Forward run')
         run_time = timedelta()
         ret = ''
         for run in self.runs:
@@ -925,7 +882,6 @@ class Simulation:
         # Start runs
         for run in self.runs:
             run.delete_output_files()
-            #run.start(update=self.update, restart=self.restart)
             run.start(restart=self.restart)
         # The schedule appends keywords to the interface file (satnum.dat)
         ecl.t = ior.t = self.schedule.update()
@@ -1054,6 +1010,7 @@ class Simulation:
         # Merge Eclipse and IORSim restart files
         self.update.status(value='Merging Eclipse and IORSim restart files...')
         self.update.progress(value=0)   # Reset progress time
+        sleep(0.05) # Give progress-bar time to respond
         ecl = self.ecl or Eclipse(root=case)   
         ior = self.ior or Iorsim(root=case)   
         if ecl.unrst.is_file() and ior.unrst.is_file():
