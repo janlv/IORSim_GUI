@@ -57,7 +57,7 @@ class Eclipse(Runner):                                                      # ec
     #--------------------------------------------------------------------------------
     def time_and_step(self):                                                # eclipse
     #--------------------------------------------------------------------------------
-        t = n = 0
+        t = n = [0]
         for output in (self.unsmry, self.msg, self.unrst):
             if output.file.is_file() and output.size() > 0:
                 #print(output)
@@ -927,6 +927,9 @@ class Simulation:
         except (SystemError, ProcessLookupError, NoSuchProcess) as e:
             msg = str(e)
             success = 'simulation complete' in msg.lower()
+            if not type(e) is SystemError and any([r.canceled for r in self.runs]):
+                msg = 'INFO Run stopped'
+            #print(type(e).__name__, e, msg)
         except KeyboardInterrupt:
             self.cancel()
             msg = 'Simulation cancelled' 

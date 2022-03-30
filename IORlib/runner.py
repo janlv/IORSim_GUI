@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 
 # Constants
-CHILD_SEARCH_WAIT = 0.5    # Seconds to sleep during child process search
-CHILD_SEARCH_LIMIT = 500   # Total number of iterations in child process search 
-SUSPEND_TIMER_PRECICION = 0.1 # Precision of the delayed-suspend-timer in seconds
+CHILD_SEARCH_WAIT = 0.5        # Seconds to sleep during child process search
+CHILD_SEARCH_LIMIT = 500       # Total number of iterations in child process search 
+SUSPEND_TIMER_PRECICION = 0.1  # Precision of the delayed-suspend-timer in seconds
 
 DEBUG = False
 
@@ -298,6 +298,8 @@ class Process:                                                              # Pr
         time = None
         for i in range(limit):
             sleep(wait)
+            if self.is_not_running():
+                raise SystemError(f'ERROR {self.info()} disappeared while searching for child-processes!')
             children = self._process.children(recursive=True)
             log is not False and log(children, v=3)
             # Stop if named child process is found

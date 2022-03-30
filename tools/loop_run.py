@@ -1,5 +1,6 @@
-import sys
-sys.path.append('../IORSim_GUI')
+#!/usr/bin/env python3
+#import sys
+#sys.path.append('../IORSim_GUI')
 from ior2ecl import runsim
 from pathlib import Path
 
@@ -7,8 +8,8 @@ def mypath(dirs):
     return Path.home().joinpath(*(dirs.split()))
 
 def loop_run(cases, times):
-    iorexe = mypath('codes IORSim build bin IORSimX.exe')
-    cdir = mypath('codes IORSim_GUI GUI cases')
+    iorexe = mypath('codes IORSim CVS build bin IORSimX')
+    cdir = mypath('github IORSim_GUI cases')
     n = 0
     for case,time in zip(cases, times):
         print(f'CASE {n} : {case}\n--------------------------')
