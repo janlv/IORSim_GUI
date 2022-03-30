@@ -11,7 +11,8 @@ IOR_ALIVE_LIMIT = -1   # Negative value = never suspended
 LOG_LEVEL_MAX = 3
 LOG_LEVEL_MIN = 1
 LOG_LEVEL = 3          # Default log level
-LOOP_PAUSE = 0.01
+CHECK_PAUSE = 0.01
+RFT_CHECK_ITER = 100   # Number of iterations before reducing number of blocks
 
 DEBUG = False
 
@@ -28,11 +29,11 @@ from shutil import copy as shutil_copy
 from traceback import print_exc as trace_print_exc, format_exc as  trace_format_exc
 from re import search, compile
 from os.path import relpath
-from threading import Thread, Timer as th_timer
+#from threading import Thread, Timer as th_timer
 
 from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
-from IORlib.ECL import DATA_file, RFT_file, UNRST_file, get_time_step_MSG, get_time_step_UNRST, get_time_step_UNSMRY, get_tsteps, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
+from IORlib.ECL import Input_file as ECL_input, MSG_file, RFT_file, UNRST_file, UNSMRY_file, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
 
 
 #====================================================================================
@@ -50,10 +51,12 @@ class Eclipse(Runner):                                                      # ec
         self.rft = RFT_file(root, wait_func=self.wait_for)
         # self.unrst = Path(root+'.UNRST')
         # self.rft = Path(root+'.RFT')
-        self.unsmry = Path(root+'.UNSMRY')
-        self.msg = Path(root+'.MSG')
+        # self.unsmry = Path(root+'.UNSMRY')
+        # self.msg = Path(root+'.MSG')
+        self.unsmry = UNSMRY_file(root)
+        self.msg = MSG_file(root)
         #self.inputfile = Path(root+'.DATA')
-        self.inputfile = DATA_file(root)
+        self.inputfile = ECL_input(root+'.DATA')
         self.is_iorsim = False
         self.is_eclipse = True
 
@@ -61,15 +64,24 @@ class Eclipse(Runner):                                                      # ec
     def time_and_step(self):                                                # eclipse
     #--------------------------------------------------------------------------------
         t = n = 0
-        if self.unsmry.is_file():
-            t, n = get_time_step_UNSMRY(file=self.unsmry)
-        elif self.msg.is_file():
-            t, n = get_time_step_MSG(file=self.msg) 
-        elif self.unrst.is_file():
-            t, n = get_time_step_UNRST(file=self.unrst.file, end=True)
-        return int(t), int(n)        
-        # t, n = self.unrst.var(['time', 'step'], N=-1)
+        for output in (self.unsmry, self.msg, self.unrst):
+            if output.file.is_file() and output.size() > 0:
+                t, n = output.var(['time', 'step'], N=-1, raise_error=False)
+                if t and n:
+                    break
+        print(f'{self.name}: time = {t}, step = {n}')
+        return t[0], n[0]
+        # if self.unsmry.is_file():
+        #     t, n = get_time_step_UNSMRY(file=self.unsmry)
+        # elif self.msg.is_file():
+        #     t, n = get_time_step_MSG(file=self.msg) 
+        # elif self.unrst.is_file():
+        # t, n = self.unrst.var(['time', 'step'], N=-1, raise_error=False)
+        # #t, n = get_time_step_UNRST(file=self.unrst.file, end=True)
+        # t, n  = [i and int(i[0]) or 0 for i in (t, n)]
         # print(f'{self.name}: time = {t}, step = {n}')
+        # return t, n
+        # t, n = self.unrst.var(['time', 'step'], N=-1)
         # return int(t[-1]), int(n[-1])        
 
     #--------------------------------------------------------------------------------
@@ -229,20 +241,21 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         super().start()
         self.update.status(value=f'{self.name} running...')
         # Wait for output-files to appear  
-        self.unrst.wait_for_file(pause=LOOP_PAUSE)
-        self.rft.wait_for_file(pause=LOOP_PAUSE)
+        #self.unrst.wait_for_file(pause=LOOP_PAUSE)
+        #self.rft.wait_for_file(pause=LOOP_PAUSE)
         # Wait for flushed UNRST-file   
         nblocks = 1 + self.init_tsteps # Add 1 for 0'th SEQNUM
         for i in range(nblocks):
             if i > 0:
                 self.update_function(progress=not restart, plot=True)
-            self.unrst.wait_for_complete_file(nblocks=1, pause=LOOP_PAUSE)
+            # self.unrst.wait_for_complete_file(nblocks=1, pause=LOOP_PAUSE)
+            self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
         # Get number of wells from UNRST-file
-        # self.nwell, = self.unrst.var(['nwell'], end=True)
         self.nwell = self.unrst.var(['nwell'])[0][-1]
         self._print(f' nwell = {self.nwell}')
         # Wait for flushed RFT-file
-        self.rft.wait_for_complete_file(nblocks=nblocks*self.nwell, pause=LOOP_PAUSE)
+        # self.rft.wait_for_complete_file(nblocks=nblocks*self.nwell, pause=LOOP_PAUSE)
+        self.rft.check.data_saved_maxmin(max=nblocks*self.nwell, min=1, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
         self.suspend()
 
 
@@ -254,9 +267,11 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
         if self.check_unrst:
-            self.unrst.wait_for_complete_file(nblocks=1, pause=LOOP_PAUSE) 
+            # self.unrst.wait_for_complete_file(nblocks=1, pause=LOOP_PAUSE) 
+            self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE) 
         if self.check_rft:
-            self.rft.wait_for_complete_file(nblocks=self.nwell, pause=LOOP_PAUSE) 
+            # self.rft.wait_for_complete_file(nblocks=self.nwell, pause=LOOP_PAUSE) 
+            self.rft.check.data_saved_maxmin(max=self.nwell, min=1, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE) 
         self.suspend()
         if self.delete_interface:
             self.interface_file(self.n).delete()
@@ -444,7 +459,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
         #keep_alive = keep_alive and IOR_ALIVE_LIMIT or False
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
-        self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
+        # self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
+        self.tsteps = kwargs.get('tsteps') or ECL_input(f'{self.case}.DATA').tsteps() 
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
         self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
@@ -556,21 +572,16 @@ class Schedule:
         The schedule is a list of lists: [[start-time, ''],[days, 'KEYWORD'],[end-time, '']]
         '''
         self.case = Path(case)
-        self.ifacefile = None
         self.comment = comment
-        self.ifacefile = interface_file
+        # self.ifacefile = interface_file
+        self.ifacefile = ECL_input(interface_file, read=False)
         self.days = init_days 
-        # ECL_inp = self.case.with_suffix('.DATA')
-        ECL_inp = DATA_file(self.case)
-        # self.start = get_start(ECL_inp)
+        ECL_inp = ECL_input(f'{self.case}.DATA')
         self.start = ECL_inp.start()
         # Read start-date from restart file if RESTART in DATA-file
-        # self.restart_file = get_restart_file_step(ECL_inp)[0]
         self.restart_file = ECL_inp.restart_file_and_step()[0]
         if self.restart_file: # and self.restart_file.is_file():
-            # self.start = get_start_UNRST(file=self.restart_file)
             self.start = UNRST_file(self.restart_file).date(N=1)
-        #print(self.start)
         self.tstep = 0
         self._schedule = []
         self.file = None
@@ -580,8 +591,6 @@ class Schedule:
             self._schedule = self.days_and_actions()
         # Add end time 
         self.insert(days=T, remove=True)
-        #[print(s) for s in self._schedule]
-        #print(self.info())
         DEBUG and print(f'Creating {self}')
 
 
@@ -702,7 +711,7 @@ class Schedule:
             return
         if tstep == 0:
             raise SystemError(f'ERROR Simulation stopped because schedule gave TSTEP 0 at {self.days} days, check {self.file}')
-        with open(self.ifacefile, 'r') as f:
+        with open(self.ifacefile.file, 'r') as f:
             lines = f.readlines()
         n = len(lines) + append_line
         if n > 0:
@@ -713,7 +722,7 @@ class Schedule:
             # Append action
             if action:
                 lines.insert(n, action)
-            with open(self.ifacefile, 'w') as f:
+            with open(self.ifacefile.file, 'w') as f:
                 f.write(''.join(lines))
 
     #--------------------------------------------------------------------------------
@@ -721,9 +730,9 @@ class Schedule:
     #--------------------------------------------------------------------------------
         # just a check...
         print(f'{self.days}, {self.start+timedelta(days=self.days)}')
-        with open(self.ifacefile, 'r') as f:
+        with open(self.ifacefile.file, 'r') as f:
             lines = f.readlines()
-        print(self.ifacefile, ': ', ''.join(lines[-10:]))
+        print(self.ifacefile.file, ': ', ''.join(lines[-10:]))
         print('Schedule:')
         print(self._schedule)
 
@@ -737,7 +746,8 @@ class Schedule:
         if self.days >= self._schedule[0][0]:
             action = self._schedule.pop(0)[1]
         # Get tstep for next step (given by IORSim in satnum.dat)
-        self.tstep = get_tsteps(self.ifacefile)[0]
+        #self.tstep = get_tsteps(self.ifacefile)[0]
+        self.tstep = self.ifacefile.tsteps()[0]
         #print(f'START: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         # Check arrival of next event and adjust tstep if neccessary
         if self._schedule and self.days + self.tstep + 1e-8 > self._schedule[0][0]:
@@ -762,7 +772,7 @@ class Simulation:
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.name = 'ior2ecl'
         self.root = root
-        self.ECL_inp = DATA_file(root)
+        self.ECL_inp = ECL_input(f'{root}.DATA')
         # DATA_file = Path(str(self.root)+'.DATA') 
         # if not DATA_file.is_file():
         #     raise SystemError(f'ERROR No DATA-file found in {DATA_file.parent}')
@@ -820,6 +830,7 @@ class Simulation:
             # self.restart_days = int( restart_days or get_restart_time_step(DATA_file)[0] )
             #self.restart_days = int( restart_days or self.ECL_inp.restart_time_and_step()[0] )
             self.restart_days, self.restart_step = self.ECL_inp.restart_time_and_step()
+            #print(self.restart_days, self.restart_step)
         except SystemError as e:
             self.update.message(f'{e}')
             return
@@ -1264,12 +1275,13 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         sim.convert_and_merge(case=sim.root, only_merge=only_merge)
         return
 
-    if sim.mode=='forward':
-        sim.set_time(int(sum(get_tsteps(str(root)+'.DATA'))))
+    # if sim.mode=='forward':
+    #     sim.set_time(int(sum(get_tsteps(str(root)+'.DATA'))))
     if not to_screen:
         print(sim.info_header())
     result, msg = sim.run()
     print()
+
 
 @print_error
 #--------------------------------------------------------------------------------

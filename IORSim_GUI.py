@@ -54,7 +54,7 @@ disable_warnings()
 # Local libraries
 from ior2ecl import ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, return_matching_string, delete_all, file_contains, write_file
-from IORlib.ECL import get_included_files, get_tsteps, unfmt_file
+from IORlib.ECL import Input_file as ECL_input, unfmt_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
 
@@ -1768,7 +1768,8 @@ class main_window(QMainWindow):                                    # main_window
         inp = self.input
         inp['ecl_days'] = inp['species'] = inp['tracers'] = None
         if inp['root']:
-            tsteps = get_tsteps(inp['root']+'.DATA')
+            # tsteps = get_tsteps(inp['root']+'.DATA')
+            tsteps = ECL_input(f'{inp["root"]}.DATA').tsteps()
             inp['ecl_days'] = int(sum(tsteps))
             inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
             inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
@@ -1899,7 +1900,8 @@ class main_window(QMainWindow):                                    # main_window
         # Input files, change name
         inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.DATA','.trcinp')]
         # Included files, keep name and path
-        data_files = get_included_files(src.with_suffix('.DATA'))
+        # data_files = get_included_files(src.with_suffix('.DATA'))
+        data_files = ECL_input(src.with_suffix('.DATA')).include_files()
         ior_files = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
         inc_files = [(src.parent/file, dst.parent/file) for file in data_files+ior_files]
         for src_fil, dst_fil in inp_files + inc_files:
