@@ -61,7 +61,7 @@ class Eclipse(Runner):                                                      # ec
         for output in (self.unsmry, self.msg, self.unrst):
             if output.file.is_file() and output.size() > 0:
                 # print(output)
-                t, n = output.var(['time', 'step'], N=-1, raise_error=False)
+                t, n = output.get(['time', 'step'], N=-1, raise_error=False)
                 if t and n:
                     break
                 else:
@@ -231,7 +231,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
                 self.update_function(progress=not restart, plot=True)
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
         # Get number of wells from UNRST-file
-        self.nwell = self.unrst.var(['nwell'])[0][-1]
+        self.nwell = self.unrst.get(['nwell'])[0][-1]
         self._print(f' nwell = {self.nwell}')
         # Wait for flushed RFT-file
         self.rft.check.data_saved_maxmin(max=nblocks*self.nwell, min=1, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
