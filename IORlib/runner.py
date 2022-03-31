@@ -332,8 +332,8 @@ class Runner:                                                               # ru
     """
     
     #--------------------------------------------------------------------------------
-    def __init__(self, N=0, T=0, n=0, t=0, name=None, case=None, exe=None, cmd=None, pipe=False,
-                 verbose=3, timer=None, runlog=None, ext_iface=None, ext_OK=None,
+    def __init__(self, N=0, T=0, n=0, t=0, name='', case='', exe='', cmd=None, pipe=False,
+                 verbose=3, timer=None, runlog=None, ext_iface='', ext_OK='',
                  keep_files=False, stop_children=True, keep_alive=False, **kwargs):           # runner
     #--------------------------------------------------------------------------------
         #print('runner.__init__: ',keep_alive, N,T,name,case,exe,cmd,ext_iface,ext_OK)

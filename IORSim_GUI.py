@@ -441,9 +441,9 @@ class sim_worker(base_worker):
         def status(run=None, value=None, mode=None, **x):
         #------------------------------------
             if run and not value:
-                count = f'{int(run.t)}'
+                count = f'{run.t:.0f}'
                 if self.progress_min:
-                    count = f'({int(self.progress_min)} + {int(run.t-self.progress_min)})'
+                    count = f'({self.progress_min:.0f} + {(run.t-self.progress_min):.0f})'
                 value = f'{run.name}   {count} / {run.T} days'
                 if mode == 'forward':
                     value = run.name + ' ' + value
@@ -758,6 +758,7 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def update(self, file):
     #-----------------------------------------------------------------------
+        #print(file)
         self.set_text(read_file(file))
         self.editor_.moveCursor(QTextCursor.End)
 
@@ -1768,8 +1769,7 @@ class main_window(QMainWindow):                                    # main_window
         inp = self.input
         inp['ecl_days'] = inp['species'] = inp['tracers'] = None
         if inp['root']:
-            # tsteps = get_tsteps(inp['root']+'.DATA')
-            tsteps = ECL_input(f'{inp["root"]}.DATA').tsteps()
+            tsteps = ECL_input(f'{inp["root"]}.DATA').get('TSTEP')
             inp['ecl_days'] = int(sum(tsteps))
             inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
             inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
@@ -1900,8 +1900,7 @@ class main_window(QMainWindow):                                    # main_window
         # Input files, change name
         inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.DATA','.trcinp')]
         # Included files, keep name and path
-        # data_files = get_included_files(src.with_suffix('.DATA'))
-        data_files = ECL_input(src.with_suffix('.DATA')).include_files()
+        data_files = ECL_input(src.with_suffix('.DATA')).get('INCLUDE')
         ior_files = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
         inc_files = [(src.parent/file, dst.parent/file) for file in data_files+ior_files]
         for src_fil, dst_fil in inp_files + inc_files:

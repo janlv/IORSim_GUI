@@ -60,19 +60,22 @@ class Eclipse(Runner):                                                      # ec
         t = n = [0]
         for output in (self.unsmry, self.msg, self.unrst):
             if output.file.is_file() and output.size() > 0:
-                #print(output)
+                # print(output)
                 t, n = output.var(['time', 'step'], N=-1, raise_error=False)
                 if t and n:
                     break
-        #print(f'{self.name}: time = {t}, step = {n}')
+                else:
+                    t = n = [0]
+        # print(f'{self.name}: time = {t}, step = {n}')
         return t[0], n[0]
+
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                          # eclipse
     #--------------------------------------------------------------------------------
-        silentdelete( [self.unrst.file, self.rft.file] )
-        silentdelete( [str(self.case)+ext for ext in ('.SMSPEC','.UNSMRY','.RTELOG','.RTEMSG','_ECLIPSE.UNRST')] )
-        delete_files_matching( [str(self.case)+fil for fil in ('*.session*', '*.dbprtx.lock', '*.dbprtx.lock-journal')] )
+        delete_files_matching( [f'{self.case}*.{ext}' for ext in ('*UNRST','RFT','SMSPEC','UNSMRY','RTELOG','RTEMSG','MSG', 'session*', 'dbprtx.lock*')])
+        delete_files_matching(self.case.parent/'fort??????')
+
 
     #--------------------------------------------------------------------------------
     def check_input(self):                                                  # eclipse
@@ -86,8 +89,9 @@ class Eclipse(Runner):                                                      # ec
 
         # Check if included files exists
         # for file in get_included_files(inp_file):
-        for file in self.inputfile.include_files():
-            if not file.is_file():
+        # for file in self.inputfile.include_files():
+        for file in self.inputfile.get('INCLUDE'):
+            if file and not file.is_file():
                 raise SystemError(f"{msg} '{file}' included from {self.inputfile} is missing")
 
 
@@ -178,7 +182,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     #--------------------------------------------------------------------------------
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', keep_alive=keep_alive, **kwargs)
         #self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
-        self.tsteps = kwargs.get('tsteps') or self.inputfile.tsteps()
+        # self.tsteps = kwargs.get('tsteps') or self.inputfile.tsteps()
+        self.tsteps = kwargs.get('tsteps') or self.inputfile.get('TSTEP')
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps) 
         self.check_unrst = check_unrst
@@ -429,7 +434,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
         #keep_alive = keep_alive and IOR_ALIVE_LIMIT or False
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
-        self.tsteps = kwargs.get('tsteps') or ECL_input(f'{self.case}.DATA').tsteps() 
+        # self.tsteps = kwargs.get('tsteps') or ECL_input(f'{self.case}.DATA').tsteps() 
+        self.tsteps = kwargs.get('tsteps') or ECL_input(f'{self.case}.DATA').get('TSTEP') 
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
         self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
@@ -545,9 +551,9 @@ class Schedule:
         self.ifacefile = ECL_input(interface_file, read=False)
         self.days = init_days 
         ECL_inp = ECL_input(f'{self.case}.DATA')
-        self.start = ECL_inp.start()
+        self.start = ECL_inp.get('START')[0]
         # Read start-date from restart file if RESTART in DATA-file
-        self.restart_file = ECL_inp.restart_file_and_step()[0]
+        self.restart_file = ECL_inp.get('RESTART')[0]
         if self.restart_file: 
             self.start = UNRST_file(self.restart_file).date(N=1)
         self.tstep = 0
@@ -714,7 +720,7 @@ class Schedule:
         if self.days >= self._schedule[0][0]:
             action = self._schedule.pop(0)[1]
         # Get tstep for next step (given by IORSim in satnum.dat)
-        self.tstep = self.ifacefile.tsteps()[0]
+        self.tstep = self.ifacefile.get('TSTEP')[0]
         #print(f'START: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         # Check arrival of next event and adjust tstep if neccessary
         if self._schedule and self.days + self.tstep + 1e-8 > self._schedule[0][0]:
@@ -794,7 +800,8 @@ class Simulation:
             self.update.message(f'{e}')
             return
         self.restart = self.restart_days > 0
-        self.tsteps = tsteps or self.ECL_inp.tsteps()
+        # self.tsteps = tsteps or self.ECL_inp.tsteps()
+        self.tsteps = tsteps or self.ECL_inp.get('TSTEP')
         if self.tsteps == [0]:
             self.tsteps = get_tsteps_from_schedule_files(self.root)
         if not self.mode:
