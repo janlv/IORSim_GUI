@@ -32,7 +32,7 @@ from os.path import relpath
 
 from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
-from IORlib.ECL import Input_file as ECL_input, MSG_file, RFT_file, UNRST_file, UNSMRY_file, get_tsteps_from_schedule_files, unfmt_file, fmt_file, Section
+from IORlib.ECL import Input_file as ECL_input, MSG_file, RFT_file, UNRST_file, UNSMRY_file, unfmt_file, fmt_file, Section
 
 
 #====================================================================================
@@ -81,7 +81,7 @@ class Eclipse(Runner):                                                      # ec
     def check_input(self):                                                  # eclipse
     #--------------------------------------------------------------------------------
         super().check_input()
-        msg = f'WARNING Unable to start {self.name}:'
+        msg = f'ERROR Unable to start {self.name}:'
 
         # Check if root.DATA exists
         if not self.inputfile.is_file():
@@ -92,7 +92,7 @@ class Eclipse(Runner):                                                      # ec
         # for file in self.inputfile.include_files():
         for file in self.inputfile.get('INCLUDE'):
             if file and not file.is_file():
-                raise SystemError(f"{msg} '{file}' included from {self.inputfile} is missing")
+                raise SystemError(f"{msg} '{file.name}' included from {self.inputfile.file.name} is missing")
 
 
     #--------------------------------------------------------------------------------
@@ -798,10 +798,16 @@ class Simulation:
             self.update.message(f'{e}')
             return
         self.restart = self.restart_days > 0
-        # self.tsteps = tsteps or self.ECL_inp.tsteps()
         self.tsteps = tsteps or self.ECL_inp.get('TSTEP')
+        schedule_file = None
         if self.tsteps == [0]:
-            self.tsteps = get_tsteps_from_schedule_files(self.root)
+            # Get tsteps from included .SCH/.sch file
+            schedule_file = self.ECL_inp.include_file('.sch')
+            if schedule_file and schedule_file.is_file():
+                self.tsteps = self.ECL_inp.date2tstep(ECL_input(schedule_file).get('DATES')) 
+        if self.tsteps == [0]:
+            self.update.message(f'ERROR No TSTEP given in {self.ECL_inp.file.name}{schedule_file and f" or {schedule_file.name}" or ""}, simulation stopped')
+            return
         if not self.mode:
             self.mode = self.mode_from_case()
         # Backward simulation
@@ -906,7 +912,7 @@ class Simulation:
             self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
             ecl.t = ior.t = self.schedule.update()
-            self.print2log(f'days = {ior.t:.3f}/{ior.T} ({self.schedule.now()})')
+            self.print2log(f'days = {ior.t:.2f}/{ior.T} ({self.schedule.now()})')
             self.update.progress(value=ior.t)
             self.update.plot()
         # Timestep loop finished
