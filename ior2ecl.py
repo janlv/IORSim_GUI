@@ -406,10 +406,8 @@ class Iorsim(Runner):                                                        # i
                line = line.strip()
                if line and not line.startswith('#'):
                    n += 1
-        #print('line: |'+line+'|')
         if line:
             t = float(line.split()[0])
-        #print('{}: time = {}, step = {}'.format(self.name, t, n))
         return int(t), int(n)
 
     #--------------------------------------------------------------------------------

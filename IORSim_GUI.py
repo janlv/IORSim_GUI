@@ -313,8 +313,8 @@ def delete_all_widgets_in_layout(layout):
 #-----------------------------------------------------------------------
 def to_rgb(color):
 #-----------------------------------------------------------------------
-    #return 'rgb{}'.format( tuple(asarray(asarray(matplotlib.colors.to_rgb(color))*255, dtype='int')) )
-    return 'rgb{}'.format( tuple(asarray(asarray(colors_to_rgb(color))*255, dtype='int')) )
+    # return 'rgb{}'.format( tuple(asarray(asarray(colors_to_rgb(color))*255, dtype='int')) )
+    return f'rgb{tuple(asarray(asarray(colors_to_rgb(color))*255, dtype="int"))}'
     
 
 #-----------------------------------------------------------------------
@@ -1735,7 +1735,8 @@ class main_window(QMainWindow):                                    # main_window
             f.write('# This is an input-file for ior2ecl_GUI.py, do not edit.\n')
             #for var,val in self.input.items():
             for var in self.input_to_save:
-                line = '{} {}'.format(var,self.input.get(var) or '')
+                # line = '{} {}'.format(var,self.input.get(var) or '')
+                line = f'{var} {self.input.get(var) or ""}'
                 f.write(line+'\n')
                 #print('saved input: '+line)
         return True
@@ -1760,8 +1761,7 @@ class main_window(QMainWindow):                                    # main_window
                             v = val
                         finally:
                             self.input[var] = v
-        #for var,val in self.input.items():
-        #    print('{} = {} ({})'.format(var,val,type(val)))
+
                             
     #-----------------------------------------------------------------------
     def set_variables_from_casefiles(self):                # main_window

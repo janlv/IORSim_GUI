@@ -698,8 +698,8 @@ class Runner:                                                               # ru
     #--------------------------------------------------------------------------------
         if not self.pipe:
             raise SystemError('STDIN is not piped, unable to write. Aborting...')
-        self._print('writing {} to STDIN'.format(i))
-        inp = '{:d}\n'.format(i)
+        self._print(f'writing {i} to STDIN')
+        inp = f'{i:d}\n'
         self.P.stdin.write(inp.encode())
         self.P.stdin.flush()
 
