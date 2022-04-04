@@ -532,7 +532,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
 class Schedule:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, case, T=0, init_days=0, ext='.SCH', comment='--', interface_file=None): #, end='/', tag='TSTEP'):
+    def __init__(self, case, T=0, init_days=0, start=None, ext='.SCH', comment='--', interface_file=None): #, end='/', tag='TSTEP'):
     #--------------------------------------------------------------------------------
         '''
         Create schedule from a .SCH-file if it exists. 
@@ -548,12 +548,13 @@ class Schedule:
         self.comment = comment
         self.ifacefile = ECL_input(interface_file, read=False)
         self.days = init_days 
-        ECL_inp = ECL_input(f'{self.case}.DATA')
-        self.start = ECL_inp.get('START')[0]
+        self.start = start
+        # ECL_inp = ECL_input(f'{self.case}.DATA')
+        # self.start = start or ECL_inp.get('START')[0]
         # Read start-date from restart file if RESTART in DATA-file
-        self.restart_file = ECL_inp.get('RESTART')[0]
-        if self.restart_file: 
-            self.start = UNRST_file(self.restart_file).date(N=1)
+        # self.restart_file = ECL_inp.get('RESTART')[0]
+        # if self.restart_file: 
+        #     self.start = UNRST_file(self.restart_file).date(N=1)
         self.tstep = 0
         self._schedule = []
         self.file = None
@@ -761,6 +762,8 @@ class Simulation:
         self.mode = mode
         self.schedule = None
         self.restart = False
+        self.restart_file = None
+        self.restart_step = self.restart_days = 0
         if root:
             kwargs.update({'root':str(root), 'runlog':self.runlog})
             self.prepare_mode(**kwargs)
@@ -790,18 +793,29 @@ class Simulation:
             return False
 
     #-----------------------------------------------------------------------
-    def prepare_mode(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, tsteps=None, **kwargs):
+    # def prepare_mode(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, tsteps=None, **kwargs):
+    def prepare_mode(self, **kwargs):
     #-----------------------------------------------------------------------
-        try:
-            self.restart_days, self.restart_step = self.ECL_inp.restart_time_and_step()
-        except SystemError as e:
-            self.update.message(f'{e}')
-            return
-        self.restart = self.restart_days > 0
-        self.tsteps = tsteps or self.ECL_inp.get('TSTEP')
+        # Check if this is a restart-run
+        file, step = self.ECL_inp.get('RESTART')
+        if file and step:
+            # Get time and step from the restart-file
+            self.restart_file = UNRST_file(file)
+            self.restart_step = step
+            # time, n = UNRST_file(file).get(['time', 'step'], stop=('step', step))
+            time, n = self.restart_file.get(['time', 'step'], stop=('step', step))
+            self.restart_days = time[n.index(step)]
+            self.restart = True
+        # try:
+        #     self.restart_days, self.restart_step = self.ECL_inp.restart_time_and_step()
+        # except SystemError as e:
+        #     self.update.message(f'{e}')
+        #     return
+        #self.restart = self.restart_days > 0
+        self.tsteps = self.ECL_inp.get('TSTEP')
         schedule_file = None
         if self.tsteps == [0]:
-            # Get tsteps from included .SCH/.sch file
+            # Get tsteps from included .SCH/.sch file (if it exists)
             schedule_file = self.ECL_inp.include_file('.sch')
             if schedule_file and schedule_file.is_file():
                 self.tsteps = self.ECL_inp.date2tstep(ECL_input(schedule_file).get('DATES')) 
@@ -812,45 +826,47 @@ class Simulation:
             self.mode = self.mode_from_case()
         # Backward simulation
         if self.mode=='backward':
-            time_ecl = sum(self.tsteps) + self.restart_days
-            ior_integration = get_keyword(str(self.root)+'.trcinp', '\*INTEGRATION', end='\*')[0]
-            ior_dt_min = ior_integration[4] 
-            if time < time_ecl:
-                time = time_ecl + 1
-                self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
-                #print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
-            self.T = time 
-            # No problem if N yields a too large t, the simulation automatically ends when t == T. 
-            N = int(time/ior_dt_min) + 2 + len(self.tsteps)
-            if N > MAX_ITERATIONS:
-                self.update.message(f'ERROR Too many iterations: time/timestep = {time}/{ior_dt_min} = {time/ior_dt_min:.0f}')
-                self.run_sim = None
-                return
-            kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
-            # Init runs
-            self.run_sim = self.backward
-            self.runs = [Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs), 
-                         Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)]
-            self.ecl, self.ior = self.runs
-            # Set up schedule of commands to pass to satnum-file
-            self.schedule = Schedule(self.root, T=self.T, init_days=time_ecl, interface_file=self.ior.satnum)
+            self.init_backward_mode(**kwargs)
+            # time_ecl = sum(self.tsteps) + self.restart_days
+            # ior_integration = get_keyword(str(self.root)+'.trcinp', '\*INTEGRATION', end='\*')[0]
+            # ior_dt_min = ior_integration[4] 
+            # if time < time_ecl:
+            #     time = time_ecl + 1
+            #     self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
+            #     #print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
+            # self.T = time 
+            # # No problem if N yields a too large t, the simulation automatically ends when t == T. 
+            # N = int(time/ior_dt_min) + 2 + len(self.tsteps)
+            # if N > MAX_ITERATIONS:
+            #     self.update.message(f'ERROR Too many iterations: time/timestep = {time}/{ior_dt_min} = {time/ior_dt_min:.0f}')
+            #     self.run_sim = None
+            #     return
+            # kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
+            # # Init runs
+            # self.run_sim = self.backward
+            # self.runs = [Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs), 
+            #              Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)]
+            # self.ecl, self.ior = self.runs
+            # # Set up schedule of commands to pass to satnum-file
+            # self.schedule = Schedule(self.root, T=self.T, init_days=time_ecl, interface_file=self.ior.satnum)
         # Forward simulation
         if self.mode=='forward':
-            time_ecl = sum(self.tsteps)
-            if time != time_ecl:
-                time = time_ecl
-            self.T = time
-            #print(f'time: {time}, time_ecl: {time_ecl}')
-            kwargs.update({'T':self.T})
-            self.run_sim = self.forward
-            if not self.runs:
-                self.runs = ('eclipse','iorsim')
-            for name in self.runs:
-                if name=='eclipse':
-                    self.ecl = Ecl_forward(exe=eclexe, **kwargs)
-                if name=='iorsim':
-                    self.ior = Ior_forward(exe=iorexe, **kwargs)
-            self.runs = [run for run in (self.ecl, self.ior) if run]
+            self.init_forward_mode(**kwargs)
+            # time_ecl = sum(self.tsteps)
+            # if time != time_ecl:
+            #     time = time_ecl
+            # self.T = time
+            # #print(f'time: {time}, time_ecl: {time_ecl}')
+            # kwargs.update({'T':self.T})
+            # self.run_sim = self.forward
+            # if not self.runs:
+            #     self.runs = ('eclipse','iorsim')
+            # for name in self.runs:
+            #     if name=='eclipse':
+            #         self.ecl = Ecl_forward(exe=eclexe, **kwargs)
+            #     if name=='iorsim':
+            #         self.ior = Ior_forward(exe=iorexe, **kwargs)
+            # self.runs = [run for run in (self.ecl, self.ior) if run]
         # Check neccessary input files
         try:
             for run in self.runs:
@@ -859,6 +875,56 @@ class Simulation:
             self.run_sim = None  # => ready() returns False
             self.update.message(f'{e}')
             return
+
+
+    #-----------------------------------------------------------------------
+    def init_forward_mode(self, iorexe=None, eclexe=None, time=0, **kwargs):
+    #-----------------------------------------------------------------------
+        time_ecl = sum(self.tsteps)
+        if time != time_ecl:
+            time = time_ecl
+        self.T = time
+        #print(f'time: {time}, time_ecl: {time_ecl}')
+        kwargs.update({'T':self.T})
+        self.run_sim = self.forward
+        if not self.runs:
+            self.runs = ('eclipse','iorsim')
+        for name in self.runs:
+            if name=='eclipse':
+                self.ecl = Ecl_forward(exe=eclexe, **kwargs)
+            if name=='iorsim':
+                self.ior = Ior_forward(exe=iorexe, **kwargs)
+        self.runs = [run for run in (self.ecl, self.ior) if run]
+
+
+    #-----------------------------------------------------------------------
+    def init_backward_mode(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, **kwargs):
+    #-----------------------------------------------------------------------
+        time_ecl = sum(self.tsteps) + self.restart_days
+        ior_integration = get_keyword(str(self.root)+'.trcinp', '\*INTEGRATION', end='\*')[0]
+        ior_dt_min = ior_integration[4] 
+        if time < time_ecl:
+            time = time_ecl + 1
+            self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
+            #print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
+        self.T = time 
+        # No problem if N yields a too large t, the simulation automatically ends when t == T. 
+        N = int(time/ior_dt_min) + 2 + len(self.tsteps)
+        if N > MAX_ITERATIONS:
+            self.update.message(f'ERROR Too many iterations: time/timestep = {time}/{ior_dt_min} = {time/ior_dt_min:.0f}')
+            self.run_sim = None
+            return
+        kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
+        # Init runs
+        self.run_sim = self.backward
+        self.runs = [Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs), 
+                        Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)]
+        self.ecl, self.ior = self.runs
+        # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
+        start = self.restart_file and self.restart_file.date(N=1) or self.ECL_inp.get('START')[0]
+        # Set up schedule of commands to pass to satnum-file
+        self.schedule = Schedule(self.root, T=self.T, start=start, init_days=time_ecl, interface_file=self.ior.satnum)
+
 
     #-----------------------------------------------------------------------
     def forward(self): 
