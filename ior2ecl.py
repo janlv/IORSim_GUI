@@ -93,7 +93,7 @@ class Eclipse(Runner):                                                      # ec
         for file in self.inputfile.get('INCLUDE'):
             if file and not file.is_file():
                 raise SystemError(f"{msg} '{file.name}' included from {self.inputfile.file.name} is missing")
-
+        return True
 
     #--------------------------------------------------------------------------------
     def unexpected_stop_error(self):                                        # eclipse
@@ -156,6 +156,7 @@ class Ecl_forward(Forward_mixin, Eclipse):                              # ecl_fo
         if file_contains(str(self.case)+'.DATA', text='READDATA', comment='--', end='END'):
             raise SystemError('WARNING The current case cannot run in forward-mode: '+
                               'Eclipse input contains the READDATA keyword.')
+        return True
 
 
 #====================================================================================
@@ -206,6 +207,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         ### Check presence of RPTSOL RESTART>1
         if not file_contains(DATA_file, regex=r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}", **kwargs):
             raise_error("insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in the DATA-file.")
+        return True
 
 
     #--------------------------------------------------------------------------------
@@ -376,6 +378,7 @@ class Iorsim(Runner):                                                        # i
         # Check if required keywords are used, and if the order is correct 
         if self.check_input_kw:
             self.check_keywords()
+        return True
 
 
     #--------------------------------------------------------------------------------
@@ -764,9 +767,11 @@ class Simulation:
         self.restart = False
         self.restart_file = None
         self.restart_step = self.restart_days = 0
+        kwargs.update({'root':str(root), 'runlog':self.runlog})
+        self.kwargs = kwargs
         if root:
-            kwargs.update({'root':str(root), 'runlog':self.runlog})
-            self.prepare_mode(**kwargs)
+            #self.init_runs(**kwargs)
+            self.run_sim = self.init_runs()
 
     #-----------------------------------------------------------------------
     def close(self):
@@ -787,14 +792,12 @@ class Simulation:
     #-----------------------------------------------------------------------
     def ready(self):
     #-----------------------------------------------------------------------
-        if self.run_sim:
-            return True
-        else:
-            return False
+        return self.run_sim and all([run.check_input() for run in self.runs])
+        #print(self.run_sim, self.runs, [run.check_input() for run in self.runs] )
+        #return OK
 
     #-----------------------------------------------------------------------
-    # def prepare_mode(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, tsteps=None, **kwargs):
-    def prepare_mode(self, **kwargs):
+    def init_runs(self):
     #-----------------------------------------------------------------------
         # Check if this is a restart-run
         file, step = self.ECL_inp.get('RESTART')
@@ -802,16 +805,13 @@ class Simulation:
             # Get time and step from the restart-file
             self.restart_file = UNRST_file(file)
             self.restart_step = step
-            # time, n = UNRST_file(file).get(['time', 'step'], stop=('step', step))
             time, n = self.restart_file.get(['time', 'step'], stop=('step', step))
+            if step > n[-1] or not step in n: 
+                new_step = min(n, key=lambda x:abs(x-step))
+                self.update.message(f'ERROR Error in the Eclipse input-file ({self.ECL_inp.file.name}): Unable to restart from step {step}, use {new_step} instead')
+                return False
             self.restart_days = time[n.index(step)]
             self.restart = True
-        # try:
-        #     self.restart_days, self.restart_step = self.ECL_inp.restart_time_and_step()
-        # except SystemError as e:
-        #     self.update.message(f'{e}')
-        #     return
-        #self.restart = self.restart_days > 0
         self.tsteps = self.ECL_inp.get('TSTEP')
         schedule_file = None
         if self.tsteps == [0]:
@@ -821,64 +821,18 @@ class Simulation:
                 self.tsteps = self.ECL_inp.date2tstep(ECL_input(schedule_file).get('DATES')) 
         if self.tsteps == [0]:
             self.update.message(f'ERROR No TSTEP given in {self.ECL_inp.file.name}{schedule_file and f" or {schedule_file.name}" or ""}, simulation stopped')
-            return
-        if not self.mode:
-            self.mode = self.mode_from_case()
-        # Backward simulation
-        if self.mode=='backward':
-            self.init_backward_mode(**kwargs)
-            # time_ecl = sum(self.tsteps) + self.restart_days
-            # ior_integration = get_keyword(str(self.root)+'.trcinp', '\*INTEGRATION', end='\*')[0]
-            # ior_dt_min = ior_integration[4] 
-            # if time < time_ecl:
-            #     time = time_ecl + 1
-            #     self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
-            #     #print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
-            # self.T = time 
-            # # No problem if N yields a too large t, the simulation automatically ends when t == T. 
-            # N = int(time/ior_dt_min) + 2 + len(self.tsteps)
-            # if N > MAX_ITERATIONS:
-            #     self.update.message(f'ERROR Too many iterations: time/timestep = {time}/{ior_dt_min} = {time/ior_dt_min:.0f}')
-            #     self.run_sim = None
-            #     return
-            # kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
-            # # Init runs
-            # self.run_sim = self.backward
-            # self.runs = [Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs), 
-            #              Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)]
-            # self.ecl, self.ior = self.runs
-            # # Set up schedule of commands to pass to satnum-file
-            # self.schedule = Schedule(self.root, T=self.T, init_days=time_ecl, interface_file=self.ior.satnum)
-        # Forward simulation
-        if self.mode=='forward':
-            self.init_forward_mode(**kwargs)
-            # time_ecl = sum(self.tsteps)
-            # if time != time_ecl:
-            #     time = time_ecl
-            # self.T = time
-            # #print(f'time: {time}, time_ecl: {time_ecl}')
-            # kwargs.update({'T':self.T})
-            # self.run_sim = self.forward
-            # if not self.runs:
-            #     self.runs = ('eclipse','iorsim')
-            # for name in self.runs:
-            #     if name=='eclipse':
-            #         self.ecl = Ecl_forward(exe=eclexe, **kwargs)
-            #     if name=='iorsim':
-            #         self.ior = Ior_forward(exe=iorexe, **kwargs)
-            # self.runs = [run for run in (self.ecl, self.ior) if run]
-        # Check neccessary input files
-        try:
-            for run in self.runs:
-                run.check_input()
-        except SystemError as e:
-            self.run_sim = None  # => ready() returns False
-            self.update.message(f'{e}')
-            return
+            return False
+        self.mode = self.mode or self.mode_from_case()
+        init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
+        run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
+        # Call init-function
+        self.runs = init_func(**self.kwargs)
+        # Return run-function if init-function was successfull
+        return self.runs and run_func
 
 
     #-----------------------------------------------------------------------
-    def init_forward_mode(self, iorexe=None, eclexe=None, time=0, **kwargs):
+    def init_forward_run(self, iorexe=None, eclexe=None, time=0, **kwargs):
     #-----------------------------------------------------------------------
         time_ecl = sum(self.tsteps)
         if time != time_ecl:
@@ -886,7 +840,6 @@ class Simulation:
         self.T = time
         #print(f'time: {time}, time_ecl: {time_ecl}')
         kwargs.update({'T':self.T})
-        self.run_sim = self.forward
         if not self.runs:
             self.runs = ('eclipse','iorsim')
         for name in self.runs:
@@ -894,11 +847,12 @@ class Simulation:
                 self.ecl = Ecl_forward(exe=eclexe, **kwargs)
             if name=='iorsim':
                 self.ior = Ior_forward(exe=iorexe, **kwargs)
-        self.runs = [run for run in (self.ecl, self.ior) if run]
+        return [run for run in (self.ecl, self.ior) if run]
+        #return True
 
 
     #-----------------------------------------------------------------------
-    def init_backward_mode(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, **kwargs):
+    def init_backward_run(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, **kwargs):
     #-----------------------------------------------------------------------
         time_ecl = sum(self.tsteps) + self.restart_days
         ior_integration = get_keyword(str(self.root)+'.trcinp', '\*INTEGRATION', end='\*')[0]
@@ -906,29 +860,28 @@ class Simulation:
         if time < time_ecl:
             time = time_ecl + 1
             self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
-            #print(f'   INFO Simulation time increased to > {time_ecl} days, sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in {DATA_file.name}')
         self.T = time 
         # No problem if N yields a too large t, the simulation automatically ends when t == T. 
         N = int(time/ior_dt_min) + 2 + len(self.tsteps)
         if N > MAX_ITERATIONS:
             self.update.message(f'ERROR Too many iterations: time/timestep = {time}/{ior_dt_min} = {time/ior_dt_min:.0f}')
-            self.run_sim = None
-            return
+            return False
         kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
         # Init runs
-        self.run_sim = self.backward
-        self.runs = [Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs), 
+        self.ecl, self.ior = [Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs), 
                         Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)]
-        self.ecl, self.ior = self.runs
+        #self.runs = [self.ecl, self.ior]
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
         start = self.restart_file and self.restart_file.date(N=1) or self.ECL_inp.get('START')[0]
         # Set up schedule of commands to pass to satnum-file
         self.schedule = Schedule(self.root, T=self.T, start=start, init_days=time_ecl, interface_file=self.ior.satnum)
+        return [self.ecl, self.ior]
 
 
     #-----------------------------------------------------------------------
     def forward(self): 
     #-----------------------------------------------------------------------
+        #self.runs = self.init_forward_run(**self.kwargs)
         run_time = timedelta()
         ret = ''
         for run in self.runs:
@@ -944,8 +897,6 @@ class Simulation:
             #print(run.name, t, run.T)
             if run.t < run.T:
                 run.unexpected_stop_error()
-                #msg = 'ERROR ' + run.name + ' stopped unexpectedly, check the log'
-                #raise SystemError(msg)
             run_time += run.run_time()
             ret = run.complete_msg(run_time=run_time)
         return ret
@@ -954,6 +905,8 @@ class Simulation:
     #-----------------------------------------------------------------------
     def backward(self): 
     #-----------------------------------------------------------------------
+        # self.runs = self.init_backward_run(**self.kwargs)
+        # self.print2log(self.info_header())
         self.update.progress(value=-self.runs[0].T)
         ecl, ior = self.runs
         # Start runs
@@ -986,6 +939,7 @@ class Simulation:
             self.update.status(value=f'Stopping {run.name}...')
             run.quit()
         return ecl.complete_msg()
+
 
     #-----------------------------------------------------------------------
     def run(self):

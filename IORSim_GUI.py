@@ -444,7 +444,7 @@ class sim_worker(base_worker):
                 count = f'{run.t:.0f}'
                 if self.progress_min:
                     count = f'({self.progress_min:.0f} + {(run.t-self.progress_min):.0f})'
-                value = f'{run.name}   {count} / {run.T} days'
+                value = f'{run.name}   {count} / {run.T:.0f} days'
                 if mode == 'forward':
                     value = run.name + ' ' + value
             self.status_message(value)

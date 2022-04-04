@@ -394,6 +394,7 @@ class Runner:                                                               # ru
         ### check if executables exist on the system
         if which(self.exe) is None:
             raise SystemError('WARNING Executable not found: ' + self.exe)
+        return True
 
 
     #--------------------------------------------------------------------------------
