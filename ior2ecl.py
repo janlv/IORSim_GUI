@@ -789,12 +789,12 @@ class Simulation:
         txt += f'Application: {__version__}\n'
         return txt
 
+
     #-----------------------------------------------------------------------
     def ready(self):
     #-----------------------------------------------------------------------
-        return self.run_sim and all([run.check_input() for run in self.runs])
-        #print(self.run_sim, self.runs, [run.check_input() for run in self.runs] )
-        #return OK
+        return bool(self.run_sim)
+
 
     #-----------------------------------------------------------------------
     def init_runs(self):
@@ -825,10 +825,16 @@ class Simulation:
         self.mode = self.mode or self.mode_from_case()
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
-        # Call init-function
-        self.runs = init_func(**self.kwargs)
-        # Return run-function if init-function was successfull
-        return self.runs and run_func
+        check_OK = False
+        try:
+            # Call init-function
+            self.runs = init_func(**self.kwargs)
+            # Check input
+            check_OK = self.runs and all([run.check_input() for run in self.runs])
+            # Return run-function if init-function was successfull
+        except SystemError as e:
+            self.update.message(f'{e}')
+        return check_OK and run_func
 
 
     #-----------------------------------------------------------------------
