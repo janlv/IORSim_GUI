@@ -52,7 +52,7 @@ from urllib3 import disable_warnings
 disable_warnings()
 
 # Local libraries
-from ior2ecl import ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
+from ior2ecl import ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, return_matching_string, delete_all, file_contains, write_file
 from IORlib.ECL import Input_file as ECL_input, unfmt_file
 
@@ -1029,7 +1029,7 @@ class Settings(QDialog):
                      'ecl_keep_alive' : variable(f'Wait up to', False, f'Keep Eclipse running while waiting for input to improve performance', False),
                      'ecl_alive_limit': variable(f'seconds before Eclipse is paused during IORSim runs', str(ECL_ALIVE_LIMIT), f'Eclipse will stop if new input is not ready within 100 seconds', False),
                      'ior_keep_alive' : variable(f'Do not pause IORSim during Eclipse runs', False, f'Keep IORSim running while waiting for input', False),
-                     'log_level'      : variable('Detail level of the application log', str(LOG_LEVEL), 'A higher value gives a more detailed application log', False)}
+                     'log_level'      : variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL), 'A higher value gives a more detailed application log', False)}
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
         self.abs_path = False

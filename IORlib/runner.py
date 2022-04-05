@@ -334,7 +334,7 @@ class Runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def __init__(self, N=0, T=0, n=0, t=0, name='', case='', exe='', cmd=None, pipe=False,
                  verbose=3, timer=None, runlog=None, ext_iface='', ext_OK='',
-                 keep_files=False, stop_children=True, keep_alive=False, **kwargs):           # runner
+                 keep_files=False, stop_children=True, keep_alive=False, lognr=None, **kwargs):           # runner
     #--------------------------------------------------------------------------------
         #print('runner.__init__: ',keep_alive, N,T,name,case,exe,cmd,ext_iface,ext_OK)
         self.reset_processes()
@@ -342,7 +342,7 @@ class Runner:                                                               # ru
         self.case = Path(case)
         self.exe = exe
         self.cmd = cmd
-        self.log = safeopen( Path(case).parent / Path(name.lower()+'.log'), 'w' )
+        self.log = safeopen(Path(case).parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log', 'w' )
         self.runlog = runlog
         self.ext_iface = ext_iface
         self.ext_OK = ext_OK

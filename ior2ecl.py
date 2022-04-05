@@ -10,8 +10,8 @@ ECL_ALIVE_LIMIT = 90   # Seconds to wait before Eclipse is suspended (if option 
 IOR_ALIVE_LIMIT = -1   # Negative value = never suspended
 LOG_LEVEL_MAX = 3
 LOG_LEVEL_MIN = 1
-LOG_LEVEL = 3          # Default log level
-CHECK_PAUSE = 0.01
+DEFAULT_LOG_LEVEL = 3      
+CHECK_PAUSE = 0.01     # Default sleep-time during wait-loops
 RFT_CHECK_ITER = 100   # Number of iterations before reducing number of blocks
 
 DEBUG = False
@@ -755,7 +755,8 @@ class Simulation:
         self.output = namedtuple('output',['convert','merge','del_convert','del_merge'])(convert, merge, del_convert, del_merge)
         self.runlog = None
         if root and not to_screen:
-            self.runlog = safeopen(Path(root).parent/(self.name+'.log'), 'w')
+            lognr = kwargs.get('lognr')
+            self.runlog = safeopen(Path(root).parent/f'{self.name}{lognr and "_" or ""}{lognr or ""}.log', 'w')
         self.print2log = lambda txt, **kwargs: print(txt, file=self.runlog, flush=True, **kwargs)
         self.current_run = None
         self.runs = runs
@@ -1188,9 +1189,9 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
     # parser.add_argument('-rft_size',       help='Backward mode: Only check size of RFT-file, default is full check', action='store_true')
-    parser.add_argument('-iorsim',         help="Run only iorsim", action='store_true')
-    parser.add_argument('-eclipse',        help="Run only eclipse", action='store_true')
-    parser.add_argument('-v',              default=LOG_LEVEL, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
+    parser.add_argument('-iorsim',         help="Run only IORSim", action='store_true')
+    parser.add_argument('-eclipse',        help="Run only Eclipse", action='store_true')
+    parser.add_argument('-v',              default=DEFAULT_LOG_LEVEL, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
     parser.add_argument('-keep_files',     help='Interface-files are not deleted after completion', action='store_true')
     parser.add_argument('-to_screen',      help='Print program log to screen', action='store_true')
     parser.add_argument('-only_convert',   help='Only convert+merge and exit', action='store_true')
@@ -1199,6 +1200,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-ecl_alive',      help=f'Keep Eclipse alive at least {ECL_ALIVE_LIMIT} seconds', action='store_true')
     parser.add_argument('-ior_alive',      help=f'Keep IORSim alive', action='store_true')
     parser.add_argument('-check_input',    help='Check IORSim input file keywords', action='store_true', dest='check_input_kw')
+    parser.add_argument('-lognr',          help='Add this number to the log-files', type=int)
     args = vars(parser.parse_args())
     # Look for case in case_dir if root is not a file
     if case_dir and not Path(args['root']).is_file():
@@ -1221,7 +1223,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
            ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, check_input=False, 
-           verbose=LOG_LEVEL):
+           verbose=DEFAULT_LOG_LEVEL, lognr=None):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1263,7 +1265,8 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
                      check_unrst=check_unrst, check_rft=check_rft, keep_files=keep_files, 
                      progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert, merge=merge, delete=delete, ecl_keep_alive=ecl_alive,
-                     ior_keep_alive=ior_alive, runs=runs, mode=mode, check_input_kw=check_input, verbose=verbose)
+                     ior_keep_alive=ior_alive, runs=runs, mode=mode, check_input_kw=check_input, verbose=verbose,
+                     lognr=lognr)
 
     if not sim.ready():
         return 
@@ -1290,7 +1293,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
            ecl_alive=args['ecl_alive'] and ECL_ALIVE_LIMIT, ior_alive=args['ior_alive'] and IOR_ALIVE_LIMIT, only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
-           check_input=args['check_input_kw'], verbose=args['v'])
+           check_input=args['check_input_kw'], verbose=args['v'], lognr=args['lognr'])
     os_exit(0)
 
 
