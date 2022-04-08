@@ -5,7 +5,7 @@ __version__ = '2.25'
 __author__ = 'Jan Ludvig Vinningland'
 
 # Constants
-MAX_ITERATIONS = 1e5   # Iteration limit (avoid time consuming creation of interface-files)
+#MAX_ITERATIONS = 1e5   # Iteration limit (avoid time consuming creation of interface-files)
 ECL_ALIVE_LIMIT = 90   # Seconds to wait before Eclipse is suspended (if option is on)
 IOR_ALIVE_LIMIT = -1   # Negative value = never suspended
 LOG_LEVEL_MAX = 3
@@ -221,7 +221,9 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.n += self.init_tsteps  
         self.interface_file('all').delete()
         # Need to create all interface files in advance to avoid Eclipse termination        
-        [self.interface_file(i).create_empty() for i in range(self.n, self.N)] 
+        #[self.interface_file(i).create_empty() for i in range(self.n, self.N)] 
+        self.interface_file(self.n).create_empty()
+        #self.interface_file(self.N-1).create_empty()
         self.OK_file().delete()
         # Start Eclipse
         super().start()
@@ -245,6 +247,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     #--------------------------------------------------------------------------------
         self.interface_file(self.n).copy(satnum_file, delete=True)
         self.OK_file().create_empty()
+        # Create next interface-file to avoid Eclipse from terminating
+        self.interface_file(self.n+1).create_empty()
         self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
         if self.check_unrst:
@@ -870,10 +874,10 @@ class Simulation:
         self.T = time 
         # No problem if N yields a too large t, the simulation automatically ends when t == T. 
         N = int(time/ior_dt_min) + 2 + len(self.tsteps)
-        if N > MAX_ITERATIONS:
-            self.update.message(f'ERROR Too many iterations: time/timestep = {time}/{ior_dt_min} = {time/ior_dt_min:.0f}')
-            return False
-        kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
+        # if N > MAX_ITERATIONS:
+        #     self.update.message(f'ERROR Too many iterations: time/timestep = {time}/{ior_dt_min} = {time/ior_dt_min:.0f}')
+        #     return False
+        kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update, 'dt':ior_dt_min})
         # Init runs
         self.ecl, self.ior = [Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs), 
                         Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)]

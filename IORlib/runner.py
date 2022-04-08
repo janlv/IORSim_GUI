@@ -68,6 +68,7 @@ class Control_file:
     #--------------------------------------------------------------------------------
         self._ext = ext
         self._name = Path(str(root) + '.' + ext)
+        #self._path = Path(f'{self._root}.{self._ext}{n and f"{n:0{self._digits}d}" or ""}')
 
     #--------------------------------------------------------------------------------
     def name(self):
