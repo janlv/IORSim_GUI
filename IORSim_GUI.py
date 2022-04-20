@@ -441,9 +441,9 @@ class sim_worker(base_worker):
         def status(run=None, value=None, mode=None, **x):
         #------------------------------------
             if run and not value:
-                count = f'{run.t:.0f}'
+                count = f'{run.t:.2f}'.rstrip('0').rstrip('.')
                 if self.progress_min:
-                    count = f'({self.progress_min:.0f} + {(run.t-self.progress_min):.0f})'
+                    count = f'({self.progress_min:.0f} + {(run.t-self.progress_min):.2f}'.rstrip('0').rstrip('.')+')'
                 value = f'{run.name}   {count} / {run.T:.0f} days'
                 if mode == 'forward':
                     value = run.name + ' ' + value

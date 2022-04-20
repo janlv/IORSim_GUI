@@ -64,11 +64,12 @@ def pass_KeyboardInterrupt(func):
 class Control_file:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, ext=None, root=None):
+    def __init__(self, ext=None, root=None, log=False):
     #--------------------------------------------------------------------------------
-        self._ext = ext
-        self._name = Path(str(root) + '.' + ext)
+        #self._ext = ext
+        self._name = Path(f'{root}.{ext}')
         #self._path = Path(f'{self._root}.{self._ext}{n and f"{n:0{self._digits}d}" or ""}')
+        self.log = log
 
     #--------------------------------------------------------------------------------
     def name(self):
@@ -89,12 +90,14 @@ class Control_file:
     #--------------------------------------------------------------------------------
     def create_empty(self, delete=False):
     #--------------------------------------------------------------------------------
+        self.log and self.log(f'Create empty {self._name.name}')
         self._name.touch()
     
     @catch_permission_error
     #--------------------------------------------------------------------------------
     def create_from_string(self, string):    
     #--------------------------------------------------------------------------------
+        self.log and self.log(f'Create {self._name.name} from string')
         with open(self._name,'w') as f:
             f.write(string)
 
@@ -102,6 +105,7 @@ class Control_file:
     #--------------------------------------------------------------------------------
     def copy(self, src, delete=False):
     #--------------------------------------------------------------------------------
+        self.log and self.log(f'Create {self._name.name} from file')
         copy(src, self._name)
         if delete:
             silentdelete(src)
@@ -111,6 +115,7 @@ class Control_file:
     #--------------------------------------------------------------------------------
     def append(self, _ascii):
     #--------------------------------------------------------------------------------
+        self.log and self.log(f'Append to {self._name.name}')
         with open(self._name, 'a') as f:
             f.write(f'{_ascii}\n')
 
@@ -118,11 +123,12 @@ class Control_file:
     #--------------------------------------------------------------------------------
     def delete(self):
     #--------------------------------------------------------------------------------
-        path = self._name.parent
-        name = self._name.name
-        for f in path.glob(name):
-            #print('deleting',f)
-            f.unlink()
+        if self._name.is_file():
+            self.log and self.log(f'Delete {self._name.name}')
+            self._name.unlink()
+        else:
+            [f.unlink() for f in self._name.parent.glob(self._name.name) if f.is_file()]    
+
 
     #@ignore_permission_error
     #--------------------------------------------------------------------------------
@@ -132,7 +138,7 @@ class Control_file:
             if not self._name.is_file():
                 return True
         except PermissionError:
-            return None
+            return False
 
 
 
@@ -333,7 +339,7 @@ class Runner:                                                               # ru
     """
     
     #--------------------------------------------------------------------------------
-    def __init__(self, N=0, T=0, n=0, t=0, name='', case='', exe='', cmd=None, pipe=False,
+    def __init__(self, T=0, n=0, t=0, name='', case='', exe='', cmd=None, pipe=False,
                  verbose=3, timer=None, runlog=None, ext_iface='', ext_OK='',
                  keep_files=False, stop_children=True, keep_alive=False, lognr=None, **kwargs):           # runner
     #--------------------------------------------------------------------------------
@@ -359,7 +365,7 @@ class Runner:                                                               # ru
         self.t = t  
         self.n = int(n)
         self.T = T   # Max time
-        self.N = int(N)   # Max number of steps
+        #self.N = int(N)   # Max number of steps
         self.starttime = None
         self.keep_alive = keep_alive
         self.suspend_timer = None
@@ -397,12 +403,14 @@ class Runner:                                                               # ru
             raise SystemError('WARNING Executable not found: ' + self.exe)
         return True
 
-
     #--------------------------------------------------------------------------------
-    def interface_file(self, nr):
+    def interface_file(self, nr, log=4):
     #--------------------------------------------------------------------------------
+        log_func = False
+        if log:
+            log_func = lambda x : self._print(x, v=log)    
         if isinstance(nr, int):
-            return Control_file(ext=self.ext_iface.format(nr), root=self.case) 
+            return Control_file(ext=self.ext_iface.format(nr), root=self.case, log=log_func) 
         elif nr == 'all':
             ext, num = self.ext_iface.split('{')
             n = int(num.split('d')[0][-1])
@@ -506,7 +514,7 @@ class Runner:                                                               # ru
         if self.keep_alive > 0 and self.suspend_timer.cancel_if_alive():
             self._print(f'No resume (suspend delayed {self.suspend_timer.endtime():.0f} sec)', v=2)
         elif self.keep_alive < 0:
-            self._print('No resume (never suspended)', v=2)
+            self._print('No resume (not suspended)', v=2)
         else:
             msg = 'Resume'
             if self.suspend_timer and not self.suspend_timer.is_alive():
@@ -534,27 +542,34 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def time_and_step(self):                                                 # runner
+    # def time_and_step(self):                                                 # runner
+    def time(self):                                                 # runner
     #--------------------------------------------------------------------------------
         return 0, 0
+    #     return None, None
 
 
     #--------------------------------------------------------------------------------
-    def stop_if_canceled(self, step='days'):
+    # def stop_if_canceled(self, step='days'):
+    def stop_if_canceled(self, unit='days'):
     #--------------------------------------------------------------------------------
         if self.canceled:
-            if not step in ('steps','step'):
-                # Use time unit
-                c = int(self.t)
-                if c == 0:
-                    c = self.time_and_step()[0]
-            else:
-                # Use step unit
-                c = int(self.n)
-                if c == 0:
-                    c = self.time_and_step()[1]
+            # Use time unit
+            # time = int(self.t)
+            # if time == 0:
+            #     time = self.time()
+            # if not step in ('steps','step'):
+            #     # Use time unit
+            #     c = int(self.t)
+            #     if c == 0:
+            #         c = self.time_and_step()[0]
+            # else:
+            #     # Use step unit
+            #     c = int(self.n)
+            #     if c == 0:
+            #         c = self.time_and_step()[1]
             self._print('', tag='')
-            raise SystemError('INFO Run stopped after ' + str(c) + ' ' + step)    
+            raise SystemError(f'INFO Run stopped after {self.time():.2f}'.rstrip('0').rstrip('.') + f' {unit}')    
 
 
     #--------------------------------------------------------------------------------
@@ -565,11 +580,6 @@ class Runner:                                                               # ru
         [p.assert_running(raise_error=raise_error) for p in self.active]
         self.stop_if_canceled()
 
-
-    #--------------------------------------------------------------------------------
-    def time_and_step(self):
-    #--------------------------------------------------------------------------------
-        return None, None
 
 
     #--------------------------------------------------------------------------------
@@ -587,21 +597,23 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def stop_if_limit_reached(self, limit='time', value=None): 
+    def stop_if_timelimit_reached(self): 
     #--------------------------------------------------------------------------------
-        if not value:
-            t, n = self.time_and_step()
-        if limit in ('step','steps'):
-            lim = self.N
-            value = value or n
-        else:
-            lim = self.T
-            value = value or t
-        #print(n, self.N)
-        if value > lim:
+        # t = value
+        # if not t:
+        #     # t, n = self.time_and_step()
+        #     t = self.time()
+        # if limit in ('step','steps'):
+        #     lim = self.N
+        #     value = value or n
+        # else:
+        # lim = self.T
+        # value = value or t
+        time = self.time()
+        if time > self.T:
             #print('Step limit reached')
             raise SystemError(self.complete_msg())
-        return value
+        return time
 
 
     #--------------------------------------------------------------------------------
@@ -713,6 +725,12 @@ class Runner:                                                               # ru
             if tag is True:
                 tag = f'{self.name}:'
             print(tag, txt, file=self.runlog, flush=flush, **kwargs)
+
+
+    # #--------------------------------------------------------------------------------
+    # def _print_v4(self, txt):
+    # #--------------------------------------------------------------------------------
+    #     self._print(txt, v=4)
 
 
     #--------------------------------------------------------------------------------

@@ -8,7 +8,7 @@ __author__ = 'Jan Ludvig Vinningland'
 #MAX_ITERATIONS = 1e5   # Iteration limit (avoid time consuming creation of interface-files)
 ECL_ALIVE_LIMIT = 90   # Seconds to wait before Eclipse is suspended (if option is on)
 IOR_ALIVE_LIMIT = -1   # Negative value = never suspended
-LOG_LEVEL_MAX = 3
+LOG_LEVEL_MAX = 4
 LOG_LEVEL_MIN = 1
 DEFAULT_LOG_LEVEL = 3      
 CHECK_PAUSE = 0.01     # Default sleep-time during wait-loops
@@ -55,19 +55,23 @@ class Eclipse(Runner):                                                      # ec
         self.is_eclipse = True
 
     #--------------------------------------------------------------------------------
-    def time_and_step(self):                                                # eclipse
+    # def time_and_step(self):                                                # eclipse
+    def time(self):                                                # eclipse
     #--------------------------------------------------------------------------------
-        t = n = [0]
+        t = [0]
         for output in (self.unsmry, self.msg, self.unrst):
             if output.file.is_file() and output.size() > 0:
                 # print(output)
-                t, n = output.get(['time', 'step'], N=-1, raise_error=False)
-                if t and n:
+                # t, n = output.get(['time', 'step'], N=-1, raise_error=False)
+                t = output.get(['time'], N=-1, raise_error=False)
+                if t:
+                    t = t[0]
                     break
                 else:
-                    t = n = [0]
+                    t = [0]
         # print(f'{self.name}: time = {t}, step = {n}')
-        return t[0], n[0]
+        #print(f'Eclipse time: {t}')
+        return t[0]
 
 
     #--------------------------------------------------------------------------------
@@ -135,7 +139,7 @@ class Forward_mixin:
         self.loop_count += 1
         if self.loop_count == self.count:
             self.loop_count = 0
-            self.t = self.stop_if_limit_reached(limit='time')
+            self.t = self.stop_if_timelimit_reached()
             for func in self.update:
                 func(run=self)
 
@@ -168,7 +172,8 @@ class Backward_mixin:
         #print(f'update_function(progress={progress}, plot={plot}')
         self.assert_running_and_stop_if_canceled()
         #if self.update:
-        self.t = self.time_and_step()[0]
+        # self.t = self.time_and_step()[0]
+        self.t = self.time()
         self.update.status(run=self)
         progress and self.update.progress(value=self.t)
         plot and self.update.plot()
@@ -220,10 +225,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         # self.n is not 0 if RESTART option is in use
         self.n += self.init_tsteps  
         self.interface_file('all').delete()
-        # Need to create all interface files in advance to avoid Eclipse termination        
-        #[self.interface_file(i).create_empty() for i in range(self.n, self.N)] 
         self.interface_file(self.n).create_empty()
-        #self.interface_file(self.N-1).create_empty()
         self.OK_file().delete()
         # Start Eclipse
         super().start()
@@ -240,15 +242,18 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         # Wait for flushed RFT-file
         self.rft.check.data_saved_maxmin(max=nblocks*self.nwell, min=1, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
         self.suspend()
+        self.t = self.time()
 
 
     #--------------------------------------------------------------------------------
     def run_one_step(self, satnum_file, log=True):                     # ecl_backward
     #--------------------------------------------------------------------------------
         self.interface_file(self.n).copy(satnum_file, delete=True)
+        #self._print(f'Creating {self.interface_file(self.n).name()}')
         self.OK_file().create_empty()
         # Create next interface-file to avoid Eclipse from terminating
         self.interface_file(self.n+1).create_empty()
+        #self._print(f'Creating empty {self.interface_file(self.n+1).name()}')
         self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
         if self.check_unrst:
@@ -258,9 +263,11 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.suspend()
         if self.delete_interface:
             self.interface_file(self.n).delete()
+            #self._print(f'Deleting {self.interface_file(self.n).name()}')
         self.n += 1
+        self.t = self.time()
         if log:
-            self._print(f' UNRST-file now at {self.unrst.date(N=-1)}')
+            self._print(f' Date is {self.unrst.date(N=-1)} ({self.t} days)')
 
 
 
@@ -396,7 +403,8 @@ class Iorsim(Runner):                                                        # i
         super().start()
 
     #--------------------------------------------------------------------------------
-    def time_and_step(self):                                                 # iorsim
+    # def time_and_step(self):                                                 # iorsim
+    def time(self):                                                 # iorsim
     #--------------------------------------------------------------------------------
         # Output file for reading days
         if not self.trcconc:
@@ -405,17 +413,15 @@ class Iorsim(Runner):                                                        # i
                     self.trcconc = outfile
                     break
         if not self.trcconc:
-            return 0, 0
-        ### Get time and step from IORSim output
-        t, n = 0, 0
+            return 0
+        # Get time from IORSim output
+        t = 0
         with open(self.trcconc) as out:
-           for line in out:
-               line = line.strip()
-               if line and not line.startswith('#'):
-                   n += 1
-        if line:
-            t = float(line.split()[0])
-        return int(t), int(n)
+            last_line = out.readlines()[-1].strip()
+        if last_line and not last_line.startswith('#'):
+            t = float(last_line.split()[0])
+        #print(f'IORSim time: {t}')
+        return t
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                           # iorsim
@@ -503,7 +509,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         #self.satnum_dist(echo=True)
 
     #--------------------------------------------------------------------------------
-    def run_steps(self, N, start=False):                               # ior_backward
+    def run_steps(self, N, start=False, log=True):                     # ior_backward
     #--------------------------------------------------------------------------------
         ### run IORSim
         for n in range(N):
@@ -511,6 +517,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
                 self.update_function(plot=True)
             self.n += 1
             self.interface_file(self.n).create_empty()
+            #self._print(f'Creating {self.interface_file(self.n).name()}')
+            #print(f'Creating {self.n}')
             self.OK_file().create_empty()
             if n == 0:
                 if start:
@@ -524,7 +532,11 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         warn_empty_file(self.satnum, comment='--')
         self.suspend()
         if self.delete_interface:
-            [self.interface_file(n).delete() for n in range(N)] 
+            #[self._print(f'Deleting {self.interface_file(self.n-n).name()}') for n in range(N)] 
+            [self.interface_file(self.n-n).delete() for n in range(N)] 
+        self.t = self.time()
+        if log:
+            self._print(f' {self.t:.3f}/{self.T} days')
 
 
     #--------------------------------------------------------------------------------
@@ -738,7 +750,7 @@ class Schedule:
 
 
 #====================================================================================
-class Simulation:
+class Simulation:                                                        # Simulation
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, mode=None, root=None, pause=0, runs=[], to_screen=False, 
@@ -767,6 +779,7 @@ class Simulation:
         self.run_sim = None
         self.ior = self.ecl = None
         self.T = 0
+        self.dt = None
         self.mode = mode
         self.schedule = None
         self.restart = False
@@ -778,32 +791,35 @@ class Simulation:
             #self.init_runs(**kwargs)
             self.run_sim = self.init_runs()
 
-    #-----------------------------------------------------------------------
-    def close(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def close(self):                                                     # Simulation
+    #--------------------------------------------------------------------------------
         self.runs = self.ior = self.ecl = self.current_run = self.schedule = None
         if self.runlog:
             self.runlog.close()
 
 
-    #-----------------------------------------------------------------------
-    def versions(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def versions(self):                                                  # Simulation
+    #--------------------------------------------------------------------------------
         txt = f'Python: {get_python_version()}\n'
         txt += f'psutil: {psutil_version}\n'
         txt += f'Application: {__version__}\n'
         return txt
 
 
-    #-----------------------------------------------------------------------
-    def ready(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def ready(self):                                                     # Simulation
+    #--------------------------------------------------------------------------------
         return bool(self.run_sim)
 
 
-    #-----------------------------------------------------------------------
-    def init_runs(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def init_runs(self):                                                 # Simulation
+    #--------------------------------------------------------------------------------
+        '''
+        Read Eclipse and IORSim input files, run the init_func, and return the run_func
+        '''
         # Check if this is a restart-run
         file, step = self.ECL_inp.get('RESTART')
         if file and step:
@@ -842,9 +858,9 @@ class Simulation:
         return check_OK and run_func
 
 
-    #-----------------------------------------------------------------------
-    def init_forward_run(self, iorexe=None, eclexe=None, time=0, **kwargs):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def init_forward_run(self, iorexe=None, eclexe=None, time=0, **kwargs): # Simulation
+    #--------------------------------------------------------------------------------
         time_ecl = sum(self.tsteps)
         if time != time_ecl:
             time = time_ecl
@@ -862,26 +878,23 @@ class Simulation:
         #return True
 
 
-    #-----------------------------------------------------------------------
-    def init_backward_run(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, **kwargs):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def init_backward_run(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, **kwargs): # Simulation
+    #--------------------------------------------------------------------------------
         time_ecl = sum(self.tsteps) + self.restart_days
-        ior_integration = get_keyword(str(self.root)+'.trcinp', '\*INTEGRATION', end='\*')[0]
-        ior_dt_min = ior_integration[4] 
+        # ior_dt_min = ior_integration[4]
+        # self.dt = ior_dt_min 
         if time < time_ecl:
             time = time_ecl + 1
             self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
         self.T = time 
+        self.dt = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')[0][4]
         # No problem if N yields a too large t, the simulation automatically ends when t == T. 
-        N = int(time/ior_dt_min) + 2 + len(self.tsteps)
-        # if N > MAX_ITERATIONS:
-        #     self.update.message(f'ERROR Too many iterations: time/timestep = {time}/{ior_dt_min} = {time/ior_dt_min:.0f}')
-        #     return False
-        kwargs.update({'N':N, 'T':self.T, 'tsteps':self.tsteps, 'update':self.update, 'dt':ior_dt_min})
+        #N = int(time/ior_dt_min) + 2 + len(self.tsteps)
+        kwargs.update({'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
         # Init runs
-        self.ecl, self.ior = [Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs), 
-                        Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)]
-        #self.runs = [self.ecl, self.ior]
+        self.ecl = Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs)
+        self.ior = Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
         start = self.restart_file and self.restart_file.date(N=1) or self.ECL_inp.get('START')[0]
         # Set up schedule of commands to pass to satnum-file
@@ -889,10 +902,9 @@ class Simulation:
         return [self.ecl, self.ior]
 
 
-    #-----------------------------------------------------------------------
-    def forward(self): 
-    #-----------------------------------------------------------------------
-        #self.runs = self.init_forward_run(**self.kwargs)
+    #--------------------------------------------------------------------------------
+    def forward(self):                                                   # Simulation
+    #--------------------------------------------------------------------------------
         run_time = timedelta()
         ret = ''
         for run in self.runs:
@@ -904,7 +916,8 @@ class Simulation:
             self.update.status(value=run.name+' running', mode=self.mode)
             run.init_control_func(update=self.update) 
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
-            run.t = run.time_and_step()[0]
+            # run.t = run.time_and_step()[0]
+            run.t = run.time()
             #print(run.name, t, run.T)
             if run.t < run.T:
                 run.unexpected_stop_error()
@@ -913,11 +926,9 @@ class Simulation:
         return ret
 
 
-    #-----------------------------------------------------------------------
-    def backward(self): 
-    #-----------------------------------------------------------------------
-        # self.runs = self.init_backward_run(**self.kwargs)
-        # self.print2log(self.info_header())
+    #--------------------------------------------------------------------------------
+    def backward(self):                                                  # Simulation
+    #--------------------------------------------------------------------------------
         self.update.progress(value=-self.runs[0].T)
         ecl, ior = self.runs
         # Start runs
@@ -925,7 +936,8 @@ class Simulation:
             run.delete_output_files()
             run.start(restart=self.restart)
         # The schedule appends keywords to the interface file (satnum.dat)
-        ecl.t = ior.t = self.schedule.update()
+        # ecl.t = ior.t = self.schedule.update()
+        self.schedule.update()
         # Update progress
         if self.restart:
             # Fix progress for restart runs
@@ -935,14 +947,16 @@ class Simulation:
             self.update.progress(value=ior.t, n0=ior.t)
         # Start timestep loop
         while ior.t < ior.T:
-            self.print2log(f'\nStep {ecl.n+1}/{ecl.N}')
+            self.print2log(f'\nStep {ecl.n+1}')
             self.update.status(run=ecl, mode=self.mode)
             ecl.run_one_step(ior.satnum)
             # Run IORSim to prepare satnum input for the next Eclipse run
             self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
-            ecl.t = ior.t = self.schedule.update()
-            self.print2log(f'days = {ior.t:.2f}/{ior.T} ({self.schedule.now()})')
+            # ecl.t = ior.t = self.schedule.update()
+            self.schedule.update()
+            #self.print2log(f'days = {ior.t:.2f}/{ior.T} ({self.schedule.now()})')
+            self.print2log(f'Date is {self.schedule.now()}')
             self.update.progress(value=ior.t)
             self.update.plot()
         # Timestep loop finished
@@ -952,9 +966,9 @@ class Simulation:
         return ecl.complete_msg()
 
 
-    #-----------------------------------------------------------------------
-    def run(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def run(self):                                                       # Simulation
+    #--------------------------------------------------------------------------------
         # Print header
         self.print2log(self.versions())
         self.print2log(self.info_header())
@@ -997,9 +1011,9 @@ class Simulation:
             return success, msg + ' ' + conv_msg
 
 
-    #-----------------------------------------------------------------------
-    def convert_and_merge(self, case=None, only_convert=False, only_merge=False):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def convert_and_merge(self, case=None, only_convert=False, only_merge=False): # Simulation
+    #--------------------------------------------------------------------------------
         func = (self.convert_restart, self.merge_restart)
         if only_convert:
             func = (self.convert_restart,)
@@ -1013,9 +1027,10 @@ class Simulation:
                 return msg
         return ''
 
-    #-----------------------------------------------------------------------
-    def convert_restart(self, case=None, fast=True):
-    #-----------------------------------------------------------------------
+
+    #--------------------------------------------------------------------------------
+    def convert_restart(self, case=None, fast=True):                     # Simulation
+    #--------------------------------------------------------------------------------
         # Convert from formatted (ascii) to unformatted (binary) restart file
         self.update.status(value='Converting restart file...')
         ior = self.ior or Iorsim(root=case)   
@@ -1049,9 +1064,10 @@ class Simulation:
             silentdelete(ior.funrst)
         return True, 'Convert complete, process-time was '+str(datetime.now()-start).split('.')[0]
 
-    #-----------------------------------------------------------------------
-    def merge_restart(self, case=None):
-    #-----------------------------------------------------------------------
+
+    #--------------------------------------------------------------------------------
+    def merge_restart(self, case=None):                                  # Simulation
+    #--------------------------------------------------------------------------------
         # Merge Eclipse and IORSim restart files
         self.update.status(value='Merging Eclipse and IORSim restart files...')
         self.update.progress(value=0)   # Reset progress time
@@ -1089,9 +1105,10 @@ class Simulation:
             silentdelete((backup_ecl, ior.unrst))
         return True, 'Merge complete, process-time was '+str(datetime.now()-start).split('.')[0]
 
-    #-----------------------------------------------------------------------
-    def info_header(self):
-    #-----------------------------------------------------------------------
+
+    #--------------------------------------------------------------------------------
+    def info_header(self):                                               # Simulation
+    #--------------------------------------------------------------------------------
         logfiles = [run.log.name for run in self.runs]+[log.name for log in (self.runlog,) if log]
         case = Path(self.root).name
         s  = '\n'
@@ -1104,26 +1121,30 @@ class Simulation:
             days = timedelta(days=self.restart_days)
             s += f' (restart after {days.days} days, at {self.schedule.start + days})'
         s += '\n'
+        s += self.dt and f'    {"Timestep":10s}: {self.dt} days\n' or ''
         s += f'    {"Folder":10s}: {Path(self.root).parent}\n'
         s += f'    {"Log-files":10s}: {", ".join([Path(file).name for file in logfiles])}\n'
         s += '\n'
         return s
 
-    #-----------------------------------------------------------------------
-    def set_time(self, time):
-    #-----------------------------------------------------------------------
+
+    #--------------------------------------------------------------------------------
+    def set_time(self, time):                                            # Simulation
+    #--------------------------------------------------------------------------------
         self.T = time
         for run in self.runs:
             run.set_time(time)
 
-    #-----------------------------------------------------------------------
-    def get_time(self):
-    #-----------------------------------------------------------------------
+
+    #--------------------------------------------------------------------------------
+    def get_time(self):                                                  # Simulation
+    #--------------------------------------------------------------------------------
         return self.T
 
-    #-----------------------------------------------------------------------
-    def mode_from_case(self):
-    #-----------------------------------------------------------------------
+
+    #--------------------------------------------------------------------------------
+    def mode_from_case(self):                                            # Simulation
+    #--------------------------------------------------------------------------------
         data = str(self.root)+'.DATA'
         if Path(data).is_file():
             if file_contains(data, text='READDATA', comment='--', end='END'):
@@ -1134,9 +1155,9 @@ class Simulation:
             return None
 
 
-    #-----------------------------------------------------------------------
-    def cancel(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def cancel(self):                                                    # Simulation
+    #--------------------------------------------------------------------------------
         for run in self.runs:
             run.canceled = True
 
@@ -1148,28 +1169,6 @@ class Simulation:
 #                    Various utility functions                              #
 #                                                                           #
 #############################################################################
-
-
-
-# #--------------------------------------------------------------------------------
-# def iorexe_from_settings(settings_file, iorexe):
-# #--------------------------------------------------------------------------------
-#     iorsim = get_keyword(settings_file, 'iorsim', with_space=False)
-#     print(iorsim)
-#     # Find iorexe in settings.txt if missing
-#     settings_file = Path(settings_file)
-#     if settings_file.is_file():
-#         with open(settings_file) as f:
-#             for line in f:
-#                 if line.strip().startswith('#'):
-#                     continue
-#                 try: var, val = line.split()
-#                 except ValueError: break
-#                 if var=='iorsim':
-#                     break 
-#         print(val)
-#         return val
-#     raise SystemError('\n   Missing IORSim executable: '+str(iorexe)+'\n')
 
 
 #--------------------------------------------------------------------------------
@@ -1192,7 +1191,6 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-iorexe',         help="Name of IORSim executable, default is 'IORSimX'"                  )
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
-    # parser.add_argument('-rft_size',       help='Backward mode: Only check size of RFT-file, default is full check', action='store_true')
     parser.add_argument('-iorsim',         help="Run only IORSim", action='store_true')
     parser.add_argument('-eclipse',        help="Run only Eclipse", action='store_true')
     parser.add_argument('-v',              default=DEFAULT_LOG_LEVEL, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
@@ -1220,6 +1218,7 @@ def parse_input(case_dir=None, settings_file=None):
         else:
             raise SystemError('IORSim executable is missing')    
     return args
+
 
 @print_error
 #--------------------------------------------------------------------------------
