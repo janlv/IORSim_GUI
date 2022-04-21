@@ -5,7 +5,6 @@ __version__ = '2.25'
 __author__ = 'Jan Ludvig Vinningland'
 
 # Constants
-#MAX_ITERATIONS = 1e5   # Iteration limit (avoid time consuming creation of interface-files)
 ECL_ALIVE_LIMIT = 90   # Seconds to wait before Eclipse is suspended (if option is on)
 IOR_ALIVE_LIMIT = -1   # Negative value = never suspended
 LOG_LEVEL_MAX = 4
@@ -26,7 +25,7 @@ from time import sleep
 from itertools import accumulate
 from psutil import NoSuchProcess, __version__ as psutil_version
 from shutil import copy as shutil_copy 
-from traceback import print_exc as trace_print_exc, format_exc as  trace_format_exc
+from traceback import print_exc as trace_print_exc, format_exc as trace_format_exc
 from re import search, compile
 from os.path import relpath
 
@@ -55,7 +54,6 @@ class Eclipse(Runner):                                                      # ec
         self.is_eclipse = True
 
     #--------------------------------------------------------------------------------
-    # def time_and_step(self):                                                # eclipse
     def time(self):                                                # eclipse
     #--------------------------------------------------------------------------------
         t = [0]
@@ -99,6 +97,7 @@ class Eclipse(Runner):                                                      # ec
                 raise SystemError(f"{msg} '{file.name}' included from {self.inputfile.file.name} is missing")
         return True
 
+
     #--------------------------------------------------------------------------------
     def unexpected_stop_error(self):                                        # eclipse
     #--------------------------------------------------------------------------------
@@ -114,6 +113,7 @@ class Eclipse(Runner):                                                      # ec
         if len(ifiles) == 1:
             error = f'due to missing interface-files (last file is {ifiles[-1].name})'
         raise SystemError(f'ERROR {self.name} stopped {error}')
+
 
     #--------------------------------------------------------------------------------
     def start(self):                                                        # eclipse
@@ -147,10 +147,6 @@ class Forward_mixin:
 #====================================================================================
 class Ecl_forward(Forward_mixin, Eclipse):                              # ecl_forward
 #====================================================================================
-    # #--------------------------------------------------------------------------------
-    # def __init__(self, root, **kwargs):
-    # #--------------------------------------------------------------------------------
-    #     super().__init__(root, **kwargs)
 
     #--------------------------------------------------------------------------------
     def check_input(self):                                             # ecl_forward
@@ -187,8 +183,6 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     def __init__(self, check_unrst=True, check_rft=True, keep_alive=False, **kwargs):
     #--------------------------------------------------------------------------------
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', keep_alive=keep_alive, **kwargs)
-        #self.tsteps = kwargs.get('tsteps') or get_tsteps(self.case.with_suffix('.DATA'))
-        # self.tsteps = kwargs.get('tsteps') or self.inputfile.tsteps()
         self.tsteps = kwargs.get('tsteps') or self.inputfile.get('TSTEP')
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps) 
@@ -222,8 +216,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.update.status(value=f'Starting {self.name}...')
         if self.n > 0 or self.t > 0:
             self._print(f'Starting at {self.t} days (step {self.n})')
-        # self.n is not 0 if RESTART option is in use
-        self.n += self.init_tsteps  
+        self.n += self.init_tsteps   # Use += and not = in case self.n is not 0 (RESTART option)
         self.interface_file('all').delete()
         self.interface_file(self.n).create_empty()
         self.OK_file().delete()
@@ -249,11 +242,9 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     def run_one_step(self, satnum_file, log=True):                     # ecl_backward
     #--------------------------------------------------------------------------------
         self.interface_file(self.n).copy(satnum_file, delete=True)
-        #self._print(f'Creating {self.interface_file(self.n).name()}')
         self.OK_file().create_empty()
-        # Create next interface-file to avoid Eclipse from terminating
+        # Create next interface-file to avoid Eclipse from reading END
         self.interface_file(self.n+1).create_empty()
-        #self._print(f'Creating empty {self.interface_file(self.n+1).name()}')
         self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
         if self.check_unrst:
@@ -263,12 +254,10 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.suspend()
         if self.delete_interface:
             self.interface_file(self.n).delete()
-            #self._print(f'Deleting {self.interface_file(self.n).name()}')
         self.n += 1
         self.t = self.time()
         if log:
             self._print(f' Date is {self.unrst.date(N=-1)} ({self.t} days)')
-
 
 
     #--------------------------------------------------------------------------------
@@ -402,8 +391,8 @@ class Iorsim(Runner):                                                        # i
                 raise SystemError(f'ERROR Unable to start IORSim: Eclipse output file {Path(fname).name} is missing')
         super().start()
 
+
     #--------------------------------------------------------------------------------
-    # def time_and_step(self):                                                 # iorsim
     def time(self):                                                 # iorsim
     #--------------------------------------------------------------------------------
         # Output file for reading days
@@ -422,6 +411,7 @@ class Iorsim(Runner):                                                        # i
             t = float(last_line.split()[0])
         #print(f'IORSim time: {t}')
         return t
+
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                           # iorsim
@@ -445,7 +435,6 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
         #keep_alive = keep_alive and IOR_ALIVE_LIMIT or False
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
-        # self.tsteps = kwargs.get('tsteps') or ECL_input(f'{self.case}.DATA').tsteps() 
         self.tsteps = kwargs.get('tsteps') or ECL_input(f'{self.case}.DATA').get('TSTEP') 
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
@@ -459,8 +448,9 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         super().delete_output_files()
         silentdelete(self.satnum)
 
+
     #--------------------------------------------------------------------------------
-    def satnum_flushed(self):
+    def satnum_flushed(self):                                          # ior_backward
     #--------------------------------------------------------------------------------
         file = Path(self.satnum)
         nchar = len(self.endtag) + 3
@@ -477,8 +467,9 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
                 return False
         return False
 
+
     #--------------------------------------------------------------------------------
-    def satnum_dist(self, echo=False):                                             # ior_backward
+    def satnum_dist(self, echo=False):                                 # ior_backward
     #--------------------------------------------------------------------------------
         '''
         Return the distribution of SATNUM numbers as a dict
@@ -494,6 +485,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
             else:
                 return dist
 
+
     #--------------------------------------------------------------------------------
     def start(self, restart=False):                                    # ior_backward
     #--------------------------------------------------------------------------------
@@ -502,11 +494,13 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.interface_file('all').delete()
         self.run_steps(1+self.init_tsteps, start=True)
 
+
     #--------------------------------------------------------------------------------
     def run_one_step(self):                                            # ior_backward
     #--------------------------------------------------------------------------------
         self.run_steps(1)
         #self.satnum_dist(echo=True)
+
 
     #--------------------------------------------------------------------------------
     def run_steps(self, N, start=False, log=True):                     # ior_backward
@@ -517,8 +511,6 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
                 self.update_function(plot=True)
             self.n += 1
             self.interface_file(self.n).create_empty()
-            #self._print(f'Creating {self.interface_file(self.n).name()}')
-            #print(f'Creating {self.n}')
             self.OK_file().create_empty()
             if n == 0:
                 if start:
@@ -532,7 +524,6 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         warn_empty_file(self.satnum, comment='--')
         self.suspend()
         if self.delete_interface:
-            #[self._print(f'Deleting {self.interface_file(self.n-n).name()}') for n in range(N)] 
             [self.interface_file(self.n-n).delete() for n in range(N)] 
         self.t = self.time()
         if log:
@@ -546,6 +537,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.interface_file(self.n+1).append('Quit')
         self.OK_file().create_empty()
         super().quit()
+
 
 #====================================================================================
 class Schedule:
@@ -568,12 +560,6 @@ class Schedule:
         self.ifacefile = ECL_input(interface_file, read=False)
         self.days = init_days 
         self.start = start
-        # ECL_inp = ECL_input(f'{self.case}.DATA')
-        # self.start = start or ECL_inp.get('START')[0]
-        # Read start-date from restart file if RESTART in DATA-file
-        # self.restart_file = ECL_inp.get('RESTART')[0]
-        # if self.restart_file: 
-        #     self.start = UNRST_file(self.restart_file).date(N=1)
         self.tstep = 0
         self._schedule = []
         self.file = None
@@ -628,6 +614,7 @@ class Schedule:
         else:
             self._schedule.append([days, action])
 
+
     #--------------------------------------------------------------------------------
     def get_type(self, string):                                            # Schedule
     #--------------------------------------------------------------------------------
@@ -643,6 +630,7 @@ class Schedule:
         else:
             raise SystemError('WARNING Schedule-file contains a mix of TSTEP and DATES')
         return use_dates
+
 
     #--------------------------------------------------------------------------------
     def days_and_actions(self, remove_end=True):                           # Schedule
@@ -693,6 +681,7 @@ class Schedule:
         # Return only non-empty [day, action] pairs
         return [[float(d), a+'\n'] for (d,a) in zip(days, actions) if a]
 
+
     #--------------------------------------------------------------------------------
     def append(self, action=None, tstep=None, append_line=-4):             # Schedule
     #--------------------------------------------------------------------------------
@@ -717,6 +706,7 @@ class Schedule:
             with open(self.ifacefile.file, 'w') as f:
                 f.write(''.join(lines))
 
+
     #--------------------------------------------------------------------------------
     def check(self):                                                       # Schedule
     #--------------------------------------------------------------------------------
@@ -727,6 +717,7 @@ class Schedule:
         print(self.ifacefile.file, ': ', ''.join(lines[-10:]))
         print('Schedule:')
         print(self._schedule)
+
 
     #--------------------------------------------------------------------------------
     def update(self):                                                      # Schedule
@@ -747,6 +738,7 @@ class Schedule:
         #self.check()
         #print(f'END: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         return self.days
+
 
 
 #====================================================================================
@@ -788,8 +780,8 @@ class Simulation:                                                        # Simul
         kwargs.update({'root':str(root), 'runlog':self.runlog})
         self.kwargs = kwargs
         if root:
-            #self.init_runs(**kwargs)
             self.run_sim = self.init_runs()
+
 
     #--------------------------------------------------------------------------------
     def close(self):                                                     # Simulation
@@ -875,22 +867,17 @@ class Simulation:                                                        # Simul
             if name=='iorsim':
                 self.ior = Ior_forward(exe=iorexe, **kwargs)
         return [run for run in (self.ecl, self.ior) if run]
-        #return True
 
 
     #--------------------------------------------------------------------------------
     def init_backward_run(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, **kwargs): # Simulation
     #--------------------------------------------------------------------------------
         time_ecl = sum(self.tsteps) + self.restart_days
-        # ior_dt_min = ior_integration[4]
-        # self.dt = ior_dt_min 
         if time < time_ecl:
             time = time_ecl + 1
             self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
         self.T = time 
         self.dt = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')[0][4]
-        # No problem if N yields a too large t, the simulation automatically ends when t == T. 
-        #N = int(time/ior_dt_min) + 2 + len(self.tsteps)
         kwargs.update({'T':self.T, 'tsteps':self.tsteps, 'update':self.update})
         # Init runs
         self.ecl = Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs)
@@ -916,7 +903,6 @@ class Simulation:                                                        # Simul
             self.update.status(value=run.name+' running', mode=self.mode)
             run.init_control_func(update=self.update) 
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
-            # run.t = run.time_and_step()[0]
             run.t = run.time()
             #print(run.name, t, run.T)
             if run.t < run.T:
@@ -955,8 +941,7 @@ class Simulation:                                                        # Simul
             ior.run_one_step()
             # ecl.t = ior.t = self.schedule.update()
             self.schedule.update()
-            #self.print2log(f'days = {ior.t:.2f}/{ior.T} ({self.schedule.now()})')
-            self.print2log(f'Date is {self.schedule.now()}')
+            self.print2log(f'Step {ecl.n} ({self.schedule.now()}) completed')
             self.update.progress(value=ior.t)
             self.update.plot()
         # Timestep loop finished
@@ -1278,8 +1263,6 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         sim.convert_and_merge(case=sim.root, only_merge=only_merge)
         return
 
-    # if sim.mode=='forward':
-    #     sim.set_time(int(sum(get_tsteps(str(root)+'.DATA'))))
     if not to_screen:
         print(sim.info_header())
     result, msg = sim.run()

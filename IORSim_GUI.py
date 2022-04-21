@@ -53,7 +53,7 @@ disable_warnings()
 
 # Local libraries
 from ior2ecl import ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, return_matching_string, delete_all, file_contains, write_file
+from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, replace_line, return_matching_string, delete_all, file_contains, write_file
 from IORlib.ECL import Input_file as ECL_input, unfmt_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -1005,12 +1005,12 @@ class Settings(QDialog):
     def __init__(self, parent=None, file=None):                   # settings
     #-----------------------------------------------------------------------
         super(Settings, self).__init__(parent)
-        self.setWindowTitle('Settings')
-        
+        self.parent = parent
+        self.file = Path(file) 
+        self.setWindowTitle('Settings')        
         self.setWindowFlag(Qt.WindowTitleHint)
         #self.setMinimumSize(400,400)
         self.setObjectName('settings_window')
-        self.parent = parent
         self.line = -1
         self._get = {}
         self._set = {}
@@ -1036,7 +1036,6 @@ class Settings(QDialog):
         self.initUI()
         self.set_expert_mode(False)
         self.set_default()
-        self.file = Path(file) 
         self.load()
 
 
@@ -1332,11 +1331,16 @@ class main_window(QMainWindow):                                    # main_window
     def __init__(self, *args, settings_file=None, **kwargs):                       # main_window
     #-----------------------------------------------------------------------
         super(main_window, self).__init__(*args, **kwargs)
-        size = QSize(900, 600)
         self.setWindowTitle('IORSim') 
-        screen = self.screen().size()
-        position = QPoint(int(0.5*(screen.width()-size.width())), int(0.5*(screen.height()-size.height())))
-        self.setGeometry(QRect(position, size))
+        geo = get_keyword(settings_file, 'geometry', comment='#')
+        if geo:
+            geo = QRect(*geo[0])
+        else:
+            size = QSize(900, 600)
+            screen = self.screen().size()
+            position = QPoint(int(0.5*(screen.width()-size.width())), int(0.5*(screen.height()-size.height())))
+            geo = QRect(position, size)
+        self.setGeometry(geo)
         #self.setMinimumHeight(600)
         #self.setMinimumWidth(800)
         self.setObjectName('main_window')
@@ -1733,9 +1737,7 @@ class main_window(QMainWindow):                                    # main_window
         #print(self.input_file)
         with open(self.input_file, 'w') as f:
             f.write('# This is an input-file for ior2ecl_GUI.py, do not edit.\n')
-            #for var,val in self.input.items():
             for var in self.input_to_save:
-                # line = '{} {}'.format(var,self.input.get(var) or '')
                 line = f'{var} {self.input.get(var) or ""}'
                 f.write(line+'\n')
                 #print('saved input: '+line)
@@ -3402,6 +3404,10 @@ class main_window(QMainWindow):                                    # main_window
             self.download_worker.running = False
             sleep(0.1)
         self.save_input_values()
+        # Save window geometry in settings
+        geo = f'geometry {" ".join( (str(i) for i in self.frameGeometry().getRect()) )}\n'
+        replace_line(self.settings.file, find='geometry', replace=geo)
+        # Quit Qt
         QApplication.quit()
                 
 

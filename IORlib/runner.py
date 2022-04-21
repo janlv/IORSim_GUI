@@ -66,9 +66,7 @@ class Control_file:
     #--------------------------------------------------------------------------------
     def __init__(self, ext=None, root=None, log=False):
     #--------------------------------------------------------------------------------
-        #self._ext = ext
         self._name = Path(f'{root}.{ext}')
-        #self._path = Path(f'{self._root}.{self._ext}{n and f"{n:0{self._digits}d}" or ""}')
         self.log = log
 
     #--------------------------------------------------------------------------------
@@ -542,32 +540,15 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    # def time_and_step(self):                                                 # runner
     def time(self):                                                 # runner
     #--------------------------------------------------------------------------------
-        return 0, 0
-    #     return None, None
+        return 0
 
 
     #--------------------------------------------------------------------------------
-    # def stop_if_canceled(self, step='days'):
     def stop_if_canceled(self, unit='days'):
     #--------------------------------------------------------------------------------
         if self.canceled:
-            # Use time unit
-            # time = int(self.t)
-            # if time == 0:
-            #     time = self.time()
-            # if not step in ('steps','step'):
-            #     # Use time unit
-            #     c = int(self.t)
-            #     if c == 0:
-            #         c = self.time_and_step()[0]
-            # else:
-            #     # Use step unit
-            #     c = int(self.n)
-            #     if c == 0:
-            #         c = self.time_and_step()[1]
             self._print('', tag='')
             raise SystemError(f'INFO Run stopped after {self.time():.2f}'.rstrip('0').rstrip('.') + f' {unit}')    
 
@@ -579,7 +560,6 @@ class Runner:                                                               # ru
         #self.main.assert_running(raise_error=raise_error)
         [p.assert_running(raise_error=raise_error) for p in self.active]
         self.stop_if_canceled()
-
 
 
     #--------------------------------------------------------------------------------
@@ -599,19 +579,9 @@ class Runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def stop_if_timelimit_reached(self): 
     #--------------------------------------------------------------------------------
-        # t = value
-        # if not t:
-        #     # t, n = self.time_and_step()
-        #     t = self.time()
-        # if limit in ('step','steps'):
-        #     lim = self.N
-        #     value = value or n
-        # else:
-        # lim = self.T
-        # value = value or t
         time = self.time()
         if time > self.T:
-            #print('Step limit reached')
+            #print('Time-limit reached')
             raise SystemError(self.complete_msg())
         return time
 
@@ -691,21 +661,6 @@ class Runner:                                                               # ru
                 self._print('access denied!!!', tag='', v=v)            
         self.close()
 
-
-    # #@pass_KeyboardInterrupt
-    # #--------------------------------------------------------------------------------
-    # def kill_and_clean(self):
-    # #--------------------------------------------------------------------------------
-    #     self.kill()
-    #     self.log.close()
-    #     self.clean_up()
-
-    # #--------------------------------------------------------------------------------
-    # def clean_up(self):
-    # #--------------------------------------------------------------------------------
-    #     if self.ext_iface and not self.keep_files:
-    #         self.interface_file('all').delete()
-
     
     #--------------------------------------------------------------------------------
     def write_to_stdin(self, i):                                             # runner
@@ -727,19 +682,14 @@ class Runner:                                                               # ru
             print(tag, txt, file=self.runlog, flush=flush, **kwargs)
 
 
-    # #--------------------------------------------------------------------------------
-    # def _print_v4(self, txt):
-    # #--------------------------------------------------------------------------------
-    #     self._print(txt, v=4)
-
-
     #--------------------------------------------------------------------------------
     def _printerror(self, txt, **kwargs):                                     # runner
     #--------------------------------------------------------------------------------
         print()
         print('  ERROR: ' + txt, **kwargs)
         print('', flush=True)
-    
+
+
     #--------------------------------------------------------------------------------
     def _printwarning(self, txt, **kwargs):                                     # runner
     #--------------------------------------------------------------------------------
