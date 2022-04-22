@@ -1901,17 +1901,18 @@ class main_window(QMainWindow):                                    # main_window
         dst = Path(to_root)
         # Input files, change name
         inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.DATA','.trcinp')]
-        # Included files, keep name and path
-        data_files = ECL_input(src.with_suffix('.DATA')).get('INCLUDE')
-        ior_files = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
-        inc_files = [(src.parent/file, dst.parent/file) for file in data_files+ior_files]
+        # Included files, same name but different folders
+        ecl_inc_files = ECL_input(src.with_suffix('.DATA')).get('INCLUDE') # NB! Returns full paths
+        ior_inc_files = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
+        inc_files = [(src.parent/file.name, dst.parent/file.name) for file in ecl_inc_files+ior_inc_files]
         for src_fil, dst_fil in inp_files + inc_files:
             if src_fil.is_file():
-                #print(f'{src_fil} -> {dst_fil}')
+                # print(f'copy_case_files: {src_fil} -> {dst_fil}')
                 shutil_copy(src_fil, dst_fil)
         
+
     #-----------------------------------------------------------------------
-    def read_case_dir(self):
+    def read_case_dir(self):                                   # main_window
     #-----------------------------------------------------------------------
         cases = []
         if self.casedir.is_dir():
@@ -2198,7 +2199,6 @@ class main_window(QMainWindow):                                    # main_window
             from_case = self.case
             name = Path(new_name.var.text().upper()).stem
             to_case = self.casedir/name/name
-            #print(str(from_case)+' -> '+str(to_case))
             self.add_case(from_case, rename=to_case)
         new_name.set_func(func)
         new_name.open()
