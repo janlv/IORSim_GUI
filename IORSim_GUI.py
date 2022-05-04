@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import sys
+#print(sys.version_info)
 from pathlib import Path
 #-----------------------------------------------------------------------
 def resource_path():
@@ -29,14 +30,14 @@ latest_release = github_url +"releases/latest"
 
 # External libraries
 from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
-from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor, QContextMenuEvent 
+from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression, QRect, QPoint
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
-from numpy import False_, genfromtxt, asarray, iterable 
+from numpy import genfromtxt, asarray
 
 # Python libraries
 from traceback import format_exc, print_exc, format_exc
@@ -1024,11 +1025,11 @@ class Settings(QDialog):
                      'del_convert'    : variable('Delete original after convert', True, 'Delete the FUNRST-file if it is successfully converted to an UNRST-file', False),
                      'merge'          : variable('Merge Eclipse and IORSim output', True, 'Merge the unformatted output from Eclipse and IORSim into one file', False),
                      'del_merge'      : variable('Delete originals after merge', True, 'Delete the original UNRST-files from Elipse and IORSim if successfully merged', False),
-                     'unrst'          : variable('Confirm flushed UNRST-file before suspending Eclipse', True, 'Check that the UNRST-file is properly flushed before suspending Eclipse', False), 
-                     'rft'            : variable('Confirm flushed RFT-file before suspending Eclipse', True, 'Check that the RFT-file is properly flushed before suspending Eclipse', False),
-                     'ecl_keep_alive' : variable(f'Wait up to', False, f'Keep Eclipse running while waiting for input to improve performance', False),
-                     'ecl_alive_limit': variable(f'seconds before Eclipse is paused during IORSim runs', str(ECL_ALIVE_LIMIT), f'Eclipse will stop if new input is not ready within 100 seconds', False),
-                     'ior_keep_alive' : variable(f'Do not pause IORSim during Eclipse runs', False, f'Keep IORSim running while waiting for input', False),
+                     'unrst'          : variable('Confirm flushed UNRST-file during Eclipse step', True, 'Check that the UNRST-file is properly flushed before suspending Eclipse', False), 
+                     'rft'            : variable('Confirm flushed RFT-file during Eclipse step', True, 'Check that the RFT-file is properly flushed before suspending Eclipse', False),
+                     'ecl_keep_alive' : variable(f'Keep Eclipse running up to', False, f'Keep Eclipse running while waiting for input to improve performance', False),
+                     'ecl_alive_limit': variable(f'seconds between steps', str(ECL_ALIVE_LIMIT), f'Suspend Eclipse if IORSim takes more than {ECL_ALIVE_LIMIT} seconds to complete a timestep', False),
+                     'ior_keep_alive' : variable(f'Keep IORSim running between steps', False, f'Keep IORSim running while waiting for input', False),
                      'log_level'      : variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL), 'A higher value gives a more detailed application log', False)}
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []

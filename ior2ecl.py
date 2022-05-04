@@ -59,7 +59,6 @@ class Eclipse(Runner):                                                      # ec
         t = [0]
         for output in (self.unsmry, self.msg, self.unrst):
             if output.file.is_file() and output.size() > 0:
-                # print(output)
                 # t, n = output.get(['time', 'step'], N=-1, raise_error=False)
                 t = output.get(['time'], N=-1, raise_error=False)
                 if t:
@@ -67,8 +66,6 @@ class Eclipse(Runner):                                                      # ec
                     break
                 else:
                     t = [0]
-        # print(f'{self.name}: time = {t}, step = {n}')
-        #print(f'Eclipse time: {t}')
         return t[0]
 
 
