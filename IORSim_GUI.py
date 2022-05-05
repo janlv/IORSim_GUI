@@ -1027,9 +1027,9 @@ class Settings(QDialog):
                      'del_merge'      : variable('Delete originals after merge', True, 'Delete the original UNRST-files from Elipse and IORSim if successfully merged', False),
                      'unrst'          : variable('Confirm flushed UNRST-file during Eclipse step', True, 'Check that the UNRST-file is properly flushed before suspending Eclipse', False), 
                      'rft'            : variable('Confirm flushed RFT-file during Eclipse step', True, 'Check that the RFT-file is properly flushed before suspending Eclipse', False),
-                     'ecl_keep_alive' : variable(f'Keep Eclipse running up to', False, f'Keep Eclipse running while waiting for input to improve performance', False),
-                     'ecl_alive_limit': variable(f'seconds between steps', str(ECL_ALIVE_LIMIT), f'Suspend Eclipse if IORSim takes more than {ECL_ALIVE_LIMIT} seconds to complete a timestep', False),
-                     'ior_keep_alive' : variable(f'Keep IORSim running between steps', False, f'Keep IORSim running while waiting for input', False),
+                     'ecl_keep_alive' : variable(f'Eclipse process not paused if idle time is less than ', False, f'Delay pausing the Eclipse process during idle time between steps (Expert mode)', False),
+                     'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT), f'Set this limit lower than 100 seconds to avoid unexpected Eclipse termination (Expert mode)', False),
+                     'ior_keep_alive' : variable(f'IORSim process not paused while idle', False, f'Never pause IORSim during idle time between steps (Expert mode)', False),
                      'log_level'      : variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL), 'A higher value gives a more detailed application log', False)}
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
@@ -1038,7 +1038,6 @@ class Settings(QDialog):
         self.set_expert_mode(False)
         self.set_default()
         self.load()
-
 
     #-----------------------------------------------------------------------
     def set_expert_mode(self, enabled):
@@ -1101,13 +1100,16 @@ class Settings(QDialog):
         ### Backward options
         self.add_heading()
         self.add_heading('Backward options')
-        #self.add_items([self.new_checkbox(var) for var in ('unrst', 'rft', 'ecl_keep_alive', 'ior_keep_alive')], nrow=4)
+        # UNRST and RFT checks
         self.add_items([self.new_checkbox(var) for var in ('unrst', 'rft')], nrow=2)
+        # Keep processes alive between steps? 
+        # Expert mode: Type 'e' to edit  
         cb = [self.new_checkbox(var) for var in ('ecl_keep_alive', 'ior_keep_alive')]
         le = self.new_lineedit('ecl_alive_limit', width=30)
-        #le = [self.new_lineedit(var, width=30) for var in ('ecl_alive_limit', 'ior_alive_limit')]
         # Add widget in layout to expert mode
-        self.expert.append(le.itemAt(0).widget())
+        #self.expert.append(le.itemAt(0).widget())
+        self.expert.extend( (le.itemAt(i).widget() for i in range(le.count())) )
+        self.expert.extend(cb)
         self.add_items([cb[0], le])
         self.add_items([cb[1]])
 
@@ -1333,17 +1335,17 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         super(main_window, self).__init__(*args, **kwargs)
         self.setWindowTitle('IORSim') 
-        geo = get_keyword(settings_file, 'geometry', comment='#')
-        if geo:
-            geo = QRect(*geo[0])
+        screen = self.screen().geometry() #size()
+        saved_geo = get_keyword(settings_file, 'geometry', comment='#')
+        if saved_geo:
+            geo = QRect(*saved_geo[0])
+            # Top left inside screen
+            geo.setTopLeft(QPoint(*[max(c,40) for c in geo.topLeft().toTuple()]))
         else:
             size = QSize(900, 600)
-            screen = self.screen().size()
             position = QPoint(int(0.5*(screen.width()-size.width())), int(0.5*(screen.height()-size.height())))
             geo = QRect(position, size)
         self.setGeometry(geo)
-        #self.setMinimumHeight(600)
-        #self.setMinimumWidth(800)
         self.setObjectName('main_window')
         #self.setContentsMargins(2,2,2,2)
         self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
@@ -1381,6 +1383,7 @@ class main_window(QMainWindow):                                    # main_window
         self.update_casedir()
         self.threadpool = QThreadPool()
         self.show()
+
 
     #-----------------------------------------------------------------------
     def update_casedir(self):
@@ -3406,7 +3409,7 @@ class main_window(QMainWindow):                                    # main_window
             sleep(0.1)
         self.save_input_values()
         # Save window geometry in settings
-        geo = f'geometry {" ".join( (str(i) for i in self.frameGeometry().getRect()) )}\n'
+        geo = f'geometry {" ".join( (str(i) for i in self.geometry().getRect()) )}\n'
         replace_line(self.settings.file, find='geometry', replace=geo)
         # Quit Qt
         QApplication.quit()
