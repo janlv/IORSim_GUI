@@ -1339,8 +1339,6 @@ class main_window(QMainWindow):                                    # main_window
         saved_geo = get_keyword(settings_file, 'geometry', comment='#')
         if saved_geo:
             geo = QRect(*saved_geo[0])
-            # Top left inside screen
-            geo.setTopLeft(QPoint(*[max(c,40) for c in geo.topLeft().toTuple()]))
         else:
             size = QSize(900, 600)
             position = QPoint(int(0.5*(screen.width()-size.width())), int(0.5*(screen.height()-size.height())))
@@ -1383,7 +1381,13 @@ class main_window(QMainWindow):                                    # main_window
         self.update_casedir()
         self.threadpool = QThreadPool()
         self.show()
-
+        # Move window if upper left corner is outside limits
+        # This check must come after self.show()
+        pos = self.frameGeometry().topLeft().toTuple()
+        if any([p<0 for p in pos]):
+            x, y = [-min(p,0) for p in pos]
+            self.setGeometry(self.geometry().adjusted(x, y, x, y))            
+                
 
     #-----------------------------------------------------------------------
     def update_casedir(self):
