@@ -1027,9 +1027,9 @@ class Settings(QDialog):
                      'del_merge'      : variable('Delete originals after merge', True, 'Delete the original UNRST-files from Elipse and IORSim if successfully merged', False),
                      'unrst'          : variable('Confirm flushed UNRST-file during Eclipse step', True, 'Check that the UNRST-file is properly flushed before suspending Eclipse', False), 
                      'rft'            : variable('Confirm flushed RFT-file during Eclipse step', True, 'Check that the RFT-file is properly flushed before suspending Eclipse', False),
-                     'ecl_keep_alive' : variable(f'Eclipse process not paused if idle time is less than ', False, f'Delay pausing the Eclipse process during idle time between steps (Expert mode)', False),
+                     'ecl_keep_alive' : variable(f'Eclipse process not paused if idle time is less than', False, f'Delay pausing the Eclipse process during idle time between steps (Expert mode)', False),
                      'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT), f'Set this limit lower than 100 seconds to avoid unexpected Eclipse termination (Expert mode)', False),
-                     'ior_keep_alive' : variable(f'IORSim process not paused while idle', False, f'Never pause IORSim during idle time between steps (Expert mode)', False),
+                     'ior_keep_alive' : variable(f'IORSim process not paused when idle', False, f'Never pause IORSim during idle time between steps (Expert mode)', False),
                      'log_level'      : variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL), 'A higher value gives a more detailed application log', False)}
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
