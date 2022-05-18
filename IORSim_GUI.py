@@ -290,7 +290,7 @@ def show_message(window, kind, text='', extra='', ok_text=None, wait=False, deta
     return msg
 
 #-----------------------------------------------------------------------
-def delete_all_widgets_in_layout(layout):
+def delete_all_widgets_in_layout(layout, recursive=True):
 #-----------------------------------------------------------------------
     '''
    Deletes all widgets in a given layout, and all its
@@ -305,10 +305,11 @@ def delete_all_widgets_in_layout(layout):
             layout.removeWidget(widget)
             widget.deleteLater()
         else:
-            layout2 = layout.itemAt(i).layout()
-            if layout2:
-                #print(type(layout2))
-                delete_all_widgets_in_layout(layout2)
+            if recursive:
+                layout2 = layout.itemAt(i).layout()
+                if layout2:
+                    #print(type(layout2))
+                    delete_all_widgets_in_layout(layout2)
 
                 
 #-----------------------------------------------------------------------
@@ -674,9 +675,6 @@ class Editor(QGroupBox):
         self.search_width = search_width
         self.space = space
         self.match_case = match_case
-        # if name == 'app_log_viewer':
-        #     self.editor_ = Log_viewer_with_level()
-        # else:
         self.editor_ = QPlainTextEdit()
         self.editor_.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.set_text = self.editor_.setPlainText
@@ -722,7 +720,7 @@ class Editor(QGroupBox):
             ### End button
             self.end_btn = self.new_button(text='End', func=self.goto_end)
             buttons.addWidget(self.end_btn)
-        if self.space:
+        if self.space > 0:
             lbl = QLabel(' ')
             lbl.setFixedWidth(self.space)
             buttons.addWidget(lbl)
@@ -943,14 +941,13 @@ class PDF_viewer(Editor):
     def __init__(self, *args, **kwargs):
     #-----------------------------------------------------------------------
         super().__init__(*args, search=True, save=False, refresh=False, top=False, end=False, **kwargs)
+        viewer = QWebEngineView(self)
+        viewer.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
+        viewer.settings().setAttribute(QWebEngineSettings.PdfViewerEnabled, True)
+        delete_all_widgets_in_layout(self.layout(), recursive=False)
+        self.layout().addWidget(viewer)
+        self.editor_ = viewer
 
-    #-----------------------------------------------------------------------
-    def init_editor(self, layout):                          # PDF_viewer
-    #-----------------------------------------------------------------------
-        self.editor_ = QWebEngineView(self)
-        self.editor_.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
-        self.editor_.settings().setAttribute(QWebEngineSettings.PdfViewerEnabled, True)
-        layout.addWidget(self.editor_)
 
     #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                    # PDF_viewer
@@ -991,12 +988,15 @@ class PDF_viewer(Editor):
 class Window(QMainWindow):                                              
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, parent=None, widget=None, title='', size=(1000, 500)):
+    def __init__(self, parent=None, widget=None, title='', geo=None):
     #-----------------------------------------------------------------------
         super(Window, self).__init__(parent)
         self.setWindowTitle(title)
-        self.setMinimumSize(*size)
-        self.widget = widget
+        if geo:
+            self.setGeometry(geo)
+        #self.setGeometry(QRect(QPoint(10,10),QSize(*size)))
+        #self.setMinimumSize(*size)
+        self.widget_ = widget
         self.setCentralWidget(widget)
 
 #===========================================================================
@@ -1569,16 +1569,20 @@ class main_window(QMainWindow):                                    # main_window
         self.download_worker.signals.result.connect(self.download_success) 
         self.threadpool.start(self.download_worker)
 
+
     #-----------------------------------------------------------------------
     def show_guide(self, guide, title=''):
     #-----------------------------------------------------------------------
-        if not self.pdf_view:
+        if self.pdf_view is None:
             self.pdf_view = PDF_viewer()
         self.pdf_view.view_file(guide, title=title)
-        if not self.user_guide:
-            self.user_guide = Window(widget=self.pdf_view, title='IORSim User Guide', size=(1000, 800))
+        if self.user_guide is None:
+            geo = self.geometry()
+            geo.adjust(30,30,-30,-30)
+            self.user_guide = Window(widget=self.pdf_view, title=title, geo=geo)
         self.user_guide.show()
-    
+
+
     #-----------------------------------------------------------------------
     def show_iorsim_guide(self):
     #-----------------------------------------------------------------------
