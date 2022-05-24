@@ -2313,14 +2313,18 @@ class main_window(QMainWindow):                                    # main_window
             act.setEnabled(enable)
         # Chemistry files are put in a separate menu, clear menu before adding actions
         self.chem_menu.clear()
-        #if '.trcinp' in files:
+        # Get chemfiles included in .trcinp
         chemfiles = flat_list(get_keyword(self.input['root']+'.trcinp', '\*CHEMFILE', end='\*'))
-        #self.chemfile_act = []
+        # Use the default chemfile if no chemfile in .trcinp
+        if not chemfiles:
+            chemfiles = [Path(self.input['root']).stem + '.geocheminp']
         for name in chemfiles:
             filename = Path(self.case).parent/name
-            act = create_action(self, text=name, func=partial(self.view_input_file, name=filename, title='Chemistry input file'), icon='document-c')
-            self.chem_menu.addAction(act)
-            #self.chemfile_act.append(act)
+            if filename.is_file():
+                act = create_action(self, text=name, func=partial(self.view_input_file, name=filename, title='Chemistry input file'), icon='document-c')
+                self.chem_menu.addAction(act)
+        # Only enable the chem_menu if it has actions (files)
+        self.chem_menu.setEnabled( len(self.chem_menu.actions()) > 0 )
 
         
     #-----------------------------------------------------------------------
