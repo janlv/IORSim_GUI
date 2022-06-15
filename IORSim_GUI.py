@@ -1909,6 +1909,7 @@ class main_window(QMainWindow):                                    # main_window
         # Included files, same name but different folders
         ecl_inc_files = ECL_input(src.with_suffix('.DATA')).get('INCLUDE') # NB! Returns full paths
         ior_inc_files = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
+        ior_inc_files = [Path(file) for file in ior_inc_files]
         inc_files = [(src.parent/file.name, dst.parent/file.name) for file in ecl_inc_files+ior_inc_files]
         for src_fil, dst_fil in inp_files + inc_files:
             if src_fil.is_file():
