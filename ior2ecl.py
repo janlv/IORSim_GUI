@@ -901,7 +901,7 @@ class Simulation:                                                        # Simul
             run.init_control_func(update=self.update) 
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             run.t = run.time()
-            #print(run.name, t, run.T)
+            # print(run.name, run.t, run.T)
             if run.t < run.T:
                 run.unexpected_stop_error()
             run_time += run.run_time()

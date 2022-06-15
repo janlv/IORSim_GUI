@@ -580,8 +580,9 @@ class Runner:                                                               # ru
     def stop_if_timelimit_reached(self): 
     #--------------------------------------------------------------------------------
         time = self.time()
-        if time > self.T:
-            #print('Time-limit reached')
+        # if time > self.T:
+        if int(time) > int(self.T):
+            #print(f'Time-limit reached, {time} > {self.T}!')
             raise SystemError(self.complete_msg())
         return time
 

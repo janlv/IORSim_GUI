@@ -54,7 +54,7 @@ disable_warnings()
 
 # Local libraries
 from ior2ecl import ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, replace_line, return_matching_string, delete_all, file_contains, write_file
+from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
 from IORlib.ECL import Input_file as ECL_input, unfmt_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -443,10 +443,11 @@ class sim_worker(base_worker):
         def status(run=None, value=None, mode=None, **x):
         #------------------------------------
             if run and not value:
-                count = f'{run.t:.2f}'.rstrip('0').rstrip('.')
+                t, T = strip_zero((run.t, run.T))
                 if self.progress_min:
-                    count = f'({self.progress_min:.0f} + {(run.t-self.progress_min):.2f}'.rstrip('0').rstrip('.')+')'
-                value = f'{run.name}   {count} / {run.T:.0f} days'
+                    a, b = strip_zero((self.progress_min, run.t-self.progress_min))
+                    t = f'{a} + {b}'    
+                value = f'{run.name}   {t} / {T} days'
                 if mode == 'forward':
                     value = run.name + ' ' + value
             self.status_message(value)
