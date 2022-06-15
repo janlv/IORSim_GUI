@@ -463,7 +463,8 @@ class sim_worker(base_worker):
         result, msg = False, ''
         self.sim = Simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
         if self.sim.ready():
-            self.days_box.setText(str(int(self.sim.get_time())))
+            #self.days_box.setText(str(int(self.sim.get_time())))
+            self.days_box.setText(str(self.sim.get_time()).rstrip('0').rstrip('.'))
             result, msg = self.sim.run()
         self.show_message(msg)
         return result
@@ -1599,10 +1600,8 @@ class main_window(QMainWindow):                                    # main_window
         ### toolbar
         self.toolbar = QToolBar('Toolbar')
         self.toolbar.setStyleSheet('QToolBar{spacing:15px; padding:5px;}')
-        #self.toolbar.setIconSize(QSize(24, 24))
         self.toolbar.setIconSize(QSize(20, 20))
         self.addToolBar(self.toolbar)
-        #self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.toolbar.setStyleSheet('QToolButton { padding: 0px 0px 0px 0px}')
         self.create_toolbar_widgets()
@@ -1619,13 +1618,6 @@ class main_window(QMainWindow):                                    # main_window
                 'Choose a case, or add a new from the Case-menu',
                 'Set total time interval',
                 'Compare current case to a previous case')
-        #ql = QLabel()
-        #ql.setText('')
-        #ql.setFixedWidth(70)
-        #ql.setStatusTip('Set simulation mode from the Mode menu')
-        #self.toolbar.addWidget(ql)
-        #self.mode_label = ql
-        #self.toolbar.addSeparator()
         for i,(text,wid) in enumerate(list(widgets.items())[:3]):
             ql = QLabel()
             ql.setText(text.capitalize())
@@ -1651,9 +1643,7 @@ class main_window(QMainWindow):                                    # main_window
         self.modes = ['forward','backward','eclipse','iorsim']
         mode_names = ['Forward','Backward','Eclipse','IORSim']
         self.mode_cb = widgets['run']
-        #self.mode_cb.setStyleSheet('QComboBox {min-width: 100px;}')
         self.mode_cb.addItems(mode_names)
-        #self.mode_cb.setPlaceholderText('Choose mode')
         self.mode_cb.setCurrentIndex(-1)
         self.mode_cb.currentIndexChanged[int].connect(self.on_mode_select)
         # case
@@ -1738,7 +1728,7 @@ class main_window(QMainWindow):                                    # main_window
         self.case = self.input.get('root')
         self.create_caselist(choose=self.case)
         ### number of days
-        self.days_box.setText(str(self.input.get('days') or days))
+        self.days_box.setText(str(self.input.get('days') or days).rstrip('0').rstrip('.')) # Remove trailing .0
         
         
     #-----------------------------------------------------------------------
@@ -1770,7 +1760,8 @@ class main_window(QMainWindow):                                    # main_window
                         val = None
                     finally:
                         try:
-                            v = int(val) 
+                            # v = int(val) 
+                            v = float(val) 
                         except (TypeError,ValueError):
                             v = val
                         finally:
@@ -1784,7 +1775,8 @@ class main_window(QMainWindow):                                    # main_window
         inp['ecl_days'] = inp['species'] = inp['tracers'] = None
         if inp['root']:
             tsteps = ECL_input(f'{inp["root"]}.DATA').get('TSTEP')
-            inp['ecl_days'] = int(sum(tsteps))
+            #inp['ecl_days'] = int(sum(tsteps))
+            inp['ecl_days'] = sum(tsteps)
             inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
             inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
             inp['species'] += inp['tracers']
@@ -1981,7 +1973,6 @@ class main_window(QMainWindow):                                    # main_window
 
         
     #-----------------------------------------------------------------------
-    #def set_mode(self, mode, box=False, tip=None, days=None, func=None, run=None):  # main_window
     def set_mode(self, mode, box=False, tip=None, days=None, run=None):  # main_window
     #-----------------------------------------------------------------------
         if not self.case:
@@ -1990,17 +1981,15 @@ class main_window(QMainWindow):                                    # main_window
             return False
         self.mode = self.input['mode'] = mode
         if days:
-            self.days_box.setText(str(days))
+            self.days_box.setText(str(days).rstrip('0').rstrip('.'))
         if tip:
             self.days_box.setStatusTip(tip)
         self.days_box.setEnabled(box)
-        #self.run_func = func
         if not isinstance(run, tuple):
             run = (run,)
         self.run = run
         fh = open(str(Path(self.case).parent/'mode.gui'), 'w')
         fh.write(mode+'\n')
-        #print('mode write: '+mode)
         fh.close()
 
 
@@ -2027,7 +2016,8 @@ class main_window(QMainWindow):                                    # main_window
             days = [1,]
             if self.read_ecl_data():
                 days = self.data['ecl'].get('days') or [1,]
-            self.max_days = int(days[-1])
+            # self.max_days = int(days[-1])
+            self.max_days = days[-1]
             self.set_mode(mode, days=self.max_days, box=True, tip='Set total time interval, maximun is '+str(self.max_days), run=mode)
             self.update_menu_boxes('ior')
             self.create_plot()
@@ -2038,18 +2028,17 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_input_change(self, text):                           # main_window
     #-----------------------------------------------------------------------
-        #print('on_input_change: ', text)
         name = self.sender().objectName()
-        #var = {'dt':'Timestep', 'nsteps':'Number of steps'}
-        #var = {'nsteps':'Number of steps'}
         var = {'days':'Number of days'}
         if not text:
             self.input[name] = 0
             return
         try:
-            val = int(text)
+            #val = int(text)
+            val = float(text)
         except:
-            show_message(self, 'error', text=var[name]+' must be an integer!')
+            #show_message(self, 'error', text=var[name]+' must be an integer!')
+            show_message(self, 'error', text=var[name]+' must be an number!')
         else:
             self.input[name] = val
             
@@ -2454,19 +2443,15 @@ class main_window(QMainWindow):                                    # main_window
         #  FWCT    - field water cut total (prod)
         #  ROIP    - Reservoir oil in place
 
-        #print('init_ecl_data: start')
         varlist = ['WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT',
                    'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT'] #,'FWIT','FWIR'] 
-        #print('{} : {}'.format(type(self.input['root']),self.input['root']))
         datafile = self.input['root']
         if case:
             datafile = case
         smspec = Path(datafile+'.SMSPEC')
         unsmry = Path(datafile+'.UNSMRY')
-        #print(unsmry, smspec)
         if not smspec.is_file() or not unsmry.is_file():
             return False
-        #print('init_ecl_data: inside')
         self.unsmry = unfmt_file(unsmry)
         smspec = unfmt_file(smspec)
 
