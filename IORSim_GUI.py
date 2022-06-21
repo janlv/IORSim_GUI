@@ -58,7 +58,7 @@ disable_warnings()
 # Local libraries
 from ior2ecl import ior_include_files, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
-from IORlib.ECL import Input_file as ECL_input, unfmt_file
+from IORlib.ECL import Input_file as ECL_input, unfmt_file, keywords as ECL_keywords
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
 
@@ -954,34 +954,44 @@ class Editor(QGroupBox):
 
 
 #===========================================================================
-class Eclipse_editor(Editor):                                              
+class Highlight_editor(Editor):                                              
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, comment=None, keywords=[], **kwargs):
     #-----------------------------------------------------------------------
-        super(Eclipse_editor, self).__init__(*args, **kwargs)
-        # Sections
-        sections = [color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
-                    'SOLUTION','SUMMARY','SCHEDULE','OPTIMIZE']
-        # Global keywords
-        globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b','COLUMNS','DEBUG','DEBUG3','ECHO','END',
-                    'ENDINC','ENDSKIP','SKIP','SKIP100','SKIP300','EXTRAPMS','FORMFEED','GETDATA',
-                    'INCLUDE','MESSAGES','NOECHO','NOWARN','WARN']
-        # Common keywords
-        common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b','TITLE','CART','DIMENS','FMTIN','FMTOUT',
-                    'FMTOUT','UNIFOUT','UNIFIN','OIL','WATER','GAS','VAPOIL','DISGAS','FIELD','METRIC','LAB','START','WELLDIMS','REGDIMS','TRACERS',
-                    'NSTACK','TABDIMS','NOSIM','GRIDFILE','DX','DY','DZ','PORO','BOX','PERMX','PERMY','PERMZ','TOPS',
-                    'INIT','RPTGRID','PVCDO','PVTW','DENSITY','PVDG','ROCK','SPECROCK','SPECHEAT','TRACER','TRACERKP',
-                    'TRDIFPAR','TRDIFIDE','SATNUM','FIPNUM','TRKPFPAR','TRKPFIDE','RPTSOL','RESTART','PRESSURE','SWAT',
-                    'SGAS','RTEMPA','TBLKFA1','TBLKFIDE','TBLKFPAR','FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWCT','FWIR',
-                    'FWIT','FOIP','ROIP','WTPCHEA','WOPR','WWPR','WWIR','WBHP','WWCT','WOPT','WWIT','WTPRA1','WTPTA1','WTPCA1',
-                    'WTIRA1','WTITA1','WTICA1','CTPRA1','CTIRA1','FOIP','ROIP','FPR','TCPU','TCPUTS','WNEWTON','ZIPEFF','STEPTYPE',
-                    'NEWTON','NLINEARP','NLINEARS','MSUMLINS','MSUMNEWT','MSUMPROB','WTPRPAR','WTPRIDE','WTPCPAR','WTPCIDE','RUNSUM',
-                    'SEPARATE','WELSPECS','COMPDAT','WRFTPLT','TSTEP','DATES','SKIPREST','WCONINJE','WCONPROD','WCONHIST','WTEMP','RPTSCHED',
-                    'RPTRST','TUNING','READDATA', 'ROCKTABH','GRIDUNIT','NEWTRAN','MAPAXES','EQLDIMS','ROCKCOMP','TEMP',
-                    'GRIDOPTS','VFPPDIMS','VFPIDIMS','AQUDIMS','SMRYDIMS','CPR','FAULTDIM','MEMORY','EQUALS','MINPV',
-                    'COPY','MULTIPLY']
-        self.highlighter = Highlighter(self.document(), comment='--', keywords=[sections, globals, common])
+        super(Highlight_editor, self).__init__(*args, **kwargs)
+        self.highlighter = Highlighter(self.document(), comment=comment, keywords=keywords)
+
+
+
+# #===========================================================================
+# class Eclipse_editor(Editor):                                              
+# #===========================================================================
+#     #-----------------------------------------------------------------------
+#     def __init__(self, *args, **kwargs):
+#     #-----------------------------------------------------------------------
+#         super(Eclipse_editor, self).__init__(*args, **kwargs)
+#         # Sections
+#         sections = [color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b'] + ECL_keywords.sections
+#         # Global keywords
+#         globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b'] + ECL_keywords.globals
+#         # Common keywords
+#         common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b'] + ECL_keywords.common
+#         self.highlighter = Highlighter(self.document(), comment='--', keywords=[sections, globals, common])
+
+
+# #===========================================================================
+# class IORSim_editor(Editor):                                              
+# #===========================================================================
+#     #-----------------------------------------------------------------------
+#     def __init__(self, *args, **kwargs):
+#     #-----------------------------------------------------------------------
+#         super(IORSim_editor, self).__init__(*args, **kwargs)
+#         ### Mandatory keywords
+#         mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.required
+#         ### Optional keywords
+#         optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.optional
+#         self.highlighter = Highlighter(self.document(), comment='#', keywords=[mandatory, optional])
 
 
 
@@ -1438,6 +1448,7 @@ class main_window(QMainWindow):                                    # main_window
         if any([p<0 for p in pos]):
             x, y = [-min(p,0) for p in pos]
             self.setGeometry(self.geometry().adjusted(x, y, x, y))            
+        #print(self.screen().geometry())
                 
 
     #-----------------------------------------------------------------------
@@ -1734,7 +1745,7 @@ class main_window(QMainWindow):                                    # main_window
     def create_central_widget(self):                                          # main_window
     #-----------------------------------------------------------------------
         ### Central widget
-        # Layout position given as (row, col, rowspan, colspan)
+        ### Layout position given as (row, col, rowspan, colspan)
         self.position = {'ior_menu' : (0, 0),
                          'ecl_menu' : (1, 0),
                          'plot'     : (0, 1, 2, 1)}
@@ -1749,21 +1760,30 @@ class main_window(QMainWindow):                                    # main_window
         #widget.setStyleSheet('QWidget {border: 1px solid black}')
         widget.setLayout(self.layout)
         self.setCentralWidget(widget)
-        # Create IORSim plot menu
+        ### Create IORSim plot menu
         self.ior_menu = Menu(title='IORSim plot options')
         self.layout.addWidget(make_scrollable(self.ior_menu), *self.position['ior_menu']) # 
-        # Create ECLIPSE plot menu
+        ### Create ECLIPSE plot menu
         self.ecl_menu = Menu(title='ECLIPSE plot options')
         self.layout.addWidget(make_scrollable(self.ecl_menu), *self.position['ecl_menu']) # 
-        # Create plot- and file-view area
+        ### Create plot- and file-view area
         self.plot = Plot() 
         self.editor = Editor(name='editor', save_func=self.prepare_case)
+        ### Eclipse editor
+        sections = [color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b'] + ECL_keywords.sections
+        globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b'] + ECL_keywords.globals
+        common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b'] + ECL_keywords.common
+        self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=[sections, globals, common], save_func=self.prepare_case)
+        ### IORSim editor
+        mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.required
+        optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.optional
+        self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=[mandatory, optional], save_func=self.prepare_case)
+        ### Chemfile editor
+        self.chem_editor = Highlight_editor(name='Chemistry editor', comment='#')
         self.log_viewer = Editor(name='log_viewer', read_only=True)
-        #self.app_log_viewer = Editor(name='app_log_viewer', read_only=True)
-        #self.app_log_viewer.editor_.set_log_value_getter(self.settings._get['log_level'])
-        # Plot is the default view at startup
+        self.editors = (self.eclipse_editor, self.iorsim_editor, self.editor, self.chem_editor, self.log_viewer)
+        ### Plot is the default view at startup
         self.layout.addWidget(self.plot, *self.position['plot'])
-
 
 
     #-----------------------------------------------------------------------
@@ -2236,7 +2256,8 @@ class main_window(QMainWindow):                                    # main_window
         self.input['root'] = self.case = None
         self.max_3_checked = []
         # if self.current_viewer() in (self.editor, self.log_viewer, self.app_log_viewer):
-        if self.current_viewer() in (self.editor, self.log_viewer):
+        #if self.current_viewer() in (self.editor, self.log_viewer):
+        if self.current_viewer() in self.editors:
             self.view_file(None)
         # Delete case folder
         delete_all(Path(case).parent)
@@ -2727,7 +2748,7 @@ class main_window(QMainWindow):                                    # main_window
             self.reset_progress_and_message()
 
     #-----------------------------------------------------------------------
-    def view_input_file(self, name=None, ext=None, title=None, comment='#', keywords=[]):                                # main_window
+    def view_input_file(self, name=None, editor=None, ext=None, title=None, comment='#', keywords=[]):                                # main_window
     #-----------------------------------------------------------------------
         # Avoid re-opening file after it is saved
         #print(self.sender())
@@ -2736,14 +2757,13 @@ class main_window(QMainWindow):                                    # main_window
         if self.input['root']:
             if not name:
                 name = self.input['root']+ext
-            # if self.current_view and self.current_view.file_is_open(name):
             if self.current_viewer().file_is_open(name):
                 return
             fil = is_file_ignore_suffix_case(name)
             if fil: 
-                self.view_file(fil, viewer=self.editor, title=f'{title}: {fil.name}')
-                if keywords:
-                    Highlighter(self.editor.document(), comment=comment, keywords=keywords)
+                self.view_file(fil, viewer=editor, title=f'{title}: {fil.name}')
+                # if keywords:
+                #     Highlighter(self.editor.document(), comment=comment, keywords=keywords)
 
             else:
                 self.sender().setChecked(False)
@@ -2763,7 +2783,6 @@ class main_window(QMainWindow):                                    # main_window
         if not self.input['root']:
             return
         ext='.DATA'
-        comment='--'
         if title is None:
             title = 'Eclipse input file'
         if name is None:
@@ -2771,32 +2790,9 @@ class main_window(QMainWindow):                                    # main_window
         # Avoid re-opening file after it is saved
         if self.current_viewer().file_is_open(name):
             return
-        # Sections
-        sections = [color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
-                    'SOLUTION','SUMMARY','SCHEDULE','OPTIMIZE']
-        # Global keywords
-        #globals = [color.blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','COLUMNS','DEBUG','DEBUG3','ECHO','END',
-        globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b','COLUMNS','DEBUG','DEBUG3','ECHO','END',
-                    'ENDINC','ENDSKIP','SKIP','SKIP100','SKIP300','EXTRAPMS','FORMFEED','GETDATA',
-                    'INCLUDE','MESSAGES','NOECHO','NOWARN','WARN']
-        # Common keywords
-        #common = [color.green, QFont.Normal, Qt.CaseSensitive, r"\b",r'\b','TITLE','CART','DIMENS','FMTIN','FMTOUT',
-        common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b','TITLE','CART','DIMENS','FMTIN','FMTOUT',
-                    'FMTOUT','UNIFOUT','UNIFIN','OIL','WATER','GAS','VAPOIL','DISGAS','FIELD','METRIC','LAB','START','WELLDIMS','REGDIMS','TRACERS',
-                    'NSTACK','TABDIMS','NOSIM','GRIDFILE','DX','DY','DZ','PORO','BOX','PERMX','PERMY','PERMZ','TOPS',
-                    'INIT','RPTGRID','PVCDO','PVTW','DENSITY','PVDG','ROCK','SPECROCK','SPECHEAT','TRACER','TRACERKP',
-                    'TRDIFPAR','TRDIFIDE','SATNUM','FIPNUM','TRKPFPAR','TRKPFIDE','RPTSOL','RESTART','PRESSURE','SWAT',
-                    'SGAS','RTEMPA','TBLKFA1','TBLKFIDE','TBLKFPAR','FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWCT','FWIR',
-                    'FWIT','FOIP','ROIP','WTPCHEA','WOPR','WWPR','WWIR','WBHP','WWCT','WOPT','WWIT','WTPRA1','WTPTA1','WTPCA1',
-                    'WTIRA1','WTITA1','WTICA1','CTPRA1','CTIRA1','FOIP','ROIP','FPR','TCPU','TCPUTS','WNEWTON','ZIPEFF','STEPTYPE',
-                    'NEWTON','NLINEARP','NLINEARS','MSUMLINS','MSUMNEWT','MSUMPROB','WTPRPAR','WTPRIDE','WTPCPAR','WTPCIDE','RUNSUM',
-                    'SEPARATE','WELSPECS','COMPDAT','WRFTPLT','TSTEP','DATES','SKIPREST','WCONINJE','WCONPROD','WCONHIST','WTEMP','RPTSCHED',
-                    'RPTRST','TUNING','READDATA', 'ROCKTABH','GRIDUNIT','NEWTRAN','MAPAXES','EQLDIMS','ROCKCOMP','TEMP',
-                    'GRIDOPTS','VFPPDIMS','VFPIDIMS','AQUDIMS','SMRYDIMS','CPR','FAULTDIM','MEMORY','EQUALS','MINPV',
-                    'COPY','MULTIPLY']
-        #self.view_input_file(ext=ext, title=title, comment=comment, keywords=[sections, globals, common])
-        self.view_input_file(name=name, title=title, comment=comment, keywords=[sections, globals, common])
-        
+        self.view_input_file(name=name, title=title, editor=self.eclipse_editor)
+
+
     #-----------------------------------------------------------------------
     def view_iorsim_input(self):                                # main_window
     #-----------------------------------------------------------------------
@@ -2811,14 +2807,14 @@ class main_window(QMainWindow):                                    # main_window
         # if self.current_view and self.current_view.file_is_open(name):
         if self.current_viewer().file_is_open(name):
             return
-        # Mandatory keywords
-        #mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.required
-        mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.required
-        # Optional keywords
-        #optional = [color.green, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.optional
-        optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.optional
-        self.view_input_file(name=name, title=title, comment=comment, keywords=[mandatory, optional])
-
+        # # Mandatory keywords
+        # #mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.required
+        # mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.required
+        # # Optional keywords
+        # #optional = [color.green, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.optional
+        # optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.optional
+        self.view_input_file(name=name, title=title, editor=self.iorsim_editor)
+  
 
     #-----------------------------------------------------------------------
     def view_geochem_input(self):                                # main_window
