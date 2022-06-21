@@ -11,7 +11,7 @@ LOG_LEVEL_MAX = 4
 LOG_LEVEL_MIN = 1
 DEFAULT_LOG_LEVEL = 3      
 CHECK_PAUSE = 0.01     # Default sleep-time during wait-loops
-RFT_CHECK_ITER = 100   # Number of iterations before reducing number of blocks
+RFT_CHECK_ITER = 100   # Number of iterations before reducing number of expected RFT blocks
 
 DEBUG = False
 
@@ -49,7 +49,7 @@ class Eclipse(Runner):                                                      # ec
         self.rft = RFT_file(root, wait_func=self.wait_for)
         self.unsmry = UNSMRY_file(root)
         self.msg = MSG_file(root)
-        self.inputfile = ECL_input(root+'.DATA')
+        self.inputfile = ECL_input(root)
         self.is_iorsim = False
         self.is_eclipse = True
 
@@ -105,10 +105,10 @@ class Eclipse(Runner):                                                      # ec
                 if 'LICENSE FAILURE' in line:
                     error = 'due to a license failure'
                     break
-        ifile = self.interface_file('all').path()
-        ifiles = list(ifile.parent.glob(ifile.name))
-        if len(ifiles) == 1:
-            error = f'due to missing interface-files (last file is {ifiles[-1].name})'
+        # ifile = self.interface_file('all').path()
+        # ifiles = list(ifile.parent.glob(ifile.name))
+        # if len(ifiles) == 1:
+        #     error = f'due to missing interface-files (last file is {ifiles[-1].name})'
         raise SystemError(f'ERROR {self.name} stopped {error}')
 
 
@@ -432,7 +432,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
         #keep_alive = keep_alive and IOR_ALIVE_LIMIT or False
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
-        self.tsteps = kwargs.get('tsteps') or ECL_input(f'{self.case}.DATA').get('TSTEP') 
+        self.tsteps = kwargs.get('tsteps') or ECL_input(self.case).tsteps()
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
         self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
@@ -540,7 +540,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
 class Schedule:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, case, T=0, init_days=0, start=None, ext='.SCH', comment='--', interface_file=None): #, end='/', tag='TSTEP'):
+    def __init__(self, case, T=0, init_days=0, start=None, ext='.SCH', comment='--', 
+                 interface_file=None, file=None): #, end='/', tag='TSTEP'):
     #--------------------------------------------------------------------------------
         '''
         Create schedule from a .SCH-file if it exists. 
@@ -559,7 +560,7 @@ class Schedule:
         self.start = start
         self.tstep = 0
         self._schedule = []
-        self.file = None
+        self.file = file
         # Ignore case in file extension
         self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
         if self.file:
@@ -752,7 +753,7 @@ class Simulation:                                                        # Simul
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.name = 'ior2ecl'
         self.root = root
-        self.ECL_inp = ECL_input(f'{root}.DATA')
+        self.ECL_inp = ECL_input(root)
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
         if delete:
@@ -776,8 +777,11 @@ class Simulation:                                                        # Simul
         self.restart_step = self.restart_days = 0
         kwargs.update({'root':str(root), 'runlog':self.runlog})
         self.kwargs = kwargs
-        if root:
-            self.run_sim = self.init_runs()
+        if self.root:
+            try:
+                self.run_sim = self.init_runs()
+            except SystemError as e:
+                self.update.message(f'{e}')
 
 
     #--------------------------------------------------------------------------------
@@ -822,28 +826,17 @@ class Simulation:                                                        # Simul
                 return False
             self.restart_days = time[n.index(step)]
             self.restart = True
-        self.tsteps = self.ECL_inp.get('TSTEP')
-        schedule_file = None
+        self.tsteps = ECL_input(self.root, include=True).tsteps()
         if self.tsteps == [0]:
-            # Get tsteps from included .SCH/.sch file (if it exists)
-            schedule_file = self.ECL_inp.include_file('.sch')
-            if schedule_file and schedule_file.is_file():
-                self.tsteps = self.ECL_inp.date2tstep(ECL_input(schedule_file).get('DATES')) 
-        if self.tsteps == [0]:
-            self.update.message(f'ERROR No TSTEP given in {self.ECL_inp.file.name}{schedule_file and f" or {schedule_file.name}" or ""}, simulation stopped')
+            self.update.message(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
             return False
         self.mode = self.mode or self.mode_from_case()
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
         check_OK = False
-        try:
-            # Call init-function
-            self.runs = init_func(**self.kwargs)
-            # Check input
-            check_OK = self.runs and all([run.check_input() for run in self.runs])
-            # Return run-function if init-function was successfull
-        except SystemError as e:
-            self.update.message(f'{e}')
+        self.runs = init_func(**self.kwargs)
+        # Check input
+        check_OK = self.runs and all([run.check_input() for run in self.runs])
         return check_OK and run_func
 
 
@@ -901,7 +894,7 @@ class Simulation:                                                        # Simul
             run.init_control_func(update=self.update) 
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             run.t = run.time()
-            # print(run.name, run.t, run.T)
+            print(run.name, run.t, run.T)
             if run.t < run.T:
                 run.unexpected_stop_error()
             run_time += run.run_time()
@@ -1013,7 +1006,7 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def convert_restart(self, case=None, fast=True):                     # Simulation
     #--------------------------------------------------------------------------------
-        # Convert from formatted (ascii) to unformatted (binary) restart file
+        ### Convert from formatted (ascii) to unformatted (binary) restart file
         self.update.status(value='Converting restart file...')
         ior = self.ior or Iorsim(root=case)   
         if not ior.funrst.is_file():
@@ -1152,6 +1145,55 @@ class Simulation:                                                        # Simul
 #                                                                           #
 #############################################################################
 
+# #--------------------------------------------------------------------------------
+# def ecl_include_files(root):
+# #--------------------------------------------------------------------------------
+#     '''
+#     Return full path to files included in the Eclipse .DATA-file
+#     '''
+#     files = ECL_input(Path(root).with_suffix('.DATA')).get('INCLUDE') # NB! Returns full paths
+#     ff = [inc for inc in [ECL_input(f).get('INCLUDE') for f in files] if inc != ['']]
+#     files.extend(flat_list(ff))
+#     #print(files+ff)
+#     return files
+
+
+# #--------------------------------------------------------------------------------
+# def ecl_include_files(root):
+# #--------------------------------------------------------------------------------
+#     '''
+#     Return full path to files included in the Eclipse .DATA-file
+#     '''
+#     files = [Path(root).with_suffix('.DATA')]
+#     result = []
+#     ecl_include_files_rec(files, result)
+#     result = flat_list(result)
+#     result.pop(0)
+#     return result
+
+
+# #--------------------------------------------------------------------------------
+# def ecl_include_files_rec(files, result):
+# #--------------------------------------------------------------------------------
+#     if not files:
+#         return
+#     result.append(files)
+#     new_files = [ECL_input(file).get('INCLUDE') for file in files] 
+#     ecl_include_files_rec(flat_list([f for f in new_files if f != ['']]), result)
+
+
+#--------------------------------------------------------------------------------
+def ior_include_files(root):
+#--------------------------------------------------------------------------------
+    '''
+    Return full path to files included in the IORSim .trcinp-file
+    '''
+    trcinp = Path(root).with_suffix('.trcinp')
+    files = flat_list(get_keyword(trcinp, '\*CHEMFILE', end='\*'))
+    files = [trcinp.parent/Path(f) for f in files]
+    #print('IOR:', files) 
+    return files
+
 
 #--------------------------------------------------------------------------------
 def case_from_casedir(case_dir, root):
@@ -1161,6 +1203,7 @@ def case_from_casedir(case_dir, root):
     if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
         return case_dir/root/root
     raise SystemError('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
+
 
 #--------------------------------------------------------------------------------
 def parse_input(case_dir=None, settings_file=None):

@@ -4,6 +4,9 @@
 import sys
 #print(sys.version_info)
 from pathlib import Path
+from xml.etree.ElementInclude import include
+
+from pygments import highlight
 #-----------------------------------------------------------------------
 def resource_path():
 #-----------------------------------------------------------------------
@@ -29,7 +32,7 @@ github_url = "https://github.com/janlv/IORSim_GUI/"
 latest_release = github_url +"releases/latest"
 
 # External libraries
-from PySide6.QtWidgets import QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QScrollArea, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression, QRect, QPoint
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
@@ -53,7 +56,7 @@ from urllib3 import disable_warnings
 disable_warnings()
 
 # Local libraries
-from ior2ecl import ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
+from ior2ecl import ior_include_files, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
 from IORlib.ECL import Input_file as ECL_input, unfmt_file
 
@@ -112,6 +115,16 @@ def create_action(win, text=None, shortcut=None, tip=None, func=None, icon=None,
     act.triggered.connect(func)
     #act.changed.connect(func)
     return act
+
+
+#-----------------------------------------------------------------------
+def make_scrollable(widget):
+#-----------------------------------------------------------------------
+    scroll = QScrollArea()
+    scroll.setStyleSheet('QScrollArea {border: 1px solid lightgray}')
+    scroll.setWidget(widget)
+    scroll.setWidgetResizable(True)
+    return scroll
 
 
 #-----------------------------------------------------------------------
@@ -183,47 +196,48 @@ def get_eclipse_well_yaxis_fluid(root):
     summary = well = False
     vars = []
     wells = []
-    encoding = None
-    try:
-        with open(fil) as f:
-            for line in f:
-                l = f.readline()
-    except UnicodeDecodeError:
-        #encoding = 'ISO-8859-1'
-        encoding = 'latin-1'
-    with open(fil, encoding=encoding) as f:
-        for line in f:
-            if line.lstrip().startswith('--') or line.isspace():
+    # encoding = None
+    # try:
+    #     with open(fil) as f:
+    #         for line in f:
+    #             l = f.readline()
+    # except UnicodeDecodeError:
+    #     #encoding = 'ISO-8859-1'
+    #     encoding = 'latin-1'
+    # with open(fil, encoding=encoding) as f:
+    #     for line in f:
+    for line in ECL_input(root, include=True).lines():
+        # if line.lstrip().startswith('--') or line.isspace():
+        #     continue
+        if line.lstrip().upper().startswith('SUMMARY'):
+            summary = True
+            continue
+        if line.lstrip().upper().startswith('SCHEDULE'):
+            break
+        if summary:
+            kw = line.strip()
+            #print('kw:', kw)
+            if kw[0] in ('F','R'):
+                vars.append(kw)
+                #print('add: '+kw)
+            if kw[0] == 'W':
+                vars.append(kw)
+                well = True
                 continue
-            if line.lstrip().upper().startswith('SUMMARY'):
-                summary = True
-                continue
-            if line.lstrip().upper().startswith('SCHEDULE'):
-                break
-            if summary:
-                kw = line.strip()
-                #print(kw)
-                if kw[0] in ('F','R'):
-                    vars.append(kw)
-                    #print('add: '+kw)
-                if kw[0] == 'W':
-                    vars.append(kw)
-                    well = True
-                    continue
-                if well:
-                    if '/' in kw:
-                        kw = kw[:-1].strip()
-                        well = False
-                    if ',' in kw:
-                        kw = kw.split(',')
-                    elif ' ' in kw:
-                        kw = kw.split()
-                    elif len(kw)>0:
-                        kw = (kw,)
-                    else:
-                        kw = []
-                    for k in kw:
-                        wells.append(k.strip())                  
+            if well:
+                if '/' in kw:
+                    kw = kw[:-1].strip()
+                    well = False
+                if ',' in kw:
+                    kw = kw.split(',')
+                elif ' ' in kw:
+                    kw = kw.split()
+                elif len(kw)>0:
+                    kw = (kw,)
+                else:
+                    kw = []
+                for k in kw:
+                    wells.append(k.strip())                  
     vars = list(set(vars))
     #print('vars',vars)
     if len(vars)==0:
@@ -606,11 +620,13 @@ class Menu(QGroupBox):
     def __init__(self, parent=None, title='', ncol=2):
     #-----------------------------------------------------------------------
         super(Menu, self).__init__(parent)
+        self.setStyleSheet('QGroupBox {border: none; margin-top:5px; padding: 15px 0px 0px 0px;}')
         self.setTitle(title)
         self.setLayout(QHBoxLayout())
         for i in range(ncol):
             self.layout().addLayout(QVBoxLayout())
             self.layout().itemAt(i).setAlignment(Qt.AlignTop)
+
 
     #-----------------------------------------------------------------------
     def column(self, nr):
@@ -867,7 +883,6 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def save_text(self, save_func=None):            # Editor
     #-----------------------------------------------------------------------
-        #print('save_text')
         write_file(self.file, self.editor_.toPlainText())
         self.save_btn.setEnabled(False)
         if save_func:
@@ -915,7 +930,9 @@ class Editor(QGroupBox):
             return
         #self.setObjectName(str(file))
         self.file = str(file)
-        self.highlight = None
+        # if self.highlight:
+        #     del self.highlight
+        #     self.highlight = None
         text = ''
         if file and Path(file).is_file():
             text = read_file(file)
@@ -934,6 +951,38 @@ class Editor(QGroupBox):
             self.set_text(read_file(self.file))
         vscroll = self.vscroll.get(str(self.file)) or 0
         self.editor_.verticalScrollBar().setValue(vscroll)
+
+
+#===========================================================================
+class Eclipse_editor(Editor):                                              
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, *args, **kwargs):
+    #-----------------------------------------------------------------------
+        super(Eclipse_editor, self).__init__(*args, **kwargs)
+        # Sections
+        sections = [color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
+                    'SOLUTION','SUMMARY','SCHEDULE','OPTIMIZE']
+        # Global keywords
+        globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b','COLUMNS','DEBUG','DEBUG3','ECHO','END',
+                    'ENDINC','ENDSKIP','SKIP','SKIP100','SKIP300','EXTRAPMS','FORMFEED','GETDATA',
+                    'INCLUDE','MESSAGES','NOECHO','NOWARN','WARN']
+        # Common keywords
+        common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b','TITLE','CART','DIMENS','FMTIN','FMTOUT',
+                    'FMTOUT','UNIFOUT','UNIFIN','OIL','WATER','GAS','VAPOIL','DISGAS','FIELD','METRIC','LAB','START','WELLDIMS','REGDIMS','TRACERS',
+                    'NSTACK','TABDIMS','NOSIM','GRIDFILE','DX','DY','DZ','PORO','BOX','PERMX','PERMY','PERMZ','TOPS',
+                    'INIT','RPTGRID','PVCDO','PVTW','DENSITY','PVDG','ROCK','SPECROCK','SPECHEAT','TRACER','TRACERKP',
+                    'TRDIFPAR','TRDIFIDE','SATNUM','FIPNUM','TRKPFPAR','TRKPFIDE','RPTSOL','RESTART','PRESSURE','SWAT',
+                    'SGAS','RTEMPA','TBLKFA1','TBLKFIDE','TBLKFPAR','FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWCT','FWIR',
+                    'FWIT','FOIP','ROIP','WTPCHEA','WOPR','WWPR','WWIR','WBHP','WWCT','WOPT','WWIT','WTPRA1','WTPTA1','WTPCA1',
+                    'WTIRA1','WTITA1','WTICA1','CTPRA1','CTIRA1','FOIP','ROIP','FPR','TCPU','TCPUTS','WNEWTON','ZIPEFF','STEPTYPE',
+                    'NEWTON','NLINEARP','NLINEARS','MSUMLINS','MSUMNEWT','MSUMPROB','WTPRPAR','WTPRIDE','WTPCPAR','WTPCIDE','RUNSUM',
+                    'SEPARATE','WELSPECS','COMPDAT','WRFTPLT','TSTEP','DATES','SKIPREST','WCONINJE','WCONPROD','WCONHIST','WTEMP','RPTSCHED',
+                    'RPTRST','TUNING','READDATA', 'ROCKTABH','GRIDUNIT','NEWTRAN','MAPAXES','EQLDIMS','ROCKCOMP','TEMP',
+                    'GRIDOPTS','VFPPDIMS','VFPIDIMS','AQUDIMS','SMRYDIMS','CPR','FAULTDIM','MEMORY','EQUALS','MINPV',
+                    'COPY','MULTIPLY']
+        self.highlighter = Highlighter(self.document(), comment='--', keywords=[sections, globals, common])
+
 
 
 #===========================================================================
@@ -1441,30 +1490,27 @@ class main_window(QMainWindow):                                    # main_window
                                              func=self.delete_current_case)
         self.plot_act = create_action(self, text='Plot', icon='guide.png', func=self.view_plot, checkable=True)
         self.plot_act.setChecked(True)
-        self.ecl_inp_act = create_action(self, text='Eclipse input file', icon='document-attribute-e.png',
+        self.ecl_inp_act = create_action(self, text='Input file', icon='document-attribute-e.png',
                                          func=self.view_eclipse_input, checkable=True)
-        self.ior_inp_act = create_action(self, text='IORSim input file', icon='document-attribute-i.png',
+        self.ior_inp_act = create_action(self, text='Input file', icon='document-attribute-i.png',
                                          func=self.view_iorsim_input, checkable=True)
         self.schedule_file_act = create_action(self, text='Schedule file', icon='document-attribute-s.png',
                                           func=self.view_schedule_file, checkable=True)
-        self.ecl_log_act = create_action(self, text='Eclipse log', icon='script-attribute-e.png',
+        self.ecl_log_act = create_action(self, text='Log file', icon='script-attribute-e.png',
                                          func=self.view_eclipse_log, checkable=True)
-        self.ior_log_act = create_action(self, text='IORSim log', icon='script-attribute-i.png',
+        self.ior_log_act = create_action(self, text='Log file', icon='script-attribute-i.png',
                                          func=self.view_iorsim_log, checkable=True)
-        self.py_log_act = create_action(self, text='Application log', icon='script-attribute.png',
+        self.py_log_act = create_action(self, text='Script log', icon='script-attribute.png',
                                         func=self.view_program_log, checkable=True)
-        #self.log_level_act = [create_action(self, text=str(i), func=lambda o=self: print(o.text()), checkable=True) for i in range(3)]
-        #self.log_level_act = []
-        #self.log_level_act.append( create_action(self, text='1', func=lambda: print(1), checkable=True) )
-        #self.log_level_act.append( create_action(self, text='2', func=lambda: print(2), checkable=True) )
-        #self.log_level_act.append( create_action(self, text='3', func=lambda: print(3), checkable=True) )
                 
         
     #-----------------------------------------------------------------------
     def create_menus(self):                                          # main_window
     #-----------------------------------------------------------------------
-        ### menu
+        ### Menu
         menu = self.menuBar()
+        self.view_group = QActionGroup(self)
+        ### File
         file_menu = menu.addMenu('&File')
         file_menu.addAction(self.add_case_act)
         file_menu.addAction(self.dupl_case_act) 
@@ -1472,38 +1518,38 @@ class main_window(QMainWindow):                                    # main_window
         file_menu.addAction(self.clear_case_act)
         file_menu.addAction(self.delete_case_act)
         file_menu.addSeparator()
+        file_menu.addAction(self.set_act)
+        file_menu.addSeparator()
         file_menu.addAction(self.exit_act)
-        edit_menu = menu.addMenu('&Edit')
-        self.view_ag = QActionGroup(self)
-        for act in (self.ecl_inp_act, self.ior_inp_act, self.schedule_file_act):
-            edit_menu.addAction(act)
-            self.view_ag.addAction(act)
-        #self.chem_menu = edit_menu.addMenu(QIcon(':documents-stack'), 'Chemistry files')
-        self.chem_menu = edit_menu.addMenu(QIcon('icons:documents-stack.png'), 'Chemistry files')
-        edit_menu.addSeparator()
-        edit_menu.addAction(self.set_act)
+        ### Eclipse
+        ecl_menu = menu.addMenu('&Eclipse')
+        ecl_menu.addAction(self.ecl_inp_act)
+        self.view_group.addAction(self.ecl_inp_act)
+        self.ecl_incl_menu = ecl_menu.addMenu(QIcon('icons:documents-stack.png'), 'Include files')
+        ecl_menu.addAction(self.ecl_log_act)
+        self.view_group.addAction(self.ecl_log_act)
+        ### IORSim
+        ior_menu = menu.addMenu('&IORSim')
+        ior_menu.addAction(self.ior_inp_act)
+        self.view_group.addAction(self.ior_inp_act)
+        self.ior_incl_menu = ior_menu.addMenu(QIcon('icons:documents-stack.png'), 'Chemistry files')
+        ior_menu.addAction(self.schedule_file_act)
+        self.view_group.addAction(self.schedule_file_act)
+        ior_menu.addAction(self.ior_log_act)
+        self.view_group.addAction(self.ior_log_act)
+        ### View
         view_menu = menu.addMenu('&View')
-        self.view_ag.addAction(self.plot_act)
         view_menu.addAction(self.plot_act)
+        self.view_group.addAction(self.plot_act)
         view_menu.addSeparator()
-        for act in (self.ecl_log_act, self.ior_log_act, self.py_log_act):
-            view_menu.addAction(act)
-            self.view_ag.addAction(act) 
-        # view_menu.addSeparator()
-        # log_level_menu = view_menu.addMenu('Log level')
-        # self.log_level_group = QActionGroup(self)
-        # for act in self.log_level_act:
-        #     log_level_menu.addAction(act)
-        #     self.log_level_group.addAction(act)
+        view_menu.addAction(self.py_log_act)
+        self.view_group.addAction(self.py_log_act)
+        ### Help
         help_menu = menu.addMenu('&Help')
         help_menu.addAction(self.iorsim_guide_act)
         help_menu.addAction(self.script_guide_act)
         help_menu.addSeparator()
         help_menu.addAction(self.download_act)
-        # # Only allow download if we are running the 'compiled' version
-        # if this_file.suffix == '.py':
-        #     self.download_act.setEnabled(False)
-        #     self.download_act.setStatusTip(self.download_act.statusTip() + ' (only available for compiled version)')
         help_menu.addSeparator()
         help_menu.addAction(self.about_act)
 
@@ -1663,6 +1709,7 @@ class main_window(QMainWindow):                                    # main_window
         self.ref_case.currentIndexChanged[int].connect(self.on_compare_select)
         self.ref_case.setProperty('lastitem',0)    
 
+
     #-----------------------------------------------------------------------
     def create_statusbar(self):                                          # main_window
     #-----------------------------------------------------------------------
@@ -1703,11 +1750,11 @@ class main_window(QMainWindow):                                    # main_window
         widget.setLayout(self.layout)
         self.setCentralWidget(widget)
         # Create IORSim plot menu
-        self.ior_menu = Menu(title='IORSim plot options') 
-        self.layout.addWidget(self.ior_menu, *self.position['ior_menu']) # 
+        self.ior_menu = Menu(title='IORSim plot options')
+        self.layout.addWidget(make_scrollable(self.ior_menu), *self.position['ior_menu']) # 
         # Create ECLIPSE plot menu
         self.ecl_menu = Menu(title='ECLIPSE plot options')
-        self.layout.addWidget(self.ecl_menu, *self.position['ecl_menu']) # 
+        self.layout.addWidget(make_scrollable(self.ecl_menu), *self.position['ecl_menu']) # 
         # Create plot- and file-view area
         self.plot = Plot() 
         self.editor = Editor(name='editor', save_func=self.prepare_case)
@@ -1775,7 +1822,8 @@ class main_window(QMainWindow):                                    # main_window
         inp = self.input
         inp['ecl_days'] = inp['species'] = inp['tracers'] = None
         if inp['root']:
-            tsteps = ECL_input(f'{inp["root"]}.DATA').get('TSTEP')
+            #tsteps = ECL_input(f'{inp["root"]}.DATA').get('TSTEP')
+            tsteps = ECL_input(inp['root']).tsteps()
             #inp['ecl_days'] = int(sum(tsteps))
             inp['ecl_days'] = sum(tsteps)
             inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
@@ -1905,16 +1953,23 @@ class main_window(QMainWindow):                                    # main_window
         src = Path(from_root)
         dst = Path(to_root)
         # Input files, change name
-        inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.DATA','.trcinp')]
+        inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.DATA', '.trcinp')]
         # Included files, same name but different folders
-        ecl_inc_files = ECL_input(src.with_suffix('.DATA')).get('INCLUDE') # NB! Returns full paths
-        ior_inc_files = flat_list(get_keyword(src.with_suffix('.trcinp'), '\*CHEMFILE', end='\*'))
-        ior_inc_files = [Path(file) for file in ior_inc_files]
-        inc_files = [(src.parent/file.name, dst.parent/file.name) for file in ecl_inc_files+ior_inc_files]
+        inc_files = [(path, dst.parent/path.name) for path in ECL_input(src).include_files() + ior_include_files(src)]
+        missing_files = []
         for src_fil, dst_fil in inp_files + inc_files:
             if src_fil.is_file():
-                # print(f'copy_case_files: {src_fil} -> {dst_fil}')
+                #print(f'copy_case_files: {src_fil} -> {dst_fil}')
                 shutil_copy(src_fil, dst_fil)
+            else:
+                missing_files.append(src_fil)
+        ### Copy optional files
+        for file in src.parent.glob('*.CFG'):
+            #print(f'copy_case_files (optional): {file} -> {dst.parent/file.name}')
+            shutil_copy(file, dst.parent/file.name)
+        if missing_files:
+            self.show_message_text(f'WARNING The following case-files are missing: {missing_files}')
+
         
 
     #-----------------------------------------------------------------------
@@ -2280,42 +2335,73 @@ class main_window(QMainWindow):                                    # main_window
         # Check boxes only if this an eclipse-only run
         self.update_ecl_menu(checked=self.is_eclipse_mode())
         self.create_plot()
-        if self.view_ag.checkedAction():
-           self.view_ag.checkedAction().trigger()
-        self.update_edit_menu()
+        if self.view_group.checkedAction():
+           self.view_group.checkedAction().trigger()
+        #self.update_edit_menu()
+        self.update_include_menus()
 
 
     #-----------------------------------------------------------------------
-    def update_edit_menu(self):
+    def update_file_menu(self, files, menu, viewer=None, title=''):
     #-----------------------------------------------------------------------
-        '''
-        Only enable file-actions in the Edit-menu if the file exists
-        '''
-        if not self.input['root']:
+        ### Clear menu
+        menu.clear()
+        ### Disable if empty 
+        menu.setEnabled( len(files)>0 )
+        for file in files:
+            act = create_action(self, text=file.name, checkable=True, func=partial(viewer, name=file, title=title), icon='document-c')
+            act.setIconText('include')
+            self.view_group.addAction(act)
+            ### Disable for non-existing file
+            act.setEnabled(file.is_file())
+            menu.addAction(act)
+            #self.view_group.addAction(act)
+
+
+    #-----------------------------------------------------------------------
+    def update_include_menus(self):
+    #-----------------------------------------------------------------------
+        root = self.input['root']
+        if not root:
             return
-        suffixes = ('.trcinp',       '.data',          '.sch')
-        actions =  (self.ior_inp_act, self.ecl_inp_act, self.schedule_file_act)
-        #files = []
-        for act, ext in zip(actions, suffixes):
-            enable = False
-            if is_file_ignore_suffix_case( self.input['root']+ext ):
-                #files.append(ext)
-                enable = True
-            act.setEnabled(enable)
-        # Chemistry files are put in a separate menu, clear menu before adding actions
-        self.chem_menu.clear()
-        # Get chemfiles included in .trcinp
-        chemfiles = flat_list(get_keyword(self.input['root']+'.trcinp', '\*CHEMFILE', end='\*'))
-        # Use the default chemfile if no chemfile in .trcinp
-        if not chemfiles:
-            chemfiles = [Path(self.input['root']).stem + '.geocheminp']
-        for name in chemfiles:
-            filename = Path(self.case).parent/name
-            if filename.is_file():
-                act = create_action(self, text=name, func=partial(self.view_input_file, name=filename, title='Chemistry input file'), icon='document-c')
-                self.chem_menu.addAction(act)
-        # Only enable the chem_menu if it has actions (files)
-        self.chem_menu.setEnabled( len(self.chem_menu.actions()) > 0 )
+        ### Remove old include-files from the view-group
+        [self.view_group.removeAction(act) for act in self.view_group.actions() if act.iconText()=='include']
+        ### Add case-specific include files
+        self.update_file_menu(ior_include_files(root), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files')
+        self.update_file_menu(ECL_input(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include files')
+
+
+    # #-----------------------------------------------------------------------
+    # def update_edit_menu(self):
+    # #-----------------------------------------------------------------------
+    #     '''
+    #     Only enable file-actions in the Edit-menu if the file exists
+    #     '''
+    #     if not self.input['root']:
+    #         return
+    #     suffixes = ('.trcinp',       '.data',          '.sch')
+    #     actions =  (self.ior_inp_act, self.ecl_inp_act, self.schedule_file_act)
+    #     #files = []
+    #     for act, ext in zip(actions, suffixes):
+    #         enable = False
+    #         if is_file_ignore_suffix_case( self.input['root']+ext ):
+    #             #files.append(ext)
+    #             enable = True
+    #         act.setEnabled(enable)
+    #     # Chemistry files are put in a separate menu, clear menu before adding actions
+    #     self.chem_menu.clear()
+    #     # Get chemfiles included in .trcinp
+    #     chemfiles = flat_list(get_keyword(self.input['root']+'.trcinp', '\*CHEMFILE', end='\*'))
+    #     # Use the default chemfile if no chemfile in .trcinp
+    #     if not chemfiles:
+    #         chemfiles = [Path(self.input['root']).stem + '.geocheminp']
+    #     for name in chemfiles:
+    #         filename = Path(self.case).parent/name
+    #         if filename.is_file():
+    #             act = create_action(self, text=name, func=partial(self.view_input_file, name=filename, title='Chemistry input file'), icon='document-c')
+    #             self.chem_menu.addAction(act)
+    #     # Only enable the chem_menu if it has actions (files)
+    #     self.chem_menu.setEnabled( len(self.chem_menu.actions()) > 0 )
 
         
     #-----------------------------------------------------------------------
@@ -2644,6 +2730,8 @@ class main_window(QMainWindow):                                    # main_window
     def view_input_file(self, name=None, ext=None, title=None, comment='#', keywords=[]):                                # main_window
     #-----------------------------------------------------------------------
         # Avoid re-opening file after it is saved
+        #print(self.sender())
+        #print(self.view_group)
         self.log_file = None
         if self.input['root']:
             if not name:
@@ -2653,12 +2741,14 @@ class main_window(QMainWindow):                                    # main_window
                 return
             fil = is_file_ignore_suffix_case(name)
             if fil: 
-                self.view_file(fil, viewer=self.editor, title=f'{title}: {fil.name}')        
-                self.highlight = Highlighter(self.editor.document(), comment=comment, keywords=keywords)
+                self.view_file(fil, viewer=self.editor, title=f'{title}: {fil.name}')
+                if keywords:
+                    Highlighter(self.editor.document(), comment=comment, keywords=keywords)
+
             else:
                 self.sender().setChecked(False)
                 self.sender().parent().missing_file_error(tag=name)
-                self.editor.clear()
+                #self.editor.clear()
                 return False
         
         else:
@@ -2668,20 +2758,20 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
-    def view_eclipse_input(self):                 # main_window
+    def view_eclipse_input(self, name=None, title=None):                 # main_window
     #-----------------------------------------------------------------------
         if not self.input['root']:
             return
         ext='.DATA'
-        title='Eclipse input file'
         comment='--'
+        if title is None:
+            title = 'Eclipse input file'
+        if name is None:
+            name = self.input['root']+ext
         # Avoid re-opening file after it is saved
-        #if self.editor.file_is_open(self.input['root']+ext):
-        # if self.current_view and self.current_view.file_is_open(self.input['root']+ext):
-        if self.current_viewer().file_is_open(self.input['root']+ext):
+        if self.current_viewer().file_is_open(name):
             return
         # Sections
-        #sections = [color.red, QFont.Bold, Qt.CaseInsensitive, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
         sections = [color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b','RUNSPEC','GRID','EDIT','PROPS' ,'REGIONS',
                     'SOLUTION','SUMMARY','SCHEDULE','OPTIMIZE']
         # Global keywords
@@ -2704,7 +2794,8 @@ class main_window(QMainWindow):                                    # main_window
                     'RPTRST','TUNING','READDATA', 'ROCKTABH','GRIDUNIT','NEWTRAN','MAPAXES','EQLDIMS','ROCKCOMP','TEMP',
                     'GRIDOPTS','VFPPDIMS','VFPIDIMS','AQUDIMS','SMRYDIMS','CPR','FAULTDIM','MEMORY','EQUALS','MINPV',
                     'COPY','MULTIPLY']
-        self.view_input_file(ext=ext, title=title, comment=comment, keywords=[sections, globals, common])
+        #self.view_input_file(ext=ext, title=title, comment=comment, keywords=[sections, globals, common])
+        self.view_input_file(name=name, title=title, comment=comment, keywords=[sections, globals, common])
         
     #-----------------------------------------------------------------------
     def view_iorsim_input(self):                                # main_window
@@ -2737,8 +2828,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        #globals = [color.blue, QFont.Normal, Qt.CaseSensitive, '\\b','\\b','END']
-        #common = [color.green, QFont.Normal, Qt.CaseSensitive, r"\b",r'\b','TSTEP','DATES','WCONINJE','WCONHIST']
         globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b','END']
         common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b','TSTEP','DATES','WCONINJE','WCONHIST']
         self.view_input_file(ext='.SCH', title='Schedule file for backward runs', comment='--', keywords=[globals, common])
