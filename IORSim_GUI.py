@@ -2363,14 +2363,14 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
-    def update_file_menu(self, files, menu, viewer=None, title=''):
+    def update_file_menu(self, files, menu, viewer=None, editor=None, title=''):
     #-----------------------------------------------------------------------
         ### Clear menu
         menu.clear()
         ### Disable if empty 
         menu.setEnabled( len(files)>0 )
         for file in files:
-            act = create_action(self, text=file.name, checkable=True, func=partial(viewer, name=file, title=title), icon='document-c')
+            act = create_action(self, text=file.name, checkable=True, func=partial(viewer, name=file, title=title, editor=editor), icon='document-c')
             act.setIconText('include')
             self.view_group.addAction(act)
             ### Disable for non-existing file
@@ -2388,41 +2388,9 @@ class main_window(QMainWindow):                                    # main_window
         ### Remove old include-files from the view-group
         [self.view_group.removeAction(act) for act in self.view_group.actions() if act.iconText()=='include']
         ### Add case-specific include files
-        self.update_file_menu(ior_include_files(root), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files')
-        self.update_file_menu(ECL_input(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include files')
+        self.update_file_menu(ior_include_files(root), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files', editor=self.chem_editor)
+        self.update_file_menu(ECL_input(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include files', editor=self.editor)
 
-
-    # #-----------------------------------------------------------------------
-    # def update_edit_menu(self):
-    # #-----------------------------------------------------------------------
-    #     '''
-    #     Only enable file-actions in the Edit-menu if the file exists
-    #     '''
-    #     if not self.input['root']:
-    #         return
-    #     suffixes = ('.trcinp',       '.data',          '.sch')
-    #     actions =  (self.ior_inp_act, self.ecl_inp_act, self.schedule_file_act)
-    #     #files = []
-    #     for act, ext in zip(actions, suffixes):
-    #         enable = False
-    #         if is_file_ignore_suffix_case( self.input['root']+ext ):
-    #             #files.append(ext)
-    #             enable = True
-    #         act.setEnabled(enable)
-    #     # Chemistry files are put in a separate menu, clear menu before adding actions
-    #     self.chem_menu.clear()
-    #     # Get chemfiles included in .trcinp
-    #     chemfiles = flat_list(get_keyword(self.input['root']+'.trcinp', '\*CHEMFILE', end='\*'))
-    #     # Use the default chemfile if no chemfile in .trcinp
-    #     if not chemfiles:
-    #         chemfiles = [Path(self.input['root']).stem + '.geocheminp']
-    #     for name in chemfiles:
-    #         filename = Path(self.case).parent/name
-    #         if filename.is_file():
-    #             act = create_action(self, text=name, func=partial(self.view_input_file, name=filename, title='Chemistry input file'), icon='document-c')
-    #             self.chem_menu.addAction(act)
-    #     # Only enable the chem_menu if it has actions (files)
-    #     self.chem_menu.setEnabled( len(self.chem_menu.actions()) > 0 )
 
         
     #-----------------------------------------------------------------------
@@ -2748,7 +2716,7 @@ class main_window(QMainWindow):                                    # main_window
             self.reset_progress_and_message()
 
     #-----------------------------------------------------------------------
-    def view_input_file(self, name=None, editor=None, ext=None, title=None, comment='#', keywords=[]):                                # main_window
+    def view_input_file(self, name=None, editor=None, ext=None, title=None):       # main_window
     #-----------------------------------------------------------------------
         # Avoid re-opening file after it is saved
         #print(self.sender())
@@ -2801,32 +2769,24 @@ class main_window(QMainWindow):                                    # main_window
             return
         ext='.trcinp'
         title='IORSim input file'
-        comment='#'
         name = self.input['root']+ext
-        #if self.editor.file_is_open(name):
-        # if self.current_view and self.current_view.file_is_open(name):
         if self.current_viewer().file_is_open(name):
             return
-        # # Mandatory keywords
-        # #mandatory = [color.blue, QFont.Bold, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.required
-        # mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.required
-        # # Optional keywords
-        # #optional = [color.green, QFont.Normal, Qt.CaseInsensitive, '\\', '\\b'] + iorsim.keywords.optional
-        # optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.optional
         self.view_input_file(name=name, title=title, editor=self.iorsim_editor)
   
 
-    #-----------------------------------------------------------------------
-    def view_geochem_input(self):                                # main_window
-    #-----------------------------------------------------------------------
-        self.view_input_file(ext='.geocheminp', title='IORSim geochem file', comment='#')
+    # #-----------------------------------------------------------------------
+    # def view_geochem_input(self):                                # main_window
+    # #-----------------------------------------------------------------------
+    #     self.view_input_file(ext='.geocheminp', title='IORSim geochem file', editor=self.chem_editor)
         
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b','END']
-        common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b','TSTEP','DATES','WCONINJE','WCONHIST']
-        self.view_input_file(ext='.SCH', title='Schedule file for backward runs', comment='--', keywords=[globals, common])
+        #globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b','END']
+        #common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b','TSTEP','DATES','WCONINJE','WCONHIST']
+        #self.view_input_file(ext='.SCH', title='Schedule file for backward runs', comment='--', keywords=[globals, common])
+        self.view_input_file(ext='.SCH', title='Schedule file for backward runs', editor=self.editor)
         
     #-----------------------------------------------------------------------
     def view_log(self, logfile, title=None, viewer=None):       # main_window
@@ -2837,9 +2797,6 @@ class main_window(QMainWindow):                                    # main_window
             return False
         self.log_file = Path(self.case).parent/logfile
         self.view_file(self.log_file, viewer=viewer, title=title)
-        #self.editor.save_btn.setEnabled(False)
-        #self.editor.undo_btn.setEnabled(False)
-        #self.editor.redo_btn.setEnabled(False)
         
     #-----------------------------------------------------------------------
     def view_eclipse_log(self):                                # main_window
@@ -2854,14 +2811,12 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_program_log(self):                                # main_window
     #-----------------------------------------------------------------------
-        #self.view_log('ior2ecl.log', title='Application logfile', viewer=self.app_log_viewer)
         self.view_log('ior2ecl.log', title='Application logfile', viewer=self.log_viewer)
     
     #-----------------------------------------------------------------------
     def update_log(self, viewer):                                # main_window
     #-----------------------------------------------------------------------
         if self.log_file:
-            # self.log_viewer.update(self.log_file)
             viewer.update(self.log_file)
     
     #-----------------------------------------------------------------------
