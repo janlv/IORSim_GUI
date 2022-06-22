@@ -2,19 +2,23 @@
 IORSim is a reservoir simulator add-on that brings advanced geochemical IOR methods to existing 
 Eclipse simulations.
 
-### Required libraries
-Install the required libraries by executing 
+## Running the compiled version
+A compiled version of the python script is provided with every new release of IORSim_GUI. This version contains all the required packages and there is no need to install additional code. At startup, the python packages are extracted to a temporary folder before the script is executed. This leads to slightly longer startup time for the compiled version. 
 
-`pip install`
+## Running the python script
+The python interpreter must be version 3.8 or newer. Install the required libraries by executing 
 
-### Running python script in a Conda environment
-To execute IORSim_GUI.py in a conda enviroment you need to specify the python interpreter:
+`pip install -r requirements.txt`
+
+If python is properly installed in your path, IORSim_GUI.py can simply be invoked by
+
+`./IORSim_GUI.py`
+
+### Running in a Conda environment
+To execute IORSim_GUI.py in a conda enviroment you need to specify the python interpreter
 
 `python IORSim_GUI.py`
 
 
-Install requred libriaries by running
-
-`python -m pip install PySide6, matplotlib, psutil`
 
 
