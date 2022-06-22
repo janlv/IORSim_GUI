@@ -4,9 +4,7 @@
 import sys
 #print(sys.version_info)
 from pathlib import Path
-from xml.etree.ElementInclude import include
 
-from pygments import highlight
 #-----------------------------------------------------------------------
 def resource_path():
 #-----------------------------------------------------------------------
@@ -2600,16 +2598,18 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def read_ecl_data(self, case=None, reinit=False):
     #-----------------------------------------------------------------------
-        #print('read_ecl_data', case, reinit, self.unsmry)
+        # print('read_ecl_data', case, reinit, self.unsmry)
         datafile = self.input['root']
         if case:
             datafile = case
         if not datafile:
             self.data['ecl'] = {}
+            # print('return False')
             return False
         ### read data
         if reinit or not self.unsmry:
             if not self.init_ecl_data(case=case):
+                # print('return False')
                 return False
         for block in self.unsmry.blocks(only_new=True):
             if block.key()=='PARAMS':
@@ -2624,6 +2624,7 @@ class main_window(QMainWindow):                                    # main_window
                     wells = self.ecl_data.wells
                     for i in index:
                         self.data['ecl'][wells[i]][yaxis][fluid].append(data[i])
+        # print('return True')
         return True
 
                         
@@ -2884,22 +2885,29 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_plot_line(self, name, is_checked, lines=None, set_data=True):
     #-----------------------------------------------------------------------
-        #print('update_plot_line')
+        #print('update_plot_line')#, name, is_checked, lines, set_data)
         if not lines:
             lines = self.plot_lines
         if not lines:
+            #print('call create_plot_lines from update_plot_line') #, name, is_checked, lines, set_data)
             self.create_plot_lines()
         if not name in lines:
+            #print('return')
             return
+        #print('inside', name, is_checked, lines, set_data)
         for ax,line in lines[name].items():
+            #print(line)
             line.set_visible(is_checked)
             if is_checked and set_data:
                 well, yaxis, var, data = line.get_label().split()
                 if not self.data[data]:
+                    #print('return')
                     return
                 xdata = self.data[data]['days']
                 ydata = self.data[data][well][yaxis][var]
-                line.set_data(xdata, ydata)
+                if len(xdata) == len(ydata):
+                    line.set_data(xdata, ydata)
+                #print(well, yaxis, var, xdata, ydata)
             ax.relim(visible_only=True)
             ax.autoscale_view()
         if 'temp' in name.lower():
@@ -2972,7 +2980,11 @@ class main_window(QMainWindow):                                    # main_window
             return False
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
-            data = genfromtxt(str(files[0]))
+            ### Wells may not produce during the whole simulation, find largest file
+            size = [f.stat().st_size for f in files]
+            file = [files[i] for i, s in enumerate(size) if s==max(size)]
+            #print(file[0].name)
+            data = genfromtxt(str(file[0]))
         if data.ndim < 2: # if ndim==1 only one line of data, abort....
             return False
         inp = self.input
@@ -2985,6 +2997,7 @@ class main_window(QMainWindow):                                    # main_window
             if not file.is_file():
                 continue
             # read data
+            #print('Reading',file.name)
             well, yaxis = file.name.split('_W_')[-1].split('.trc')
             if yaxis=='prd':
                 yaxis = 'prod'
@@ -3089,6 +3102,7 @@ class main_window(QMainWindow):                                    # main_window
             #if self.worker:
             #    ax.set_xlim(*self.xlim)
             #    axx.set_xlim(*self.xlim)
+        #print('call from prepare_case')
         self.create_plot_lines()
         self.plot.canvas.fig.subplots_adjust(top=.93, hspace=0.4, right=.87)
         self.plot.canvas.draw()
@@ -3098,7 +3112,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_plot_lines(self):
     #-----------------------------------------------------------------------
-        #print('create_plot_lines')
+        # print('create_plot_lines')
         self.plot_lines = {}
         lines = {}
         self.ref_plot_lines = {}
@@ -3123,6 +3137,7 @@ class main_window(QMainWindow):                                    # main_window
                         xdata = the_data['days']
                         ydata = the_data[well][yaxis][var]
                         if len(xdata) != len(ydata):
+                            # print('Size mismatch in create_plot_lines:', len(xdata), len(ydata))
                             continue
                     except KeyError as e:
                         continue
@@ -3135,6 +3150,7 @@ class main_window(QMainWindow):                                    # main_window
                         lines[var] = {}
                     line.set_visible(var_box[var].isChecked())
                     lines[var][ax[ind]] = line
+                    #print(line, line.get_visible() )
                 # if we have a compare case
                 ref_line = None
                 if self.plot_ref:
@@ -3205,26 +3221,34 @@ class main_window(QMainWindow):                                    # main_window
         #if read_data:
         #    self.read_ior_data()
         #    self.read_ecl_data()
-        #print('update_all_plot_lines: {}'.format(self.plot_lines))
+        #print(f'update_all_plot_lines: {self.plot_lines}')
         if not self.plot_lines:
+            #print('call from update_all_plot_lines')
             self.create_plot_lines()
         for name,ax_line in self.plot_lines.items():
             for ax,line in ax_line.items():
-                #print(var, ax, line)
                 well, yaxis, var, data = line.get_label().split()
+                # print(name, well, yaxis, var, data)
                 if not self.data.get(data):
                     return
                 if data=='ior':
-                    is_checked = self.ior_boxes['var'][name].isChecked()
+                    check_box = self.ior_boxes['var'][name]
+                    # is_checked = self.ior_boxes['var'][name].isChecked()
                 else: # data=='ecl'
-                    is_checked = self.ecl_boxes['var'][name].isChecked()
-                line.set_visible(is_checked)
-                if is_checked:
+                    check_box = self.ecl_boxes['var'][name]
+                    # is_checked = self.ecl_boxes['var'][name].isChecked()
+                line.set_visible(check_box.isChecked())
+                if check_box.isChecked():
                     try:
                         xdata = self.data[data]['days']
                         ydata = self.data[data][well][yaxis][var]
-                        line.set_data(xdata, ydata)
-                    except KeyError:
+                        if (len(xdata) == len(ydata)):
+                            line.set_data(xdata, ydata)
+                        else:
+                            set_checkbox(check_box, False)
+                        #print(len(xdata), len(ydata))
+                    except KeyError as e:
+                        #print(f'KeyError: {e}')
                         pass
                 #try:
                 #    ax.relim(visible_only=True)
@@ -3236,8 +3260,9 @@ class main_window(QMainWindow):                                    # main_window
             self.update_axes_limits()
             self.plot.canvas.draw()
         except ValueError as e:
+            #print(f'ValueError: {e}')
             pass
-            #print('ValueError: '+str(e))
+
 
     #-----------------------------------------------------------------------
     def update_progressbar(self, t):
@@ -3314,6 +3339,7 @@ class main_window(QMainWindow):                                    # main_window
         view = self.current_viewer() #.name
         #print('view:', view)
         if view == self.plot: #'plot':
+            #print('call from update_view_area')
             self.update_all_plot_lines()
         #elif view in (self.log_viewer, self.app_log_viewer) : #'log_viewer':
         elif view == self.log_viewer:

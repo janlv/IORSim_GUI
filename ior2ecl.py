@@ -313,7 +313,7 @@ class Iorsim(Runner):                                                        # i
         cmd = [exe, str(root)] + args.split()
         super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, **kwargs)
         self.update = kwargs.get('update') or None
-        self.trcconc = None
+        #self.trcconc = None
         self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
         self.unrst = self.funrst.with_suffix('.UNRST')
         self.inputfile = Path(abs_root+'.trcinp')
@@ -392,22 +392,33 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
     def time(self):                                                 # iorsim
     #--------------------------------------------------------------------------------
-        # Output file for reading days
-        if not self.trcconc:
-            for outfile in self.case.parent.glob(self.case.stem+'*.trcconc'):
-                if outfile.is_file():
-                    self.trcconc = outfile
-                    break
-        if not self.trcconc:
-            return 0
-        # Get time from IORSim output
         t = 0
-        with open(self.trcconc) as out:
-            last_line = out.readlines()[-1].strip()
-        if last_line and not last_line.startswith('#'):
-            t = float(last_line.split()[0])
-        #print(f'IORSim time: {t}')
-        return t
+        if self.log:
+            with open(self.log.name) as logfile:
+                log = logfile.readlines()
+            time = compile(r'\bTime\b:\s+([0-9.e+-]+)').findall(''.join(log))
+            if time:
+                t = time[-1]
+        #print('time', t)
+        return float(t)
+
+        # # Output file for reading days
+        # if not self.trcconc:
+        #     for outfile in self.case.parent.glob(self.case.stem+'*.trcconc'):
+        #         if outfile.is_file():
+        #             self.trcconc = outfile
+        #             break
+        # if not self.trcconc:
+        #     return 0
+        # # Get time from IORSim output
+        # t = 0
+        # with open(self.trcconc) as out:
+        #     last_line = out.readlines()[-1].strip()
+        # if last_line and not last_line.startswith('#'):
+        #     t = float(last_line.split()[0])
+        # #print(f'IORSim time: {t}')
+        # return t
+        # Output file for reading days
 
 
     #--------------------------------------------------------------------------------
@@ -894,7 +905,7 @@ class Simulation:                                                        # Simul
             run.init_control_func(update=self.update) 
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             run.t = run.time()
-            print(run.name, run.t, run.T)
+            # print(run.name, run.t, run.T)
             if run.t < run.T:
                 run.unexpected_stop_error()
             run_time += run.run_time()
