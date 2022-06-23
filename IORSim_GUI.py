@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+DEBUG = False
+
 import sys
 #print(sys.version_info)
 from pathlib import Path
@@ -54,7 +56,7 @@ from urllib3 import disable_warnings
 disable_warnings()
 
 # Local libraries
-from ior2ecl import ior_include_files, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
+from ior2ecl import IORSim_input, ior_include_files, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
 from IORlib.ECL import Input_file as ECL_input, unfmt_file, keywords as ECL_keywords
 
@@ -476,11 +478,13 @@ class sim_worker(base_worker):
         result, msg = False, ''
         self.sim = Simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
         if self.sim.ready():
-            #self.days_box.setText(str(int(self.sim.get_time())))
             self.days_box.setText(str(self.sim.get_time()).rstrip('0').rstrip('.'))
             result, msg = self.sim.run()
+        else:
+            DEBUG and print('Simulation not ready in sim_worker!')
         self.show_message(msg)
         return result
+
 
 #===========================================================================
 class download_worker(base_worker):
@@ -1773,8 +1777,8 @@ class main_window(QMainWindow):                                    # main_window
         common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b'] + ECL_keywords.common
         self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=[sections, globals, common], save_func=self.prepare_case)
         ### IORSim editor
-        mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.required
-        optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.optional
+        mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + IORSim_input.keywords.required
+        optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + IORSim_input.keywords.optional
         self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=[mandatory, optional], save_func=self.prepare_case)
         ### Chemfile editor
         self.chem_editor = Highlight_editor(name='Chemistry editor', comment='#')
@@ -2569,6 +2573,7 @@ class main_window(QMainWindow):                                    # main_window
         ecl['days'] = []
         for w in [wn for wn in  set(ecl_data.wells) if not ':+:' in wn]:
             ecl[w] = {}
+            ecl[w]['days'] = []
             for y in set(yaxis_type):
                 ecl[w][y] = {}
                 for f in list(fluid_type.values())+['Temp_ecl']:
@@ -2624,6 +2629,9 @@ class main_window(QMainWindow):                                    # main_window
                     wells = self.ecl_data.wells
                     for i in index:
                         self.data['ecl'][wells[i]][yaxis][fluid].append(data[i])
+        wells = (w for w in self.ecl_data.wells if not ':+:' in w)
+        for well in wells:
+            self.data['ecl'][well]['days'] = self.data['ecl']['days']
         # print('return True')
         return True
 
@@ -2903,7 +2911,7 @@ class main_window(QMainWindow):                                    # main_window
                 if not self.data[data]:
                     #print('return')
                     return
-                xdata = self.data[data]['days']
+                xdata = self.data[data][well]['days']
                 ydata = self.data[data][well][yaxis][var]
                 if len(xdata) == len(ydata):
                     line.set_data(xdata, ydata)
@@ -3006,7 +3014,7 @@ class main_window(QMainWindow):                                    # main_window
             except FileNotFoundError:
                 return False
             try:
-                ior['days'] = data[1:,0]
+                ior[well]['days'] = data[1:,0]
                 #print(ior['days'])
                 for i,name in enumerate(inp['species']):
                     #print(well, yaxis, name)
@@ -3014,9 +3022,10 @@ class main_window(QMainWindow):                                    # main_window
                 if 'conc' in yaxis:
                     ior[well]['conc']['Temp'] = data[1:,-1]
                     ior[well]['prod']['Temp'] = data[1:,-1]
+                #print(len(ior['days']), [len(ior[well][yaxis][s]) for s in inp['species']])
             except (KeyError, IndexError, TypeError) as e:
-                #print(e)
-                pass #return False
+                DEBUG and print('ERROR in read_ior_data:', e)
+                pass
         self.data['ior'] = ior
         return True
 
@@ -3112,7 +3121,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_plot_lines(self):
     #-----------------------------------------------------------------------
-        # print('create_plot_lines')
+        #print('create_plot_lines')
         self.plot_lines = {}
         lines = {}
         self.ref_plot_lines = {}
@@ -3134,10 +3143,10 @@ class main_window(QMainWindow):                                    # main_window
                 line = None
                 if the_data:
                     try:
-                        xdata = the_data['days']
+                        xdata = the_data[well]['days']
                         ydata = the_data[well][yaxis][var]
                         if len(xdata) != len(ydata):
-                            # print('Size mismatch in create_plot_lines:', len(xdata), len(ydata))
+                            DEBUG and print('Size mismatch:', len(xdata), len(ydata), well, yaxis, var)
                             continue
                     except KeyError as e:
                         continue
@@ -3157,7 +3166,7 @@ class main_window(QMainWindow):                                    # main_window
                     refdata = self.plot_ref_data.get(data)
                     if refdata: # and var_box[var].isChecked():
                         try:
-                            xdata = refdata['days']
+                            xdata = refdata[well]['days']
                             ydata = refdata[well][yaxis][var]
                             if len(xdata) != len(ydata):
                                 continue
@@ -3240,7 +3249,7 @@ class main_window(QMainWindow):                                    # main_window
                 line.set_visible(check_box.isChecked())
                 if check_box.isChecked():
                     try:
-                        xdata = self.data[data]['days']
+                        xdata = self.data[data][well]['days']
                         ydata = self.data[data][well][yaxis][var]
                         if (len(xdata) == len(ydata)):
                             line.set_data(xdata, ydata)
@@ -3248,7 +3257,7 @@ class main_window(QMainWindow):                                    # main_window
                             set_checkbox(check_box, False)
                         #print(len(xdata), len(ydata))
                     except KeyError as e:
-                        #print(f'KeyError: {e}')
+                        DEBUG and print(f'KeyError in update_all_plot_lines: {e}')
                         pass
                 #try:
                 #    ax.relim(visible_only=True)
@@ -3260,7 +3269,7 @@ class main_window(QMainWindow):                                    # main_window
             self.update_axes_limits()
             self.plot.canvas.draw()
         except ValueError as e:
-            #print(f'ValueError: {e}')
+            DEBUG and print(f'ValueError in update_all_plot_lines:: {e}')
             pass
 
 
