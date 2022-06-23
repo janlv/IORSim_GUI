@@ -267,9 +267,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         super().quit()
 
 
-
 #====================================================================================
-class Iorsim(Runner):                                                        # iorsim
+class IORSim_input:                                                    # iorsim_input
 #====================================================================================
     #================================================================================
     class keywords:
@@ -296,38 +295,19 @@ class Iorsim(Runner):                                                        # i
         specie_key = '*SPECIES'
         solution_key = '*SOLUTION'
 
+    #--------------------------------------------------------------------------------
+    def __init__(self, root):                                          # iorsim_input
+    #--------------------------------------------------------------------------------
+        self.file = Path(root).with_suffix('.trcinp')
+
 
     #--------------------------------------------------------------------------------
-    def __init__(self, root=None, exe='IORSimX', args='', relative_root=True, **kwargs):     # iorsim
-    #--------------------------------------------------------------------------------
-        #print('iorsim.__init__: ',root, exe, args, kwargs)
-        exe = str(exe)
-        if '.exe' not in exe and 'win' in platform:
-            exe += '.exe'
-        # IORSim only accepts root relative to the current directory
-        abs_root = str(root)
-        if relative_root:
-            root = Path(relpath(root))
-        else:
-            root = Path(root).absolute()
-        cmd = [exe, str(root)] + args.split()
-        super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, **kwargs)
-        self.update = kwargs.get('update') or None
-        #self.trcconc = None
-        self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
-        self.unrst = self.funrst.with_suffix('.UNRST')
-        self.inputfile = Path(abs_root+'.trcinp')
-        self.check_input_kw = kwargs.get('check_input_kw') or False
-        self.is_iorsim = True
-        self.is_eclipse = False
-
-    #--------------------------------------------------------------------------------
-    def check_keywords(self):                                                # iorsim
+    def check_keywords(self):                                          # iorsim_input
     #--------------------------------------------------------------------------------
         # Check if required keywords are used, and if the order is correct 
         def raise_error(error):
             raise SystemError(f'ERROR Error in IORSim input file: {error}')    
-        text = remove_comments(self.inputfile, comment='#')
+        text = remove_comments(self.file, comment='#')
         file_kw = [kw.upper() for kw in compile(r'(\*[A-Za-z_-]+)').findall(text)]
         # Remove repeated keywords, i.e. make unique list
         file_kw = list(dict.fromkeys(file_kw))
@@ -357,35 +337,184 @@ class Iorsim(Runner):                                                        # i
 
 
     #--------------------------------------------------------------------------------
-    def check_input(self):                                                   # iorsim
+    def check(self, error_msg='', check_kw=True):                      # iorsim_input
     #--------------------------------------------------------------------------------
-        super().check_input()
-        msg = f'WARNING Unable to start {self.name}:'
+        #super().check_input()
+        #msg = f'WARNING Unable to start {self.name}:'
 
         # Check if input-file exists
-        if not self.inputfile.is_file():
-            raise SystemError(f'{msg} missing input file {self.inputfile.name}')
+        if not self.file.is_file():
+            raise SystemError(f'ERROR {error_msg}: missing input file {self.file.name}')
 
         # Check if included files exists
-        include = flat_list(get_keyword(self.inputfile, '\*CHEMFILE', end='\*'))
-        for file in include:
-            if not self.inputfile.with_name(file).is_file():
-                raise SystemError(f"{msg} '{file}' included from {self.inputfile.name} is missing")
+        #include = flat_list(get_keyword(self.inputfile, '\*CHEMFILE', end='\*'))
+        for file in self.include_files(): #include:
+            #if not self.file.with_name(file).is_file():
+            if not file.is_file():
+                raise SystemError(f"ERROR {error_msg}: '{file.name}' included from {self.file.name} is missing in folder {file.parent}")
 
         # Check if required keywords are used, and if the order is correct 
-        if self.check_input_kw:
+        if check_kw:
             self.check_keywords()
         return True
 
 
     #--------------------------------------------------------------------------------
+    def include_files(self):
+    #--------------------------------------------------------------------------------
+        '''
+        Return full path to files included in the IORSim .trcinp-file
+        '''
+        files = flat_list(get_keyword(self.file, '\*CHEMFILE', end='\*', comment='#'))
+        files = [self.file.parent/Path(f) for f in files]
+        #print('IOR:', files) 
+        return files
+
+
+#====================================================================================
+class Iorsim(Runner):                                                        # iorsim
+#====================================================================================
+    # #================================================================================
+    # class keywords:
+    # #================================================================================
+    #     # IORSim input-file keywords
+    #     #   value == 0 : optional
+    #     #   value > 0 : required
+    #     #   value == 1 : required for all cases
+    #     #   value == 2 : required for specie cases
+    #     #   value == 3 : required for solution cases
+    #     #   value == 4 : might be removed in new versions
+    #     all_ = {'*WELLMODEL':0, '*TEMPERATURE':0, '*GRIDPLOT_WRITE':0, '*REACTING_SYSTEM':4, 
+    #             '*TRACER_LGR':1, '*INTEGRATION':1,'*INTEGRATE_SPECIES':1, '*MODELTYPE':1, 
+    #             '*SPECIES':2, '*SOLUTION':3, '*SATNUM':0, '*MODELTEMPLATE':1, '*TINIT':1, 
+    #             '*COMP':3, '*CHEMFILE':0, '*CO2': 0, '*KVALWAT': 0, '*KVALOIL': 0, '*KVALGAS': 0, 
+    #             '*MODELINSTANCE':1, '*WELLSPECIES':1, '*INJECTOR': 0, '*TIME': 0, '*OUTPUT':1,
+    #             '*PRODUCER': 0, '*WELLPLOT_INTERVAL':1, '*PRINTLEVEL':1, '*END':1}
+    #     keys = all_.keys()
+    #     ignored = ['*GRIDPLOT_FILE', '*N_TRACER']
+    #     required = [k for k,v in all_.items() if v>0]
+    #     optional = [k for k,v in all_.items() if v==0]
+    #     specie = [k for k,v in all_.items() if v>0 and v!=3]
+    #     solution = [k for k,v in all_.items() if v>0 and v!=2]
+    #     specie_key = '*SPECIES'
+    #     solution_key = '*SOLUTION'
+
+
+    #--------------------------------------------------------------------------------
+    def __init__(self, root=None, exe='IORSimX', args='', relative_root=True, **kwargs):     # iorsim
+    #--------------------------------------------------------------------------------
+        #print('iorsim.__init__: ',root, exe, args, kwargs)
+        exe = str(exe)
+        if '.exe' not in exe and 'win' in platform:
+            exe += '.exe'
+        # IORSim only accepts root relative to the current directory
+        abs_root = str(root)
+        if relative_root:
+            root = Path(relpath(root))
+        else:
+            root = Path(root).absolute()
+        cmd = [exe, str(root)] + args.split()
+        super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, **kwargs)
+        self.update = kwargs.get('update') or None
+        self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
+        self.unrst = self.funrst.with_suffix('.UNRST')
+        #self.inputfile = Path(abs_root+'.trcinp')
+        self.inputfile = IORSim_input(root)
+        self.check_input_kw = kwargs.get('check_input_kw') or False
+        self.is_iorsim = True
+        self.is_eclipse = False
+
+
+    # #--------------------------------------------------------------------------------
+    # def check_keywords(self):                                                # iorsim
+    # #--------------------------------------------------------------------------------
+    #     # Check if required keywords are used, and if the order is correct 
+    #     def raise_error(error):
+    #         raise SystemError(f'ERROR Error in IORSim input file: {error}')    
+    #     text = remove_comments(self.inputfile, comment='#')
+    #     file_kw = [kw.upper() for kw in compile(r'(\*[A-Za-z_-]+)').findall(text)]
+    #     # Remove repeated keywords, i.e. make unique list
+    #     file_kw = list(dict.fromkeys(file_kw))
+    #     # Is this a species- or a solutions-case
+    #     if self.keywords.solution_key in file_kw:
+    #         required_kw = self.keywords.solution
+    #     elif self.keywords.specie_key in file_kw:
+    #         required_kw = self.keywords.specie
+    #     else:
+    #         raise_error(f"it must contain one of the keywords '{self.keywords.specie_key}' or '{self.keywords.solution_key}'")
+    #     # Check if required keyword is missing            
+    #     missing = [kw for kw in required_kw if kw not in file_kw]
+    #     if missing:
+    #         pos = [required_kw.index(kw) for kw in missing]
+    #         front = ['after '+required_kw[i-1] if i>0 else None for i in pos]
+    #         back = ['before '+required_kw[i+1] if i<len(required_kw)-1 else None for i in pos]
+    #         tips = [f"{required_kw[pos[i]]} ({front[i] or ''}{(', '+back[i]) or ''})" for i in range(len(pos))]
+    #         raise_error('required keyword' + (len(missing)>1 and f's {list2text(tips)} are' or f' {tips[0]} is') + ' missing')
+    #     # Remove ignored keywords
+    #     file_kw = [kw for kw in file_kw if kw not in self.keywords.ignored]
+    #     # Make ordered list of input-file keywords
+    #     ordered_kw = [o for o in self.keywords.keys if o in file_kw]
+    #     # Check keyword order
+    #     for o,f in zip(ordered_kw, file_kw):
+    #         if o != f:                        
+    #             raise_error(f'expected keyword {o} but got {f}')    
+
+
+    #--------------------------------------------------------------------------------
+    def check_input(self):                                                   # iorsim
+    #--------------------------------------------------------------------------------
+        super().check_input()
+        self.inputfile.check(error_msg=f'Unable to start {self.name}:', check_kw=self.check_input_kw)
+        return True
+
+
+    # #--------------------------------------------------------------------------------
+    # def check_input(self):                                                   # iorsim
+    # #--------------------------------------------------------------------------------
+    #     super().check_input()
+    #     msg = f'WARNING Unable to start {self.name}:'
+
+    #     # Check if input-file exists
+    #     if not self.inputfile.is_file():
+    #         raise SystemError(f'{msg} missing input file {self.inputfile.name}')
+
+    #     # Check if included files exists
+    #     include = flat_list(get_keyword(self.inputfile, '\*CHEMFILE', end='\*', comment='#'))
+    #     for file in include:
+    #         if not self.inputfile.with_name(file).is_file():
+    #             raise SystemError(f"{msg} '{file}' included from {self.inputfile.name} is missing")
+
+    #     # Check if required keywords are used, and if the order is correct 
+    #     if self.check_input_kw:
+    #         self.check_keywords()
+    #     return True
+
+
+    # #--------------------------------------------------------------------------------
+    # def ior_include_files(self):
+    # #--------------------------------------------------------------------------------
+    #     '''
+    #     Return full path to files included in the IORSim .trcinp-file
+    #     '''
+    #     trcinp = Path(root).with_suffix('.trcinp')
+    #     files = flat_list(get_keyword(trcinp, '\*CHEMFILE', end='\*'))
+    #     files = [trcinp.parent/Path(f) for f in files]
+    #     #print('IOR:', files) 
+    #     return files
+
+
+    #--------------------------------------------------------------------------------
     def start(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
-        ### check that Eclipse UNRST and RFT files exists
+        ### Copy chem-files to working dir 
+        for file in self.inputfile.include_files():
+            #print(f'{file} -> {Path.cwd()/file.name}')
+            shutil_copy(file, Path.cwd()/file.name)
+        ### Check that Eclipse UNRST and RFT files exists
         for ext in ('.UNRST','.RFT'):
-            fname = str(self.case)+ext
-            if not Path(fname).is_file():
-                raise SystemError(f'ERROR Unable to start IORSim: Eclipse output file {Path(fname).name} is missing')
+            file = Path(self.case).with_suffix(ext)
+            if not file.is_file():
+                raise SystemError(f'ERROR Unable to start IORSim: Eclipse output file {file.name} is missing')
         super().start()
 
 
@@ -402,32 +531,23 @@ class Iorsim(Runner):                                                        # i
         #print('time', t)
         return float(t)
 
-        # # Output file for reading days
-        # if not self.trcconc:
-        #     for outfile in self.case.parent.glob(self.case.stem+'*.trcconc'):
-        #         if outfile.is_file():
-        #             self.trcconc = outfile
-        #             break
-        # if not self.trcconc:
-        #     return 0
-        # # Get time from IORSim output
-        # t = 0
-        # with open(self.trcconc) as out:
-        #     last_line = out.readlines()[-1].strip()
-        # if last_line and not last_line.startswith('#'):
-        #     t = float(last_line.split()[0])
-        # #print(f'IORSim time: {t}')
-        # return t
-        # Output file for reading days
-
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                           # iorsim
     #--------------------------------------------------------------------------------
+        ### Delete old output files before starting new run
         case = str(self.case)
         delete_files_matching(case+'*.trcconc', raise_error=True)
         delete_files_matching(case+'*.trcprd', raise_error=True)
         silentdelete(self.funrst)
+
+    #--------------------------------------------------------------------------------
+    def close(self):                                                         # iorsim
+    #--------------------------------------------------------------------------------
+        super().close()
+        ### Delete chem-files copied to working directory
+        [silentdelete(Path.cwd()/file.name) for file in self.inputfile.include_files()]
+
 
 
 #====================================================================================
