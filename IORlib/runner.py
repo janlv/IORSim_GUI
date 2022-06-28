@@ -15,7 +15,7 @@ from shutil import which
 from time import sleep
 from pathlib import Path 
 from shutil import copy
-from .utils import loop_until, safeopen, Timer, silentdelete, timer_thread
+from .utils import loop_until, matches, safeopen, Timer, silentdelete, timer_thread
 
 #--------------------------------------------------------------------------------
 def catch_permission_error(func):
@@ -306,7 +306,7 @@ class Process:                                                              # Pr
             if self.is_not_running():
                 raise SystemError(f'ERROR {self.info()} disappeared while searching for child-processes!')
             children = self._process.children(recursive=True)
-            log is not False and log(children, v=3)
+            log is not False and log(children and children or '  child-process search ...', v=3)
             # Stop if named child process is found
             if any([p.name().lower().startswith(name) for p in children]):
                 #found = True
@@ -339,7 +339,8 @@ class Runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def __init__(self, T=0, n=0, t=0, name='', case='', exe='', cmd=None, pipe=False,
                  verbose=3, timer=None, runlog=None, ext_iface='', ext_OK='',
-                 keep_files=False, stop_children=True, keep_alive=False, lognr=None, **kwargs):           # runner
+                 keep_files=False, stop_children=True, keep_alive=False, lognr=None, 
+                 time_regex=None, **kwargs):           # runner
     #--------------------------------------------------------------------------------
         #print('runner.__init__: ',keep_alive, N,T,name,case,exe,cmd,ext_iface,ext_OK)
         self.reset_processes()
@@ -367,6 +368,7 @@ class Runner:                                                               # ru
         self.starttime = None
         self.keep_alive = keep_alive
         self.suspend_timer = None
+        self.time_regex = time_regex
         DEBUG and print(f'Creating {self}')
 
     #-----------------------------------------------------------------------
@@ -455,7 +457,7 @@ class Runner:                                                               # ru
         self._print(f'Parent process : {self.parent.info()}, ')
         #self.parent.assert_running()
         # Child processes (if they exists)
-        children, time = self.parent.get_children(log=self._print)
+        children, time = self.parent.get_children(log=self.verbose>3 and self._print)
         self.children = [Process(c, **kwargs) for c in children]
         self._print('Child process' + (len(self.children)>1 and 'es' or '') + (time is not None and f' ({time:.1f} sec)' or '') + f' : {", ".join([p.info() for p in self.children])}')
         # Set active and main processes
@@ -542,7 +544,12 @@ class Runner:                                                               # ru
     #--------------------------------------------------------------------------------
     def time(self):                                                 # runner
     #--------------------------------------------------------------------------------
-        return 0
+        t = 0
+        if self.log:
+            match = matches(file=self.log.name, pattern=self.time_regex)
+            time = [m.group(1) for m in match]
+            t = time and time[-1] or 0           
+        return float(t)
 
 
     #--------------------------------------------------------------------------------
@@ -588,20 +595,23 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def wait_for(self, func, *args, limit=None, pause=0.01, v=2, error=None, raise_error=False, log=None, loop_func=None, **kwargs):
+    def wait_for(self, func, *args, timer=False, limit=None, pause=0.01, v=2, error=None, raise_error=False, log=None, loop_func=None, **kwargs):
     #--------------------------------------------------------------------------------
+        if timer:
+            starttime = datetime.now()
         if not loop_func:
             # Default checks during loop
             loop_func = self.assert_running_and_stop_if_canceled
         passed_args = ','.join([f'{k}={v}' for k,v in kwargs.items()])
         self._print(f'Calling wait_for( {func.__qualname__}({passed_args}), limit={limit}, pause={pause} )... ', v=v, end='')
         n = loop_until(func, *args, pause=pause, limit=limit, loop_func=loop_func, **kwargs)
+        time = timer and f' ({(datetime.now()-starttime).total_seconds():.2f} sec)' or ''
         if n<0:
             if raise_error:
                 raise SystemError(error or f'wait_for({func.__qualname__}) reached loop-limit {limit}')
-            self._print('loop limit reached!', tag='', v=v)
+            self._print(f'loop limit reached!{time}' or '', tag='', v=v)
             return False    
-        self._print(str(n) + ' loops', tag='', v=v)
+        self._print(str(n) + f' loops{time}', tag='', v=v)
         if callable(log):
             self._print(log())
         return True
@@ -678,9 +688,15 @@ class Runner:                                                               # ru
     def _print(self, txt, v=1, tag=True, flush=True, **kwargs):                         # runner
     #--------------------------------------------------------------------------------
         if v <= self.verbose:
+            if isinstance(txt, str):
+                txt = [txt]
+            txt = (str(t) for t in txt)
             if tag is True:
-                tag = f'{self.name}:'
-            print(tag, txt, file=self.runlog, flush=flush, **kwargs)
+                txt = f'{self.name}: ' + f'\n{self.name}: '.join(txt)
+            else:
+                txt = '\n'.join(txt)
+            #print(tag, txt, file=self.runlog, flush=flush, **kwargs)
+            print(txt, file=self.runlog, flush=flush, **kwargs)
 
 
     #--------------------------------------------------------------------------------

@@ -41,6 +41,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolb
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
 from numpy import genfromtxt, asarray
+from re import compile
 
 # Python libraries
 from traceback import format_exc, print_exc, format_exc
@@ -56,8 +57,8 @@ from urllib3 import disable_warnings
 disable_warnings()
 
 # Local libraries
-from ior2ecl import IORSim_input, ior_include_files, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Iorsim, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
+from ior2ecl import IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
+from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, remove_comments, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
 from IORlib.ECL import Input_file as ECL_input, unfmt_file, keywords as ECL_keywords
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -1093,7 +1094,8 @@ class Settings(QDialog):
                      'ecl_keep_alive' : variable(f'Eclipse process not paused if idle time is less than', False, f'Delay pausing the Eclipse process during idle time between steps (Expert mode)', False),
                      'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT), f'Set this limit lower than 100 seconds to avoid unexpected Eclipse termination (Expert mode)', False),
                      'ior_keep_alive' : variable(f'IORSim process not paused when idle', False, f'Never pause IORSim during idle time between steps (Expert mode)', False),
-                     'log_level'      : variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL), 'A higher value gives a more detailed application log', False)}
+                     'log_level'      : variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL), 'A higher value gives a more detailed application log', False),
+                     'merge_empty'    : variable('Merge empty schedule actions', False, 'Merge empty sucsessive DATES/TSTEP entries in the schedule-file', False)}
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
         self.abs_path = False
@@ -1170,11 +1172,14 @@ class Settings(QDialog):
         cb = [self.new_checkbox(var) for var in ('ecl_keep_alive', 'ior_keep_alive')]
         le = self.new_lineedit('ecl_alive_limit', width=30)
         # Add widget in layout to expert mode
-        #self.expert.append(le.itemAt(0).widget())
         self.expert.extend( (le.itemAt(i).widget() for i in range(le.count())) )
         self.expert.extend(cb)
         self.add_items([cb[0], le])
         self.add_items([cb[1]])
+        ### Merge empty actions in the schedule?
+        me = self.new_checkbox('merge_empty')
+        self.expert.append(me)
+        self.add_items([me])
 
         ### Log options
         self.add_heading()
@@ -1418,7 +1423,7 @@ class main_window(QMainWindow):                                    # main_window
         self.ecl_boxes = {}
         self.ior_boxes = {}
         #self.current_view = None
-        self.days = None
+        #self.days = None
         self.log_file = None
         self.unsmry = None
         self.worker = None
@@ -1786,6 +1791,8 @@ class main_window(QMainWindow):                                    # main_window
         self.editors = (self.eclipse_editor, self.iorsim_editor, self.editor, self.chem_editor, self.log_viewer)
         ### Plot is the default view at startup
         self.layout.addWidget(self.plot, *self.position['plot'])
+        #self.scroll_plot = make_scrollable(self.plot)
+        #self.layout.addWidget(self.scroll_plot, *self.position['plot'])
 
 
     #-----------------------------------------------------------------------
@@ -1977,7 +1984,8 @@ class main_window(QMainWindow):                                    # main_window
         # Input files, change name
         inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.DATA', '.trcinp')]
         # Included files, same name but different folders
-        inc_files = [(path, dst.parent/path.name) for path in ECL_input(src).include_files() + ior_include_files(src)]
+        #inc_files = [(path, dst.parent/path.name) for path in ECL_input(src).include_files() + ior_include_files(src)]
+        inc_files = [(path, dst.parent/path.name) for path in ECL_input(src).include_files() + IORSim_input(src).include_files()]
         missing_files = []
         for src_fil, dst_fil in inp_files + inc_files:
             if src_fil.is_file():
@@ -2390,7 +2398,8 @@ class main_window(QMainWindow):                                    # main_window
         ### Remove old include-files from the view-group
         [self.view_group.removeAction(act) for act in self.view_group.actions() if act.iconText()=='include']
         ### Add case-specific include files
-        self.update_file_menu(ior_include_files(root), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files', editor=self.chem_editor)
+        #self.update_file_menu(ior_include_files(root), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files', editor=self.chem_editor)
+        self.update_file_menu(IORSim_input(root).include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files', editor=self.chem_editor)
         self.update_file_menu(ECL_input(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include files', editor=self.editor)
 
 
@@ -2840,6 +2849,7 @@ class main_window(QMainWindow):                                    # main_window
         #     self.current_view.setParent(None)
         self.current_viewer().setParent(None)
         self.layout.addWidget(self.plot, *self.position['plot'])
+        #self.layout.addWidget(self.scroll_plot, *self.position['plot'])
         if not self.worker:# and self.case:
             self.read_ior_data()
             self.read_ecl_data()
@@ -2986,46 +2996,58 @@ class main_window(QMainWindow):                                    # main_window
         if len(files)<1 or not files[0].is_file():# or files[0].stat().st_size<210:
             # last check is to avoid UserWarning from genfromtxt about: Empty input file
             return False
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            ### Wells may not produce during the whole simulation, find largest file
-            size = [f.stat().st_size for f in files]
-            file = [files[i] for i, s in enumerate(size) if s==max(size)]
-            #print(file[0].name)
-            data = genfromtxt(str(file[0]))
-        if data.ndim < 2: # if ndim==1 only one line of data, abort....
-            return False
+        # with warnings.catch_warnings():
+        #     warnings.simplefilter('ignore')
+        #     ### Wells may not produce during the whole simulation, find largest file
+        #     size = [f.stat().st_size for f in files]
+        #     file = [files[i] for i, s in enumerate(size) if s==max(size)]
+        #     #print(file[0].name)
+        #     data = genfromtxt(str(file[0]))
+        # if data.ndim < 2: # if ndim==1 only one line of data, abort....
+        #     return False
         inp = self.input
         ior = {}
         for w in self.out_wells:
             ior[w] = {}
             ior[w]['conc'] = {}
             ior[w]['prod'] = {}
+        numbers = compile(r'[0-9]+')
         for file in files:
-            if not file.is_file():
+            if not file.exists() or numbers.search(remove_comments(file, comment='#', raise_error=False) or '') is None:
                 continue
             # read data
             #print('Reading',file.name)
             well, yaxis = file.name.split('_W_')[-1].split('.trc')
             if yaxis=='prd':
                 yaxis = 'prod'
+            #try:
+            #with warnings.catch_warnings():
+            #if file.stat().st_size > 100:
             try:
                 data = genfromtxt(str(file))
-            except FileNotFoundError:
-                return False
+            except PermissionError:
+                continue
+            #else:
+            #    continue
+            #except FileNotFoundError:
+            #    return False
             try:
-                ior[well]['days'] = data[1:,0]
-                #print(ior['days'])
-                for i,name in enumerate(inp['species']):
-                    #print(well, yaxis, name)
-                    ior[well][yaxis][name] = data[1:,i+1]
-                if 'conc' in yaxis:
-                    ior[well]['conc']['Temp'] = data[1:,-1]
-                    ior[well]['prod']['Temp'] = data[1:,-1]
-                #print(len(ior['days']), [len(ior[well][yaxis][s]) for s in inp['species']])
+                data = genfromtxt(str(file))
+                if data.ndim > 1:
+                    ior[well]['days'] = data[1:,0]
+                    #print(ior['days'])
+                    for i,name in enumerate(inp['species']):
+                        #print(well, yaxis, name)
+                        ior[well][yaxis][name] = data[1:,i+1]
+                    if 'conc' in yaxis:
+                        ior[well]['conc']['Temp'] = data[1:,-1]
+                        ior[well]['prod']['Temp'] = data[1:,-1]
+                    #print(len(ior['days']), [len(ior[well][yaxis][s]) for s in inp['species']])
             except (KeyError, IndexError, TypeError) as e:
                 DEBUG and print('ERROR in read_ior_data:', e)
                 pass
+        if all([ior[w]['conc']=={} for w in self.out_wells]):
+            return False
         self.data['ior'] = ior
         return True
 
@@ -3331,23 +3353,26 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_view_area(self):
     #-----------------------------------------------------------------------
+        ok = {'ecl':True, 'ior':True}
         if self.mode == 'backward':
-            self.read_ior_data()
-            self.read_ecl_data()
-        self.days = None
+            ok['ior'] = self.read_ior_data()
+            ok['ecl'] = self.read_ecl_data()
+        # self.days = None
         if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current_run():
             run = self.worker.current_run()
             if run in ('ecl','eclipse','eclrun'):
-                self.read_ecl_data()
                 run = 'ecl'
+                ok[run] = self.read_ecl_data()
             if run in ('ior','iorsim'):
-                self.read_ior_data()
                 run = 'ior'
-            if self.data.get(run):
-                self.days = (self.data[run]).get('days')
+                ok[run] = self.read_ior_data()
+            # if self.data.get(run):
+            #     self.days = (self.data[run]).get('days')
         view = self.current_viewer() #.name
-        #print('view:', view)
         if view == self.plot: #'plot':
+            self.statusBar().clearMessage()
+            if not all(list(ok.values())):
+                self.statusBar().showMessage('No wells are currently producing')
             #print('call from update_view_area')
             self.update_all_plot_lines()
         #elif view in (self.log_viewer, self.app_log_viewer) : #'log_viewer':
@@ -3421,7 +3446,7 @@ class main_window(QMainWindow):                                    # main_window
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get('iorsim'), eclexe=s.get('eclrun'), 
                                  ecl_keep_alive=s.get('ecl_keep_alive') and float(s.get('ecl_alive_limit')), 
                                  ior_keep_alive=s.get('ior_keep_alive') and IOR_ALIVE_LIMIT, 
-                                 days_box=self.days_box, verbose=int(s.get('log_level')),
+                                 days_box=self.days_box, verbose=int(s.get('log_level')), merge_empty=s.get('merge_empty'),
                                  **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)

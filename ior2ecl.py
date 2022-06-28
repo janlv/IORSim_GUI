@@ -4,6 +4,8 @@
 __version__ = '2.25'
 __author__ = 'Jan Ludvig Vinningland'
 
+DEBUG = False
+
 # Constants
 ECL_ALIVE_LIMIT = 90   # Seconds to wait before Eclipse is suspended (if option is on)
 IOR_ALIVE_LIMIT = -1   # Negative value = never suspended
@@ -13,7 +15,6 @@ DEFAULT_LOG_LEVEL = 3
 CHECK_PAUSE = 0.01     # Default sleep-time during wait-loops
 RFT_CHECK_ITER = 100   # Number of iterations before reducing number of expected RFT blocks
 
-DEBUG = False
 
 from collections import Counter, namedtuple
 from mmap import ACCESS_READ, mmap
@@ -29,9 +30,9 @@ from traceback import print_exc as trace_print_exc, format_exc as trace_format_e
 from re import search, compile
 from os.path import relpath
 
-from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, matches, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
-from IORlib.ECL import Input_file as ECL_input, MSG_file, RFT_file, UNRST_file, UNSMRY_file, unfmt_file, fmt_file, Section
+from IORlib.ECL import Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, unfmt_file, fmt_file, Section
 
 
 #====================================================================================
@@ -43,30 +44,29 @@ class Eclipse(Runner):                                                      # ec
         #print('eclipse.__init__: ',root, exe, kwargs)
         root = str(root)        
         exe = str(exe)
-        super().__init__(name='Eclipse', case=root, exe=exe, cmd=[exe, 'eclipse', root], **kwargs)                        
+        super().__init__(name='Eclipse', case=root, exe=exe, cmd=[exe, 'eclipse', root], 
+                         time_regex=r'TIME=?\s+([0-9.]+)\s+DAYS', **kwargs)                        
         self.update = kwargs.get('update') or None
-        self.unrst = UNRST_file(root, wait_func=self.wait_for)
-        self.rft = RFT_file(root, wait_func=self.wait_for)
+        self.unrst = UNRST_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
+        self.rft = RFT_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
         self.unsmry = UNSMRY_file(root)
-        self.msg = MSG_file(root)
+        #self.msg = MSG_file(root)
+        #self.prt = PRT_file(root)
         self.inputfile = ECL_input(root)
         self.is_iorsim = False
         self.is_eclipse = True
 
-    #--------------------------------------------------------------------------------
-    def time(self):                                                # eclipse
-    #--------------------------------------------------------------------------------
-        t = [0]
-        for output in (self.unsmry, self.msg, self.unrst):
-            if output.file.is_file() and output.size() > 0:
-                # t, n = output.get(['time', 'step'], N=-1, raise_error=False)
-                t = output.get(['time'], N=-1, raise_error=False)
-                if t:
-                    t = t[0]
-                    break
-                else:
-                    t = [0]
-        return t[0]
+
+    # #--------------------------------------------------------------------------------
+    # def time(self):                                                         # eclipse
+    # #--------------------------------------------------------------------------------
+    #     t = 0
+    #     if self.log:
+    #         pattern = r'TIME=?\s+([0-9.]+)\s+DAYS'
+    #         match = matches(file=self.log.name, pattern=pattern)
+    #         time = [m.group(1) for m in match]
+    #         t = time and time[-1] or 0           
+    #     return float(t)
 
 
     #--------------------------------------------------------------------------------
@@ -87,10 +87,9 @@ class Eclipse(Runner):                                                      # ec
             raise SystemError(f'{msg} missing input file {self.inputfile}')
 
         # Check if included files exists
-        # for file in get_included_files(inp_file):
-        # for file in self.inputfile.include_files():
-        for file in self.inputfile.get('INCLUDE'):
-            if file and not file.is_file():
+        # for file in self.inputfile.get('INCLUDE'):
+        for file in self.inputfile.include_files():
+            if not file.is_file():
                 raise SystemError(f"{msg} '{file.name}' included from {self.inputfile.file.name} is missing")
         return True
 
@@ -177,7 +176,7 @@ class Backward_mixin:
 class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, check_unrst=True, check_rft=True, keep_alive=False, **kwargs):
+    def __init__(self, check_unrst=True, check_rft=True, keep_alive=False, schedule=None, **kwargs):
     #--------------------------------------------------------------------------------
         super().__init__(ext_iface='I{:04d}', ext_OK='OK', keep_alive=keep_alive, **kwargs)
         self.tsteps = kwargs.get('tsteps') or self.inputfile.get('TSTEP')
@@ -185,7 +184,9 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.init_tsteps = len(self.tsteps) 
         self.check_unrst = check_unrst
         self.check_rft = check_rft
+        self.schedule = schedule
         self.nwell = 0
+        self.del_satnum = False
 
 
     #--------------------------------------------------------------------------------
@@ -228,31 +229,44 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
         # Get number of wells from UNRST-file
         self.nwell = self.unrst.get(['nwell'])[0][-1]
-        self._print(f' nwell = {self.nwell}')
+        while self.nwell < 1:
+            ### Run Eclipse until at least one well is producing and the RFT-file is created
+            self.schedule.update(tstep=self.T)
+            self.run_one_step(self.schedule.ifacefile.file, start_stop=False, nwell=True)
+            self._print(f' nwell = {self.nwell}')
+            self.update_function(progress=True, plot=True)
+            nblocks = 1
+            self.init_tsteps += 1
         # Wait for flushed RFT-file
-        self.rft.check.data_saved_maxmin(max=nblocks*self.nwell, min=1, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
+        self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
         self.suspend()
         self.t = self.time()
 
 
     #--------------------------------------------------------------------------------
-    def run_one_step(self, satnum_file, log=True):                     # ecl_backward
+    def run_one_step(self, satnum_file, log=True, start_stop=True, nwell=False):       # ecl_backward
     #--------------------------------------------------------------------------------
-        self.interface_file(self.n).copy(satnum_file, delete=True)
+        self.interface_file(self.n).copy(satnum_file, delete=self.del_satnum)
         self.OK_file().create_empty()
         # Create next interface-file to avoid Eclipse from reading END
         self.interface_file(self.n+1).create_empty()
-        self.resume()
+        start_stop and self.resume()
         self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
         if self.check_unrst:
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE) 
-        if self.check_rft:
-            self.rft.check.data_saved_maxmin(max=self.nwell, min=1, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE) 
-        self.suspend()
+        if self.check_rft and self.rft.exists():
+            nblocks = 1
+            if nwell:
+                self.nwell = nblocks = self.unrst.get(['nwell'])[0][-1]
+            msg = self.rft.check.data_saved_maxmin(nblocks=nblocks, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE) 
+            msg and self._print(msg)
+        start_stop and self.suspend()
         if self.delete_interface:
             self.interface_file(self.n).delete()
         self.n += 1
         self.t = self.time()
+        if self.check_rft and self.rft.not_in_sync(self.t):
+            self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
             self._print(f' Date is {self.unrst.date(N=-1)} ({self.t} days)')
 
@@ -374,31 +388,6 @@ class IORSim_input:                                                    # iorsim_
 #====================================================================================
 class Iorsim(Runner):                                                        # iorsim
 #====================================================================================
-    # #================================================================================
-    # class keywords:
-    # #================================================================================
-    #     # IORSim input-file keywords
-    #     #   value == 0 : optional
-    #     #   value > 0 : required
-    #     #   value == 1 : required for all cases
-    #     #   value == 2 : required for specie cases
-    #     #   value == 3 : required for solution cases
-    #     #   value == 4 : might be removed in new versions
-    #     all_ = {'*WELLMODEL':0, '*TEMPERATURE':0, '*GRIDPLOT_WRITE':0, '*REACTING_SYSTEM':4, 
-    #             '*TRACER_LGR':1, '*INTEGRATION':1,'*INTEGRATE_SPECIES':1, '*MODELTYPE':1, 
-    #             '*SPECIES':2, '*SOLUTION':3, '*SATNUM':0, '*MODELTEMPLATE':1, '*TINIT':1, 
-    #             '*COMP':3, '*CHEMFILE':0, '*CO2': 0, '*KVALWAT': 0, '*KVALOIL': 0, '*KVALGAS': 0, 
-    #             '*MODELINSTANCE':1, '*WELLSPECIES':1, '*INJECTOR': 0, '*TIME': 0, '*OUTPUT':1,
-    #             '*PRODUCER': 0, '*WELLPLOT_INTERVAL':1, '*PRINTLEVEL':1, '*END':1}
-    #     keys = all_.keys()
-    #     ignored = ['*GRIDPLOT_FILE', '*N_TRACER']
-    #     required = [k for k,v in all_.items() if v>0]
-    #     optional = [k for k,v in all_.items() if v==0]
-    #     specie = [k for k,v in all_.items() if v>0 and v!=3]
-    #     solution = [k for k,v in all_.items() if v>0 and v!=2]
-    #     specie_key = '*SPECIES'
-    #     solution_key = '*SOLUTION'
-
 
     #--------------------------------------------------------------------------------
     def __init__(self, root=None, exe='IORSimX', args='', relative_root=True, **kwargs):     # iorsim
@@ -414,7 +403,7 @@ class Iorsim(Runner):                                                        # i
         else:
             root = Path(root).absolute()
         cmd = [exe, str(root)] + args.split()
-        super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, **kwargs)
+        super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, time_regex=r'\bTime\b:\s+([0-9.e+-]+)', **kwargs)
         self.update = kwargs.get('update') or None
         self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
         self.unrst = self.funrst.with_suffix('.UNRST')
@@ -425,41 +414,6 @@ class Iorsim(Runner):                                                        # i
         self.is_eclipse = False
 
 
-    # #--------------------------------------------------------------------------------
-    # def check_keywords(self):                                                # iorsim
-    # #--------------------------------------------------------------------------------
-    #     # Check if required keywords are used, and if the order is correct 
-    #     def raise_error(error):
-    #         raise SystemError(f'ERROR Error in IORSim input file: {error}')    
-    #     text = remove_comments(self.inputfile, comment='#')
-    #     file_kw = [kw.upper() for kw in compile(r'(\*[A-Za-z_-]+)').findall(text)]
-    #     # Remove repeated keywords, i.e. make unique list
-    #     file_kw = list(dict.fromkeys(file_kw))
-    #     # Is this a species- or a solutions-case
-    #     if self.keywords.solution_key in file_kw:
-    #         required_kw = self.keywords.solution
-    #     elif self.keywords.specie_key in file_kw:
-    #         required_kw = self.keywords.specie
-    #     else:
-    #         raise_error(f"it must contain one of the keywords '{self.keywords.specie_key}' or '{self.keywords.solution_key}'")
-    #     # Check if required keyword is missing            
-    #     missing = [kw for kw in required_kw if kw not in file_kw]
-    #     if missing:
-    #         pos = [required_kw.index(kw) for kw in missing]
-    #         front = ['after '+required_kw[i-1] if i>0 else None for i in pos]
-    #         back = ['before '+required_kw[i+1] if i<len(required_kw)-1 else None for i in pos]
-    #         tips = [f"{required_kw[pos[i]]} ({front[i] or ''}{(', '+back[i]) or ''})" for i in range(len(pos))]
-    #         raise_error('required keyword' + (len(missing)>1 and f's {list2text(tips)} are' or f' {tips[0]} is') + ' missing')
-    #     # Remove ignored keywords
-    #     file_kw = [kw for kw in file_kw if kw not in self.keywords.ignored]
-    #     # Make ordered list of input-file keywords
-    #     ordered_kw = [o for o in self.keywords.keys if o in file_kw]
-    #     # Check keyword order
-    #     for o,f in zip(ordered_kw, file_kw):
-    #         if o != f:                        
-    #             raise_error(f'expected keyword {o} but got {f}')    
-
-
     #--------------------------------------------------------------------------------
     def check_input(self):                                                   # iorsim
     #--------------------------------------------------------------------------------
@@ -468,77 +422,41 @@ class Iorsim(Runner):                                                        # i
         return True
 
 
-    # #--------------------------------------------------------------------------------
-    # def check_input(self):                                                   # iorsim
-    # #--------------------------------------------------------------------------------
-    #     super().check_input()
-    #     msg = f'WARNING Unable to start {self.name}:'
-
-    #     # Check if input-file exists
-    #     if not self.inputfile.is_file():
-    #         raise SystemError(f'{msg} missing input file {self.inputfile.name}')
-
-    #     # Check if included files exists
-    #     include = flat_list(get_keyword(self.inputfile, '\*CHEMFILE', end='\*', comment='#'))
-    #     for file in include:
-    #         if not self.inputfile.with_name(file).is_file():
-    #             raise SystemError(f"{msg} '{file}' included from {self.inputfile.name} is missing")
-
-    #     # Check if required keywords are used, and if the order is correct 
-    #     if self.check_input_kw:
-    #         self.check_keywords()
-    #     return True
-
-
-    # #--------------------------------------------------------------------------------
-    # def ior_include_files(self):
-    # #--------------------------------------------------------------------------------
-    #     '''
-    #     Return full path to files included in the IORSim .trcinp-file
-    #     '''
-    #     trcinp = Path(root).with_suffix('.trcinp')
-    #     files = flat_list(get_keyword(trcinp, '\*CHEMFILE', end='\*'))
-    #     files = [trcinp.parent/Path(f) for f in files]
-    #     #print('IOR:', files) 
-    #     return files
-
-
     #--------------------------------------------------------------------------------
-    def start(self):                                                         # iorsim
+    def start(self, copy_chem=True):                                         # iorsim
     #--------------------------------------------------------------------------------
         ### Copy chem-files to working dir 
-        for file in self.inputfile.include_files():
-            #print(f'{file} -> {Path.cwd()/file.name}')
-            shutil_copy(file, Path.cwd()/file.name)
-        ### Check that Eclipse UNRST and RFT files exists
-        for ext in ('.UNRST','.RFT'):
-            file = Path(self.case).with_suffix(ext)
-            if not file.is_file():
-                raise SystemError(f'ERROR Unable to start IORSim: Eclipse output file {file.name} is missing')
+        if copy_chem:
+            for file in self.inputfile.include_files():
+                #print(f'{file} -> {Path.cwd()/file.name}')
+                shutil_copy(file, Path.cwd()/file.name)
+        ### Check existence of necessary Eclipse output files 
+        files = [self.case.with_suffix(ext) for ext in ('.UNRST', '.RFT', '.EGRID', '.INIT')]
+        missing = [f.name for f in files if not f.is_file()]
+        if missing:
+            raise SystemError(f'ERROR Unable to start IORSim: Eclipse output file {", ".join(missing)} is missing')
         super().start()
 
 
-    #--------------------------------------------------------------------------------
-    def time(self):                                                 # iorsim
-    #--------------------------------------------------------------------------------
-        t = 0
-        if self.log:
-            with open(self.log.name) as logfile:
-                log = logfile.readlines()
-            time = compile(r'\bTime\b:\s+([0-9.e+-]+)').findall(''.join(log))
-            if time:
-                t = time[-1]
-        #print('time', t)
-        return float(t)
+    # #--------------------------------------------------------------------------------
+    # def time(self):                                                 # iorsim
+    # #--------------------------------------------------------------------------------
+    #     t = 0
+    #     if self.log:
+    #         pattern = 
+    #         match = matches(file=self.log.name, pattern=pattern)
+    #         time = [m.group(1) for m in match]
+    #         t = time and time[-1] or 0           
+    #     return float(t)
 
 
     #--------------------------------------------------------------------------------
-    def delete_output_files(self):                                           # iorsim
+    def delete_output_files(self, raise_error=False):                        # iorsim
     #--------------------------------------------------------------------------------
         ### Delete old output files before starting new run
         case = str(self.case)
-        delete_files_matching(case+'*.trcconc', raise_error=True)
-        delete_files_matching(case+'*.trcprd', raise_error=True)
+        delete_files_matching(case+'*.trcconc', raise_error=raise_error)
+        delete_files_matching(case+'*.trcprd', raise_error=raise_error)
         silentdelete(self.funrst)
 
     #--------------------------------------------------------------------------------
@@ -559,7 +477,7 @@ class Ior_forward(Forward_mixin, Iorsim):                               # ior_fo
 class Ior_backward(Backward_mixin, Iorsim):                             # ior_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, keep_alive=False, **kwargs):
+    def __init__(self, keep_alive=False, schedule=None, **kwargs):
     #--------------------------------------------------------------------------------
         #keep_alive = keep_alive and IOR_ALIVE_LIMIT or False
         super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
@@ -568,6 +486,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.init_tsteps = len(self.tsteps)
         self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
         self.endtag = '-- IORSimX done.'
+        self.schedule = schedule
 
 
     #--------------------------------------------------------------------------------
@@ -615,12 +534,14 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
 
 
     #--------------------------------------------------------------------------------
-    def start(self, restart=False):                                    # ior_backward
+    def start(self, restart=False, tsteps=None):                     # ior_backward
     #--------------------------------------------------------------------------------
         # Start IORSim backward run
         self.n = 0 
         self.interface_file('all').delete()
-        self.run_steps(1+self.init_tsteps, start=True)
+        if tsteps is None:
+            tsteps = self.init_tsteps
+        self.run_steps(1+tsteps, start=True)
 
 
     #--------------------------------------------------------------------------------
@@ -672,7 +593,7 @@ class Schedule:
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, case, T=0, init_days=0, start=None, ext='.SCH', comment='--', 
-                 interface_file=None, file=None): #, end='/', tag='TSTEP'):
+                 interface_file=None, file=None, merge_empty=False): #, end='/', tag='TSTEP'):
     #--------------------------------------------------------------------------------
         '''
         Create schedule from a .SCH-file if it exists. 
@@ -695,7 +616,7 @@ class Schedule:
         # Ignore case in file extension
         self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
         if self.file:
-            self._schedule = self.days_and_actions()
+            self._schedule = self.days_and_actions(merge_empty=merge_empty)
         # Add end time 
         self.insert(days=T, remove=True)
         DEBUG and print(f'Creating {self}')
@@ -711,6 +632,12 @@ class Schedule:
     def __del__(self):
     #--------------------------------------------------------------------------------
         DEBUG and print(f'Deleting {self}')
+
+
+    #--------------------------------------------------------------------------------
+    def next_tstep(self):                                                  # Schedule
+    #--------------------------------------------------------------------------------
+        return self._schedule[0][0] - self.days
 
 
     #--------------------------------------------------------------------------------
@@ -762,7 +689,7 @@ class Schedule:
 
 
     #--------------------------------------------------------------------------------
-    def days_and_actions(self, remove_end=True):                           # Schedule
+    def days_and_actions(self, remove_end=True, merge_empty=False):               # Schedule
     #--------------------------------------------------------------------------------
         '''
         Use regexp to extract DATES or TSTEP values from the .SCH-file together
@@ -807,8 +734,12 @@ class Schedule:
             # Process x*y statements
             prod = lambda x, y : int(x)*float(y) 
             days = list(accumulate([sum([prod(*i.split('*')) if '*' in i else float(i) for i in d.split()]) for d,s in date_span]))
-        # Return only non-empty [day, action] pairs
-        return [[float(d), a+'\n'] for (d,a) in zip(days, actions) if a]
+        if merge_empty:
+            ### Return only non-empty [day, action] pairs        
+            return [[float(d), a+'\n'] for (d,a) in zip(days, actions) if a]
+        else:
+            ### Keep all DATES/TSTEP entries
+            return [[float(d), a+'\n'] for (d,a) in zip(days, actions)]
 
 
     #--------------------------------------------------------------------------------
@@ -817,24 +748,45 @@ class Schedule:
         '''
         line : line number of TSTEP
         '''
+        #print(f'append(action={action}, tstep={tstep})')
         if action is None and tstep is None:
             return
         if tstep == 0:
-            raise SystemError(f'ERROR Simulation stopped because schedule gave TSTEP 0 at {self.days} days, check {self.file}')
+            raise SystemError(f'ERROR Schedule gave TSTEP 0 at {self.days} days, simulation stopped. Check {self.file}')
+        #lines = []
+        #if self.ifacefile.is_file():
+        match = self.ifacefile.get('TSTEP', pos=True)
+        if match:
+            file_tstep, pos = match[0]
+        else:
+            raise SystemError(f'ERROR Missing TSTEP in schedule file {self.ifacefile.file.name}')
+        #print('UPDATE:', file_tstep, pos)
         with open(self.ifacefile.file, 'r') as f:
-            lines = f.readlines()
-        n = len(lines) + append_line
-        if n > 0:
-            if tstep is not None:
-                # Replace TSTEP
-                # +1 because we edit the value on the line after TSTEP
-                lines[n+1] = f'{tstep} /\n'
-            # Append action
-            if action:
-                lines.insert(n, action)
-            with open(self.ifacefile.file, 'w') as f:
-                f.write(''.join(lines))
-
+            lines = ''.join(f.readlines())
+        out = lines[:pos[0]] + (action and action or '') + f'TSTEP\n{tstep} /\n' + lines[pos[1]:]
+        #out = lines[:pos[0]] + '\n-- ACTION START --\n' + (action and action or '') + f'TSTEP\n{tstep} /\n' + '\n-- TSTEP END --\n' + lines[pos[1]:]
+        #print(out)
+        with open(self.ifacefile.file, 'w') as f:
+            f.write(out)
+        #n = max(0, len(lines) + append_line)
+        #print('n',n)
+        # if n > 0:
+        #     if tstep is not None:
+        #         # Replace TSTEP
+        #         # +1 because we edit the value on the line after TSTEP
+        #         lines[n+1] = f'{tstep} /\n'
+        #     # Append action
+        #     if action:
+        #         lines.insert(n, action)
+        # else:
+        #     ### n == 0: empty file
+        #     lines.extend(('TSTEP', f'{tstep}', '/', action))
+        # #print('lines', lines)
+        #with open(self.ifacefile.file, 'w') as f:
+        #    f.write('\n'.join(lines))
+        # with open(self.ifacefile.file, 'r') as f:
+        #     print(self.ifacefile.file.name,'\n',''.join(f.readlines()))
+        
 
     #--------------------------------------------------------------------------------
     def check(self):                                                       # Schedule
@@ -849,7 +801,7 @@ class Schedule:
 
 
     #--------------------------------------------------------------------------------
-    def update(self):                                                      # Schedule
+    def update(self, tstep=None):                                          # Schedule
     #--------------------------------------------------------------------------------        
         action = new_tstep = None
         # Update days from previous step
@@ -858,14 +810,20 @@ class Schedule:
         if self.days >= self._schedule[0][0]:
             action = self._schedule.pop(0)[1]
         # Get tstep for next step (given by IORSim in satnum.dat)
-        self.tstep = self.ifacefile.get('TSTEP')[0]
+        # with open(self.ifacefile.file) as f:
+        #     print('SATNUM.DAT', '\n'.join(f.readlines))
+        if tstep is None:
+            self.tstep = new_tstep = self.ifacefile.get('TSTEP')[0]
+        else:
+            self.ifacefile.file.write_text(f'TSTEP\n{tstep} /\n')
+            self.tstep = new_tstep = tstep
         #print(f'START: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         # Check arrival of next event and adjust tstep if neccessary
         if self._schedule and self.days + self.tstep + 1e-8 > self._schedule[0][0]:
             self.tstep = new_tstep = self._schedule[0][0] - self.days
         self.append(action=action, tstep=new_tstep)
         #self.check()
-        #print(f'END: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
+        #print(f'END: tstep:{self.tstep}, days:{self.days}, action:{action}, schedule:{self._schedule[:2]}')
         return self.days
 
 
@@ -1006,7 +964,9 @@ class Simulation:                                                        # Simul
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
         start = self.restart_file and self.restart_file.date(N=1) or self.ECL_inp.get('START')[0]
         # Set up schedule of commands to pass to satnum-file
-        self.schedule = Schedule(self.root, T=self.T, start=start, init_days=time_ecl, interface_file=self.ior.satnum)
+        self.schedule = Schedule(self.root, T=self.T, start=start, init_days=time_ecl, interface_file=self.ior.satnum, 
+                                 merge_empty=self.kwargs.get('merge_empty', False))
+        self.ecl.schedule = self.ior.schedule = self.schedule
         return [self.ecl, self.ior]
 
 
@@ -1039,9 +999,11 @@ class Simulation:                                                        # Simul
         self.update.progress(value=-self.runs[0].T)
         ecl, ior = self.runs
         # Start runs
-        for run in self.runs:
-            run.delete_output_files()
-            run.start(restart=self.restart)
+        #for run in self.runs:
+        ecl.delete_output_files()
+        ecl.start(restart=self.restart)
+        ior.delete_output_files()
+        ior.start(restart=self.restart, tsteps=ecl.init_tsteps)
         # The schedule appends keywords to the interface file (satnum.dat)
         # ecl.t = ior.t = self.schedule.update()
         self.schedule.update()
@@ -1275,55 +1237,6 @@ class Simulation:                                                        # Simul
 #                    Various utility functions                              #
 #                                                                           #
 #############################################################################
-
-# #--------------------------------------------------------------------------------
-# def ecl_include_files(root):
-# #--------------------------------------------------------------------------------
-#     '''
-#     Return full path to files included in the Eclipse .DATA-file
-#     '''
-#     files = ECL_input(Path(root).with_suffix('.DATA')).get('INCLUDE') # NB! Returns full paths
-#     ff = [inc for inc in [ECL_input(f).get('INCLUDE') for f in files] if inc != ['']]
-#     files.extend(flat_list(ff))
-#     #print(files+ff)
-#     return files
-
-
-# #--------------------------------------------------------------------------------
-# def ecl_include_files(root):
-# #--------------------------------------------------------------------------------
-#     '''
-#     Return full path to files included in the Eclipse .DATA-file
-#     '''
-#     files = [Path(root).with_suffix('.DATA')]
-#     result = []
-#     ecl_include_files_rec(files, result)
-#     result = flat_list(result)
-#     result.pop(0)
-#     return result
-
-
-# #--------------------------------------------------------------------------------
-# def ecl_include_files_rec(files, result):
-# #--------------------------------------------------------------------------------
-#     if not files:
-#         return
-#     result.append(files)
-#     new_files = [ECL_input(file).get('INCLUDE') for file in files] 
-#     ecl_include_files_rec(flat_list([f for f in new_files if f != ['']]), result)
-
-
-#--------------------------------------------------------------------------------
-def ior_include_files(root):
-#--------------------------------------------------------------------------------
-    '''
-    Return full path to files included in the IORSim .trcinp-file
-    '''
-    trcinp = Path(root).with_suffix('.trcinp')
-    files = flat_list(get_keyword(trcinp, '\*CHEMFILE', end='\*'))
-    files = [trcinp.parent/Path(f) for f in files]
-    #print('IOR:', files) 
-    return files
 
 
 #--------------------------------------------------------------------------------
