@@ -1982,9 +1982,8 @@ class main_window(QMainWindow):                                    # main_window
         src = Path(from_root)
         dst = Path(to_root)
         # Input files, change name
-        inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.DATA', '.trcinp')]
+        inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.DATA', '.trcinp', '.SCH')]
         # Included files, same name but different folders
-        #inc_files = [(path, dst.parent/path.name) for path in ECL_input(src).include_files() + ior_include_files(src)]
         inc_files = [(path, dst.parent/path.name) for path in ECL_input(src).include_files() + IORSim_input(src).include_files()]
         missing_files = []
         for src_fil, dst_fil in inp_files + inc_files:

@@ -229,6 +229,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
         # Get number of wells from UNRST-file
         self.nwell = self.unrst.get(['nwell'])[0][-1]
+        # Wait for flushed RFT-file
+        self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
         while self.nwell < 1:
             ### Run Eclipse until at least one well is producing and the RFT-file is created
             self.schedule.update(tstep=self.T)
@@ -237,8 +239,6 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             self.update_function(progress=True, plot=True)
             nblocks = 1
             self.init_tsteps += 1
-        # Wait for flushed RFT-file
-        self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
         self.suspend()
         self.t = self.time()
 
