@@ -2996,15 +2996,6 @@ class main_window(QMainWindow):                                    # main_window
         if len(files)<1 or not files[0].is_file():# or files[0].stat().st_size<210:
             # last check is to avoid UserWarning from genfromtxt about: Empty input file
             return False
-        # with warnings.catch_warnings():
-        #     warnings.simplefilter('ignore')
-        #     ### Wells may not produce during the whole simulation, find largest file
-        #     size = [f.stat().st_size for f in files]
-        #     file = [files[i] for i, s in enumerate(size) if s==max(size)]
-        #     #print(file[0].name)
-        #     data = genfromtxt(str(file[0]))
-        # if data.ndim < 2: # if ndim==1 only one line of data, abort....
-        #     return False
         inp = self.input
         ior = {}
         for w in self.out_wells:
@@ -3027,12 +3018,8 @@ class main_window(QMainWindow):                                    # main_window
                 data = genfromtxt(str(file))
             except PermissionError:
                 continue
-            #else:
-            #    continue
-            #except FileNotFoundError:
-            #    return False
             try:
-                data = genfromtxt(str(file))
+                #data = genfromtxt(str(file))
                 if data.ndim > 1:
                     ior[well]['days'] = data[1:,0]
                     #print(ior['days'])
