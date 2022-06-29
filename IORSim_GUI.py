@@ -1106,7 +1106,7 @@ class Settings(QDialog):
                      'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT), f'Set this limit lower than 100 seconds to avoid unexpected Eclipse termination (Expert mode)', False),
                      'ior_keep_alive' : variable(f'IORSim process not paused when idle', False, f'Never pause IORSim during idle time between steps (Expert mode)', False),
                      'log_level'      : variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL), 'A higher value gives a more detailed application log', False),
-                     'merge_empty'    : variable('Merge empty schedule actions', False, 'Merge empty sucsessive DATES/TSTEP entries in the schedule-file', False)}
+                     'merge_empty'    : variable('Merge schedule entries with void actions', False, 'Merge sucsessive DATES/TSTEP entries in the schedule-file that have no actions', False)}
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
         self.abs_path = False

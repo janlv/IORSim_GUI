@@ -1266,6 +1266,7 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-iorsim',         help="Run only IORSim", action='store_true')
     parser.add_argument('-eclipse',        help="Run only Eclipse", action='store_true')
     parser.add_argument('-v',              default=DEFAULT_LOG_LEVEL, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
+    parser.add_argument('-merge_empty',    help='Merge empty schedule entries', action='store_true')
     parser.add_argument('-keep_files',     help='Interface-files are not deleted after completion', action='store_true')
     parser.add_argument('-to_screen',      help='Print program log to screen', action='store_true')
     parser.add_argument('-only_convert',   help='Only convert+merge and exit', action='store_true')
@@ -1298,7 +1299,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
            ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, check_input=False, 
-           verbose=DEFAULT_LOG_LEVEL, lognr=None):
+           verbose=DEFAULT_LOG_LEVEL, lognr=None, merge_empty=False):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1341,7 +1342,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
                      progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert, merge=merge, delete=delete, ecl_keep_alive=ecl_alive,
                      ior_keep_alive=ior_alive, runs=runs, mode=mode, check_input_kw=check_input, verbose=verbose,
-                     lognr=lognr)
+                     lognr=lognr, merge_empty=merge_empty)
 
     if not sim.ready():
         return 
@@ -1366,7 +1367,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
            ecl_alive=args['ecl_alive'] and ECL_ALIVE_LIMIT, ior_alive=args['ior_alive'] and IOR_ALIVE_LIMIT, only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
-           check_input=args['check_input_kw'], verbose=args['v'], lognr=args['lognr'])
+           check_input=args['check_input_kw'], verbose=args['v'], lognr=args['lognr'], merge_empty=args['merge_empty'])
     os_exit(0)
 
 
