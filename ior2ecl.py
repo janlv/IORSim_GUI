@@ -321,7 +321,7 @@ class IORSim_input:                                                    # iorsim_
         # Check if required keywords are used, and if the order is correct 
         def raise_error(error):
             raise SystemError(f'ERROR Error in IORSim input file: {error}')    
-        text = remove_comments(self.file, comment='#')
+        text = remove_comments(file=self.file, comment='#')
         file_kw = [kw.upper() for kw in compile(r'(\*[A-Za-z_-]+)').findall(text)]
         # Remove repeated keywords, i.e. make unique list
         file_kw = list(dict.fromkeys(file_kw))
@@ -521,7 +521,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         '''
         Return the distribution of SATNUM numbers as a dict
         '''
-        lines = remove_comments(self.satnum, comment='--') 
+        lines = remove_comments(file=self.satnum, comment='--') 
         values = compile(r'SATNUM\s+([0-9\s]+)').findall(lines) 
         if values:
             values = [int(v) for v in values[0].split('\n') if v.strip()]
@@ -607,7 +607,7 @@ class Schedule:
         '''
         self.case = Path(case)
         self.comment = comment
-        self.ifacefile = ECL_input(interface_file, read=False)
+        self.ifacefile = ECL_input(interface_file, reread=True)
         self.days = init_days 
         self.start = start
         self.tstep = 0
@@ -709,7 +709,7 @@ class Schedule:
         #    + : 1 or more rep.
         #    * : 0 or more rep.
 
-        schfile = remove_comments(self.file)
+        schfile = remove_comments(file=self.file)
         # Remove entries after END 
         if remove_end:
             found = search(r'\bEND\b', schfile)
@@ -915,7 +915,10 @@ class Simulation:                                                        # Simul
                 return False
             self.restart_days = time[n.index(step)]
             self.restart = True
-        self.tsteps = ECL_input(self.root, include=True).tsteps()
+        self.tsteps = ECL_input(self.root).tsteps()
+        if self.tsteps == [0]:
+            ### If no tstep, look for tstep in include-files
+            self.tsteps = ECL_input(self.root, include=True).tsteps()
         if self.tsteps == [0]:
             self.update.message(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
             return False

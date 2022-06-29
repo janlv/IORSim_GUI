@@ -94,6 +94,17 @@ class color:
     as_tuple = (blue, orange, green, red, violet, brown, pink, gray, yellow, turq)
 
 
+#--------------------------------------------------------------------------------
+def show_error(func):
+#--------------------------------------------------------------------------------
+    def inner(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except SystemError as e:
+            args[0].show_message_text(str(e))
+    return inner
+
+
 #-----------------------------------------------------------------------
 def open_file_dialog(win, text, filetype):
 #-----------------------------------------------------------------------
@@ -189,7 +200,7 @@ def get_wells_iorsim(root):
 
 
 #-----------------------------------------------------------------------
-def get_eclipse_well_yaxis_fluid(root):
+def get_eclipse_well_yaxis_fluid(root, include=False, raise_error=True):
 #-----------------------------------------------------------------------
     fil = str(root)+'.DATA'
     if not Path(fil).is_file():
@@ -207,7 +218,7 @@ def get_eclipse_well_yaxis_fluid(root):
     #     encoding = 'latin-1'
     # with open(fil, encoding=encoding) as f:
     #     for line in f:
-    for line in ECL_input(root, include=True).lines():
+    for line in ECL_input(root, include=include).lines():
         # if line.lstrip().startswith('--') or line.isspace():
         #     continue
         if line.lstrip().upper().startswith('SUMMARY'):
@@ -241,7 +252,7 @@ def get_eclipse_well_yaxis_fluid(root):
                     wells.append(k.strip())                  
     vars = list(set(vars))
     #print('vars',vars)
-    if len(vars)==0:
+    if len(vars)==0 and raise_error:
         raise SystemError('No variables in SUMMARY section.'+
                           '\n\nEclipse plotting disabled.')
     wells = list(set(wells))
@@ -1972,6 +1983,7 @@ class main_window(QMainWindow):                                    # main_window
         return self.case
 
     
+    @show_error
     #-----------------------------------------------------------------------
     def copy_case_files(self, from_root, to_root):             # main_window
     #-----------------------------------------------------------------------
@@ -1982,15 +1994,20 @@ class main_window(QMainWindow):                                    # main_window
         src = Path(from_root)
         dst = Path(to_root)
         # Input files, change name
-        inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in ('.DATA', '.trcinp', '.SCH')]
+        mandatory = ('.DATA', '.trcinp') 
+        optional = ('.SCH',)             
+        inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in mandatory + optional]
         # Included files, same name but different folders
+        #try:
         inc_files = [(path, dst.parent/path.name) for path in ECL_input(src).include_files() + IORSim_input(src).include_files()]
+        #except SystemError as e:
+        #    self.show_message_text(e)            
         missing_files = []
         for src_fil, dst_fil in inp_files + inc_files:
             if src_fil.is_file():
                 #print(f'copy_case_files: {src_fil} -> {dst_fil}')
                 shutil_copy(src_fil, dst_fil)
-            else:
+            elif not src_fil.suffix in optional:
                 missing_files.append(src_fil)
         ### Copy optional files
         for file in src.parent.glob('*.CFG'):
@@ -2158,7 +2175,8 @@ class main_window(QMainWindow):                                    # main_window
             self.mode_cb.blockSignals(False)
             #self.prepare_case(self.input['root'])
             self.prepare_case()
-                
+
+
     #-----------------------------------------------------------------------
     def on_compare_select(self, nr):                              # main_window
     #-----------------------------------------------------------------------
@@ -2335,6 +2353,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         return self.get_current_mode() == 'iorsim'
 
+    @show_error
     #-----------------------------------------------------------------------
     def prepare_case(self):
     #-----------------------------------------------------------------------
@@ -2344,15 +2363,15 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_lines = {}
         self.ref_plot_lines = {}
         self.max_3_checked = []
-        try:
-            self.ref_case.setCurrentIndex(0)
-            self.out_wells, self.in_wells = get_wells_iorsim(root)
-            self.set_variables_from_casefiles()
-            if root:
-                self.on_mode_select(self.mode_cb.currentIndex())
-            self.set_plot_properties()
-        except SystemError as e:
-            self.show_message_text(str(e))
+        #try:
+        self.ref_case.setCurrentIndex(0)
+        self.out_wells, self.in_wells = get_wells_iorsim(root)
+        self.set_variables_from_casefiles()
+        if root:
+            self.on_mode_select(self.mode_cb.currentIndex())
+        self.set_plot_properties()
+        # except SystemError as e:
+        #     self.show_message_text(str(e))
         self.data = {}
         self.unsmry = None  # Signals to re-read Eclipse data
         # IORSim data and menu
@@ -2388,6 +2407,7 @@ class main_window(QMainWindow):                                    # main_window
             #self.view_group.addAction(act)
 
 
+    @show_error
     #-----------------------------------------------------------------------
     def update_include_menus(self):
     #-----------------------------------------------------------------------
@@ -2398,9 +2418,11 @@ class main_window(QMainWindow):                                    # main_window
         [self.view_group.removeAction(act) for act in self.view_group.actions() if act.iconText()=='include']
         ### Add case-specific include files
         #self.update_file_menu(ior_include_files(root), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files', editor=self.chem_editor)
+        #try:
         self.update_file_menu(IORSim_input(root).include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files', editor=self.chem_editor)
         self.update_file_menu(ECL_input(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include files', editor=self.editor)
-
+        #except SystemError as e:
+        #    self.show_message_text(e)
 
         
     #-----------------------------------------------------------------------
@@ -2656,7 +2678,9 @@ class main_window(QMainWindow):                                    # main_window
         if not root: 
             return False
         try:
-            wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root)
+            wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root, include=False, raise_error=False)
+            if any([l == [] for l in (wells, yaxis, fluids)]):
+                wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root, include=True, raise_error=True)
         except SystemError as e:
             lbl = QLabel()
             lbl.setText(str(e))
@@ -3003,7 +3027,7 @@ class main_window(QMainWindow):                                    # main_window
             ior[w]['prod'] = {}
         numbers = compile(r'[0-9]+')
         for file in files:
-            if not file.exists() or numbers.search(remove_comments(file, comment='#', raise_error=False) or '') is None:
+            if not file.exists() or numbers.search(remove_comments(file=file, comment='#', raise_error=False) or '') is None:
                 continue
             # read data
             #print('Reading',file.name)
