@@ -842,7 +842,7 @@ class Simulation:                                                        # Simul
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.name = 'ior2ecl'
         self.root = root
-        self.ECL_inp = ECL_input(root)
+        self.ECL_inp = ECL_input(root, check=True)
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
         if delete:
