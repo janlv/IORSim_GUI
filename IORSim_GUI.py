@@ -2282,10 +2282,8 @@ class main_window(QMainWindow):                                    # main_window
         case = self.case
         self.input['root'] = self.case = None
         self.max_3_checked = []
-        # if self.current_viewer() in (self.editor, self.log_viewer, self.app_log_viewer):
-        #if self.current_viewer() in (self.editor, self.log_viewer):
-        if self.current_viewer() in self.editors:
-            self.view_file(None)
+        #if self.current_viewer() in self.editors:
+        #    self.view_file(None)
         # Delete case folder
         delete_all(Path(case).parent)
         # Remove case from caselist
@@ -2748,6 +2746,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_file(self, file, viewer=None, title='', reset=True):           # main_window
     #-----------------------------------------------------------------------
+        #print(f'view_file({file}, viewer={viewer}, title={title}, reset={reset}')
         if not viewer:
             viewer = self.editor
         viewer.view_file(file, title=title)
