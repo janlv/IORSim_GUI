@@ -1,0 +1,16 @@
+- Different log-levels (1-4)
+- Cleaner implementation of Eclipse-file-classes in ECL.py
+- Create interface-files on the fly (no need to create all files at startup)
+- Remember window size and position between sessions
+- Fixed a copy-case-files bug
+- Fixed a PDF-viewer bug
+- Search for INCLUDE keyword files recursively
+- Search for GDFILE keyword files (.EGRID)
+- Search for an optional .CFG-file
+- Convert DATES in .DATA-file to tsteps
+- Add include-files in a single .DATA-file
+- Run Eclipse at statup until a least one well is producing (and an RFT-file is created)
+- New Eclipse and IORSim menu
+
+============= Release 2.26 =================
+

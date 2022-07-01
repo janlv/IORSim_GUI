@@ -2361,15 +2361,12 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_lines = {}
         self.ref_plot_lines = {}
         self.max_3_checked = []
-        #try:
         self.ref_case.setCurrentIndex(0)
         self.out_wells, self.in_wells = get_wells_iorsim(root)
         self.set_variables_from_casefiles()
         if root:
             self.on_mode_select(self.mode_cb.currentIndex())
         self.set_plot_properties()
-        # except SystemError as e:
-        #     self.show_message_text(str(e))
         self.data = {}
         self.unsmry = None  # Signals to re-read Eclipse data
         # IORSim data and menu
@@ -2384,7 +2381,6 @@ class main_window(QMainWindow):                                    # main_window
         self.create_plot()
         if self.view_group.checkedAction():
            self.view_group.checkedAction().trigger()
-        #self.update_edit_menu()
         self.update_include_menus()
 
 

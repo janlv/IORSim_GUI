@@ -57,18 +57,6 @@ class Eclipse(Runner):                                                      # ec
         self.is_eclipse = True
 
 
-    # #--------------------------------------------------------------------------------
-    # def time(self):                                                         # eclipse
-    # #--------------------------------------------------------------------------------
-    #     t = 0
-    #     if self.log:
-    #         pattern = r'TIME=?\s+([0-9.]+)\s+DAYS'
-    #         match = matches(file=self.log.name, pattern=pattern)
-    #         time = [m.group(1) for m in match]
-    #         t = time and time[-1] or 0           
-    #     return float(t)
-
-
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                          # eclipse
     #--------------------------------------------------------------------------------
@@ -407,11 +395,11 @@ class Iorsim(Runner):                                                        # i
         self.update = kwargs.get('update') or None
         self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
         self.unrst = self.funrst.with_suffix('.UNRST')
-        #self.inputfile = Path(abs_root+'.trcinp')
         self.inputfile = IORSim_input(root)
         self.check_input_kw = kwargs.get('check_input_kw') or False
         self.is_iorsim = True
         self.is_eclipse = False
+        self.copied_chemfiles = []
 
 
     #--------------------------------------------------------------------------------
@@ -428,26 +416,17 @@ class Iorsim(Runner):                                                        # i
         ### Copy chem-files to working dir 
         if copy_chem:
             for file in self.inputfile.include_files():
-                #print(f'{file} -> {Path.cwd()/file.name}')
-                shutil_copy(file, Path.cwd()/file.name)
-        ### Check existence of necessary Eclipse output files 
+                dest = Path.cwd()/file.name
+                if not dest.exists(): # and not dest.samefile(file):
+                    # print(f'{file} -> {dest}')
+                    shutil_copy(file, dest)
+                    self.copied_chemfiles.append(dest)
+        ### Check if the necessary Eclipse output files exist 
         files = [self.case.with_suffix(ext) for ext in ('.UNRST', '.RFT', '.EGRID', '.INIT')]
         missing = [f.name for f in files if not f.is_file()]
         if missing:
             raise SystemError(f'ERROR Unable to start IORSim: Eclipse output file {", ".join(missing)} is missing')
         super().start()
-
-
-    # #--------------------------------------------------------------------------------
-    # def time(self):                                                 # iorsim
-    # #--------------------------------------------------------------------------------
-    #     t = 0
-    #     if self.log:
-    #         pattern = 
-    #         match = matches(file=self.log.name, pattern=pattern)
-    #         time = [m.group(1) for m in match]
-    #         t = time and time[-1] or 0           
-    #     return float(t)
 
 
     #--------------------------------------------------------------------------------
@@ -459,12 +438,13 @@ class Iorsim(Runner):                                                        # i
         delete_files_matching(case+'*.trcprd', raise_error=raise_error)
         silentdelete(self.funrst)
 
+
     #--------------------------------------------------------------------------------
     def close(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
         super().close()
         ### Delete chem-files copied to working directory
-        [silentdelete(Path.cwd()/file.name) for file in self.inputfile.include_files()]
+        [silentdelete(file) for file in self.copied_chemfiles]
 
 
 
