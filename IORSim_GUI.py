@@ -51,14 +51,14 @@ from shutil import copy as shutil_copy
 import warnings
 from copy import deepcopy 
 from functools import partial
-from requests import get as requests_get
+from requests import get as requests_get, exceptions as req_exceptions
 # Suppress warnings about using verify=False in requests_get
 from urllib3 import disable_warnings
 disable_warnings()
 
 # Local libraries
 from ior2ecl import IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, read_file, remove_comments, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
+from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, pad_zero, read_file, remove_comments, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
 from IORlib.ECL import Input_file as ECL_input, unfmt_file, keywords as ECL_keywords
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -1586,17 +1586,28 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def about_app(self):
     #-----------------------------------------------------------------------
-        about = f'IORSim brings chemistry-based IOR methods to existing reservoir simulators with minor modifications of the original input files. IORSim currently cooperate with Eclipse 100, but can be made available for other reservoir simulators with some adaptations.'
+        about = f'IORSim brings chemistry-based IOR methods to existing reservoir simulators with minor modifications of the original input files. IORSim currently runs with Eclipse 100, but can be made available for other reservoir simulators with some adaptations.'
         self.show_message_text('INFO ' + about, extra=f'Version : {__version__}')
 
+
+    @show_error
     #-----------------------------------------------------------------------
     def check_version(self):
     #-----------------------------------------------------------------------
-        r = requests_get(latest_release, verify=False, timeout=10)
+        try:
+            r = requests_get(latest_release, verify=False, timeout=10)
+        except req_exceptions.ConnectionError:
+            raise SystemError('ERROR No internet connection, unable to check for new versions!')
         self.new_version = r.url.split('/')[-1].replace('v','')
+        #print(self.new_version)
         if self.new_version[0] == '.':
             self.new_version = self.new_version[1:]
-        if float(self.new_version) > float(__version__):
+        ### Compare version numbers
+        ver = (self.new_version, __version__)
+        num = pad_zero([v.split('.') for v in ver])
+        diff = [int(a)-int(b) for a,b in zip(*num)]
+        ### Update available if the first value different from zero is positive
+        if next((d>0 for d in diff if d!=0), False):
             button = ('Download', self.download)
             msg = f'INFO The latest version is {self.new_version}, you are running {__version__}. Download latest version?'
             self.show_message_text(msg, button=button, ok_text='Not now')
