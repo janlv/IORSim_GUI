@@ -1093,8 +1093,8 @@ class Settings(QDialog):
         variable = namedtuple('variable',        'text              default tip                            required ')
         self.vars = {'iorsim'         : variable('IORSim program' , None, 'Path to the IORSim executable', True),
                      'eclrun'         : variable('Eclipse program', 'eclrun', "Eclipse command, default is 'eclrun'", True), 
-                     'workdir'        : variable('Case-folder', str(default_casedir),'Path to GUI-folder', True),
-                     'savedir'        : variable('Download-folder', None, 'Download location for updates', False),
+                     'workdir'        : variable('Case directory', str(default_casedir),'Path to case-directory', True),
+                     'savedir'        : variable('Download directory', None, 'Download location for updates', False),
                      'check_input_kw' : variable('Check IORSim input file', False, 'Check IORSim input file keywords', False),
                      'convert'        : variable('Convert to unformatted output', True, 'Convert IORSim formatted output to unformatted format (readable by ResInsight)', False),
                      'del_convert'    : variable('Delete original after convert', True, 'Delete the FUNRST-file if it is successfully converted to an UNRST-file', False),
@@ -2004,15 +2004,12 @@ class main_window(QMainWindow):                                    # main_window
         '''
         src = Path(from_root)
         dst = Path(to_root)
-        # Input files, change name
+        ### Input files, change name
         mandatory = ('.DATA', '.trcinp') 
         optional = ('.SCH',)             
         inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in mandatory + optional]
-        # Included files, same name but different folders
-        #try:
+        ### Included files, same name but different folders
         inc_files = [(path, dst.parent/path.name) for path in ECL_input(src).include_files() + IORSim_input(src).include_files()]
-        #except SystemError as e:
-        #    self.show_message_text(e)            
         missing_files = []
         for src_fil, dst_fil in inp_files + inc_files:
             if src_fil.is_file():
