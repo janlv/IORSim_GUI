@@ -1,5 +1,5 @@
 PySide6 
 matplotlib 
 requests 
-pip_system_certs
+python-certifi-win32
 psutil
