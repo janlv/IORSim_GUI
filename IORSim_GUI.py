@@ -4,15 +4,28 @@
 DEBUG = False
 
 import sys
-#print(sys.version_info)
+
+### Fix SSL certificates for bundle version (pyinstaller)
+if getattr(sys, 'frozen', False) and sys.platform == 'win32':
+    import certifi
+    import certifi_win32.wincerts
+    certifi_win32.wincerts.CERTIFI_PEM = certifi.where()
+    certifi.where =  certifi_win32.wincerts.where
+    from certifi_win32.wincerts import generate_pem, verify_combined_pem
+    if not verify_combined_pem():
+        generate_pem()
+
 from pathlib import Path
+from urllib.parse import urlparse
 
 #-----------------------------------------------------------------------
 def resource_path():
 #-----------------------------------------------------------------------
-    try:
+    if getattr(sys, 'frozen', False):
+        ### Running in a bundle
         path = Path(sys._MEIPASS)
-    except AttributeError:
+    else:
+        ### Running live
         path = Path.cwd()
     return path
 
@@ -28,8 +41,18 @@ iorsim_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IO
 script_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_GUI_guide.pdf"
 
 # GitHub
-github_url = "https://github.com/janlv/IORSim_GUI/"
-latest_release = github_url +"releases/latest"
+github_repo = "https://github.com/janlv/IORSim_GUI/"
+latest_release = github_repo +"releases/latest"
+#-----------------------------------------------------------------------
+def github_url(version):
+#-----------------------------------------------------------------------
+    ext = this_file.suffix
+    if 'py' in ext:
+        return github_repo + f'archive/refs/tags/{version}.zip'
+    else:
+        return github_repo + f'releases/download/{version}/{this_file.name}'
+
+
 
 # External libraries
 from PySide6.QtWidgets import QScrollArea, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
@@ -41,7 +64,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolb
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
 from numpy import genfromtxt, asarray
-from re import compile
+from re import compile, sub
 
 # Python libraries
 from traceback import format_exc, print_exc, format_exc
@@ -310,7 +333,7 @@ def show_message(window, kind, text='', extra='', ok_text=None, wait=False, deta
         btn.clicked.disconnect()
         btn.clicked.connect(func)
     if wait:
-        msg.exec_()
+        msg.exec()
     else:
         msg.show()
     return msg
@@ -510,31 +533,41 @@ class download_worker(base_worker):
         super().__init__(print_exception=False)
         self.running = False         
         self.new_version = new_version
+        #print('new_version:',new_version)
         folder = Path(folder)
-        if this_file.suffix == '.py':
-            # Download a zip archive 
-            ext = '.zip'
-            self.url = 'https://api.github.com/repos/janlv/IORSim_GUI/zipball/v' + new_version
-        else:
-            # Download the compiled executable
-            ext = this_file.suffix
-            self.url = github_url + 'releases/download/v' + new_version + '/' + this_file.name 
-        self.savename = folder/(this_file.stem + '_v' + new_version + ext)
+        self.url = github_url(new_version)
+        ext = Path(urlparse(self.url).path).suffix
+        # if this_file.suffix == '.py':
+        #     # Download a zip archive 
+        #     ext = '.zip'
+        #     #self.url = 'https://api.github.com/repos/janlv/IORSim_GUI/zipball/v' + new_version
+        #     self.url = github_repo + f'archive/refs/tags/{new_version}.zip'
+        # else:
+        #     # Download the compiled executable
+        #     ext = this_file.suffix
+        #     self.url = github_repo + f'releases/download/{new_version}/{this_file.name}' 
+        #print('url:',self.url)
+        self.savename = folder/f'{this_file.stem}_{new_version}{ext}'
 
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
         self.running = True                     # Set to False to abort download
-        resp = requests_get(self.url, stream=True, verify=False)
-        if not resp.status_code == 200:
+        try:
+            response = requests_get(self.url, stream=True)
+        except req_exceptions.SSLError:
+            raise SystemError('ERROR SSL error during download of update')
+        except req_exceptions.ConnectionError:
+            raise SystemError('ERROR No internet connection, unable to download update!')
+        if not response.status_code == 200:
             raise SystemError(f'{self.url} not found!')
-        tot_size = int(resp.headers.get('content-length', 0)) or len(resp.content)
+        tot_size = int(response.headers.get('content-length', 0)) or len(response.content)
         block_size = 1024
         self.update_progress((-tot_size, None, None))
-        self.status_message(f'Downloading version {self.new_version} of {this_file}')
+        self.status_message(f'Downloading version {self.new_version}')
         size = 0
         with open(self.savename, 'wb') as file:
-            for data in resp.iter_content(block_size):
+            for data in response.iter_content(block_size):
                 if not self.running:
                     return
                 size += len(data)
@@ -1595,22 +1628,24 @@ class main_window(QMainWindow):                                    # main_window
     def check_version(self):
     #-----------------------------------------------------------------------
         try:
-            r = requests_get(latest_release, verify=False, timeout=10)
+            response = requests_get(latest_release, timeout=10)
+        except req_exceptions.SSLError as e:
+            DEBUG and print(f'SSLError in check_versions(): {e}')
+            raise SystemError(f'ERROR SSL error during version check')
         except req_exceptions.ConnectionError:
-            raise SystemError('ERROR No internet connection, unable to check for new versions!')
-        self.new_version = r.url.split('/')[-1].replace('v','')
-        #print(self.new_version)
-        if self.new_version[0] == '.':
-            self.new_version = self.new_version[1:]
+            raise SystemError(f'ERROR No internet connection, unable to check for new versions!')
+        self.new_version = response.url.split('/')[-1]
         ### Compare version numbers
-        ver = (self.new_version, __version__)
+        new_version = sub(r'^[a-zA-Z-+.]*', '', self.new_version)  # Remove leading characters
+        ver = (new_version, __version__)
         num = pad_zero([v.split('.') for v in ver])
         diff = [int(a)-int(b) for a,b in zip(*num)]
         ### Update available if the first value different from zero is positive
         if next((d>0 for d in diff if d!=0), False):
             button = ('Download', self.download)
-            msg = f'INFO The latest version is {self.new_version}, you are running {__version__}. Download latest version?'
-            self.show_message_text(msg, button=button, ok_text='Not now')
+            #button = ('Download', lambda : QDesktopServices.openUrl(github_url(self.new_version)))
+            msg = f'INFO The latest version is {new_version}, you are running {__version__}. Download latest version?'
+            self.show_message_text(msg, button=button, ok_text='Not now', wait=True)
         else:
             self.show_message_text(f'INFO No update available, {__version__} is the latest version')
 
@@ -1633,21 +1668,22 @@ class main_window(QMainWindow):                                    # main_window
         button = ('Quit', self.close)
         #msg = f'INFO Download of version {self.new_version} completed, restart application to use it.'
         dest = self.download_worker.savename
-        msg = f'INFO {dest.name} is now available in {dest.parent}.\nStop the application, copy the new version over the current one, and start again.'
+        msg = f'INFO {dest.name} is now available in {dest.parent}.\n\nTo complete the update, stop the application, copy the new version over the current one, and start again.'
         self.show_message_text(msg, button=button, ok_text='Not now')
 
     #-----------------------------------------------------------------------
     def download(self):
     #-----------------------------------------------------------------------
-        old_folder = self.settings.get('savedir')
-        self.settings.change_savedir()
+        #old_folder = self.settings.get('savedir')
+        #self.settings.change_savedir()
         folder = self.settings.get('savedir')
         if not folder:
             self.show_message_text('INFO Download aborted due to missing save location')
             return None
-        if folder != old_folder:
-            self.settings.save()
+        # if folder != old_folder:
+        #     self.settings.save()
         self.reset_progress_and_message()
+        self.statusBar().showMessage(f'Change save directory under File -> Settings')        
         self.download_worker = download_worker(self.new_version, folder)
         self.download_worker.signals.status_message.connect(self.update_message)
         self.download_worker.signals.show_message.connect(self.show_message_text)
