@@ -190,3 +190,5 @@ dist
 *.exe
 input.txt
 geochem-megawati
+upgrade*
+download
