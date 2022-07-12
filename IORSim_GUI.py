@@ -4,9 +4,15 @@
 DEBUG = False
 
 import sys
+import os
 
-### Fix SSL certificates for bundle version (pyinstaller)
-if getattr(sys, 'frozen', False) and sys.platform == 'win32':
+from psutil import Popen
+
+### Check if this is a bundle version (pyinstaller)
+bundle_version = getattr(sys, 'frozen', False)
+
+### Fix SSL certificates for bundle version
+if bundle_version and sys.platform == 'win32':
     import certifi
     import certifi_win32.wincerts
     certifi_win32.wincerts.CERTIFI_PEM = certifi.where()
@@ -537,16 +543,6 @@ class download_worker(base_worker):
         folder = Path(folder)
         self.url = github_url(new_version)
         ext = Path(urlparse(self.url).path).suffix
-        # if this_file.suffix == '.py':
-        #     # Download a zip archive 
-        #     ext = '.zip'
-        #     #self.url = 'https://api.github.com/repos/janlv/IORSim_GUI/zipball/v' + new_version
-        #     self.url = github_repo + f'archive/refs/tags/{new_version}.zip'
-        # else:
-        #     # Download the compiled executable
-        #     ext = this_file.suffix
-        #     self.url = github_repo + f'releases/download/{new_version}/{this_file.name}' 
-        #print('url:',self.url)
         self.savename = folder/f'{this_file.stem}_{new_version}{ext}'
 
     #-----------------------------------------------------------------------
@@ -562,16 +558,16 @@ class download_worker(base_worker):
         if not response.status_code == 200:
             raise SystemError(f'{self.url} not found!')
         tot_size = int(response.headers.get('content-length', 0)) or len(response.content)
-        block_size = 1024
         self.update_progress((-tot_size, None, None))
         self.status_message(f'Downloading version {self.new_version}')
         size = 0
+        block_size = 1024*1024 ### 1 MB
         with open(self.savename, 'wb') as file:
             for data in response.iter_content(block_size):
                 if not self.running:
                     return
                 size += len(data)
-                #print(f'\r{size/tot_size:.2f}%', end='')
+                #print(f'{size/tot_size:.2f}%')
                 self.update_progress((size, None, None))
                 file.write(data)
         if tot_size != 0 and tot_size != size:
@@ -1655,21 +1651,44 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.download_worker = None
 
+
     #-----------------------------------------------------------------------
     def download_error(self, values):
     #-----------------------------------------------------------------------
         exctype, value, trace = values
         self.show_message_text(f'ERROR Download of version {self.new_version} failed!\n\n{value}')
 
+
     #-----------------------------------------------------------------------
     def download_success(self):
     #-----------------------------------------------------------------------
         self.update_message('Download complete')
-        button = ('Quit', self.close)
+        #button = ('Quit', self.close)
+        button = ('Upgrade', self.upgrade)
         #msg = f'INFO Download of version {self.new_version} completed, restart application to use it.'
-        dest = self.download_worker.savename
-        msg = f'INFO {dest.name} is now available in {dest.parent}.\n\nTo complete the update, stop the application, copy the new version over the current one, and start again.'
+        self.download_dest = self.download_worker.savename
+        msg = f'INFO {self.download_dest.name} is now available in {self.download_dest.parent}.\n\nTo complete the update, stop the application, copy the new version over the current one, and start again.'
         self.show_message_text(msg, button=button, ok_text='Not now')
+
+
+    #-----------------------------------------------------------------------
+    def upgrade(self):
+    #-----------------------------------------------------------------------
+        self.close()
+        ext = bundle_version and '.exe' or '.py'
+        upgrader = resource_path()/('upgrader'+ext)
+        if not Path(upgrader).exists():
+            self.show_message_text('WARNING Upgrade script not found!')
+            return False
+        pid = str(os.getpid())
+        cmd = [str(upgrader), pid, self.download_dest]
+        if not bundle_version:
+            exec = [sys.executable]
+            cmd = exec + cmd + exec
+        cmd.extend(sys.argv)
+        print(f'Calling: {cmd}')
+        Popen(cmd)
+
 
     #-----------------------------------------------------------------------
     def download(self):
@@ -3551,6 +3570,13 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def quit(self):                                            # main_window
     #-----------------------------------------------------------------------
+        self.close()
+        # Quit Qt
+        QApplication.quit()
+
+    #-----------------------------------------------------------------------
+    def close(self):                                            # main_window
+    #-----------------------------------------------------------------------
         self.killsim()
         if self.download_worker:
             self.download_worker.running = False
@@ -3559,8 +3585,6 @@ class main_window(QMainWindow):                                    # main_window
         # Save window geometry in settings
         geo = f'geometry {" ".join( (str(i) for i in self.geometry().getRect()) )}\n'
         replace_line(self.settings.file, find='geometry', replace=geo)
-        # Quit Qt
-        QApplication.quit()
                 
 
     #-----------------------------------------------------------------------
@@ -3614,9 +3638,8 @@ class Highlighter(QSyntaxHighlighter):
 ###################################
 
 if __name__ == '__main__':
-    import os
 
-    # Need to set the locale under Linux to avoid datetime.strptime errors
+    ### Need to set the locale under Linux to avoid datetime.strptime errors
     os.putenv('LC_ALL', 'C')
     #os.putenv('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-logging')
     args = []

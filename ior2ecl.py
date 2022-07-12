@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '2.26.2'
+__version__ = '2.25.2'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -733,8 +733,6 @@ class Schedule:
             return
         if tstep == 0:
             raise SystemError(f'ERROR Schedule gave TSTEP 0 at {self.days} days, simulation stopped. Check {self.file}')
-        #lines = []
-        #if self.ifacefile.is_file():
         match = self.ifacefile.get('TSTEP', pos=True)
         if match:
             file_tstep, pos = match[0]
@@ -744,29 +742,10 @@ class Schedule:
         with open(self.ifacefile.file, 'r') as f:
             lines = ''.join(f.readlines())
         out = lines[:pos[0]] + (action and action or '') + f'TSTEP\n{tstep} /\n' + lines[pos[1]:]
-        #out = lines[:pos[0]] + '\n-- ACTION START --\n' + (action and action or '') + f'TSTEP\n{tstep} /\n' + '\n-- TSTEP END --\n' + lines[pos[1]:]
         #print(out)
         with open(self.ifacefile.file, 'w') as f:
             f.write(out)
-        #n = max(0, len(lines) + append_line)
-        #print('n',n)
-        # if n > 0:
-        #     if tstep is not None:
-        #         # Replace TSTEP
-        #         # +1 because we edit the value on the line after TSTEP
-        #         lines[n+1] = f'{tstep} /\n'
-        #     # Append action
-        #     if action:
-        #         lines.insert(n, action)
-        # else:
-        #     ### n == 0: empty file
-        #     lines.extend(('TSTEP', f'{tstep}', '/', action))
-        # #print('lines', lines)
-        #with open(self.ifacefile.file, 'w') as f:
-        #    f.write('\n'.join(lines))
-        # with open(self.ifacefile.file, 'r') as f:
-        #     print(self.ifacefile.file.name,'\n',''.join(f.readlines()))
-        
+
 
     #--------------------------------------------------------------------------------
     def check(self):                                                       # Schedule
