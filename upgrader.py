@@ -9,7 +9,7 @@ from IORlib.utils import kill_process
 from shutil import copy, copytree
 from subprocess import Popen
 
-def unpack_and_copy(file, target):
+def unzip_and_copy(file, target):
     with TemporaryDirectory() as tmpdir:
         with ZipFile(file, 'r') as zip:
             zip.extractall(tmpdir)
@@ -38,7 +38,7 @@ def backup_dir(path):
 
 def main(argv):
     pid = int(argv[1])
-    file = argv[2]
+    file = Path(argv[2])
     cmd = argv[3:]
     target = Path.cwd()
 
@@ -46,26 +46,26 @@ def main(argv):
     print(f'pid = {pid}, file = {file}, cmd = {cmd}')
 
     ### Stop app
-    procs = kill_process(pid)
+    kill_process(pid)
 
     ### Move new files over old ones (with backup)
-    ext = Path(file).suffix
-    if ext == '.zip':
-        unpack_and_copy(file, target)
+    if file.suffix == '.zip':
+        ### Upgrader called from script
+        unzip_and_copy(file, target)
     else:
-        dest = target/file.name
+        ### Upgrader called from bundeled version (suffix is '.exe' or '' )
+        dest = target/Path(cmd[0]).name
+        #print('dest:', dest)
         if dest.exists():
             back = backup_dir(target)
             print(f'{dest} -> {back}')
             copy(dest, back)
-            print(f'{file} -> {target}')
-            copy(file, target)
+            print(f'{file} -> {dest}')
+            copy(file, dest)
 
     ### Restart app
     print(f'Starting {cmd}')
     Popen(cmd)
-
-    sleep(5)
 
 if __name__ == '__main__':
     import sys
