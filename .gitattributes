@@ -3,4 +3,5 @@
 # exclude pyinstaller batch scripts
 *.bat      export-ignore
 # exlude tools
+tools/     export-ignore
 tools/**   export-ignore
