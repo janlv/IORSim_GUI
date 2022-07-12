@@ -37,6 +37,7 @@ def resource_path():
 
 # Default settings
 default_casedir = Path.cwd()/'IORSim_cases'
+default_savedir = Path.cwd()/'download'
 default_settings_file = Path.home()/'.iorsim_settings.dat'
 
 # Update files
@@ -52,8 +53,7 @@ latest_release = github_repo +"releases/latest"
 #-----------------------------------------------------------------------
 def github_url(version):
 #-----------------------------------------------------------------------
-    ext = this_file.suffix
-    if 'py' in ext:
+    if 'py' in this_file.suffix:
         return github_repo + f'archive/refs/tags/{version}.zip'
     else:
         return github_repo + f'releases/download/{version}/{this_file.name}'
@@ -541,6 +541,7 @@ class download_worker(base_worker):
         self.new_version = new_version
         #print('new_version:',new_version)
         folder = Path(folder)
+        folder.mkdir(exist_ok=True)
         self.url = github_url(new_version)
         ext = Path(urlparse(self.url).path).suffix
         self.savename = folder/f'{this_file.stem}_{new_version}{ext}'
@@ -1123,7 +1124,6 @@ class Settings(QDialog):
         self.vars = {'iorsim'         : variable('IORSim program' , None, 'Path to the IORSim executable', True),
                      'eclrun'         : variable('Eclipse program', 'eclrun', "Eclipse command, default is 'eclrun'", True), 
                      'workdir'        : variable('Case directory', str(default_casedir),'Path to case-directory', True),
-                     'savedir'        : variable('Download directory', None, 'Download location for updates', False),
                      'check_input_kw' : variable('Check IORSim input file', False, 'Check IORSim input file keywords', False),
                      'convert'        : variable('Convert to unformatted output', True, 'Convert IORSim formatted output to unformatted format (readable by ResInsight)', False),
                      'del_convert'    : variable('Delete original after convert', True, 'Delete the FUNRST-file if it is successfully converted to an UNRST-file', False),
@@ -1135,7 +1135,8 @@ class Settings(QDialog):
                      'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT), f'Set this limit lower than 100 seconds to avoid unexpected Eclipse termination (Expert mode)', False),
                      'ior_keep_alive' : variable(f'IORSim process not paused when idle', False, f'Never pause IORSim during idle time between steps (Expert mode)', False),
                      'log_level'      : variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL), 'A higher value gives a more detailed application log', False),
-                     'merge_empty'    : variable('Merge schedule entries with void actions', False, 'Merge sucsessive DATES/TSTEP entries in the schedule-file that have no actions', False)}
+                     'merge_empty'    : variable('Merge schedule entries having void actions', False, 'Merge sucsessive DATES/TSTEP entries in the schedule-file that have no actions', False)}
+        #'savedir'        : variable('Download directory', None, 'Download location for updates', False),
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
         self.abs_path = False
@@ -1188,7 +1189,7 @@ class Settings(QDialog):
         ### Workdir        
         self.add_line_with_button(var='workdir', open_func=self.change_workdir)
         ### Savedir        
-        self.add_line_with_button(var='savedir', open_func=self.change_savedir)
+        #self.add_line_with_button(var='savedir', open_func=self.change_savedir)
 
         ### Input options
         self.add_heading()
@@ -1337,14 +1338,14 @@ class Settings(QDialog):
             self._set['workdir'](dirname)
             self.parent.update_casedir()
 
-    #-----------------------------------------------------------------------
-    def change_savedir(self):                             # settings
-    #-----------------------------------------------------------------------
-        title = 'Choose a download location for the new version'
-        default = self.get('savedir') or str(Path.cwd())
-        folder = QFileDialog.getExistingDirectory(self, title, default, QFileDialog.ShowDirsOnly)
-        if folder:
-            self._set['savedir'](folder)
+    # #-----------------------------------------------------------------------
+    # def change_savedir(self):                             # settings
+    # #-----------------------------------------------------------------------
+    #     title = 'Choose a download location for the new version'
+    #     default = self.get('savedir') or str(Path.cwd())
+    #     folder = QFileDialog.getExistingDirectory(self, title, default, QFileDialog.ShowDirsOnly)
+    #     if folder:
+    #         self._set['savedir'](folder)
 
     #-----------------------------------------------------------------------
     def restart_now(self):                                 # settings
@@ -1667,7 +1668,7 @@ class main_window(QMainWindow):                                    # main_window
         button = ('Upgrade', self.upgrade)
         #msg = f'INFO Download of version {self.new_version} completed, restart application to use it.'
         self.download_dest = self.download_worker.savename
-        msg = f'INFO {self.download_dest.name} is now available in {self.download_dest.parent}.\n\nTo complete the update, stop the application, copy the new version over the current one, and start again.'
+        msg = f"INFO {self.download_dest.name} is now ready to be installed.\n\nClicking the 'Upgrade' button will install the new version in the current working directory and restart the application."
         self.show_message_text(msg, button=button, ok_text='Not now')
 
 
@@ -1686,7 +1687,7 @@ class main_window(QMainWindow):                                    # main_window
             exec = [sys.executable]
             cmd = exec + cmd + exec
         cmd.extend(sys.argv)
-        print(f'Calling: {cmd}')
+        #print(f'Calling: {cmd}')
         Popen(cmd)
 
 
@@ -1695,15 +1696,16 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         #old_folder = self.settings.get('savedir')
         #self.settings.change_savedir()
-        folder = self.settings.get('savedir')
-        if not folder:
-            self.show_message_text('INFO Download aborted due to missing save location')
-            return None
-        # if folder != old_folder:
+        #folder = self.settings.get('savedir')
+        #folder = default_savedir
+        #if not folder:
+        #    self.show_message_text('INFO Download aborted due to missing save location')
+        #    return None
+        # if folder != old_folder:ls u  
         #     self.settings.save()
         self.reset_progress_and_message()
-        self.statusBar().showMessage(f'Change save directory under File -> Settings')        
-        self.download_worker = download_worker(self.new_version, folder)
+        #self.statusBar().showMessage(f'Change save directory under File -> Settings')        
+        self.download_worker = download_worker(self.new_version, default_savedir)
         self.download_worker.signals.status_message.connect(self.update_message)
         self.download_worker.signals.show_message.connect(self.show_message_text)
         self.download_worker.signals.progress.connect(self.update_progress)
