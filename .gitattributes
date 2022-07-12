@@ -1,0 +1,6 @@
+# exclude .gitignore etc. from source zip-file
+.git*      export-ignore
+# exclude pyinstaller batch scripts
+*.bat      export-ignore
+# exlude tools
+tools/**   export-ignore
