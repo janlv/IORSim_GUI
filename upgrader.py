@@ -5,7 +5,7 @@ from time import sleep
 from zipfile import ZipFile
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from IORlib.utils import kill_process
+from IORlib.utils import kill_process, try_loop
 from shutil import copy as shcopy, copytree
 from subprocess import Popen
 
@@ -60,16 +60,8 @@ def copy_bundle(file, target, cmd, limit=100, pause=0.05):
 #--------------------------------------------------------------------------------
     dest = target/Path(cmd[0]).name
     if dest.exists():
-        backup = backup_dir(target)
         ### Keep trying to overwrite if PermissionError
-        for i in range(limit):
-            try:
-                copy(file, dest, backup=backup)
-                break
-            except PermissionError as e:
-                sleep(pause)
-        if i==limit-1:
-            raise SystemError(f'Unable to copy {file} over {dest} within {limit} tries during {limit*pause} seconds: {e}')
+        try_loop(file, dest, backup=backup_dir(target), func=copy, limit=limit, pause=pause, error=PermissionError)
 
 
 #--------------------------------------------------------------------------------

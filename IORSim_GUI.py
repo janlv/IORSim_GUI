@@ -1682,6 +1682,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def check_version(self, silent=False):
     #-----------------------------------------------------------------------
+        if self.check_version_worker or self.download_worker:
+            ### Version check already in progress...
+            self.show_message_text('INFO Download of new version in progress')
+            return
         self.silent_upgrade = silent
         self.check_version_worker = check_version_worker()
         signals = self.check_version_worker.signals
@@ -1702,33 +1706,10 @@ class main_window(QMainWindow):                                    # main_window
         exctype, value, trace = values
         self.show_message_text(f'ERROR Error during version check!\n\n{value}')
 
-    #@show_error
     #-----------------------------------------------------------------------
     def check_version_success(self, result):
     #-----------------------------------------------------------------------
         self.new_version = result[0]
-        #print('SUCCESS',new_version)
-        # try:
-        #     response = requests_get(latest_release, timeout=10)
-        # except req_exceptions.SSLError as e:
-        #     DEBUG and print(f'SSLError in check_versions(): {e}')
-        #     if silent:
-        #         pass
-        #     else:
-        #         raise SystemError(f'ERROR SSL error during version check')
-        # except req_exceptions.ConnectionError:
-        #     if silent:
-        #         pass
-        #     else:
-        #         raise SystemError(f'ERROR No internet connection, unable to check for new versions!')
-        # self.new_version = response.url.split('/')[-1]
-        ### Compare version numbers
-        # new_version = sub(r'^[a-zA-Z-+.]*', '', self.new_version)  # Remove leading characters
-        # ver = (new_version, __version__)
-        # num = pad_zero([v.split('.') for v in ver])
-        # diff = [int(a)-int(b) for a,b in zip(*num)]
-        # ### Update available if the first value different from zero is positive
-        # if next((d>0 for d in diff if d!=0), False):
         if self.new_version:
             if self.silent_upgrade:
                 self.download()
@@ -1804,6 +1785,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def download(self):
     #-----------------------------------------------------------------------
+        if self.download_worker:
+            ### Download already in progress...
+            return
         self.reset_progress_and_message()
         self.download_worker = download_worker(self.new_version, default_savedir)
         signals = self.download_worker.signals
