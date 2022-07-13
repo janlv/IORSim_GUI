@@ -14,9 +14,10 @@ DEBUG = False
 #--------------------------------------------------------------------------------
 def backup_dir(path: Path):
 #--------------------------------------------------------------------------------
-    date = datetime.today().strftime("%Y-%m-%d")
-    p = path/f'upgrade_{date}'
+    p = path/f'upgrade_backup'
     p.mkdir(exist_ok=True)
+    #time = datetime.today().strftime('%Y-%m-%d, %H:%M:%S')
+    #(p/'.timestamp').write_text(time)
     return p
 
 #--------------------------------------------------------------------------------
@@ -91,6 +92,12 @@ def main(argv):
     else:
         ### Upgrader called from bundeled version (suffix is '.exe' or '' )
         copy_bundle(file, target, cmd)
+
+    ### Delete file
+    try:
+        file.unlink()
+    except PermissionError:
+        pass
 
     ### Restart app
     DEBUG and print(f'Starting {cmd}')
