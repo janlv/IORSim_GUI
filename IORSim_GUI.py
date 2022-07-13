@@ -27,7 +27,7 @@ from urllib.parse import urlparse
 #-----------------------------------------------------------------------
 def resource_path():
 #-----------------------------------------------------------------------
-    if getattr(sys, 'frozen', False):
+    if bundle_version: 
         ### Running in a bundle
         path = Path(sys._MEIPASS)
     else:
@@ -95,6 +95,25 @@ QDir.addSearchPath('icons', resource_path()/'icons/')
 # class WebEngineView(QWebEngineView):
 #     def javaScriptConsoleMessage(self, level, msg, line, sourceID):
 #         pass
+
+#-----------------------------------------------------------------------
+def upgrade_file():
+#-----------------------------------------------------------------------
+    ### Get first (and only) file from savedir
+    return default_savedir.is_dir() and next(default_savedir.iterdir(), None) or None
+
+#-----------------------------------------------------------------------
+def new_version(version_str):
+#-----------------------------------------------------------------------
+    ### Check given version string against current version
+    new_version = sub(r'^[a-zA-Z-+.]*', '', version_str)  # Remove leading characters
+    ver = (new_version, __version__)
+    num = pad_zero([v.split('.') for v in ver])
+    diff = [int(a)-int(b) for a,b in zip(*num)]
+    ### Given version is newer if the first value different from zero is positive
+    if next((d>0 for d in diff if d!=0), False):
+        return version_str
+    return False
 
 
 #===========================================================================
@@ -542,6 +561,7 @@ class download_worker(base_worker):
         #print('new_version:',new_version)
         folder = Path(folder)
         folder.mkdir(exist_ok=True)
+        #files = sorted(folder.iterdir(), key=os.path.getmtime)
         self.url = github_url(new_version)
         ext = Path(urlparse(self.url).path).suffix
         self.savename = folder/f'{this_file.stem}_{new_version}{ext}'
@@ -549,6 +569,9 @@ class download_worker(base_worker):
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
+        if self.savename.is_file():
+            ### File already downloaded!
+            return
         self.running = True                     # Set to False to abort download
         try:
             response = requests_get(self.url, stream=True)
@@ -574,6 +597,39 @@ class download_worker(base_worker):
         if tot_size != 0 and tot_size != size:
             msg = f'Size mismatch when downloading {self.filename}: got {size} bytes, expected {tot_size} bytes'
             raise SystemError(msg)
+
+
+#===========================================================================
+class check_version_worker(base_worker):
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, timeout=20):
+    #-----------------------------------------------------------------------
+        super().__init__(print_exception=False)
+        self.timeout = timeout
+
+
+    #-----------------------------------------------------------------------
+    def runnable(self):
+    #-----------------------------------------------------------------------
+        try:
+            response = requests_get(latest_release, timeout=self.timeout)
+        except req_exceptions.SSLError as e:
+            DEBUG and print(f'SSLError in check_versions(): {e}')
+            raise SystemError(f'ERROR SSL error during version check')
+        except req_exceptions.ConnectionError:
+            raise SystemError(f'ERROR No internet connection, unable to check for new versions!')
+        version_str = response.url.split('/')[-1]
+        return new_version(version_str)
+        # new_version = sub(r'^[a-zA-Z-+.]*', '', new_version_str)  # Remove leading characters
+        # ver = (new_version, __version__)
+        # num = pad_zero([v.split('.') for v in ver])
+        # diff = [int(a)-int(b) for a,b in zip(*num)]
+        # ### Update available if the first value different from zero is positive
+        # if next((d>0 for d in diff if d!=0), False):
+        #     return new_version_str
+        # return False
+
 
 #===========================================================================
 class Mpl_canvas(FigureCanvasQTAgg):                                              
@@ -1457,6 +1513,7 @@ class main_window(QMainWindow):                                    # main_window
         #self.setContentsMargins(2,2,2,2)
         self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
         self.font = QFont().defaultFamily()
+        self.silent_upgrade = False
         self.menu_fontsize = 7
         self.plot_lines = None
         self.data = {}
@@ -1469,6 +1526,7 @@ class main_window(QMainWindow):                                    # main_window
         self.unsmry = None
         self.worker = None
         self.download_worker = None
+        self.check_version_worker = None
         self.convert = None
         self.max_3_checked = []
         self.plot_prop = {}
@@ -1497,6 +1555,7 @@ class main_window(QMainWindow):                                    # main_window
             x, y = [-min(p,0) for p in pos]
             self.setGeometry(self.geometry().adjusted(x, y, x, y))            
         #print(self.screen().geometry())
+        self.check_version(silent=True)
                 
 
     #-----------------------------------------------------------------------
@@ -1531,8 +1590,12 @@ class main_window(QMainWindow):                                    # main_window
                                       tip='IORSim User Guide', func=self.show_iorsim_guide)
         self.script_guide_act = create_action(self, text='GUI User Guide', icon='lifebuoy.png', shortcut='',
                                       tip='User guide for this application', func=self.show_script_guide)
-        self.download_act = create_action(self, text='Check for updates', icon='drive-download.png', shortcut='',
-                                      tip='Check if a new version is avaliable', func=self.check_version)
+        ### Check updates
+        has_updates = default_savedir.is_dir() and next(default_savedir.iterdir(), None) or None
+        text = has_updates and 'Restart to update' or 'Check for updates'
+        func = has_updates and self.upgrade or self.check_version
+        self.download_act = create_action(self, text=text, icon='drive-download.png', shortcut='',
+                                      tip='Check if a new version is avaliable', func=func)
         self.about_act = create_action(self, text='About', icon='question.png', shortcut='',
                                       tip='Application details', func=self.about_app)
         self.exit_act = create_action(self, text='&Exit', icon='control-power.png', shortcut='Ctrl+Q',
@@ -1620,31 +1683,63 @@ class main_window(QMainWindow):                                    # main_window
         self.show_message_text('INFO ' + about, extra=f'Version : {__version__}')
 
 
-    @show_error
     #-----------------------------------------------------------------------
-    def check_version(self):
+    def check_version(self, silent=False):
     #-----------------------------------------------------------------------
-        try:
-            response = requests_get(latest_release, timeout=10)
-        except req_exceptions.SSLError as e:
-            DEBUG and print(f'SSLError in check_versions(): {e}')
-            raise SystemError(f'ERROR SSL error during version check')
-        except req_exceptions.ConnectionError:
-            raise SystemError(f'ERROR No internet connection, unable to check for new versions!')
-        self.new_version = response.url.split('/')[-1]
+        self.silent_upgrade = silent
+        self.check_version_worker = check_version_worker()
+        signals = self.check_version_worker.signals
+        signals.finished.connect(self.check_version_finished) 
+        signals.result.connect(self.check_version_success) 
+        if not silent:
+            signals.error.connect(self.check_version_error) 
+        self.threadpool.start(self.check_version_worker)
+
+    #-----------------------------------------------------------------------
+    def check_version_finished(self):
+    #-----------------------------------------------------------------------
+        self.check_version_worker = None
+
+    #-----------------------------------------------------------------------
+    def check_version_error(self, values):
+    #-----------------------------------------------------------------------
+        exctype, value, trace = values
+        self.show_message_text(f'ERROR Error during version check!\n\n{value}')
+
+    #@show_error
+    #-----------------------------------------------------------------------
+    def check_version_success(self, new_version):
+    #-----------------------------------------------------------------------
+        # try:
+        #     response = requests_get(latest_release, timeout=10)
+        # except req_exceptions.SSLError as e:
+        #     DEBUG and print(f'SSLError in check_versions(): {e}')
+        #     if silent:
+        #         pass
+        #     else:
+        #         raise SystemError(f'ERROR SSL error during version check')
+        # except req_exceptions.ConnectionError:
+        #     if silent:
+        #         pass
+        #     else:
+        #         raise SystemError(f'ERROR No internet connection, unable to check for new versions!')
+        # self.new_version = response.url.split('/')[-1]
         ### Compare version numbers
-        new_version = sub(r'^[a-zA-Z-+.]*', '', self.new_version)  # Remove leading characters
-        ver = (new_version, __version__)
-        num = pad_zero([v.split('.') for v in ver])
-        diff = [int(a)-int(b) for a,b in zip(*num)]
-        ### Update available if the first value different from zero is positive
-        if next((d>0 for d in diff if d!=0), False):
-            button = ('Download', self.download)
-            #button = ('Download', lambda : QDesktopServices.openUrl(github_url(self.new_version)))
-            msg = f'INFO The latest version is {new_version}, you are running {__version__}. Download latest version?'
-            self.show_message_text(msg, button=button, ok_text='Not now', wait=True)
+        # new_version = sub(r'^[a-zA-Z-+.]*', '', self.new_version)  # Remove leading characters
+        # ver = (new_version, __version__)
+        # num = pad_zero([v.split('.') for v in ver])
+        # diff = [int(a)-int(b) for a,b in zip(*num)]
+        # ### Update available if the first value different from zero is positive
+        # if next((d>0 for d in diff if d!=0), False):
+        if new_version:
+            if self.silent_upgrade:
+                self.download(silent=True)
+            else:   
+                button = ('Download', self.download)
+                msg = f'INFO The latest version is {new_version}, you are running {__version__}. Download latest version?'
+                self.show_message_text(msg, button=button, ok_text='Not now', wait=True)
         else:
-            self.show_message_text(f'INFO No update available, {__version__} is the latest version')
+            not self.silent_upgrade and self.show_message_text(f'INFO No update available, {__version__} is the latest version')
 
 
     #-----------------------------------------------------------------------
@@ -1663,18 +1758,31 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def download_success(self):
     #-----------------------------------------------------------------------
-        self.update_message('Download complete')
-        #button = ('Quit', self.close)
-        button = ('Upgrade', self.upgrade)
-        #msg = f'INFO Download of version {self.new_version} completed, restart application to use it.'
         self.download_dest = self.download_worker.savename
-        msg = f"INFO {self.download_dest.name} is now ready to be installed.\n\nClicking the 'Upgrade' button will install the new version in the current working directory and restart the application."
-        self.show_message_text(msg, button=button, ok_text='Not now')
+        if self.silent_upgrade:
+            self.download_act.setText('Restart to upgrade')
+            self.download_act.triggered.connect(self.upgrade)
+        else:
+            self.update_message('Download complete')
+            #button = ('Quit', self.close)
+            button = ('Upgrade', self.upgrade)
+            #msg = f'INFO Download of version {self.new_version} completed, restart application to use it.'
+            msg = f"INFO {self.download_dest.name} is now ready to be installed.\n\nClicking the 'Upgrade' button will install the new version in the current working directory and restart the application."
+            self.show_message_text(msg, button=button, ok_text='Not now')
 
 
     #-----------------------------------------------------------------------
     def upgrade(self):
     #-----------------------------------------------------------------------
+        file = upgrade_file()
+        version = file and file.stem.split('_')[-1] or None
+        version = version and new_version(version) or None
+        if not version:
+            if self.silent_upgrade:
+                return
+            else:
+                self.show_message_text(f'WARNING Upgrade not possible! File: {file}, downloaded version: {version}, current version {__version__}')
+        ### Proceed with upgrade
         self.close()
         ext = bundle_version and '.exe' or '.py'
         upgrader = resource_path()/('upgrader'+ext)
@@ -1694,24 +1802,16 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def download(self):
     #-----------------------------------------------------------------------
-        #old_folder = self.settings.get('savedir')
-        #self.settings.change_savedir()
-        #folder = self.settings.get('savedir')
-        #folder = default_savedir
-        #if not folder:
-        #    self.show_message_text('INFO Download aborted due to missing save location')
-        #    return None
-        # if folder != old_folder:ls u  
-        #     self.settings.save()
         self.reset_progress_and_message()
-        #self.statusBar().showMessage(f'Change save directory under File -> Settings')        
         self.download_worker = download_worker(self.new_version, default_savedir)
-        self.download_worker.signals.status_message.connect(self.update_message)
-        self.download_worker.signals.show_message.connect(self.show_message_text)
-        self.download_worker.signals.progress.connect(self.update_progress)
-        self.download_worker.signals.finished.connect(self.download_finished) 
-        self.download_worker.signals.error.connect(self.download_error) 
-        self.download_worker.signals.result.connect(self.download_success) 
+        signals = self.download_worker.signals
+        signals.finished.connect(self.download_finished) 
+        signals.result.connect(self.download_success) 
+        if not self.silent_upgrade:
+            signals.status_message.connect(self.update_message)
+            signals.show_message.connect(self.show_message_text)
+            signals.progress.connect(self.update_progress)
+            signals.error.connect(self.download_error) 
         self.threadpool.start(self.download_worker)
 
 
