@@ -1585,16 +1585,17 @@ class main_window(QMainWindow):                                    # main_window
         self.script_guide_act = create_action(self, text='GUI User Guide', icon='lifebuoy.png', shortcut='',
                                       tip='User guide for this application', func=self.show_script_guide)
         ### Check updates
+        self.download_act = create_action(self, text='Check for updates', icon='drive-download.png', shortcut='',
+                                      tip='Check if a new version is avaliable', func=self.check_version)
         has_updates = default_savedir.is_dir() and next(default_savedir.iterdir(), None) or None
-        text = has_updates and 'Restart to update' or 'Check for updates'
-        icon = has_updates and 'arrow-circle-225-left.png' or 'drive-download.png'
-        func = has_updates and self.upgrade or self.check_version
-        self.download_act = create_action(self, text=text, icon=icon, shortcut='',
-                                      tip='Check if a new version is avaliable', func=func)
+        has_updates and self.download_act_upgrade()
+        ### About
         self.about_act = create_action(self, text='About', icon='question.png', shortcut='',
                                       tip='Application details', func=self.about_app)
+        ### Quit
         self.exit_act = create_action(self, text='&Exit', icon='control-power.png', shortcut='Ctrl+Q',
                                       tip='Exit application', func=self.quit)
+        ### Add case
         self.add_case_act = create_action(self, text='Import case...', icon='document--plus.png',
                                           func=self.add_case_from_file)
         self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy.png',
@@ -1753,13 +1754,18 @@ class main_window(QMainWindow):                                    # main_window
         exctype, value, trace = values
         self.show_message_text(f'ERROR Download of version {self.new_version} failed!\n\n{value}')
 
+    #-----------------------------------------------------------------------
+    def download_act_upgrade(self):
+    #-----------------------------------------------------------------------
+        self.download_act.setText('Restart to upgrade')
+        self.download_act.triggered.connect(self.upgrade)
+        self.download_act.setIcon(QIcon('icons:arrow-circle-225-left.png'))
 
     #-----------------------------------------------------------------------
     def download_success(self):
     #-----------------------------------------------------------------------
         self.download_dest = self.download_worker.savename
-        self.download_act.setText('Restart to upgrade')
-        self.download_act.triggered.connect(self.upgrade)
+        self.download_act_upgrade()
         if not self.silent_upgrade:
             self.update_message('Download complete')
             button = ('Upgrade', self.upgrade)
