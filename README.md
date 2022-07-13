@@ -14,10 +14,9 @@ If python is properly installed in your path, IORSim_GUI.py can simply be invoke
 
 `./IORSim_GUI.py`
 
-### Running in a Conda environment
-To execute IORSim_GUI.py in a conda enviroment you need to specify the python interpreter
+In case this fails, you need to specify the python interpreter
 
-`python IORSim_GUI.py`
+`python IORSim_GUI.py` 
 
 
 
