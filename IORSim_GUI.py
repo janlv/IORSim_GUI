@@ -563,6 +563,7 @@ class download_worker(base_worker):
         #print('new_version:',new_version)
         folder = Path(folder)
         folder.mkdir(exist_ok=True)
+        [f.unlink() for f in folder.iterdir()]
         #files = sorted(folder.iterdir(), key=os.path.getmtime)
         self.url = github_url(new_version)
         ext = Path(urlparse(self.url).path).suffix
@@ -1587,8 +1588,8 @@ class main_window(QMainWindow):                                    # main_window
         ### Check updates
         self.download_act = create_action(self, text='Check for updates', icon='drive-download.png', shortcut='',
                                       tip='Check if a new version is avaliable', func=self.check_version)
-        has_updates = default_savedir.is_dir() and next(default_savedir.iterdir(), None) or None
-        has_updates and self.download_act_upgrade()
+        #has_updates = default_savedir.is_dir() and next(default_savedir.iterdir(), None) or None
+        #has_updates and self.download_act_upgrade()
         ### About
         self.about_act = create_action(self, text='About', icon='question.png', shortcut='',
                                       tip='Application details', func=self.about_app)
@@ -1684,8 +1685,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         if self.check_version_worker or self.download_worker:
             ### Version check already in progress...
-            self.show_message_text('INFO Download of new version in progress')
+            # self.show_message_text('INFO Download of new version in progress')
             return
+        self.download_act.setEnabled(False)
         self.silent_upgrade = silent
         self.check_version_worker = check_version_worker()
         signals = self.check_version_worker.signals
@@ -1699,6 +1701,7 @@ class main_window(QMainWindow):                                    # main_window
     def check_version_finished(self):
     #-----------------------------------------------------------------------
         self.check_version_worker = None
+        self.download_act.setEnabled(True)
 
     #-----------------------------------------------------------------------
     def check_version_error(self, values):
@@ -1727,7 +1730,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         #print('Download complete!')
         self.download_worker = None
-
+        self.download_act.setEnabled(True)
 
     #-----------------------------------------------------------------------
     def download_error(self, values):
@@ -1738,9 +1741,12 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def download_act_upgrade(self):
     #-----------------------------------------------------------------------
-        self.download_act.setText('Restart to upgrade')
-        self.download_act.triggered.connect(self.upgrade)
-        self.download_act.setIcon(QIcon('icons:arrow-circle-225-left.png'))
+        act = self.download_act
+        act.setText('Restart to upgrade')
+        act.triggered.disconnect()
+        act.triggered.connect(self.upgrade)
+        act.setIcon(QIcon('icons:arrow-circle-225-left.png'))
+        act.setEnabled(True)
 
     #-----------------------------------------------------------------------
     def download_success(self):
@@ -1788,6 +1794,7 @@ class main_window(QMainWindow):                                    # main_window
         if self.download_worker:
             ### Download already in progress...
             return
+        self.download_act.setEnabled(False)
         self.reset_progress_and_message()
         self.download_worker = download_worker(self.new_version, default_savedir)
         signals = self.download_worker.signals
