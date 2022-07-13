@@ -42,6 +42,7 @@ default_settings_file = Path.home()/'.iorsim_settings.dat'
 
 # Update files
 this_file = Path(sys.argv[0])
+check_version_at_start = False
 
 # Guide files
 iorsim_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_2021_User_Guide.pdf"
@@ -70,7 +71,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolb
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
 from numpy import genfromtxt, asarray
-from re import compile, sub
+from re import compile
 
 # Python libraries
 from traceback import format_exc, print_exc, format_exc
@@ -87,7 +88,7 @@ disable_warnings()
 
 # Local libraries
 from ior2ecl import IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, pad_zero, read_file, remove_comments, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
+from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
 from IORlib.ECL import Input_file as ECL_input, unfmt_file, keywords as ECL_keywords
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -106,8 +107,9 @@ def upgrade_file():
 def new_version(version_str):
 #-----------------------------------------------------------------------
     ### Check given version string against current version
-    new_version = sub(r'^[a-zA-Z-+.]*', '', version_str)  # Remove leading characters
-    ver = (new_version, __version__)
+    # new_version = sub(r'^[a-zA-Z-+.]*', '', version_str)  # Remove leading letters
+    version = remove_leading_nondigits(version_str)
+    ver = (version, __version__)
     num = pad_zero([v.split('.') for v in ver])
     diff = [int(a)-int(b) for a,b in zip(*num)]
     ### Given version is newer if the first value different from zero is positive
@@ -432,7 +434,7 @@ class HLine(QFrame):
 class worker_signals(QObject):                                              
 #===========================================================================
     finished = Signal()
-    result = Signal(int)
+    result = Signal(tuple)
     error = Signal(tuple)
     #progress = Signal(int)
     progress = Signal(tuple)
@@ -471,7 +473,7 @@ class base_worker(QRunnable):
             exctype, value = sys.exc_info()[:2]
             self.signals and self.signals.error.emit((exctype, value, format_exc()))
         else:
-            self.signals and self.signals.result.emit(result)
+            self.signals and self.signals.result.emit((result,))
         finally:
             self.signals and self.signals.finished.emit()
 
@@ -566,6 +568,7 @@ class download_worker(base_worker):
         ext = Path(urlparse(self.url).path).suffix
         self.savename = folder/f'{this_file.stem}_{new_version}{ext}'
 
+
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
@@ -608,7 +611,6 @@ class check_version_worker(base_worker):
         super().__init__(print_exception=False)
         self.timeout = timeout
 
-
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
@@ -621,14 +623,6 @@ class check_version_worker(base_worker):
             raise SystemError(f'ERROR No internet connection, unable to check for new versions!')
         version_str = response.url.split('/')[-1]
         return new_version(version_str)
-        # new_version = sub(r'^[a-zA-Z-+.]*', '', new_version_str)  # Remove leading characters
-        # ver = (new_version, __version__)
-        # num = pad_zero([v.split('.') for v in ver])
-        # diff = [int(a)-int(b) for a,b in zip(*num)]
-        # ### Update available if the first value different from zero is positive
-        # if next((d>0 for d in diff if d!=0), False):
-        #     return new_version_str
-        # return False
 
 
 #===========================================================================
@@ -1555,7 +1549,7 @@ class main_window(QMainWindow):                                    # main_window
             x, y = [-min(p,0) for p in pos]
             self.setGeometry(self.geometry().adjusted(x, y, x, y))            
         #print(self.screen().geometry())
-        self.check_version(silent=True)
+        check_version_at_start and self.check_version(silent=True)
                 
 
     #-----------------------------------------------------------------------
@@ -1593,8 +1587,9 @@ class main_window(QMainWindow):                                    # main_window
         ### Check updates
         has_updates = default_savedir.is_dir() and next(default_savedir.iterdir(), None) or None
         text = has_updates and 'Restart to update' or 'Check for updates'
+        icon = has_updates and 'arrow-circle-225-left.png' or 'drive-download.png'
         func = has_updates and self.upgrade or self.check_version
-        self.download_act = create_action(self, text=text, icon='drive-download.png', shortcut='',
+        self.download_act = create_action(self, text=text, icon=icon, shortcut='',
                                       tip='Check if a new version is avaliable', func=func)
         self.about_act = create_action(self, text='About', icon='question.png', shortcut='',
                                       tip='Application details', func=self.about_app)
@@ -1708,8 +1703,10 @@ class main_window(QMainWindow):                                    # main_window
 
     #@show_error
     #-----------------------------------------------------------------------
-    def check_version_success(self, new_version):
+    def check_version_success(self, result):
     #-----------------------------------------------------------------------
+        self.new_version = result[0]
+        #print('SUCCESS',new_version)
         # try:
         #     response = requests_get(latest_release, timeout=10)
         # except req_exceptions.SSLError as e:
@@ -1731,12 +1728,13 @@ class main_window(QMainWindow):                                    # main_window
         # diff = [int(a)-int(b) for a,b in zip(*num)]
         # ### Update available if the first value different from zero is positive
         # if next((d>0 for d in diff if d!=0), False):
-        if new_version:
+        if self.new_version:
             if self.silent_upgrade:
-                self.download(silent=True)
+                self.download()
             else:   
                 button = ('Download', self.download)
-                msg = f'INFO The latest version is {new_version}, you are running {__version__}. Download latest version?'
+                ver = remove_leading_nondigits(self.new_version)
+                msg = f'INFO The latest version is {ver}, you are running {__version__}. Download latest version?'
                 self.show_message_text(msg, button=button, ok_text='Not now', wait=True)
         else:
             not self.silent_upgrade and self.show_message_text(f'INFO No update available, {__version__} is the latest version')
@@ -1745,6 +1743,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def download_finished(self):
     #-----------------------------------------------------------------------
+        #print('Download complete!')
         self.download_worker = None
 
 
@@ -1759,14 +1758,11 @@ class main_window(QMainWindow):                                    # main_window
     def download_success(self):
     #-----------------------------------------------------------------------
         self.download_dest = self.download_worker.savename
-        if self.silent_upgrade:
-            self.download_act.setText('Restart to upgrade')
-            self.download_act.triggered.connect(self.upgrade)
-        else:
+        self.download_act.setText('Restart to upgrade')
+        self.download_act.triggered.connect(self.upgrade)
+        if not self.silent_upgrade:
             self.update_message('Download complete')
-            #button = ('Quit', self.close)
             button = ('Upgrade', self.upgrade)
-            #msg = f'INFO Download of version {self.new_version} completed, restart application to use it.'
             msg = f"INFO {self.download_dest.name} is now ready to be installed.\n\nClicking the 'Upgrade' button will install the new version in the current working directory and restart the application."
             self.show_message_text(msg, button=button, ok_text='Not now')
 
