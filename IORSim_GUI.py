@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 DEBUG = False
+CHECK_VERSION_AT_START = True
 
 import sys
 import os
@@ -42,7 +43,6 @@ default_settings_file = Path.home()/'.iorsim_settings.dat'
 
 # Update files
 this_file = Path(sys.argv[0])
-check_version_at_start = False
 
 # Guide files
 iorsim_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_2021_User_Guide.pdf"
@@ -1549,7 +1549,7 @@ class main_window(QMainWindow):                                    # main_window
             x, y = [-min(p,0) for p in pos]
             self.setGeometry(self.geometry().adjusted(x, y, x, y))            
         #print(self.screen().geometry())
-        check_version_at_start and self.check_version(silent=True)
+        CHECK_VERSION_AT_START and self.check_version(silent=True)
                 
 
     #-----------------------------------------------------------------------
