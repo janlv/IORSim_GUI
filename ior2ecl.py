@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '2.26.2'
+__version__ = '2.26.1'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -30,7 +30,7 @@ from traceback import print_exc as trace_print_exc, format_exc as trace_format_e
 from re import search, compile
 from os.path import relpath
 
-from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, matches, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
 from IORlib.ECL import Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, unfmt_file, fmt_file, Section
 
@@ -763,26 +763,25 @@ class Schedule:
     def update(self, tstep=None):                                          # Schedule
     #--------------------------------------------------------------------------------        
         action = new_tstep = None
-        # Update days from previous step
+        ### Update days from previous step
         self.days += self.tstep
-        # Append action if time is right
+        ### Append action if time is right
         if self.days >= self._schedule[0][0]:
             action = self._schedule.pop(0)[1]
-        # Get tstep for next step (given by IORSim in satnum.dat)
-        # with open(self.ifacefile.file) as f:
-        #     print('SATNUM.DAT', '\n'.join(f.readlines))
         if tstep is None:
+            ### Get tstep for next step from satnum.dat (written by IORSim)
             self.tstep = new_tstep = self.ifacefile.get('TSTEP')[0]
         else:
+            ### Write given tstep to empty satnum.dat (IORSim is not yet running) 
             self.ifacefile.file.write_text(f'TSTEP\n{tstep} /\n')
             self.tstep = new_tstep = tstep
-        #print(f'START: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
-        # Check arrival of next event and adjust tstep if neccessary
+        # print(f'START: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
+        ### Check arrival of next event and adjust tstep if neccessary
         if self._schedule and self.days + self.tstep + 1e-8 > self._schedule[0][0]:
             self.tstep = new_tstep = self._schedule[0][0] - self.days
         self.append(action=action, tstep=new_tstep)
         #self.check()
-        #print(f'END: tstep:{self.tstep}, days:{self.days}, action:{action}, schedule:{self._schedule[:2]}')
+        # print(f'END: tstep:{self.tstep}, days:{self.days}, action:{action}, schedule:{self._schedule[:2]}')
         return self.days
 
 
