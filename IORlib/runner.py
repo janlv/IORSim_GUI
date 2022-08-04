@@ -545,7 +545,7 @@ class Runner:                                                               # ru
     def time(self):                                                 # runner
     #--------------------------------------------------------------------------------
         t = 0
-        if self.log:
+        if self.log and Path(self.log.name).stat().st_size > 1:
             match = matches(file=self.log.name, pattern=self.time_regex)
             time = [m.group(1) for m in match]
             t = time and time[-1] or 0           
