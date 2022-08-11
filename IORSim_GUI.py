@@ -1701,7 +1701,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def check_version_finished(self):
     #-----------------------------------------------------------------------
-        print('check_version finished')
+        #print('check_version finished')
         self.check_version_worker = None
 
     #-----------------------------------------------------------------------
@@ -1713,7 +1713,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def check_version_success(self, result):
     #-----------------------------------------------------------------------
-        print('check_version success')
+        #print('check_version success')
         self.download_act.setEnabled(True)
         self.new_version = result[0]
         if self.new_version:
@@ -1731,7 +1731,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def download_finished(self):
     #-----------------------------------------------------------------------
-        print('Download finished')
+        #print('Download finished')
         self.download_worker = None
         self.download_act.setEnabled(True)
 
@@ -1764,7 +1764,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def download_success(self):
     #-----------------------------------------------------------------------
-        print('Download success')
+        # print('Download success')
         self.download_dest = self.download_worker.savename
         self.download_act_upgrade()
         if not self.silent_upgrade:
@@ -1781,7 +1781,7 @@ class main_window(QMainWindow):                                    # main_window
             self.download_act_check_version()
             self.show_message_text(msg)
         file = upgrade_file()
-        print('upgrade, file: ',file)
+        # print('upgrade, file: ',file)
         if not file:
             return error('WARNING Upgrade file is missing')
         version = file and file.stem.split('_')[-1] or None
@@ -1811,7 +1811,7 @@ class main_window(QMainWindow):                                    # main_window
             ### Download already in progress...
             return
         self.download_act.setEnabled(False)
-        print('enabled 1:',self.download_act.isEnabled())
+        # print('enabled 1:',self.download_act.isEnabled())
         self.reset_progress_and_message()
         self.download_worker = download_worker(self.new_version, default_savedir)
         signals = self.download_worker.signals
