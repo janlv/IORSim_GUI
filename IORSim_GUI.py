@@ -67,9 +67,11 @@ from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon,
 from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression, QRect, QPoint
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
+
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
+
 from numpy import genfromtxt, asarray
 from re import compile
 
@@ -637,7 +639,6 @@ class Mpl_canvas(FigureCanvasQTAgg):
         #self.axes = fig.add_subplot(subplot)
         super(Mpl_canvas, self).__init__(self.fig)
 
-
                 
 #===========================================================================
 class User_input(QDialog):                                              
@@ -687,6 +688,8 @@ class User_input(QDialog):
         if self.func:
             self.func()
         super().accept()
+
+
 #===========================================================================
 class Plot(QGroupBox):                                              
 #===========================================================================
@@ -1979,9 +1982,9 @@ class main_window(QMainWindow):                                    # main_window
         self.log_viewer = Editor(name='log_viewer', read_only=True)
         self.editors = (self.eclipse_editor, self.iorsim_editor, self.editor, self.chem_editor, self.log_viewer)
         ### Plot is the default view at startup
+        #self.scrollplot = make_scrollable(self.plot)
         self.layout.addWidget(self.plot, *self.position['plot'])
-        #self.scroll_plot = make_scrollable(self.plot)
-        #self.layout.addWidget(self.scroll_plot, *self.position['plot'])
+        #self.layout.addWidget(self.scrollplot, *self.position['plot'])
 
 
     #-----------------------------------------------------------------------
@@ -3042,7 +3045,7 @@ class main_window(QMainWindow):                                    # main_window
         #     self.current_view.setParent(None)
         self.current_viewer().setParent(None)
         self.layout.addWidget(self.plot, *self.position['plot'])
-        #self.layout.addWidget(self.scroll_plot, *self.position['plot'])
+        #self.layout.addWidget(self.scrollplot, *self.position['plot'])
         if not self.worker:# and self.case:
             self.read_ior_data()
             self.read_ecl_data()
@@ -3052,7 +3055,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_checked_list(self, box): 
     #-----------------------------------------------------------------------
-        #print('update_checked_list: '+self.sender().objectName())
+        # print('update_checked_list: '+self.sender().objectName())
         max_3 = self.max_3_checked
         if box.isChecked():
             max_3.append(box)
@@ -3209,7 +3212,7 @@ class main_window(QMainWindow):                                    # main_window
             #if file.stat().st_size > 100:
             try:
                 data = genfromtxt(str(file))
-            except PermissionError:
+            except (PermissionError, FileNotFoundError):
                 continue
             try:
                 #data = genfromtxt(str(file))
