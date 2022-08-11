@@ -1187,8 +1187,7 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def cancel(self):                                                    # Simulation
     #--------------------------------------------------------------------------------
-        for run in self.runs:
-            run.canceled = True
+        [run.cancel() for run in self.runs if isinstance(run, Runner)]
 
 
 
