@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 
 DEBUG = False
+
+# Options
 CHECK_VERSION_AT_START = True
 
 import sys
@@ -89,7 +91,7 @@ from urllib3 import disable_warnings
 disable_warnings()
 
 # Local libraries
-from ior2ecl import IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
+from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
 from IORlib.ECL import Input_file as ECL_input, unfmt_file, keywords as ECL_keywords
 
@@ -1190,7 +1192,7 @@ class Settings(QDialog):
                      'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT), f'Set this limit lower than 100 seconds to avoid unexpected Eclipse termination (Expert mode)', False),
                      'ior_keep_alive' : variable(f'IORSim process not paused when idle', False, f'Never pause IORSim during idle time between steps (Expert mode)', False),
                      'log_level'      : variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL), 'A higher value gives a more detailed application log', False),
-                     'merge_empty'    : variable('Merge schedule entries having void actions', False, 'Merge sucsessive DATES/TSTEP entries in the schedule-file that have no actions', False)}
+                     'skip_empty'     : variable('Skip empty DATES/TSTEP entries in the schedule-file', SCHEDULE_SKIP_EMPTY, 'Skip DATES/TSTEP entries in the schedule-file with missing statements', False)}
         #'savedir'        : variable('Download directory', None, 'Download location for updates', False),
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
@@ -1273,7 +1275,7 @@ class Settings(QDialog):
         self.add_items([cb[0], le])
         self.add_items([cb[1]])
         ### Merge empty actions in the schedule?
-        me = self.new_checkbox('merge_empty')
+        me = self.new_checkbox('skip_empty')
         self.expert.append(me)
         self.add_items([me])
 
@@ -3629,7 +3631,7 @@ class main_window(QMainWindow):                                    # main_window
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get('iorsim'), eclexe=s.get('eclrun'), 
                                  ecl_keep_alive=s.get('ecl_keep_alive') and float(s.get('ecl_alive_limit')), 
                                  ior_keep_alive=s.get('ior_keep_alive') and IOR_ALIVE_LIMIT, 
-                                 days_box=self.days_box, verbose=int(s.get('log_level')), merge_empty=s.get('merge_empty'),
+                                 days_box=self.days_box, verbose=int(s.get('log_level')), skip_empty=s.get('skip_empty'),
                                  **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)

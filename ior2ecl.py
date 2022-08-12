@@ -6,14 +6,20 @@ __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
 
+# Options
+COPY_CHEMFILE = True
+SCHEDULE_SKIP_EMPTY = True
+
 # Constants
-ECL_ALIVE_LIMIT = 90   # Seconds to wait before Eclipse is suspended (if option is on)
-IOR_ALIVE_LIMIT = -1   # Negative value = never suspended
-LOG_LEVEL_MAX = 4
-LOG_LEVEL_MIN = 1
+IOR_SATNUM_FILE   = 'satnum.dat'       # Interface-file from IORSim with statements for next Eclipse run
+IOR_SATNUM_ENDTAG = '-- IORSimX done.' # Signature from IORSim at end of interface-file
+ECL_ALIVE_LIMIT   = 90   # Seconds to wait before Eclipse is suspended (if option is on)
+IOR_ALIVE_LIMIT   = -1   # Negative value = never suspended
+LOG_LEVEL_MAX     = 4
+LOG_LEVEL_MIN     = 1
 DEFAULT_LOG_LEVEL = 3      
-CHECK_PAUSE = 0.01     # Default sleep-time during wait-loops
-RFT_CHECK_ITER = 100   # Number of iterations before reducing number of expected RFT blocks
+CHECK_PAUSE       = 0.01  # Default sleep-time during wait-loops
+RFT_CHECK_ITER    = 100   # Number of iterations before reducing number of expected RFT blocks
 
 
 from collections import Counter, namedtuple
@@ -411,10 +417,10 @@ class Iorsim(Runner):                                                        # i
 
 
     #--------------------------------------------------------------------------------
-    def start(self, copy_chem=True):                                         # iorsim
+    def start(self):                                         # iorsim
     #--------------------------------------------------------------------------------
         ### Copy chem-files to working dir 
-        if copy_chem:
+        if COPY_CHEMFILE:
             for file in self.inputfile.include_files():
                 dest = Path.cwd()/file.name
                 if not dest.exists(): # and not dest.samefile(file):
@@ -464,8 +470,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.tsteps = kwargs.get('tsteps') or ECL_input(self.case).tsteps()
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
-        self.satnum = Path('satnum.dat')   # Output-file from IORSim, read by Eclipse as an interface-file
-        self.endtag = '-- IORSimX done.'
+        self.satnum = Path(IOR_SATNUM_FILE)   # Output-file from IORSim, read by Eclipse as an interface-file
+        self.endtag = IOR_SATNUM_ENDTAG
         self.schedule = schedule
 
 
@@ -573,7 +579,7 @@ class Schedule:
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, case, T=0, init_days=0, start=None, ext='.SCH', comment='--', 
-                 interface_file=None, file=None, merge_empty=False): #, end='/', tag='TSTEP'):
+                 interface_file=None, file=None, skip_empty=False): #, end='/', tag='TSTEP'):
     #--------------------------------------------------------------------------------
         '''
         Create schedule from a .SCH-file if it exists. 
@@ -596,7 +602,7 @@ class Schedule:
         # Ignore case in file extension
         self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
         if self.file:
-            self._schedule = self.days_and_actions(merge_empty=merge_empty)
+            self._schedule = self.days_and_actions(skip_empty=skip_empty)
         # Add end time 
         self.insert(days=T, remove=True)
         DEBUG and print(f'Creating {self}')
@@ -669,7 +675,7 @@ class Schedule:
 
 
     #--------------------------------------------------------------------------------
-    def days_and_actions(self, remove_end=True, merge_empty=False):               # Schedule
+    def days_and_actions(self, remove_end=True, skip_empty=False):               # Schedule
     #--------------------------------------------------------------------------------
         '''
         Use regexp to extract DATES or TSTEP values from the .SCH-file together
@@ -714,7 +720,7 @@ class Schedule:
             # Process x*y statements
             prod = lambda x, y : int(x)*float(y) 
             days = list(accumulate([sum([prod(*i.split('*')) if '*' in i else float(i) for i in d.split()]) for d,s in date_span]))
-        if merge_empty:
+        if skip_empty:
             ### Return only non-empty [day, action] pairs        
             return [[float(d), a+'\n'] for (d,a) in zip(days, actions) if a]
         else:
@@ -926,7 +932,7 @@ class Simulation:                                                        # Simul
         start = self.restart_file and self.restart_file.date(N=1) or self.ECL_inp.get('START')[0]
         # Set up schedule of commands to pass to satnum-file
         self.schedule = Schedule(self.root, T=self.T, start=start, init_days=time_ecl, interface_file=self.ior.satnum, 
-                                 merge_empty=self.kwargs.get('merge_empty', False))
+                                 skip_empty=self.kwargs.get('skip_empty', False))
         self.ecl.schedule = self.ior.schedule = self.schedule
         return [self.ecl, self.ior]
 
@@ -1223,7 +1229,10 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-iorsim',         help="Run only IORSim", action='store_true')
     parser.add_argument('-eclipse',        help="Run only Eclipse", action='store_true')
     parser.add_argument('-v',              default=DEFAULT_LOG_LEVEL, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
-    parser.add_argument('-merge_empty',    help='Merge empty schedule entries', action='store_true')
+    if SCHEDULE_SKIP_EMPTY:
+        parser.add_argument('-not_skip_empty', help='Do not skip empty schedule-file entries', action='store_true')
+    else:
+        parser.add_argument('-skip_empty', help='Skip schedule-file entries with no statements', action='store_true')
     parser.add_argument('-keep_files',     help='Interface-files are not deleted after completion', action='store_true')
     parser.add_argument('-to_screen',      help='Print program log to screen', action='store_true')
     parser.add_argument('-only_convert',   help='Only convert+merge and exit', action='store_true')
@@ -1234,6 +1243,8 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-check_input',    help='Check IORSim input file keywords', action='store_true', dest='check_input_kw')
     parser.add_argument('-lognr',          help='Add this number to the log-files', type=int)
     args = vars(parser.parse_args())
+    # Define 'skip_empty' 
+    args['skip_empty'] = args.get('skip_empty') or not args.get('not_skip_empty')
     # Look for case in case_dir if root is not a file
     if case_dir and not Path(args['root']).is_file():
         args['root'] = case_from_casedir(case_dir, args['root'])
@@ -1256,7 +1267,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
            ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, check_input=False, 
-           verbose=DEFAULT_LOG_LEVEL, lognr=None, merge_empty=False):
+           verbose=DEFAULT_LOG_LEVEL, lognr=None, skip_empty=SCHEDULE_SKIP_EMPTY):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1299,7 +1310,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
                      progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert, merge=merge, delete=delete, ecl_keep_alive=ecl_alive,
                      ior_keep_alive=ior_alive, runs=runs, mode=mode, check_input_kw=check_input, verbose=verbose,
-                     lognr=lognr, merge_empty=merge_empty)
+                     lognr=lognr, skip_empty=skip_empty)
 
     if not sim.ready():
         return 
@@ -1324,7 +1335,7 @@ def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
            ecl_alive=args['ecl_alive'] and ECL_ALIVE_LIMIT, ior_alive=args['ior_alive'] and IOR_ALIVE_LIMIT, only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
-           check_input=args['check_input_kw'], verbose=args['v'], lognr=args['lognr'], merge_empty=args['merge_empty'])
+           check_input=args['check_input_kw'], verbose=args['v'], lognr=args['lognr'], skip_empty=args['skip_empty'])
     os_exit(0)
 
 
