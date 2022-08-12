@@ -3202,7 +3202,10 @@ class main_window(QMainWindow):                                    # main_window
             ior[w]['prod'] = {}
         numbers = compile(r'[0-9]+')
         for file in files:
-            if not file.exists() or numbers.search(remove_comments(file=file, comment='#', raise_error=False) or '') is None:
+            try:
+                if not file.exists() or numbers.search(remove_comments(file=file, comment='#', raise_error=False) or '') is None:
+                    continue
+            except PermissionError:
                 continue
             # read data
             #print('Reading',file.name)
@@ -3379,8 +3382,7 @@ class main_window(QMainWindow):                                    # main_window
                                 continue
                         except KeyError as e:
                             continue                        
-                        ref_line, = ax[ind].plot(refdata['days'], refdata[well][yaxis][var],
-                                                 color=self.plot_prop['color'][var],
+                        ref_line, = ax[ind].plot(xdata, ydata, color=self.plot_prop['color'][var],
                                                  linestyle=self.plot_prop['line'][var], alpha=0.4,
                                                  lw=2, label=well+' '+yaxis+' '+var+' '+data)
                 if ref_line:

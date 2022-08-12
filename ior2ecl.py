@@ -8,7 +8,7 @@ DEBUG = False
 
 # Options
 COPY_CHEMFILE = True
-SCHEDULE_SKIP_EMPTY = True
+SCHEDULE_SKIP_EMPTY = False
 
 # Constants
 IOR_SATNUM_FILE   = 'satnum.dat'       # Interface-file from IORSim with statements for next Eclipse run
@@ -579,7 +579,7 @@ class Schedule:
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, case, T=0, init_days=0, start=None, ext='.SCH', comment='--', 
-                 interface_file=None, file=None, skip_empty=False): #, end='/', tag='TSTEP'):
+                 interface_file=None, skip_empty=False): #, end='/', tag='TSTEP'):
     #--------------------------------------------------------------------------------
         '''
         Create schedule from a .SCH-file if it exists. 
@@ -592,18 +592,20 @@ class Schedule:
         The schedule is a list of lists: [[start-time, ''],[days, 'KEYWORD'],[end-time, '']]
         '''
         self.case = Path(case)
+        self.skip_empty = skip_empty
         self.comment = comment
         self.ifacefile = ECL_input(interface_file, reread=True)
         self.days = init_days 
         self.start = start
         self.tstep = 0
         self._schedule = []
-        self.file = file
-        # Ignore case in file extension
+        self.end = 0
+        ### Ignore case in file extension
         self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
         if self.file:
-            self._schedule = self.days_and_actions(skip_empty=skip_empty)
-        # Add end time 
+            self._schedule = self.days_and_actions()
+            self.end = (len(self._schedule) > 0) and self._schedule[-1][0] or 0
+        # Add simulation end time 
         self.insert(days=T, remove=True)
         DEBUG and print(f'Creating {self}')
 
@@ -611,7 +613,7 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def __str__(self):                                                     # Schedule
     #--------------------------------------------------------------------------------
-        return f'<Schedule(file={self.file}, start={self.start}, days={self.days}, length={len(self._schedule)})>'
+        return f'<Schedule(file={self.file}, start={self.start}, end={self.end}, init_days={self.days}, length={len(self._schedule)})>'
 
 
     #--------------------------------------------------------------------------------
@@ -675,7 +677,7 @@ class Schedule:
 
 
     #--------------------------------------------------------------------------------
-    def days_and_actions(self, remove_end=True, skip_empty=False):               # Schedule
+    def days_and_actions(self, remove_end=True):               # Schedule
     #--------------------------------------------------------------------------------
         '''
         Use regexp to extract DATES or TSTEP values from the .SCH-file together
@@ -720,9 +722,13 @@ class Schedule:
             # Process x*y statements
             prod = lambda x, y : int(x)*float(y) 
             days = list(accumulate([sum([prod(*i.split('*')) if '*' in i else float(i) for i in d.split()]) for d,s in date_span]))
-        if skip_empty:
+        if self.skip_empty:
             ### Return only non-empty [day, action] pairs        
-            return [[float(d), a+'\n'] for (d,a) in zip(days, actions) if a]
+            day_act = [[float(d), a+'\n'] for (d,a) in zip(days, actions) if a]
+            ### Include last entry also if it is empty
+            if day_act[-1][0] < days[-1]:
+                day_act.append([float(days[-1]), '\n'])
+            return day_act
         else:
             ### Keep all DATES/TSTEP entries
             return [[float(d), a+'\n'] for (d,a) in zip(days, actions)]
@@ -1149,6 +1155,7 @@ class Simulation:                                                        # Simul
         s  = '\n'
         s += f'    {"Case":10s}: {case}\n'
         s += f'    {"Mode":10s}: {self.mode.capitalize()}\n'
+        s += self.schedule and f'    {"Schedule":10s}: start={self.schedule.start}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         s += f'    {"Days":10s}: {self.T}' 
         if self.mode=='forward':
             s += f' (edit TSTEP in {case}.DATA to change number of days)'
@@ -1243,8 +1250,8 @@ def parse_input(case_dir=None, settings_file=None):
     parser.add_argument('-check_input',    help='Check IORSim input file keywords', action='store_true', dest='check_input_kw')
     parser.add_argument('-lognr',          help='Add this number to the log-files', type=int)
     args = vars(parser.parse_args())
-    # Define 'skip_empty' 
-    args['skip_empty'] = args.get('skip_empty') or not args.get('not_skip_empty')
+    if SCHEDULE_SKIP_EMPTY: 
+        args['skip_empty'] = not args['not_skip_empty']
     # Look for case in case_dir if root is not a file
     if case_dir and not Path(args['root']).is_file():
         args['root'] = case_from_casedir(case_dir, args['root'])
