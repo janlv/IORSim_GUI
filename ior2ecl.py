@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '2.26.3'
+__version__ = '2.26.4'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -1155,7 +1155,7 @@ class Simulation:                                                        # Simul
         s  = '\n'
         s += f'    {"Case":10s}: {case}\n'
         s += f'    {"Mode":10s}: {self.mode.capitalize()}\n'
-        s += self.schedule and f'    {"Schedule":10s}: start={self.schedule.start}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
+        s += self.schedule.file and f'    {"Schedule":10s}: start={self.schedule.start}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         s += f'    {"Days":10s}: {self.T}' 
         if self.mode=='forward':
             s += f' (edit TSTEP in {case}.DATA to change number of days)'
