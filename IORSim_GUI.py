@@ -1262,7 +1262,10 @@ class Settings(QDialog):
 
         ### Backward options
         self.add_heading()
-        self.add_heading('Backward options')
+        self.add_heading("Backward options")
+        lbl = QLabel("  (press 'e' for expert options)")
+        #lbl.setAlignment(Qt.AlignRight)
+        self.grid.addWidget(lbl, self.line, 1)
         # UNRST and RFT checks
         self.add_items([self.new_checkbox(var) for var in ('unrst', 'rft')], nrow=2)
         # Keep processes alive between steps? 
