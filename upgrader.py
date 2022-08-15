@@ -12,7 +12,7 @@ from subprocess import Popen
 DEBUG = False
 
 #--------------------------------------------------------------------------------
-def backup_dir(path: Path):
+def make_backup_dir(path: Path):
 #--------------------------------------------------------------------------------
     p = path/f'upgrade_backup'
     p.mkdir(exist_ok=True)
@@ -48,7 +48,7 @@ def unzip_and_copy(file, target):
         with ZipFile(file, 'r') as zip:
             zip.extractall(tmpdir)
         dir = next(Path(tmpdir).iterdir())  # Extracted dir
-        backup = backup_dir(target)
+        backup = make_backup_dir(target)
         ### Loop over files in extracted dir
         for item in dir.iterdir():
             dest = target/item.name
@@ -61,7 +61,7 @@ def copy_bundle(file, target, cmd, limit=100, pause=0.05):
     dest = target/Path(cmd[0]).name
     if dest.exists():
         ### Keep trying to overwrite if PermissionError
-        try_except_loop(file, dest, backup=backup_dir(target), func=copy, limit=limit, pause=pause, error=PermissionError)
+        try_except_loop(file, dest, backup=make_backup_dir(target), func=copy, limit=limit, pause=pause, error=PermissionError)
 
 
 #--------------------------------------------------------------------------------

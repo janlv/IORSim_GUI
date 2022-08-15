@@ -1188,9 +1188,9 @@ class Settings(QDialog):
                      'del_merge'      : variable('Delete originals after merge', True, 'Delete the original UNRST-files from Elipse and IORSim if successfully merged', False),
                      'unrst'          : variable('Confirm flushed UNRST-file during Eclipse step', True, 'Check that the UNRST-file is properly flushed before suspending Eclipse', False), 
                      'rft'            : variable('Confirm flushed RFT-file during Eclipse step', True, 'Check that the RFT-file is properly flushed before suspending Eclipse', False),
-                     'ecl_keep_alive' : variable(f'Eclipse process not paused if idle time is less than', False, f'Delay pausing the Eclipse process during idle time between steps (Expert mode)', False),
-                     'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT), f'Set this limit lower than 100 seconds to avoid unexpected Eclipse termination (Expert mode)', False),
-                     'ior_keep_alive' : variable(f'IORSim process not paused when idle', False, f'Never pause IORSim during idle time between steps (Expert mode)', False),
+                     'ecl_keep_alive' : variable(f'Eclipse process not paused if idle for less than', False, "Eclipse process is running also when idle ('e' to edit)", False),
+                     'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT), "If on, set this limit lower than 100 seconds to avoid unexpected Eclipse termination ('e' to edit)", False),
+                     'ior_keep_alive' : variable(f'IORSim process not paused when idle', False, "IORSim process is running when idle. WARNING! Consumes more CPU ('e' to edit)", False),
                      'log_level'      : variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL), 'A higher value gives a more detailed application log', False),
                      'skip_empty'     : variable('Skip empty DATES/TSTEP entries in the schedule-file', SCHEDULE_SKIP_EMPTY, 'Skip DATES/TSTEP entries in the schedule-file with missing statements', False)}
         #'savedir'        : variable('Download directory', None, 'Download location for updates', False),
@@ -1263,13 +1263,16 @@ class Settings(QDialog):
         ### Backward options
         self.add_heading()
         self.add_heading("Backward options")
-        lbl = QLabel("  (press 'e' for expert options)")
-        #lbl.setAlignment(Qt.AlignRight)
-        self.grid.addWidget(lbl, self.line, 1)
-        # UNRST and RFT checks
+        # lbl = QLabel("  (press 'e' for expert options)")
+        # self.grid.addWidget(lbl, self.line, 1)
+        ### UNRST and RFT checks
         self.add_items([self.new_checkbox(var) for var in ('unrst', 'rft')], nrow=2)
-        # Keep processes alive between steps? 
-        # Expert mode: Type 'e' to edit  
+        ### Merge empty actions in the schedule?
+        me = self.new_checkbox('skip_empty')
+        #self.expert.append(me)
+        self.add_items([me])
+        ### Keep processes alive between steps? 
+        ### Expert mode: Type 'e' to edit  
         cb = [self.new_checkbox(var) for var in ('ecl_keep_alive', 'ior_keep_alive')]
         le = self.new_lineedit('ecl_alive_limit', width=30)
         # Add widget in layout to expert mode
@@ -1277,10 +1280,6 @@ class Settings(QDialog):
         self.expert.extend(cb)
         self.add_items([cb[0], le])
         self.add_items([cb[1]])
-        ### Merge empty actions in the schedule?
-        me = self.new_checkbox('skip_empty')
-        self.expert.append(me)
-        self.add_items([me])
 
         ### Log options
         self.add_heading()
@@ -1725,6 +1724,9 @@ class main_window(QMainWindow):                                    # main_window
         self.download_act.setEnabled(True)
         self.new_version = result[0]
         if self.new_version:
+            if this_file.with_name('.git').is_dir():
+                self.show_message_text("INFO Script running in a folder with Git version control. Execute 'git pull' from the command line to upgrade.")
+                return
             if self.silent_upgrade:
                 self.download()
             else:   
