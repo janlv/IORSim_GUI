@@ -1,7 +1,7 @@
 name: Build Workflow
 
 on:
-  workflow_dispatch:
+  #workflow_dispatch:
   release:
     types: [ published ]
 
@@ -19,15 +19,15 @@ jobs:
         python -m pip install -r requirements.txt
         python -m pip install pyinstaller
     - name: Download UPX
-      run: curl.exe -LJO https://github.com/upx/upx/releases/download/v3.96/upx-3.96-win64.zip
+      run: curl -LJO https://github.com/upx/upx/releases/download/v3.96/upx-3.96-win64.zip
     - name: Unzip UPX
       run: 7z x upx-3.96-win64.zip
     - name: Compile
       run: .\compile_iorsim.bat
-    - name: Dir
-      run: dir 
-    # - name: Upload Asset
-    #   run: |
-    #     curl -X POST -H "Accept: application/vnd.github+json" \
-    #       -H "Authorization: token <TOKEN>" \
-    #       https://uploads.github.com/repos/OWNER/REPO/releases/${{ github.event.release.tag_name }}/assets
+    # - name: Dir
+    #   run: dir 
+    - name: Upload Asset
+      run: |
+        curl -X POST -H "Accept: application/vnd.github+json" \
+          -H "Authorization: token <TOKEN>" \
+          https://uploads.github.com/repos/janlv/IORSim_GUI/releases/${{ github.event.release.tag_name }}/assets
