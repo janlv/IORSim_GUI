@@ -1725,7 +1725,7 @@ class main_window(QMainWindow):                                    # main_window
         self.new_version = result[0]
         if self.new_version:
             if this_file.with_name('.git').is_dir():
-                self.show_message_text("INFO Script running in a folder with Git version control. Execute 'git pull' from the command line to upgrade.")
+                not self.silent_upgrade and self.show_message_text(f"INFO Version {self.new_version} is available, but this script is running in a folder under Git version control.\n\nExecute 'git pull' from the command line to upgrade.")
                 return
             if self.silent_upgrade:
                 self.download()
