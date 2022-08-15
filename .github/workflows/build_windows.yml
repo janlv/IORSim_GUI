@@ -16,7 +16,7 @@ jobs:
     - name: Download UPX
       run: curl.exe -LJO https://github.com/upx/upx/releases/download/v3.96/upx-3.96-win64.zip
     - name: Unzip
-      run: 7z e upx-3.96-win64.zip
+      run: 7z x upx-3.96-win64.zip
     - name: Dir
       run: dir 
     # - uses: actions/checkout@v3
