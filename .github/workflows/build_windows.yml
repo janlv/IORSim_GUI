@@ -13,6 +13,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
+    - name: Download UPX
+      run: curl.exe -LJO https://github.com/upx/upx/releases/download/v3.96/upx-3.96-win64.zip
+    - name: Unzip
+      run: 7z e upx-3.96-win64.zip
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v4
       with:
@@ -22,10 +26,6 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip install -r requirements.txt
         python -m pip install pyinstaller
-    - name: Download UPX
-      run: curl.exe -ko ./upx-3.96-win64.zip "https://github.com/upx/upx/releases/download/v3.96"
-    - name: Unzip
-      run: 7z e upx-3.96-win64.zip
     - name: Compile
       run: .\compile_iorsim.bat
     - uses: actions/upload-artifact@v3
