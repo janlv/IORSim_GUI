@@ -17,14 +17,18 @@ jobs:
     - uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-    - run: |
+    - name: Prepare Python
+      run: |
         python -m pip install --upgrade pip
         python -m pip install -r requirements.txt
         python -m pip install pyinstaller
-        curl.exe -o upx-3.96-win64.zip https://github.com/upx/upx/releases/download/v3.96
-        7z e upx-3.96-win64.zip
-        .\compile_iorsim.bat
+    - name: Download UPX
+      run: curl.exe -ko ./upx-3.96-win64.zip "https://github.com/upx/upx/releases/download/v3.96"
+    - name: Unzip
+      run: 7z e upx-3.96-win64.zip
+    - name: Compile
+      run: .\compile_iorsim.bat
     - uses: actions/upload-artifact@v3
       with:
-        name: IORSim_GUI.exe
-        path: .
+        name: IORSim_GUI
+        path: dist/IORSim_GUI.exe
