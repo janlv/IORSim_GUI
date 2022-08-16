@@ -27,12 +27,12 @@ jobs:
         python -m pip install pyinstaller
     - name: Download UPX and unzip
       run: |
-        if [ "$RUNNER_OS" == "Windows"]; then
+        if [ "$RUNNER_OS" == "Windows" ]; then
           echo "ASSET=IORSim_GUI.exe#'Windows executable'" >> $GITHUB_ENV
           FILE=upx-3.96-win64.zip
           curl -LJO ${{env.UPX_URL}}/$FILE
           7z x $FILE
-        elif [ "$RUNNER_OS" == "Linux"]; then
+        elif [ "$RUNNER_OS" == "Linux" ]; then
           echo "ASSET=IORSim_GUI#'Linux executable'" >> $GITHUB_ENV
           FILE=upx-3.96-amd64_linux.tar.xz
           wget ${{env.UPX_URL}}/$FILE
