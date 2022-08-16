@@ -6,9 +6,9 @@ on:
     types: [ published ]
 
 env:
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  UPX_URL: https://github.com/upx/upx/releases/download/v3.96
   APP_NAME: IORSim_GUI
+  UPX_VER: '3.96'
+  GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
 defaults:
   run:
@@ -32,18 +32,19 @@ jobs:
         python -m pip install pyinstaller
     - name: Build bundle (download UPX, unzip, build)
       run: |
+        UPX_URL=https://github.com/upx/upx/releases/download/v$UPX_VER
         if [ "$RUNNER_OS" == "Windows" ]; then
           EXE=.exe
-          FILE=upx-3.96-win64
+          FILE=upx-$UPX_VER-win64
           EXT=zip
           SEP=";"
-          curl -LJO ${{env.UPX_URL}}/$FILE.$EXT
+          curl -LJO $UPX_URL/$FILE.$EXT
           7z x $FILE.$EXT
         elif [ "$RUNNER_OS" == "Linux" ]; then
-          FILE=upx-3.96-amd64_linux
+          FILE=upx-$UPX_VER-amd64_linux
           EXT=tar.xz
           SEP=":"
-          wget ${{env.UPX_URL}}/$FILE.$EXT
+          wget $UPX_URL/$FILE.$EXT
           tar -xvf $FILE.$EXT
         else 
           echo "$RUNNER_OS not supported"
@@ -51,8 +52,8 @@ jobs:
         fi
         pyinstaller$EXE --onefile --add-data "guides${SEP}guides" --add-data "icons${SEP}icons" --upx-dir "$FILE" IORSim_GUI.py
         if [ "$RUNNER_OS" == "Linux" ]; then
-          chmod u+x $APP_NAME
+          chmod u+x dist/$APP_NAME
         fi
-        echo "ASSET=$APP_NAME$EXE#'$RUNNER_OS executable'" >> $GITHUB_ENV
+        echo "ASSET=dist/$APP_NAME$EXE#'$RUNNER_OS executable'" >> $GITHUB_ENV
     - name: Upload Asset
-      run: gh release upload ${{ github.event.release.tag_name }} dist/${{env.ASSET}}
+      run: gh release upload ${{ github.event.release.tag_name }} ${{env.ASSET}}
