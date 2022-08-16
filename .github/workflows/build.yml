@@ -1,7 +1,6 @@
 name: Build Workflow
 
 on:
-  #workflow_dispatch:
   release:
     types: [ published ]
 
@@ -53,6 +52,7 @@ jobs:
         pyinstaller$EXE --onefile --add-data "guides${SEP}guides" --add-data "icons${SEP}icons" --upx-dir "$FILE" IORSim_GUI.py
         if [ "$RUNNER_OS" == "Linux" ]; then
           chmod u+x dist/$APP_NAME
+          ls -l dist
         fi
         echo "ASSET=dist/$APP_NAME$EXE#'$RUNNER_OS executable'" >> $GITHUB_ENV
     - name: Upload Asset
