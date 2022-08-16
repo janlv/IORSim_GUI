@@ -30,7 +30,7 @@ jobs:
       run: |
         python -m pip install -r requirements.txt
         python -m pip install pyinstaller
-    - name: Download UPX, unzip and build bundle
+    - name: Build bundle (download UPX, unzip, build)
       run: |
         if [ "$RUNNER_OS" == "Windows" ]; then
           EXE=.exe
@@ -51,9 +51,5 @@ jobs:
         fi
         pyinstaller$EXE --onefile --add-data "guides${SEP}guides" --add-data "icons${SEP}icons" --upx-dir "$FILE" IORSim_GUI.py
         echo "ASSET=$APP_NAME$EXE#'$RUNNER_OS executable'" >> $GITHUB_ENV
-
-    # - name: Compile
-    #   run: |
-    #     pyinstaller.exe --onefile --add-data "guides;guides" --add-data "icons;icons" --upx-dir "upx" .\IORSim_GUI.py
     - name: Upload Asset
       run: gh release upload ${{ github.event.release.tag_name }} dist/${{env.ASSET}}
