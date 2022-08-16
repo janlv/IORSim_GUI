@@ -44,7 +44,7 @@ jobs:
           exit 1
         fi
         wget ${{env.UPX_URL}}/$FILE.$EXT
-        tar -xfv $FILE.$EXT
+        tar -xvf $FILE.$EXT
         mv -v $FILE upx
       shell: bash
     - name: Compile
