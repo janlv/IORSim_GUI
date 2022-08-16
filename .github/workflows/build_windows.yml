@@ -29,26 +29,26 @@ jobs:
       run: |
         if [ "$RUNNER_OS" == "Windows" ]; then
           echo "ASSET=IORSim_GUI.exe#'Windows executable'" >> $GITHUB_ENV
-          FILE=upx-3.96-win64.zip
-          curl -LJO ${{env.UPX_URL}}/$FILE
-          7z x $FILE
+          FILE=upx-3.96-win64
+          EXT=zip
+          #curl -LJO ${{env.UPX_URL}}/$FILE.$EXT
+          #7z x $FILE.$EXT
         elif [ "$RUNNER_OS" == "Linux" ]; then
           echo "ASSET=IORSim_GUI#'Linux executable'" >> $GITHUB_ENV
-          FILE=upx-3.96-amd64_linux.tar.xz
-          wget ${{env.UPX_URL}}/$FILE
-          tar -xf $FILE
+          FILE=upx-3.96-amd64_linux
+          EXT=tar.xz
+          #wget ${{env.UPX_URL}}/$FILE.$EXT
+          #tar -xfv $FILE.$EXT
         else 
           echo "$RUNNER_OS not supported"
           exit 1
         fi
+        wget ${{env.UPX_URL}}/$FILE.$EXT
+        tar -xfv $FILE.$EXT
+        mv -v $FILE upx
       shell: bash
     - name: Compile
       run: |
-        mv upx-* upx
-        pyinstaller.exe --onefile    \
-          --add-data "guides;guides" \
-          --add-data "icons;icons"   \
-          --upx-dir "upx" \
-          .\IORSim_GUI.py
+        pyinstaller.exe --onefile --add-data "guides;guides" --add-data "icons;icons" --upx-dir "upx" .\IORSim_GUI.py
     - name: Upload Asset
       run: gh release upload ${{ github.event.release.tag_name }} dist/${{env.ASSET}}
