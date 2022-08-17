@@ -475,11 +475,11 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.schedule = schedule
 
 
-    #--------------------------------------------------------------------------------
-    def delete_output_files(self):                                     # ior_backward
-    #--------------------------------------------------------------------------------
-        super().delete_output_files()
-        silentdelete(self.satnum)
+    # #--------------------------------------------------------------------------------
+    # def delete_output_files(self):                                     # ior_backward
+    # #--------------------------------------------------------------------------------
+    #     super().delete_output_files()
+    #     silentdelete(self.satnum)
 
 
     #--------------------------------------------------------------------------------
@@ -547,6 +547,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
             self.n += 1
             self.interface_file(self.n).create_empty()
             self.OK_file().create_empty()
+            silentdelete(self.satnum)
             if n == 0:
                 if start:
                     self.update and self.update.status(value=f'Starting {self.name}...')
@@ -782,7 +783,7 @@ class Schedule:
             action = self._schedule.pop(0)[1]
         if tstep is None:
             ### Get tstep for next step from satnum.dat (written by IORSim)
-            self.tstep = new_tstep = self.ifacefile.get('TSTEP')[0]
+            self.tstep = new_tstep = self.ifacefile.get('TSTEP', raise_error=True)[0]
         else:
             ### Write given tstep to empty satnum.dat (IORSim is not yet running) 
             self.ifacefile.file.write_text(f'TSTEP\n{tstep} /\n')
@@ -846,7 +847,8 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def close(self):                                                     # Simulation
     #--------------------------------------------------------------------------------
-        self.runs = self.ior = self.ecl = self.current_run = self.schedule = None
+        self.runs = []
+        self.ior = self.ecl = self.current_run = self.schedule = None
         if self.runlog:
             self.runlog.close()
 
