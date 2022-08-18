@@ -522,7 +522,7 @@ class sim_worker(base_worker):
         #------------------------------------
         def status(run=None, value=None, mode=None, **x):
         #------------------------------------
-            if run and not value:
+            if not value and run:
                 t, T = strip_zero((run.t, run.T))
                 if self.progress_min:
                     a, b = strip_zero((self.progress_min, run.t-self.progress_min))
@@ -543,6 +543,7 @@ class sim_worker(base_worker):
 
         result, msg = False, ''
         self.sim = Simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
+        self.sim.prepare()
         if self.sim.ready():
             self.days_box.setText(str(self.sim.get_time()).rstrip('0').rstrip('.'))
             result, msg = self.sim.run()
@@ -2576,8 +2577,9 @@ class main_window(QMainWindow):                                    # main_window
         ### Clear menu
         menu.clear()
         ### Disable if empty 
-        menu.setEnabled( len(files)>0 )
+        enable = False
         for file in files:
+            enable = True
             act = create_action(self, text=file.name, checkable=True, func=partial(viewer, name=file, title=title, editor=editor), icon='document-c')
             act.setIconText('include')
             self.view_group.addAction(act)
@@ -2585,6 +2587,7 @@ class main_window(QMainWindow):                                    # main_window
             act.setEnabled(file.is_file())
             menu.addAction(act)
             #self.view_group.addAction(act)
+        menu.setEnabled(enable)
 
 
     @show_error
