@@ -83,8 +83,8 @@ class Eclipse(Runner):                                                      # ec
 
         # Check if included files exists
         for file in self.inputfile.include_files():
-            if self.canceled:
-                raise SystemError('INFO Run cancelled')
+            # if self.canceled:
+            #     raise SystemError('INFO Run cancelled')
             if not file.is_file():
                 raise SystemError(f"{msg} '{file.name}' included from {self.inputfile.file.name} is missing")
         return True
