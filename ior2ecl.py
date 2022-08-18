@@ -73,7 +73,7 @@ class Eclipse(Runner):                                                      # ec
     #--------------------------------------------------------------------------------
     def check_input(self):                                                  # eclipse
     #--------------------------------------------------------------------------------
-        self.update and self.update.status(value=f'Checking {self.name} input...')
+        #self.update and self.update.status(value=f'Checking {self.name} input...')
         super().check_input()
         msg = f'ERROR Unable to start {self.name}:'
 
@@ -415,7 +415,7 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
     def check_input(self):                                                   # iorsim
     #--------------------------------------------------------------------------------
-        self.update and self.update.status(value=f'Checking {self.name} input...')
+        #self.update and self.update.status(value=f'Checking {self.name} input...')
         super().check_input()
         self.inputfile.check(error_msg=f'Unable to start {self.name}:', check_kw=self.check_input_kw)
         return True
@@ -891,12 +891,12 @@ class Simulation:                                                        # Simul
         '''
         Read Eclipse and IORSim input files, run the init_func, and return the run_func
         '''
-        self.update.status(value='Preparing run...')
+        # self.update.status(value='Preparing run...')
         ### Check if this is a restart-run
         file, step = self.ECL_inp.get('RESTART')
         if file and step:
             ### Get time and step from the restart-file
-            self.update.status(value='Reading restart-file...')
+            # self.update.status(value='Reading restart-file...')
             self.restart_file = UNRST_file(file)
             self.restart_step = step
             time, n = self.restart_file.get(['time', 'step'], stop=('step', step))
@@ -909,7 +909,7 @@ class Simulation:                                                        # Simul
         self.tsteps = ECL_input(self.root).tsteps()
         if self.tsteps == [0]:
             ### If no tstep, look for tstep in include-files
-            self.update.status(value='Reading include-files...')
+            # self.update.status(value='Reading include-files...')
             self.tsteps = ECL_input(self.root, include=True).tsteps()
         if self.tsteps == [0]:
             self.update.message(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
@@ -973,10 +973,8 @@ class Simulation:                                                        # Simul
         for run in self.runs:
             self.current_run = run.name.lower()
             run.delete_output_files()
-            # self.update.status(value='Starting '+run.name, mode=self.mode)
             self.update.progress(value=-run.T)
             run.start()
-            # self.update.status(value=run.name+' running', mode=self.mode)
             run.init_control_func(update=self.update) 
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             run.t = run.time()
