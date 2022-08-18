@@ -2004,7 +2004,8 @@ class main_window(QMainWindow):                                    # main_window
         self.case = self.input.get('root')
         self.create_caselist(choose=self.case)
         ### number of days
-        self.days_box.setText(str(self.input.get('days') or days).rstrip('0').rstrip('.')) # Remove trailing .0
+        self.days_box.setText(f"{(self.input.get('days') or days):.2f}".rstrip('0').rstrip('.')) # Remove trailing .0
+        #self.days_box.setText(str(self.input.get('days') or days).rstrip('0').rstrip('.')) # Remove trailing .0
         
         
     #-----------------------------------------------------------------------
@@ -3583,8 +3584,8 @@ class main_window(QMainWindow):                                    # main_window
             show_message(self, 'warning', text='Total time interval is missing.')
             return False
         if self.max_days and i['days']>self.max_days:
-            show_message(self, 'warning', text='The Eclipse output read by IORSim currently sets a limit of ' + str(self.max_days) + 
-                                               ' days on the time interval. Run Eclipse with a higher TSTEP to increase the maximun time interval.')
+            show_message(self, 'warning', text=f'The Eclipse output read by IORSim currently sets a limit of {self.max_days:.2f}' + 
+                                               ' days on the time interval. Rerun Eclipse with a higher TSTEP to increase the maximun time interval.')
             return False
         if not i['root']:
             show_message(self, 'warning', text='No input-case selected')

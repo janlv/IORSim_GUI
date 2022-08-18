@@ -1156,11 +1156,12 @@ class Simulation:                                                        # Simul
         case = Path(self.root).name
         s  = '\n'
         s += f'    {"Case":10s}: {case}\n'
-        s += f'    {"Mode":10s}: {self.mode.capitalize()}\n'
+        mode = len(self.runs)<2 and self.runs[0].name or self.mode
+        s += f'    {"Mode":10s}: {mode.capitalize()}\n'
         s += (self.schedule and self.schedule.file) and f'    {"Schedule":10s}: start={self.schedule.start}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         s += f'    {"Days":10s}: {self.T}' 
         if self.mode=='forward':
-            s += f' (edit TSTEP in {case}.DATA to change number of days)'
+            s += f' (edit TSTEP in the DATA-file to change days)'
         if self.restart:
             days = timedelta(days=self.restart_days)
             s += f' (restart after {days.days} days, at {self.schedule.start + days})'
