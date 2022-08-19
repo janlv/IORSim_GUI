@@ -2568,6 +2568,11 @@ class main_window(QMainWindow):                                    # main_window
            self.view_group.checkedAction().trigger()
 
     #-----------------------------------------------------------------------
+    def get_checked_act(self):
+    #-----------------------------------------------------------------------
+        return next((act for act in self.view_group.actions() if act.isChecked()), None)
+
+    #-----------------------------------------------------------------------
     def update_schedule_act(self):
     #-----------------------------------------------------------------------
         self.schedule = None
@@ -2575,6 +2580,10 @@ class main_window(QMainWindow):                                    # main_window
             data = Path(self.input['root']+'.DATA')
             self.schedule = next(data.parent.glob('*.[Ss][Cc][Hh]'), None)
         self.schedule_file_act.setEnabled(bool(self.schedule))
+        ### Uncheck schedule act if it was checked but is no longer available
+        if not self.schedule and self.schedule_file_act is self.get_checked_act():
+            self.plot_act.setChecked(True)
+
 
 
     #-----------------------------------------------------------------------
@@ -2605,7 +2614,8 @@ class main_window(QMainWindow):                                    # main_window
         if not root:
             return
         ### Check if any include-files are checked, i.e. displayed. If checked, show plot instead
-        checked_act = next((act for act in self.view_group.actions() if act.isChecked()), None)
+        # checked_act = next((act for act in self.view_group.actions() if act.isChecked()), None)
+        checked_act = self.get_checked_act()
         include_act = [act for act in self.view_group.actions() if act.iconText()=='include']
         if checked_act and include_act and checked_act in include_act:
             self.plot_act.setChecked(True)
