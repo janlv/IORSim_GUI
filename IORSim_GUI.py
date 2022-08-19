@@ -1022,26 +1022,22 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                            # Editor
     #-----------------------------------------------------------------------
+        self.setTitle(title)
         curr_file = self.file
         if curr_file:
             self.vscroll[curr_file] = self.editor_.verticalScrollBar().value()
-        # Clear search field
+        ### Clear search field
         self.clear_search()
-        # Avoid re-opening file after it is saved
+        ### Avoid re-opening file after it is saved
         if self.file_is_open(file):
             return
-        #self.setObjectName(str(file))
         self.file = str(file)
-        # if self.highlight:
-        #     del self.highlight
-        #     self.highlight = None
         text = ''
         if file and Path(file).is_file():
             text = read_file(file)
         self.set_text(text)
         vscroll = self.vscroll.get(str(file)) or 0
         self.editor_.verticalScrollBar().setValue(vscroll)
-        self.setTitle(title)
 
     #-----------------------------------------------------------------------
     def refresh_func(self):                                           # Editor
@@ -2566,21 +2562,32 @@ class main_window(QMainWindow):                                    # main_window
         # Check boxes only if this an eclipse-only run
         self.update_ecl_menu(checked=self.is_eclipse_mode())
         self.create_plot()
+        self.update_include_menus()
+        self.update_schedule_act()
         if self.view_group.checkedAction():
            self.view_group.checkedAction().trigger()
-        self.update_include_menus()
+
+    #-----------------------------------------------------------------------
+    def update_schedule_act(self):
+    #-----------------------------------------------------------------------
+        self.schedule = None
+        if self.input['root']:
+            data = Path(self.input['root']+'.DATA')
+            self.schedule = next(data.parent.glob('*.[Ss][Cc][Hh]'), None)
+        self.schedule_file_act.setEnabled(bool(self.schedule))
 
 
     #-----------------------------------------------------------------------
     def update_file_menu(self, files, menu, viewer=None, editor=None, title=''):
     #-----------------------------------------------------------------------
+
         ### Clear menu
         menu.clear()
         ### Disable if empty 
         enable = False
         for file in files:
             enable = True
-            act = create_action(self, text=file.name, checkable=True, func=partial(viewer, file, title=title, editor=editor), icon='document-c')
+            act = create_action(self, text=file.name, checkable=True, func=partial(viewer, file, title=f'{title} {Path(file).name}', editor=editor), icon='document-c')
             act.setIconText('include')
             self.view_group.addAction(act)
             ### Disable for non-existing file
@@ -2597,13 +2604,18 @@ class main_window(QMainWindow):                                    # main_window
         root = self.input['root']
         if not root:
             return
+        ### Check if any include-files are checked, i.e. displayed. If checked, show plot instead
+        checked_act = next((act for act in self.view_group.actions() if act.isChecked()), None)
+        include_act = [act for act in self.view_group.actions() if act.iconText()=='include']
+        if checked_act and include_act and checked_act in include_act:
+            self.plot_act.setChecked(True)
         ### Remove old include-files from the view-group
-        [self.view_group.removeAction(act) for act in self.view_group.actions() if act.iconText()=='include']
+        [self.view_group.removeAction(act) for act in include_act]
         ### Add case-specific include files
         #self.update_file_menu(ior_include_files(root), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files', editor=self.chem_editor)
         #try:
-        self.update_file_menu(IORSim_input(root).include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files', editor=self.chem_editor)
-        self.update_file_menu(ECL_input(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include files', editor=self.editor)
+        self.update_file_menu(IORSim_input(root).include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry file', editor=self.chem_editor)
+        self.update_file_menu(ECL_input(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include file', editor=self.editor)
         #except SystemError as e:
         #    self.show_message_text(e)
 
@@ -2948,15 +2960,10 @@ class main_window(QMainWindow):                                    # main_window
         #print(self.view_group)
         self.log_file = None
         if self.input['root']:
-            # if name is None:
-            #     raise SystemError('ERROR Missing filename in view_input_file!')
-            #     #     name = self.input['root']+ext
             if self.current_viewer().file_is_open(name):
                 return
-            # fil = is_file_ignore_suffix_case(name)
-            # if fil: 
             if Path(name).is_file():
-                # self.view_file(fil, viewer=editor, title=f'{title} {fil.name}')
+                # print('view_file',title, name)
                 self.view_file(name, viewer=editor, title=title)
             else:
                 self.sender().setChecked(False)
@@ -3003,12 +3010,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        data = Path(self.input['root']+'.DATA')
-        schedule = next(data.parent.glob('*.[Ss][Cc][Hh]'), None)
-        if not schedule:
-            return
-        days = (ECL_input(data) + ECL_input(schedule)).tsteps()
-        self.view_input_file(schedule, title=f'Schedule file {schedule.name}, total days = {sum(days):.0f}', editor=self.editor)
+        days = self.schedule and (ECL_input(self.input['root']+'.DATA') + ECL_input(self.schedule)).tsteps() or 0
+        self.view_input_file(self.schedule, title=f'Schedule file {self.schedule.name}, total days = {sum(days):.0f}', editor=self.editor)
         
     #-----------------------------------------------------------------------
     def view_log(self, logfile, title=None, viewer=None):       # main_window
