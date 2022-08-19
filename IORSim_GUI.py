@@ -2580,7 +2580,7 @@ class main_window(QMainWindow):                                    # main_window
         enable = False
         for file in files:
             enable = True
-            act = create_action(self, text=file.name, checkable=True, func=partial(viewer, name=file, title=title, editor=editor), icon='document-c')
+            act = create_action(self, text=file.name, checkable=True, func=partial(viewer, file, title=title, editor=editor), icon='document-c')
             act.setIconText('include')
             self.view_group.addAction(act)
             ### Disable for non-existing file
@@ -2941,23 +2941,23 @@ class main_window(QMainWindow):                                    # main_window
             self.reset_progress_and_message()
 
     #-----------------------------------------------------------------------
-    def view_input_file(self, name=None, editor=None, ext=None, title=None):       # main_window
+    def view_input_file(self, name, editor=None, title=None):       # main_window
     #-----------------------------------------------------------------------
         # Avoid re-opening file after it is saved
         #print(self.sender())
         #print(self.view_group)
         self.log_file = None
         if self.input['root']:
-            if not name:
-                name = self.input['root']+ext
+            # if name is None:
+            #     raise SystemError('ERROR Missing filename in view_input_file!')
+            #     #     name = self.input['root']+ext
             if self.current_viewer().file_is_open(name):
                 return
-            fil = is_file_ignore_suffix_case(name)
-            if fil: 
-                self.view_file(fil, viewer=editor, title=f'{title}: {fil.name}')
-                # if keywords:
-                #     Highlighter(self.editor.document(), comment=comment, keywords=keywords)
-
+            # fil = is_file_ignore_suffix_case(name)
+            # if fil: 
+            if Path(name).is_file():
+                # self.view_file(fil, viewer=editor, title=f'{title} {fil.name}')
+                self.view_file(name, viewer=editor, title=title)
             else:
                 self.sender().setChecked(False)
                 self.sender().parent().missing_file_error(tag=name)
@@ -2976,14 +2976,14 @@ class main_window(QMainWindow):                                    # main_window
         if not self.input['root']:
             return
         ext='.DATA'
-        if title is None:
-            title = 'Eclipse input file'
         if name is None:
             name = self.input['root']+ext
+        if title is None:
+            title = f'Eclipse input file {Path(name).name}'
         # Avoid re-opening file after it is saved
         if self.current_viewer().file_is_open(name):
             return
-        self.view_input_file(name=name, title=title, editor=self.eclipse_editor)
+        self.view_input_file(name, title=title, editor=self.eclipse_editor)
 
 
     #-----------------------------------------------------------------------
@@ -2993,25 +2993,22 @@ class main_window(QMainWindow):                                    # main_window
         if not self.input['root']:
             return
         ext='.trcinp'
-        title='IORSim input file'
         name = self.input['root']+ext
+        title = f'IORSim input file {Path(name).name}'
         if self.current_viewer().file_is_open(name):
             return
-        self.view_input_file(name=name, title=title, editor=self.iorsim_editor)
+        self.view_input_file(name, title=title, editor=self.iorsim_editor)
   
-
-    # #-----------------------------------------------------------------------
-    # def view_geochem_input(self):                                # main_window
-    # #-----------------------------------------------------------------------
-    #     self.view_input_file(ext='.geocheminp', title='IORSim geochem file', editor=self.chem_editor)
         
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        #globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b','END']
-        #common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b','TSTEP','DATES','WCONINJE','WCONHIST']
-        #self.view_input_file(ext='.SCH', title='Schedule file for backward runs', comment='--', keywords=[globals, common])
-        self.view_input_file(ext='.SCH', title='Schedule file for backward runs', editor=self.editor)
+        data = Path(self.input['root']+'.DATA')
+        schedule = next(data.parent.glob('*.[Ss][Cc][Hh]'), None)
+        if not schedule:
+            return
+        days = (ECL_input(data) + ECL_input(schedule)).tsteps()
+        self.view_input_file(schedule, title=f'Schedule file {schedule.name}, total days = {sum(days):.0f}', editor=self.editor)
         
     #-----------------------------------------------------------------------
     def view_log(self, logfile, title=None, viewer=None):       # main_window
