@@ -1170,23 +1170,24 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def info_header(self):                                               # Simulation
     #--------------------------------------------------------------------------------
+        format = '10s'
         logfiles = [run.log.name for run in self.runs]+[log.name for log in (self.runlog,) if log]
         case = Path(self.root).name
         s  = '\n'
-        s += f'    {"Case":10s}: {case}\n'
+        s += f'    {"Case":{format}}: {case}\n'
         mode = len(self.runs)<2 and self.runs[0].name or self.mode
-        s += f'    {"Mode":10s}: {mode.capitalize()}\n'
-        s += (self.schedule and self.schedule.file) and f'    {"Schedule":10s}: start={self.schedule.start}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
-        s += f'    {"Days":10s}: {self.T}' 
+        s += f'    {"Mode":{format}}: {mode.capitalize()}\n'
+        s += f'    {"Days":{format}}: {self.T}' 
         if self.mode=='forward':
             s += f' (edit TSTEP in the DATA-file to change days)'
         if self.restart:
             days = timedelta(days=self.restart_days)
             s += f' (restart after {days.days} days, at {self.schedule.start + days})'
         s += '\n'
-        s += self.dt and f'    {"Timestep":10s}: {self.dt} days\n' or ''
-        s += f'    {"Folder":10s}: {Path(self.root).parent}\n'
-        s += f'    {"Log-files":10s}: {", ".join([Path(file).name for file in logfiles])}\n'
+        s += self.dt and f'    {"Timestep":{format}}: {self.dt} days\n' or ''
+        s += (self.schedule and self.schedule.file) and f'    {"Schedule":{format}}: start={self.schedule.start}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
+        s += f'    {"Case-path":{format}}: {Path(self.root).parent}\n'
+        s += f'    {"Log-files":{format}}: {", ".join([Path(file).name for file in logfiles])}\n'
         s += '\n'
         return s
 
