@@ -39,7 +39,7 @@ from os.path import relpath
 
 from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
-from IORlib.ECL import Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, unfmt_file, fmt_file, Section
+from IORlib.ECL import Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, fmt_file
 
 
 #====================================================================================
@@ -227,7 +227,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
                 self.update_function(progress=not restart, plot=True)
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
         # Get number of wells from UNRST-file
-        self.nwell = self.unrst.get(['nwell'])[0][-1]
+        #self.nwell = self.unrst.get(['nwell'])[0][-1]
+        self.nwell = self.unrst.get('nwell')[0][-1]
         # Wait for flushed RFT-file
         self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
         while self.nwell < 1:
@@ -256,7 +257,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         if self.check_rft and self.rft.exists():
             nblocks = 1
             if nwell:
-                self.nwell = nblocks = self.unrst.get(['nwell'])[0][-1]
+                self.nwell = nblocks = self.unrst.get('nwell')[0][-1]
             msg = self.rft.check.data_saved_maxmin(nblocks=nblocks, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE) 
             msg and self._print(msg)
         start_stop and self.suspend()
@@ -267,7 +268,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         if self.check_rft and self.rft.not_in_sync(self.t):
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
-            self._print(f' Date is {self.unrst.date(N=-1)} ({self.t} days)')
+            self._print(f' Date is {self.unrst.dates(N=-1)} ({self.t} days)')
 
 
     #--------------------------------------------------------------------------------
@@ -404,8 +405,8 @@ class Iorsim(Runner):                                                        # i
         cmd = [exe, str(root)] + args.split()
         super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, time_regex=r'\bTime\b:\s+([0-9.e+-]+)', **kwargs)
         self.update = kwargs.get('update') or None
-        self.funrst = Path(abs_root+'_IORSim_PLOT.FUNRST')
-        self.unrst = self.funrst.with_suffix('.UNRST')
+        self.funrst = fmt_file(abs_root+'_IORSim_PLOT.FUNRST')
+        self.unrst = UNRST_file(self.funrst.file)
         self.inputfile = IORSim_input(root)
         self.check_input_kw = kwargs.get('check_input_kw') or False
         self.is_iorsim = True
@@ -450,7 +451,7 @@ class Iorsim(Runner):                                                        # i
         case = str(self.case)
         delete_files_matching(case+'*.trcconc', raise_error=raise_error)
         delete_files_matching(case+'*.trcprd', raise_error=raise_error)
-        silentdelete(self.funrst)
+        silentdelete(self.funrst.file, self.unrst.file)
 
 
     #--------------------------------------------------------------------------------
@@ -458,7 +459,8 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
         super().close()
         ### Delete chem-files copied to working directory
-        [silentdelete(file) for file in self.copied_chemfiles]
+        #[silentdelete(file) for file in self.copied_chemfiles]
+        silentdelete(*self.copied_chemfiles)
 
 
 
@@ -900,7 +902,7 @@ class Simulation:                                                        # Simul
             # self.update.status(value='Reading restart-file...')
             self.restart_file = UNRST_file(file)
             self.restart_step = step
-            time, n = self.restart_file.get(['time', 'step'], stop=('step', step))
+            time, n = self.restart_file.get('time', 'step', stop=('step', step))
             if step > n[-1] or not step in n: 
                 new_step = min(n, key=lambda x:abs(x-step))
                 self.update.message(f'ERROR Error in the Eclipse input-file ({self.ECL_inp.file.name}): Unable to restart from step {step}, use {new_step} instead')
@@ -958,7 +960,7 @@ class Simulation:                                                        # Simul
         self.ecl = Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs)
         self.ior = Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
-        start = self.restart_file and self.restart_file.date(N=1) or self.ECL_inp.get('START')[0]
+        start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
         # Set up schedule of commands to pass to satnum-file
         self.schedule = Schedule(self.root, T=self.T, start=start, init_days=time_ecl, interface_file=self.ior.satnum, 
                                  skip_empty=self.kwargs.get('skip_empty', False))
@@ -1103,34 +1105,28 @@ class Simulation:                                                        # Simul
         if ior.unrst.is_file():
             return True, 'INFO Convert already complete!'
         if not ior.funrst.is_file():
-            return False, f'ERROR Unable to convert IORSim output: {ior.funrst.name} is missing'
+            return False, f'ERROR Unable to convert IORSim output: {ior.funrst.file} is missing'
         start = datetime.now()
         try:
-            infile = fmt_file(ior.funrst)
+            #infile = fmt_file(ior.funrst)
             if fast:
-                convert = infile.fast_convert
+                convert = ior.funrst.fast_convert
             else:
-                N = number_of_blocks(file=ior.funrst, blockstart='SEQNUM')
+                N = number_of_blocks(file=ior.funrst.file, blockstart='SEQNUM')
                 self.update.progress(value=-(N-1))
-                convert = infile.convert 
+                convert = ior.funrst.convert 
             convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
                     progress=lambda n: self.update.progress(value=n), 
                     cancel=ior.stop_if_canceled)
         except (Exception, KeyboardInterrupt) as e:
-            silentdelete(ior.unrst)
+            silentdelete(ior.unrst.file)
             msg = str(e)
             if isinstance(e, KeyboardInterrupt) or 'run stopped' in msg.lower():
                 return False, 'Convert cancelled'
             else:
                 raise SystemError(f'ERROR Unable to convert IORSim restart: {e}')
-        # except KeyboardInterrupt:
-        #     silentdelete(ior.unrst)
-        #     return False, 'Convert cancelled'
-        # except Exception as e:
-        #     silentdelete(ior.unrst)
-        #     return False, f'ERROR Unable to convert: {e}'
         if self.output.del_convert:
-            silentdelete(ior.funrst)
+            silentdelete(ior.funrst.file)
         return True, 'Convert complete, process-time was '+str(datetime.now()-start).split('.')[0]
 
 
@@ -1144,44 +1140,29 @@ class Simulation:                                                        # Simul
         error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files' 
         case = Path(str(case))
         ecl_backup = Path(f'{case}_ECLIPSE.UNRST')
-        merge_file = Path(f'{case}_MERGED.UNRST')
+        merge_unrst = UNRST_file(f'{case}_MERGED.UNRST')
         OK_file = case.parent/MERGE_OK_FILE
         if OK_file.exists():
             return True, 'Merge already complete!'
-        start = datetime.now()
+        starttime = datetime.now()
         ecl = self.ecl or Eclipse(root=case)   
         ior = self.ior or Iorsim(root=case)   
-        missing = [f.name for f in (ecl.unrst.file, ior.unrst) if not f.is_file()]
+        missing = [f.name for f in (ecl.unrst.file, ior.unrst.file) if not f.is_file()]
         if missing:
             return False, f'Unable to merge restart files due to missing files: {", ".join(missing)}'
-        # else:
-        #     #if ecl.unrst.is_file() and ior.unrst.is_file():
-        #     backup_ecl = Path(str(ecl.case)+'_ECLIPSE.UNRST')
-        #     # if backup_ecl.is_file():
-        #     #     # This is a pure IORSim run and backup already exists; restore backup
-        #     #     shutil_copy(backup_ecl, ecl.unrst.file)
-        #     # else:
-        #     #     # No backup exists; create backup copy
-        #     try:
-        #         size = bytes_string(ecl.unrst.file.stat().st_size)
-        #         self.update.status(value=f'Creating backup of Eclipse restart file ({size}) before merging...')
-        #         shutil_copy(ecl.unrst.file, backup_ecl)
-        #     except (Exception, KeyboardInterrupt) as e:
-        #         silentdelete(backup_ecl)
-        #         if isinstance(e, KeyboardInterrupt):
-        #             return False, 'Merge cancelled'
-        #         else:
-        #             raise SystemError(f'ERROR Unable to create backup of Eclipse restart: {e}')
-        # # else:
-        # #     missing = [f.name for f in (ecl.unrst.file, ior.unrst) if not f.is_file()]
         try:
-            # Define the sections in the restart files where the stitching is done
-            ecl_sec = Section(ecl.unrst.file, start_before='SEQNUM', end_before='SEQNUM', skip_sections=(0,))
-            ior_sec = Section(ior.unrst, start_after='DOUBHEAD', end_before='SEQNUM')
-            merge_file = Path(str(ecl.case)+'_MERGED.UNRST') 
-            merged_file = unfmt_file(merge_file).create(ecl_sec, ior_sec, 
-                                                   progress=lambda n: self.update.progress(value=n),
-                                                   cancel=ior.stop_if_canceled)
+            ### Find start and end step
+            start = max([x.unrst.get('step', N=1)[0][0] for x in (ecl, ior)])
+            end = min([x.unrst.get('step', N=-1)[0][0] for x in (ecl, ior)])
+            ### Reset progress-bar
+            self.update.progress(value=-end)
+            ### Define the restart file sections where the stitching is done
+            ecl_sec = ecl.unrst.sections(begin=start, start_before='SEQNUM', end_before='SEQNUM')
+            ior_sec = ior.unrst.sections(begin=start, start_after='DOUBHEAD', end_before='SEQNUM')
+            ### Create merged UNRST file
+            merged_file = merge_unrst.create(sections=(ecl_sec, ior_sec), files=(ecl.unrst, ior.unrst), 
+                                             progress=lambda n: self.update.progress(value=n),
+                                             cancel=ior.stop_if_canceled)
             if merged_file and merged_file.is_file():
                 ### Rename original Eclipse UNRST for backup
                 ecl.unrst.file.replace(ecl_backup)
@@ -1190,19 +1171,18 @@ class Simulation:                                                        # Simul
             else:
                 return False, error_msg
         except (Exception, KeyboardInterrupt) as e:
-            ### Delete merged file and Eclipse restart file
-            silentdelete((merge_file, ecl.unrst.file))
-            ### Restore Eclipse restart file from backup
-            #backup_ecl.replace(ecl.unrst.file)
+            ### Delete merged file
+            silentdelete(merge_unrst.file)
             if isinstance(e, KeyboardInterrupt):
                 return False, 'Merge cancelled'
             else:
-                raise SystemError(f'{error_msg}: {e}')
+                trace_print_exc()
+                raise SystemError(f'{error_msg}: {exc_info()[1]}')
         if self.output.del_merge:
-            silentdelete((ecl_backup, ior.unrst))
+            silentdelete(ecl_backup, ior.unrst.file)
         ### Create this file to avoid re-merging the merged UNRST-file 
         OK_file.touch()
-        return True, 'Merge complete, process-time was '+str(datetime.now()-start).split('.')[0]
+        return True, 'Merge complete, process-time was '+str(datetime.now()-starttime).split('.')[0]
 
 
     #--------------------------------------------------------------------------------
