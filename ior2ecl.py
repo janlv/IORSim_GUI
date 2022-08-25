@@ -1108,7 +1108,6 @@ class Simulation:                                                        # Simul
             return False, f'ERROR Unable to convert IORSim output: {ior.funrst.file} is missing'
         start = datetime.now()
         try:
-            #infile = fmt_file(ior.funrst)
             if fast:
                 convert = ior.funrst.fast_convert
             else:
