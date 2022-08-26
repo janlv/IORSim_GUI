@@ -406,7 +406,7 @@ class Iorsim(Runner):                                                        # i
         super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, time_regex=r'\bTime\b:\s+([0-9.e+-]+)', **kwargs)
         self.update = kwargs.get('update') or None
         self.funrst = fmt_file(abs_root+'_IORSim_PLOT.FUNRST')
-        self.unrst = UNRST_file(self.funrst.file)
+        self.unrst = UNRST_file(self.funrst.file, end='SATNUM')
         self.inputfile = IORSim_input(root)
         self.check_input_kw = kwargs.get('check_input_kw') or False
         self.is_iorsim = True
@@ -1099,7 +1099,7 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def convert_restart(self, case=None, fast=True):                     # Simulation
+    def convert_restart(self, case=None, fast=True, check=False):         # Simulation
     #--------------------------------------------------------------------------------
         ### Convert from formatted (ascii) to unformatted (binary) restart file
         self.update.status(value='Converting restart file...')
@@ -1119,6 +1119,11 @@ class Simulation:                                                        # Simul
             convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
                     progress=lambda n: self.update.progress(value=n), 
                     cancel=ior.stop_if_canceled)
+            if check:
+                nblocks = ior.unrst.get('step', N=-1)[0][0]
+                msg = ior.unrst.check.data_saved(nblocks=nblocks, limit=1, wait_func=ior.wait_for)
+                if msg:
+                    raise SystemError(f'ERROR Converted file {ior.unrst.file.name} did not pass the check: {msg}')
         except (Exception, KeyboardInterrupt) as e:
             silentdelete(ior.unrst.file)
             msg = str(e)
@@ -1132,7 +1137,7 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def merge_restart(self, case=None):                                  # Simulation
+    def merge_restart(self, case=None, check=False):                     # Simulation
     #--------------------------------------------------------------------------------
         # Merge Eclipse and IORSim restart files
         self.update.progress(value=0)   # Reset progress time
@@ -1150,7 +1155,8 @@ class Simulation:                                                        # Simul
             starttime = datetime.now()
             error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files' 
             ecl_backup = Path(f'{case}_ECLIPSE.UNRST')
-            merge_unrst = UNRST_file(f'{case}_MERGED.UNRST')
+            ### The merged file ends with SATNUM (IORSim UNRST) instead of ENDSOL (Eclipse UNRST)
+            merge_unrst = UNRST_file(f'{case}_MERGED.UNRST', end='SATNUM')
             ### Reset progress-bar
             end = min([x.unrst.get('step', N=-1)[0][0] for x in (ecl, ior)])
             self.update.progress(value=-end)
@@ -1163,6 +1169,10 @@ class Simulation:                                                        # Simul
             merged_file = merge_unrst.create(sections=(ecl_sec, ior_sec), files=(ecl.unrst, ior.unrst), 
                                              progress=lambda n: self.update.progress(value=n),
                                              cancel=ior.stop_if_canceled)
+            if check:
+                msg = merge_unrst.check.data_saved(nblocks=end, limit=1, wait_func=ior.wait_for)
+                if msg:
+                    raise SystemError(f'ERROR Merged file did not pass the test: {msg}')
             if merged_file and merged_file.is_file():
                 ### Rename original Eclipse UNRST for backup
                 ecl.unrst.file.replace(ecl_backup)
