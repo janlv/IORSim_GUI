@@ -1151,14 +1151,14 @@ class Simulation:                                                        # Simul
             error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files' 
             ecl_backup = Path(f'{case}_ECLIPSE.UNRST')
             merge_unrst = UNRST_file(f'{case}_MERGED.UNRST')
-            ### Find start and end step
-            start = max([x.unrst.get('step', N=1)[0][0] for x in (ecl, ior)])
-            end = min([x.unrst.get('step', N=-1)[0][0] for x in (ecl, ior)])
             ### Reset progress-bar
+            end = min([x.unrst.get('step', N=-1)[0][0] for x in (ecl, ior)])
             self.update.progress(value=-end)
-            ### Define the restart file sections where the stitching is done
-            ecl_sec = ecl.unrst.sections(begin=start, start_before='SEQNUM', end_before='SEQNUM')
-            ior_sec = ior.unrst.sections(begin=start, start_after='DOUBHEAD', end_before='SEQNUM')
+            ### Use the same start index for both files/sections
+            start = max([x.unrst.get('step', N=1)[0][0] for x in (ecl, ior)])
+            ### Define the sections in the restart file where the stitching is done
+            ecl_sec = ecl.unrst.sections(start_before='SEQNUM',  end_before='SEQNUM', begin=start)
+            ior_sec = ior.unrst.sections(start_after='DOUBHEAD', end_before='SEQNUM', begin=start)
             ### Create merged UNRST file
             merged_file = merge_unrst.create(sections=(ecl_sec, ior_sec), files=(ecl.unrst, ior.unrst), 
                                              progress=lambda n: self.update.progress(value=n),
