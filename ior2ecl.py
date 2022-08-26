@@ -824,6 +824,7 @@ class Simulation:                                                        # Simul
         self.name = 'ior2ecl'
         self.root = root
         self.ECL_inp = ECL_input(root, check=True)
+        self.merge_OK = Path(root).with_name(MERGE_OK_FILE)        
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
         if delete:
@@ -1034,6 +1035,7 @@ class Simulation:                                                        # Simul
     def run(self):                                                       # Simulation
     #--------------------------------------------------------------------------------
         # Print header
+        silentdelete(self.merge_OK)
         self.print2log(self.versions())
         self.print2log(self.info_header())
         msg = ''
@@ -1136,20 +1138,19 @@ class Simulation:                                                        # Simul
         self.update.progress(value=0)   # Reset progress time
         sleep(0.05) # Give progress-bar time to respond
         self.update.status(value='Merging Eclipse and IORSim restart files...')
-        error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files' 
-        case = Path(str(case))
-        ecl_backup = Path(f'{case}_ECLIPSE.UNRST')
-        merge_unrst = UNRST_file(f'{case}_MERGED.UNRST')
-        OK_file = case.parent/MERGE_OK_FILE
-        if OK_file.exists():
+        if self.merge_OK.exists():
             return True, 'Merge already complete!'
-        starttime = datetime.now()
+        case = Path(case)
         ecl = self.ecl or Eclipse(root=case)   
         ior = self.ior or Iorsim(root=case)   
         missing = [f.name for f in (ecl.unrst.file, ior.unrst.file) if not f.is_file()]
         if missing:
             return False, f'Unable to merge restart files due to missing files: {", ".join(missing)}'
         try:
+            starttime = datetime.now()
+            error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files' 
+            ecl_backup = Path(f'{case}_ECLIPSE.UNRST')
+            merge_unrst = UNRST_file(f'{case}_MERGED.UNRST')
             ### Find start and end step
             start = max([x.unrst.get('step', N=1)[0][0] for x in (ecl, ior)])
             end = min([x.unrst.get('step', N=-1)[0][0] for x in (ecl, ior)])
@@ -1180,7 +1181,7 @@ class Simulation:                                                        # Simul
         if self.output.del_merge:
             silentdelete(ecl_backup, ior.unrst.file)
         ### Create this file to avoid re-merging the merged UNRST-file 
-        OK_file.touch()
+        self.merge_OK.touch()
         return True, 'Merge complete, process-time was '+str(datetime.now()-starttime).split('.')[0]
 
 
