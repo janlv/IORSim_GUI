@@ -1620,11 +1620,11 @@ class main_window(QMainWindow):                                    # main_window
                                          func=self.view_iorsim_input, checkable=True)
         self.schedule_file_act = create_action(self, text='Schedule file', icon='document-attribute-s.png',
                                           func=self.view_schedule_file, checkable=True)
-        self.ecl_log_act = create_action(self, text='Log file', icon='script-attribute-e.png',
+        self.ecl_log_act = create_action(self, text='Run log', icon='script-attribute-e.png',
                                          func=self.view_eclipse_log, checkable=True)
-        self.ior_log_act = create_action(self, text='Log file', icon='script-attribute-i.png',
+        self.ior_log_act = create_action(self, text='Run log', icon='script-attribute-i.png',
                                          func=self.view_iorsim_log, checkable=True)
-        self.py_log_act = create_action(self, text='Script log', icon='script-attribute.png',
+        self.py_log_act = create_action(self, text='Script run log', icon='script-attribute.png',
                                         func=self.view_program_log, checkable=True)
                 
         

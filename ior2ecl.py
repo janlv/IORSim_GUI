@@ -239,6 +239,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             self.update_function(progress=True, plot=True)
             nblocks = 1
             self.init_tsteps += 1
+            if self.t >= self.T:
+                raise SystemError('ERROR Simulation stopped prematurely due to missing input to IORSim (missing RFT-file). Try increasing the number of days.')
         self.suspend()
         self.t = self.time()
 
@@ -1166,8 +1168,8 @@ class Simulation:                                                        # Simul
             ecl_sec = ecl.unrst.sections(start_before='SEQNUM',  end_before='SEQNUM', begin=start)
             ior_sec = ior.unrst.sections(start_after='DOUBHEAD', end_before='SEQNUM', begin=start)
             ### Create merged UNRST file
-            merged_file = merge_unrst.create(sections=(ecl_sec, ior_sec), files=(ecl.unrst, ior.unrst), 
-                                             progress=lambda n: self.update.progress(value=n),
+            merged_file = merge_unrst.create(sections=(ecl_sec, ior_sec), 
+                                             progress=lambda n: self.update.progress(value=n), 
                                              cancel=ior.stop_if_canceled)
             if check:
                 msg = merge_unrst.check.data_saved(nblocks=end, limit=1, wait_func=ior.wait_for)
