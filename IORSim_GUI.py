@@ -688,9 +688,10 @@ class User_input(QDialog):
     #-----------------------------------------------------------------------
     def accept(self):
     #-----------------------------------------------------------------------
+        super().accept()
         if self.func:
             self.func()
-        super().accept()
+
 
 
 #===========================================================================
@@ -2136,7 +2137,6 @@ class main_window(QMainWindow):                                    # main_window
         if not self.case:
             return None
 
-
     #-----------------------------------------------------------------------
     def copy_case(self, case, rename=False, choose_new=True): 
     #-----------------------------------------------------------------------
@@ -2489,7 +2489,7 @@ class main_window(QMainWindow):                                    # main_window
             self.add_case(from_case, rename=to_case)
         new_name.set_func(func)
         new_name.open()
-        
+
     #-----------------------------------------------------------------------
     def rename_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
@@ -2502,7 +2502,11 @@ class main_window(QMainWindow):                                    # main_window
             oldname = Path(self.case).stem
             newname = rename.var.text().upper()
             casedir = Path(self.casedir)
-            newdir = (casedir/oldname).rename(casedir/newname)
+            newdir = casedir/newname
+            if newdir.is_dir():
+                self.show_message_text(f'ERROR A case named {newdir.name} already exists, choose another name')
+                return
+            newdir = (casedir/oldname).rename(newdir)
             #print(str(casedir/oldname)+' => '+str(newdir))
             for x in newdir.iterdir():
                 if x.is_file() and oldname in str(x):
@@ -2511,9 +2515,6 @@ class main_window(QMainWindow):                                    # main_window
                     x.rename(newdir/new)
             newroot = casedir/newname/newname
             self.create_caselist(remove=self.case, insert=newroot, choose=newroot)
-            ## set self.case to the new name
-            #self.add_case(self.case, rename=newname) #, delete_src=True)
-            #self.delete_case(old_case)
         rename.set_func(func)
         rename.open()
         
@@ -3036,17 +3037,17 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_eclipse_log(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_log('eclipse.log', title='ECLIPSE logfile', viewer=self.log_viewer)
+        self.view_log('eclipse.log', title='ECLIPSE run log', viewer=self.log_viewer)
         
     #-----------------------------------------------------------------------
     def view_iorsim_log(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_log('iorsim.log', title='IORSim logfile', viewer=self.log_viewer)
+        self.view_log('iorsim.log', title='IORSim run log', viewer=self.log_viewer)
     
     #-----------------------------------------------------------------------
     def view_program_log(self):                                # main_window
     #-----------------------------------------------------------------------
-        self.view_log('ior2ecl.log', title='Application logfile', viewer=self.log_viewer)
+        self.view_log('ior2ecl.log', title='Script run log', viewer=self.log_viewer)
     
     #-----------------------------------------------------------------------
     def update_log(self, viewer):                                # main_window
