@@ -1188,7 +1188,7 @@ class Simulation:                                                        # Simul
             if isinstance(e, KeyboardInterrupt):
                 return False, 'Merge cancelled'
             else:
-                trace_print_exc()
+                DEBUG and trace_print_exc()
                 raise SystemError(f'{error_msg}: {exc_info()[1]}')
         if self.output.del_merge:
             silentdelete(ecl_backup, ior.unrst.file)
