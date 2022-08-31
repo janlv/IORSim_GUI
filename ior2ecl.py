@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '2.27.7'
+__version__ = '2.28'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -902,8 +902,10 @@ class Simulation:                                                        # Simul
         file, step = self.ECL_inp.get('RESTART')
         if file and step:
             ### Get time and step from the restart-file
-            # self.update.status(value='Reading restart-file...')
             self.restart_file = UNRST_file(file)
+            if not self.restart_file.is_file():
+                self.update.message(f'ERROR Restart file {self.restart_file.file.relative_to(Path.cwd())} is missing')
+                return False
             self.restart_step = step
             time, n = self.restart_file.get('time', 'step', stop=('step', step))
             if step > n[-1] or not step in n: 
