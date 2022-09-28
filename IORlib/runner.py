@@ -11,7 +11,7 @@ DEBUG = False
 from datetime import datetime
 from subprocess import DEVNULL, Popen, PIPE, STDOUT
 import psutil
-from shutil import which
+from shutil import SameFileError, which
 from time import sleep
 from pathlib import Path 
 from shutil import copy
@@ -145,8 +145,8 @@ class Control_file2:
     #--------------------------------------------------------------------------------
     def __init__(self, *args, n=None, path=None, log=False) -> None:
     #--------------------------------------------------------------------------------
-        self._base = len(args)==2 and ''.join(args) or '' 
-        self._nr = n and (lambda x : f'{x:{n}}') or (lambda x : '')
+        self._base = len(args)>=2 and ''.join(args[:2]) or '' 
+        self._nr = len(args)>2 and (lambda x : f'{x:{args[2]}}') or (lambda x : '')
         self._path = path
         self._log = log
 
@@ -181,7 +181,7 @@ class Control_file2:
         
     @catch_permission_error
     #--------------------------------------------------------------------------------
-    def create(self, delete=False):
+    def create(self):
     #--------------------------------------------------------------------------------
         self._log and self._log(f'Create empty {self}')
         self._path.touch()
@@ -190,12 +190,17 @@ class Control_file2:
     #--------------------------------------------------------------------------------
     def create_from(self, file=None, text=None, delete=False):
     #--------------------------------------------------------------------------------
-        self._log and self._log(f'Create {self} from {text and "text" or ""}{file and f"file {file}" or ""}')
-        if file:
-            copy(file, self._path)
+        file = file and Path(file)
+        if file and file.is_file: # and not file.samefile(self._path):
+            self._log and self._log(f'Create {self} from file {file}')
+            try:
+                copy(file, self._path)
+            except SameFileError:
+                self._log and self._log(f'WARNING in {self}: trying to copy same files {file.name}!')
             if delete:
                 silentdelete(file)
         elif text:
+            self._log and self._log(f'Create {self} from text')
             self._path.write_text(text)
 
     @catch_permission_error
