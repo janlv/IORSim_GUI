@@ -66,6 +66,7 @@ class Control_file:
     #--------------------------------------------------------------------------------
     def __init__(self, ext=None, root=None, log=False):
     #--------------------------------------------------------------------------------
+        #self._name = lambda nr: f'{root}.{ext}{nr:{format}}'
         self._name = Path(f'{root}.{ext}')
         self.log = log
 
@@ -96,7 +97,7 @@ class Control_file:
     def create_from_string(self, string):    
     #--------------------------------------------------------------------------------
         self.log and self.log(f'Create {self._name.name} from string')
-        with open(self._name,'w') as f:
+        with open(self._name, 'w') as f:
             f.write(string)
 
     @catch_permission_error
@@ -137,6 +138,95 @@ class Control_file:
                 return True
         except PermissionError:
             return False
+
+#====================================================================================
+class Control_file2:
+#====================================================================================
+    #--------------------------------------------------------------------------------
+    def __init__(self, *args, n=None, path=None, log=False) -> None:
+    #--------------------------------------------------------------------------------
+        self._base = len(args)==2 and ''.join(args) or '' 
+        self._nr = n and (lambda x : f'{x:{n}}') or (lambda x : '')
+        self._path = path
+        self._log = log
+
+    #--------------------------------------------------------------------------------
+    def __repr__(self) -> str:
+    #--------------------------------------------------------------------------------
+        return f'<Control_file {self._path.name}>'
+
+    #--------------------------------------------------------------------------------
+    def __call__(self, n):
+    #--------------------------------------------------------------------------------
+        self._path = Path(self._base + self._nr(n))
+        #print('__call__', self)
+        return self
+
+    #--------------------------------------------------------------------------------
+    def glob(self):
+    #--------------------------------------------------------------------------------
+        nr = self._nr(0).replace('0','?')
+        path = Path(self._base + nr)
+        return (Control_file2(path=f, log=self._log) for f in path.parent.glob(path.name))
+
+    #--------------------------------------------------------------------------------
+    def name(self):
+    #--------------------------------------------------------------------------------
+        return self._path.name
+        
+    #--------------------------------------------------------------------------------
+    def path(self):
+    #--------------------------------------------------------------------------------
+        return self._path
+        
+    @catch_permission_error
+    #--------------------------------------------------------------------------------
+    def create(self, delete=False):
+    #--------------------------------------------------------------------------------
+        self._log and self._log(f'Create empty {self}')
+        self._path.touch()
+    
+    @catch_permission_error
+    #--------------------------------------------------------------------------------
+    def create_from(self, file=None, text=None, delete=False):
+    #--------------------------------------------------------------------------------
+        self._log and self._log(f'Create {self} from {text and "text" or ""}{file and f"file {file}" or ""}')
+        if file:
+            copy(file, self._path)
+            if delete:
+                silentdelete(file)
+        elif text:
+            self._path.write_text(text)
+
+    @catch_permission_error
+    #--------------------------------------------------------------------------------
+    def append(self, string):
+    #--------------------------------------------------------------------------------
+        self._log and self._log(f'Append text to {self}')
+        with open(self._path, 'a') as f:
+            f.write(f'{string}\n')
+
+    @ignore_permission_error
+    #--------------------------------------------------------------------------------
+    def delete(self):
+    #--------------------------------------------------------------------------------
+        self._log and self._log(f'Delete {self}')
+        self._path.unlink(missing_ok=True)
+
+    #--------------------------------------------------------------------------------
+    def delete_all(self):
+    #--------------------------------------------------------------------------------
+        [cfile.delete() for cfile in self.glob()]
+
+    #--------------------------------------------------------------------------------
+    def is_deleted(self):
+    #--------------------------------------------------------------------------------
+        try:
+            if not self._path.is_file():
+                return True
+        except PermissionError:
+            return False
+        return False
 
 
 
@@ -289,7 +379,8 @@ class Process:                                                              # Pr
     #--------------------------------------------------------------------------------
     def get_children(self, raise_error=True, log=False, wait=CHILD_SEARCH_WAIT, limit=CHILD_SEARCH_LIMIT):      # Process
     #--------------------------------------------------------------------------------
-        # looking for child-processes with a name that match the app_name 
+        ### Looking for child-processes with a name that match the app_name
+        ### Only do search if app_name is different from the name of this process  
         if not self._process:
             if raise_error:
                 raise SystemError('Parent-process missing, unable to look for child-processes')
@@ -318,7 +409,7 @@ class Process:                                                              # Pr
 
 
 #====================================================================================
-class Runner:                                                               # runner
+class Runner:                                                               # Runner
 #====================================================================================
     """
 
@@ -340,7 +431,7 @@ class Runner:                                                               # ru
     def __init__(self, T=0, n=0, t=0, name='', case='', exe='', cmd=None, pipe=False,
                  verbose=3, timer=None, runlog=None, ext_iface='', ext_OK='',
                  keep_files=False, stop_children=True, keep_alive=False, lognr=None, 
-                 time_regex=None, **kwargs):           # runner
+                 time_regex=None, **kwargs):           # Runner
     #--------------------------------------------------------------------------------
         #print('runner.__init__: ',keep_alive, N,T,name,case,exe,cmd,ext_iface,ext_OK)
         self.reset_processes()
@@ -371,24 +462,24 @@ class Runner:                                                               # ru
         self.time_regex = time_regex
         DEBUG and print(f'Creating {self}')
 
-    #-----------------------------------------------------------------------
-    def __str__(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def __str__(self):                                                       # Runner
+    #--------------------------------------------------------------------------------
         return f'<Runner(name={self.name}, cmd={self.cmd}, verbose={self.verbose})>'
 
-    #-----------------------------------------------------------------------
-    def __del__(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def __del__(self):                                                       # Runner
+    #--------------------------------------------------------------------------------
         DEBUG and print(f'Deleting {self}')
 
-    #-----------------------------------------------------------------------
-    def set_time(self, time):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def set_time(self, time):                                                # Runner
+    #--------------------------------------------------------------------------------
         self.T = int(time)
 
-    #-----------------------------------------------------------------------
-    def reset_processes(self):
-    #-----------------------------------------------------------------------
+    #--------------------------------------------------------------------------------
+    def reset_processes(self):                                               # Runner
+    #--------------------------------------------------------------------------------
         self.parent = None
         self.main = None
         self.children = []
@@ -396,7 +487,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def check_input(self):                                                   # runner
+    def check_input(self):                                                   # Runner
     #--------------------------------------------------------------------------------
         ### check if executables exist on the system
         if which(self.exe) is None:
@@ -404,7 +495,7 @@ class Runner:                                                               # ru
         return True
 
     #--------------------------------------------------------------------------------
-    def interface_file(self, nr, log=4):
+    def interface_file(self, nr, log=4):                                     # Runner
     #--------------------------------------------------------------------------------
         log_func = False
         if log:
@@ -418,19 +509,19 @@ class Runner:                                                               # ru
                 
         
     #--------------------------------------------------------------------------------
-    def OK_file(self):
+    def OK_file(self):                                                       # Runner
     #--------------------------------------------------------------------------------
         return Control_file(ext=self.ext_OK, root=self.case)
 
 
     #--------------------------------------------------------------------------------
-    def unexpected_stop_error(self):                                       # runner
+    def unexpected_stop_error(self):                                         # Runner
     #--------------------------------------------------------------------------------
         raise SystemError(f'ERROR {self.name} stopped unexpectedly, check the log')
 
 
     #--------------------------------------------------------------------------------
-    def start(self, error_func=None):                                        # runner
+    def start(self, error_func=None):                                        # Runner
     #--------------------------------------------------------------------------------
         self.starttime = datetime.now()
         if self.pipe:
@@ -447,7 +538,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def set_processes(self, error_func=None):                                 # runner
+    def set_processes(self, error_func=None):                                # Runner
     #--------------------------------------------------------------------------------
         if error_func is None:
             error_func = self.unexpected_stop_error
@@ -469,30 +560,23 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def get_logfile(self):                                                   # runner
+    def get_logfile(self):                                                   # Runner
     #--------------------------------------------------------------------------------
         return self.log.name
 
-    # #--------------------------------------------------------------------------------
-    # def process_info(self):                                # runner
-    # #--------------------------------------------------------------------------------
-    #     #self._print(msg, v=1, end='')
-    #     self._print(f' {", ".join([p.info() for p in self.active])}', v=2, end='', tag='')
-    #     #self._print('', v=1, tag='')
-
     #--------------------------------------------------------------------------------
-    def suspend_active(self):                                                # runner
+    def suspend_active(self):                                                # Runner
     #--------------------------------------------------------------------------------
         return all([p.suspend() for p in self.active])
 
     #--------------------------------------------------------------------------------
-    def resume_active(self):                                                # runner
+    def resume_active(self):                                                # Runner
     #--------------------------------------------------------------------------------
         return all([p.resume() for p in self.active])
 
 
     #--------------------------------------------------------------------------------
-    def suspend(self, check=False, v=1):                                     # runner
+    def suspend(self, check=False, v=1):                                     # Runner
     #--------------------------------------------------------------------------------
         if self.keep_alive > 0:
             self._print('Delayed suspend', v=2)
@@ -509,7 +593,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def resume(self, check=False, v=1):                                      # runner
+    def resume(self, check=False, v=1):                                      # Runner
     #--------------------------------------------------------------------------------
         if self.keep_alive > 0 and self.suspend_timer.cancel_if_alive():
             self._print(f'No resume (suspend delayed {self.suspend_timer.endtime():.0f} sec)', v=2)
@@ -528,13 +612,13 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def print_process_status(self, v=2):
+    def print_process_status(self, v=2):                                     # Runner
     #--------------------------------------------------------------------------------
         self._print(', '.join( [str(p.current_status()) for p in self.active] ), v=v)
 
 
     #--------------------------------------------------------------------------------
-    def print_suspend_errors(self, v=1):
+    def print_suspend_errors(self, v=1):                                     # Runner
     #--------------------------------------------------------------------------------
         errors = [p.suspend_errors() for p in self.active if p]
         text = ', '.join([e for e in errors if e])
@@ -542,7 +626,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def time(self):                                                 # runner
+    def time(self):                                                          # Runner
     #--------------------------------------------------------------------------------
         t = 0
         if self.log: 
@@ -553,7 +637,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def stop_if_canceled(self, unit='days'):
+    def stop_if_canceled(self, unit='days'):                                 # Runner
     #--------------------------------------------------------------------------------
         if self.canceled:
             self._print('', tag='')
@@ -561,7 +645,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def assert_running_and_stop_if_canceled(self, raise_error=True):
+    def assert_running_and_stop_if_canceled(self, raise_error=True):         # Runner
     #--------------------------------------------------------------------------------
         #self.parent.assert_running(raise_error=raise_error)
         #self.main.assert_running(raise_error=raise_error)
@@ -570,13 +654,13 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def run_time(self):
+    def run_time(self):                                                      # Runner
     #--------------------------------------------------------------------------------
         return datetime.now()-self.starttime
 
 
     #--------------------------------------------------------------------------------
-    def complete_msg(self, run_time=None):
+    def complete_msg(self, run_time=None):                                   # Runner
     #--------------------------------------------------------------------------------
         if run_time is None:
             run_time = self.run_time()
@@ -584,7 +668,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def stop_if_timelimit_reached(self): 
+    def stop_if_timelimit_reached(self):                                     # Runner
     #--------------------------------------------------------------------------------
         time = self.time()
         # if time > self.T:
@@ -618,7 +702,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def wait_for_process_to_finish(self, v=2, limit=None, pause=None, loop_func=None, msg=None):      # runner
+    def wait_for_process_to_finish(self, v=2, limit=None, pause=None, loop_func=None, msg=None):      # Runner
     #--------------------------------------------------------------------------------
         msg = msg or 'Waiting for parent process to finish'
         self._print(msg, v=v)
@@ -631,12 +715,12 @@ class Runner:                                                               # ru
             self.kill()
 
     #--------------------------------------------------------------------------------
-    def cancel(self):
+    def cancel(self):                                                        # Runner
     #--------------------------------------------------------------------------------
         self.canceled = True
 
     #--------------------------------------------------------------------------------
-    def close(self):
+    def close(self):                                                         # Runner
     #--------------------------------------------------------------------------------
         self.reset_processes()
         # Close log-file
@@ -650,7 +734,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def quit(self, v=1, loop_func=lambda:None):
+    def quit(self, v=1, loop_func=lambda:None):                              # Runner
     #--------------------------------------------------------------------------------
         self._print('', tag='', v=v)
         self._print('Quitting', v=v)
@@ -661,7 +745,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def kill(self, v=2):                                                     # runner
+    def kill(self, v=2):                                                     # Runner
     #--------------------------------------------------------------------------------
         # terminate children before parent
         #procs = self.children + (self.parent and [self.parent] or []) 
@@ -678,7 +762,7 @@ class Runner:                                                               # ru
 
     
     #--------------------------------------------------------------------------------
-    def write_to_stdin(self, i):                                             # runner
+    def write_to_stdin(self, i):                                             # Runner
     #--------------------------------------------------------------------------------
         if not self.pipe:
             raise SystemError('STDIN is not piped, unable to write. Aborting...')
@@ -689,7 +773,7 @@ class Runner:                                                               # ru
 
         
     #--------------------------------------------------------------------------------
-    def _print(self, txt, v=1, tag=True, flush=True, **kwargs):                         # runner
+    def _print(self, txt, v=1, tag=True, flush=True, **kwargs):              # Runner
     #--------------------------------------------------------------------------------
         if v <= self.verbose:
             if isinstance(txt, str):
@@ -704,7 +788,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def _printerror(self, txt, **kwargs):                                     # runner
+    def _printerror(self, txt, **kwargs):                                    # Runner
     #--------------------------------------------------------------------------------
         print()
         print('  ERROR: ' + txt, **kwargs)
@@ -712,7 +796,7 @@ class Runner:                                                               # ru
 
 
     #--------------------------------------------------------------------------------
-    def _printwarning(self, txt, **kwargs):                                     # runner
+    def _printwarning(self, txt, **kwargs):                                  # Runner
     #--------------------------------------------------------------------------------
         print()
         print('  WARNING: ' + txt, **kwargs)
