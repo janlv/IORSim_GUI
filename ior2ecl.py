@@ -177,7 +177,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     #--------------------------------------------------------------------------------
     def __init__(self, check_unrst=True, check_rft=True, keep_alive=False, schedule=None, **kwargs):
     #--------------------------------------------------------------------------------
-        super().__init__(ext_iface='I{:04d}', ext_OK='OK', keep_alive=keep_alive, **kwargs)
+        # super().__init__(ext_iface='I{:04d}', ext_OK='OK', keep_alive=keep_alive, **kwargs)
+        super().__init__(ext_iface=('.I','04d'), ext_OK=('.OK',), keep_alive=keep_alive, **kwargs)
         self.tsteps = kwargs.get('tsteps') or self.inputfile.get('TSTEP')
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps) 
@@ -214,9 +215,12 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         if self.n > 0 or self.t > 0:
             self._print(f'Starting at {self.t} days (step {self.n})')
         self.n += self.init_tsteps   # Use += and not = in case self.n is not 0 (RESTART option)
-        self.interface_file('all').delete()
-        self.interface_file(self.n).create_empty()
-        self.OK_file().delete()
+        # self.interface_file('all').delete()
+        # self.interface_file(self.n).create_empty()
+        # self.OK_file().delete()
+        self.interface_file.delete_all()
+        self.interface_file(self.n).create()
+        self.OK_file.delete()
         # Start Eclipse
         super().start()
         #self.update.status(value=f'{self.name} running...')
@@ -248,12 +252,15 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     #--------------------------------------------------------------------------------
     def run_one_step(self, satnum_file, log=True, start_stop=True, nwell=False):       # ecl_backward
     #--------------------------------------------------------------------------------
-        self.interface_file(self.n).copy(satnum_file, delete=self.del_satnum)
-        self.OK_file().create_empty()
+        # self.interface_file(self.n).copy(satnum_file, delete=self.del_satnum)
+        # self.OK_file().create_empty()
+        self.interface_file(self.n).create_from(file=satnum_file, delete=self.del_satnum)
+        self.OK_file.create()
         # Create next interface-file to avoid Eclipse from reading END
-        self.interface_file(self.n+1).create_empty()
+        # self.interface_file(self.n+1).create_empty()
+        self.interface_file(self.n+1).create()
         start_stop and self.resume()
-        self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted' )
+        self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted' )
         if self.check_unrst:
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE) 
         if self.check_rft and self.rft.exists():
@@ -278,8 +285,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     #--------------------------------------------------------------------------------
         #self._print(f'appending END to {self.interface_file(self.n).name()}')
         self.print_suspend_errors()
-        self.interface_file(self.n).create_from_string('END')
-        self.OK_file().create_empty()
+        self.interface_file(self.n).create_from(string='END')
+        self.OK_file.create()
         super().quit()
 
 
@@ -478,7 +485,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     def __init__(self, keep_alive=False, schedule=None, **kwargs):
     #--------------------------------------------------------------------------------
         #keep_alive = keep_alive and IOR_ALIVE_LIMIT or False
-        super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
+        # super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
+        super().__init__(args='-readdata', ext_iface=('.IORSimI','04d'), ext_OK=('.IORSimOK',), keep_alive=keep_alive, **kwargs)
         self.tsteps = kwargs.get('tsteps') or ECL_input(self.case).tsteps()
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
@@ -536,7 +544,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
         # Start IORSim backward run
         self.n = 0 
-        self.interface_file('all').delete()
+        # self.interface_file('all').delete()
+        self.interface_file.delete_all()
         if tsteps is None:
             tsteps = self.init_tsteps
         self.run_steps(1+tsteps, start=True)
@@ -557,8 +566,9 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
             if n > 0:
                 self.update_function(plot=True)
             self.n += 1
-            self.interface_file(self.n).create_empty()
-            self.OK_file().create_empty()
+            # self.interface_file(self.n).create_empty()
+            self.interface_file(self.n).create()
+            self.OK_file.create()
             silentdelete(self.satnum)
             if n == 0:
                 if start:
@@ -567,7 +577,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
                     # self.update and self.update.status(value=f'{self.name} running...')
                 else:
                     self.resume()
-            self.wait_for( self.OK_file().is_deleted, error=self.OK_file().name()+' not deleted')
+            self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted')
         self.wait_for(self.satnum_flushed)
         warn_empty_file(self.satnum, comment='--')
         self.suspend()
@@ -583,7 +593,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
         #print('Quit: ',self.n+1)
         self.interface_file(self.n+1).append('Quit')
-        self.OK_file().create_empty()
+        self.OK_file.create()
         super().quit()
 
 

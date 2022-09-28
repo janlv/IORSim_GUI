@@ -60,94 +60,95 @@ def pass_KeyboardInterrupt(func):
     return inner
 
 
+# #====================================================================================
+# class Control_file:
+# #====================================================================================
+#     #--------------------------------------------------------------------------------
+#     def __init__(self, ext=None, root=None, log=False):
+#     #--------------------------------------------------------------------------------
+#         #self._name = lambda nr: f'{root}.{ext}{nr:{format}}'
+#         self._name = Path(f'{root}.{ext}')
+#         self.log = log
+
+#     #--------------------------------------------------------------------------------
+#     def name(self):
+#     #--------------------------------------------------------------------------------
+#         return self._name.name
+        
+#     #--------------------------------------------------------------------------------
+#     def path(self):
+#     #--------------------------------------------------------------------------------
+#         return self._name
+
+#     #--------------------------------------------------------------------------------
+#     def print(self):
+#     #--------------------------------------------------------------------------------
+#         print(self._name)
+        
+#     @catch_permission_error
+#     #--------------------------------------------------------------------------------
+#     def create_empty(self, delete=False):
+#     #--------------------------------------------------------------------------------
+#         self.log and self.log(f'Create empty {self._name.name}')
+#         self._name.touch()
+    
+#     @catch_permission_error
+#     #--------------------------------------------------------------------------------
+#     def create_from_string(self, string):    
+#     #--------------------------------------------------------------------------------
+#         self.log and self.log(f'Create {self._name.name} from string')
+#         with open(self._name, 'w') as f:
+#             f.write(string)
+
+#     @catch_permission_error
+#     #--------------------------------------------------------------------------------
+#     def copy(self, src, delete=False):
+#     #--------------------------------------------------------------------------------
+#         self.log and self.log(f'Create {self._name.name} from file')
+#         copy(src, self._name)
+#         if delete:
+#             silentdelete(src)
+#             #src.unlink(missing_ok=True)
+        
+#     @catch_permission_error
+#     #--------------------------------------------------------------------------------
+#     def append(self, _ascii):
+#     #--------------------------------------------------------------------------------
+#         self.log and self.log(f'Append to {self._name.name}')
+#         with open(self._name, 'a') as f:
+#             f.write(f'{_ascii}\n')
+
+#     @ignore_permission_error
+#     #--------------------------------------------------------------------------------
+#     def delete(self):
+#     #--------------------------------------------------------------------------------
+#         if self._name.is_file():
+#             self.log and self.log(f'Delete {self._name.name}')
+#             self._name.unlink()
+#         else:
+#             [f.unlink() for f in self._name.parent.glob(self._name.name) if f.is_file()]    
+
+
+#     #@ignore_permission_error
+#     #--------------------------------------------------------------------------------
+#     def is_deleted(self):
+#     #--------------------------------------------------------------------------------
+#         try:
+#             if not self._name.is_file():
+#                 return True
+#         except PermissionError:
+#             return False
+
 #====================================================================================
 class Control_file:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, ext=None, root=None, log=False):
+    def __init__(self, *args, path=None, log=False) -> None:
     #--------------------------------------------------------------------------------
-        #self._name = lambda nr: f'{root}.{ext}{nr:{format}}'
-        self._name = Path(f'{root}.{ext}')
-        self.log = log
-
-    #--------------------------------------------------------------------------------
-    def name(self):
-    #--------------------------------------------------------------------------------
-        return self._name.name
-        
-    #--------------------------------------------------------------------------------
-    def path(self):
-    #--------------------------------------------------------------------------------
-        return self._name
-
-    #--------------------------------------------------------------------------------
-    def print(self):
-    #--------------------------------------------------------------------------------
-        print(self._name)
-        
-    @catch_permission_error
-    #--------------------------------------------------------------------------------
-    def create_empty(self, delete=False):
-    #--------------------------------------------------------------------------------
-        self.log and self.log(f'Create empty {self._name.name}')
-        self._name.touch()
-    
-    @catch_permission_error
-    #--------------------------------------------------------------------------------
-    def create_from_string(self, string):    
-    #--------------------------------------------------------------------------------
-        self.log and self.log(f'Create {self._name.name} from string')
-        with open(self._name, 'w') as f:
-            f.write(string)
-
-    @catch_permission_error
-    #--------------------------------------------------------------------------------
-    def copy(self, src, delete=False):
-    #--------------------------------------------------------------------------------
-        self.log and self.log(f'Create {self._name.name} from file')
-        copy(src, self._name)
-        if delete:
-            silentdelete(src)
-            #src.unlink(missing_ok=True)
-        
-    @catch_permission_error
-    #--------------------------------------------------------------------------------
-    def append(self, _ascii):
-    #--------------------------------------------------------------------------------
-        self.log and self.log(f'Append to {self._name.name}')
-        with open(self._name, 'a') as f:
-            f.write(f'{_ascii}\n')
-
-    @ignore_permission_error
-    #--------------------------------------------------------------------------------
-    def delete(self):
-    #--------------------------------------------------------------------------------
-        if self._name.is_file():
-            self.log and self.log(f'Delete {self._name.name}')
-            self._name.unlink()
-        else:
-            [f.unlink() for f in self._name.parent.glob(self._name.name) if f.is_file()]    
-
-
-    #@ignore_permission_error
-    #--------------------------------------------------------------------------------
-    def is_deleted(self):
-    #--------------------------------------------------------------------------------
-        try:
-            if not self._name.is_file():
-                return True
-        except PermissionError:
-            return False
-
-#====================================================================================
-class Control_file2:
-#====================================================================================
-    #--------------------------------------------------------------------------------
-    def __init__(self, *args, n=None, path=None, log=False) -> None:
-    #--------------------------------------------------------------------------------
+        args = [str(a) for a in args]  # Ensure Path is cast to str
         self._base = len(args)>=2 and ''.join(args[:2]) or '' 
         self._nr = len(args)>2 and (lambda x : f'{x:{args[2]}}') or (lambda x : '')
-        self._path = path
+        self._path = path and Path(path) or self.__call__(0)._path
         self._log = log
 
     #--------------------------------------------------------------------------------
@@ -167,7 +168,7 @@ class Control_file2:
     #--------------------------------------------------------------------------------
         nr = self._nr(0).replace('0','?')
         path = Path(self._base + nr)
-        return (Control_file2(path=f, log=self._log) for f in path.parent.glob(path.name))
+        return (Control_file(path=f, log=self._log) for f in path.parent.glob(path.name))
 
     #--------------------------------------------------------------------------------
     def name(self):
@@ -188,20 +189,24 @@ class Control_file2:
     
     @catch_permission_error
     #--------------------------------------------------------------------------------
-    def create_from(self, file=None, text=None, delete=False):
+    def create_from(self, file=None, string=None, delete=False):
     #--------------------------------------------------------------------------------
+        if file is None and string is None:
+            raise SyntaxError("ERROR Both 'file' and 'string' argument missing in Control_file.create_from()!")
         file = file and Path(file)
-        if file and file.is_file: # and not file.samefile(self._path):
-            self._log and self._log(f'Create {self} from file {file}')
+        ### Create from file
+        if file and file.is_file:
+            self._log and self._log(f'Create {self} from file {file.name}')
             try:
                 copy(file, self._path)
             except SameFileError:
                 self._log and self._log(f'WARNING in {self}: trying to copy same files {file.name}!')
             if delete:
                 silentdelete(file)
-        elif text:
+        ### Create from string
+        elif string:
             self._log and self._log(f'Create {self} from text')
-            self._path.write_text(text)
+            self._path.write_text(string)
 
     @catch_permission_error
     #--------------------------------------------------------------------------------
@@ -215,8 +220,9 @@ class Control_file2:
     #--------------------------------------------------------------------------------
     def delete(self):
     #--------------------------------------------------------------------------------
-        self._log and self._log(f'Delete {self}')
-        self._path.unlink(missing_ok=True)
+        if self._path.is_file():
+            self._log and self._log(f'Delete {self}')
+            self._path.unlink()
 
     #--------------------------------------------------------------------------------
     def delete_all(self):
@@ -227,11 +233,10 @@ class Control_file2:
     def is_deleted(self):
     #--------------------------------------------------------------------------------
         try:
-            if not self._path.is_file():
-                return True
+            return not self._path.is_file()
         except PermissionError:
             return False
-        return False
+
 
 
 
@@ -434,7 +439,7 @@ class Runner:                                                               # Ru
     
     #--------------------------------------------------------------------------------
     def __init__(self, T=0, n=0, t=0, name='', case='', exe='', cmd=None, pipe=False,
-                 verbose=3, timer=None, runlog=None, ext_iface='', ext_OK='',
+                 verbose=3, timer=None, runlog=None, ext_iface=(), ext_OK=(),
                  keep_files=False, stop_children=True, keep_alive=False, lognr=None, 
                  time_regex=None, **kwargs):           # Runner
     #--------------------------------------------------------------------------------
@@ -446,8 +451,9 @@ class Runner:                                                               # Ru
         self.cmd = cmd
         self.log = safeopen(Path(case).parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log', 'w' )
         self.runlog = runlog
-        self.ext_iface = ext_iface
-        self.ext_OK = ext_OK
+        log4 = lambda x: self._print(x, v=4)
+        self.interface_file = Control_file(self.case, *ext_iface, log=log4)
+        self.OK_file = Control_file(self.case, *ext_OK, log=log4)
         self.popen = None
         self.stop_children = stop_children
         self.pipe = pipe
@@ -499,24 +505,24 @@ class Runner:                                                               # Ru
             raise SystemError('WARNING Executable not found: ' + self.exe)
         return True
 
-    #--------------------------------------------------------------------------------
-    def interface_file(self, nr, log=4):                                     # Runner
-    #--------------------------------------------------------------------------------
-        log_func = False
-        if log:
-            log_func = lambda x : self._print(x, v=log)    
-        if isinstance(nr, int):
-            return Control_file(ext=self.ext_iface.format(nr), root=self.case, log=log_func) 
-        elif nr == 'all':
-            ext, num = self.ext_iface.split('{')
-            n = int(num.split('d')[0][-1])
-            return Control_file(ext=ext+'?'*n, root=self.case)
+    # #--------------------------------------------------------------------------------
+    # def interface_file(self, nr, log=4):                                     # Runner
+    # #--------------------------------------------------------------------------------
+    #     log_func = False
+    #     if log:
+    #         log_func = lambda x : self._print(x, v=log)    
+    #     if isinstance(nr, int):
+    #         return Control_file(ext=self.ext_iface.format(nr), root=self.case, log=log_func) 
+    #     elif nr == 'all':
+    #         ext, num = self.ext_iface.split('{')
+    #         n = int(num.split('d')[0][-1])
+    #         return Control_file(ext=ext+'?'*n, root=self.case)
                 
         
-    #--------------------------------------------------------------------------------
-    def OK_file(self):                                                       # Runner
-    #--------------------------------------------------------------------------------
-        return Control_file(ext=self.ext_OK, root=self.case)
+    # #--------------------------------------------------------------------------------
+    # def OK_file(self):                                                       # Runner
+    # #--------------------------------------------------------------------------------
+    #     return Control_file(ext=self.ext_OK, root=self.case)
 
 
     #--------------------------------------------------------------------------------
@@ -734,8 +740,11 @@ class Runner:                                                               # Ru
         self.suspend_timer and self.suspend_timer.close()
         self.suspend_timer = None # For garbage collector (__del__)
         # Delete interface-files 
-        if self.ext_iface and not self.keep_files:
-            self.interface_file('all').delete()
+        # if self.ext_iface and not self.keep_files:
+        #     self.interface_file('all').delete()
+        if not self.keep_files:
+            self.interface_file.delete_all()
+            self.OK_file.delete()
 
 
     #--------------------------------------------------------------------------------
