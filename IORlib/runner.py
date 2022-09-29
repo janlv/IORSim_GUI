@@ -537,7 +537,7 @@ class Runner:                                                               # Ru
         self.starttime = datetime.now()
         if self.pipe:
             self._print(f"Starting in PIPE-mode", v=1)
-            self.popen = Popen(self.cmd, stdin=PIPE, stdout=self.log, stderr=STDOUT)
+            self.popen = Popen(self.cmd, stdin=PIPE, stdout=self.log, stderr=STDOUT, bufsize=1)
             self.stdin = self.popen.stdin
         else:
             self._print(f"Starting \'{' '.join(self.cmd)}\'", v=1)

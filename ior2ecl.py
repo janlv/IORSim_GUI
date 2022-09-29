@@ -211,19 +211,14 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     def start(self, restart=False):                                    # ecl_backward
     #--------------------------------------------------------------------------------
         # Start Eclipse in backward mode
-        #self.update.status(value=f'Starting {self.name}...')
         if self.n > 0 or self.t > 0:
             self._print(f'Starting at {self.t} days (step {self.n})')
         self.n += self.init_tsteps   # Use += and not = in case self.n is not 0 (RESTART option)
-        # self.interface_file('all').delete()
-        # self.interface_file(self.n).create_empty()
-        # self.OK_file().delete()
         self.interface_file.delete_all()
         self.interface_file(self.n).create()
         self.OK_file.delete()
         # Start Eclipse
         super().start()
-        #self.update.status(value=f'{self.name} running...')
         # Wait for flushed UNRST-file   
         nblocks = 1 + self.init_tsteps # Add 1 for 0'th SEQNUM
         for i in range(nblocks):
@@ -231,10 +226,10 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
                 self.update_function(progress=not restart, plot=True)
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
         # Get number of wells from UNRST-file
-        #self.nwell = self.unrst.get(['nwell'])[0][-1]
         self.nwell = self.unrst.get('nwell')[0][-1]
         # Wait for flushed RFT-file
-        self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
+        msg = self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
+        msg and self._print(msg)
         while self.nwell < 1:
             ### Run Eclipse until at least one well is producing and the RFT-file is created
             self.schedule.update(tstep=self.T)
@@ -433,7 +428,7 @@ class Iorsim(Runner):                                                        # i
 
 
     #--------------------------------------------------------------------------------
-    def start(self):                                         # iorsim
+    def start(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
         self.update and self.update.status(value=f'Starting {self.name}...')
         ### Copy chem-files to working dir 
