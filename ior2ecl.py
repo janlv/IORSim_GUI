@@ -39,7 +39,7 @@ from os.path import relpath
 
 from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
-from IORlib.ECL import Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, fmt_file
+from IORlib.ECL import Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, fmt_file, MSG_file, PRT_file
 
 
 #====================================================================================
@@ -57,8 +57,8 @@ class Eclipse(Runner):                                                      # ec
         self.unrst = UNRST_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
         self.rft = RFT_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
         self.unsmry = UNSMRY_file(root)
-        #self.msg = MSG_file(root)
-        #self.prt = PRT_file(root)
+        self.msg = MSG_file(root)
+        self.prt = PRT_file(root)
         self.inputfile = ECL_input(root)
         self.is_iorsim = False
         self.is_eclipse = True
@@ -187,6 +187,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.schedule = schedule
         self.nwell = 0
         self.del_satnum = False
+        self.print_times = lambda : self._print(f'log: {self.time()}, MSG: {self.msg.get("time")}, PRT: {self.prt.get("time")}')
+
 
 
     #--------------------------------------------------------------------------------
@@ -242,6 +244,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
                 raise SystemError('ERROR Simulation stopped prematurely due to missing input to IORSim (missing RFT-file). Try increasing the number of days.')
         self.suspend()
         self.t = self.time()
+        self.print_times()
 
 
     #--------------------------------------------------------------------------------
@@ -273,6 +276,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
             self._print(f' Date is {self.unrst.dates(N=-1)} ({self.t} days)')
+        self.print_times()
 
 
     #--------------------------------------------------------------------------------
