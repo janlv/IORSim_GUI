@@ -187,8 +187,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.schedule = schedule
         self.nwell = 0
         self.del_satnum = False
-        self.print_times = lambda : self._print(f'log: {self.time()}, MSG: {self.msg.get("time")}, PRT: {self.prt.get("time")}')
-
+        self.print_times = lambda : self._print(f'Days: log: {self.time()}, MSG: {self.msg.get("time", N=-1)}, PRT: {self.prt.get("time", N=-1)}')
 
 
     #--------------------------------------------------------------------------------
