@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '2.28'
+__version__ = '2.28.2.2'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -547,7 +547,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.interface_file.delete_all()
         if tsteps is None:
             tsteps = self.init_tsteps
-        self.run_steps(1+tsteps, start=True)
+        #self.run_steps(1+tsteps, start=True)
+        self.run_steps(tsteps, start=True)
 
 
     #--------------------------------------------------------------------------------
