@@ -93,7 +93,7 @@ disable_warnings()
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
-from IORlib.ECL import Input_file as ECL_input, unfmt_file, keywords as ECL_keywords
+from IORlib.ECL import Input_file as ECL_input, SMSPEC_file, UNSMRY_file, unfmt_file, keywords as ECL_keywords
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
 
@@ -2763,12 +2763,13 @@ class main_window(QMainWindow):                                    # main_window
         datafile = self.input['root']
         if case:
             datafile = case
-        smspec = Path(datafile+'.SMSPEC')
-        unsmry = Path(datafile+'.UNSMRY')
-        if not smspec.is_file() or not unsmry.is_file():
+        smspec = SMSPEC_file(datafile)
+        self.unsmry = UNSMRY_file(datafile)
+        if not smspec.is_file() or not self.unsmry.is_file():
+            self.unsmry = None
             return False
-        self.unsmry = unfmt_file(unsmry)
-        smspec = unfmt_file(smspec)
+        #self.unsmry = unfmt_file(unsmry)
+        #smspec = unfmt_file(smspec)
 
         ### read variable specifications
         ecl_data = namedtuple('ecl_data','time fluid wells yaxis units indx', defaults=(None,))
