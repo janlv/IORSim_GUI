@@ -39,7 +39,7 @@ from os.path import relpath
 
 from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
-from IORlib.ECL import Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, fmt_file, MSG_file, PRT_file
+from IORlib.ECL import FUNRST_file, Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
 
 
 #====================================================================================
@@ -412,7 +412,8 @@ class Iorsim(Runner):                                                        # i
         cmd = [exe, str(root)] + args.split()
         super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, time_regex=r'\bTime\b:\s+([0-9.e+-]+)', **kwargs)
         self.update = kwargs.get('update') or None
-        self.funrst = fmt_file(abs_root+'_IORSim_PLOT.FUNRST')
+        #self.funrst = fmt_file(abs_root+'_IORSim_PLOT', '.FUNRST')
+        self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
         self.unrst = UNRST_file(self.funrst.file, end='SATNUM')
         self.inputfile = IORSim_input(root)
         self.check_input_kw = kwargs.get('check_input_kw') or False
@@ -1112,7 +1113,7 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def convert_restart(self, case=None, fast=True, check=False):         # Simulation
+    def convert_restart(self, case=None, check=False):         # Simulation
     #--------------------------------------------------------------------------------
         ### Convert from formatted (ascii) to unformatted (binary) restart file
         self.update.status(value='Converting restart file...')
@@ -1123,15 +1124,15 @@ class Simulation:                                                        # Simul
             return False, f'ERROR Unable to convert IORSim output: {ior.funrst.file} is missing'
         start = datetime.now()
         try:
-            if fast:
-                convert = ior.funrst.fast_convert
-            else:
-                N = number_of_blocks(file=ior.funrst.file, blockstart='SEQNUM')
-                self.update.progress(value=-(N-1))
-                convert = ior.funrst.convert 
-            convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
-                    progress=lambda n: self.update.progress(value=n), 
-                    cancel=ior.stop_if_canceled)
+            # if fast:
+            #     convert = ior.funrst.fast_convert
+            # else:
+            #     N = number_of_blocks(file=ior.funrst.file, blockstart='SEQNUM')
+            #     self.update.progress(value=-(N-1))
+            #     convert = ior.funrst.convert 
+            ior.funrst.fast_convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
+                                    progress=lambda n: self.update.progress(value=n), 
+                                    cancel=ior.stop_if_canceled)
             if check:
                 nblocks = ior.unrst.get('step', N=-1)[0][0]
                 msg = ior.unrst.check.data_saved(nblocks=nblocks, limit=1, wait_func=ior.wait_for)
