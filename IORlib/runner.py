@@ -166,6 +166,8 @@ class Control_file:
     #--------------------------------------------------------------------------------
     def glob(self):
     #--------------------------------------------------------------------------------
+        if self._base == '':
+            return ()
         nr = self._nr(0).replace('0','?')
         path = Path(self._base + nr)
         return (Control_file(path=f, log=self._log) for f in path.parent.glob(path.name))
@@ -227,7 +229,7 @@ class Control_file:
     #--------------------------------------------------------------------------------
     def delete_all(self):
     #--------------------------------------------------------------------------------
-        [cfile.delete() for cfile in self.glob()]
+        [file.delete() for file in self.glob()]
 
     #--------------------------------------------------------------------------------
     def is_deleted(self):
