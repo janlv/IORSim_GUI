@@ -187,7 +187,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.schedule = schedule
         self.nwell = 0
         self.del_satnum = False
-        self.print_times = lambda : self._print(f'Days: log: {self.time()}, MSG: {self.msg.get("time", N=-1, raise_error=False)}, PRT: {self.prt.get("time", N=-1, raise_error=False)}')
+        #self.print_times = lambda : self._print(f'Days: log: {self.time()}, MSG: {self.msg.get("time", N=-1, raise_error=False)}, PRT: {self.prt.get("time", N=-1, raise_error=False)}')
 
 
     #--------------------------------------------------------------------------------
@@ -242,8 +242,9 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             if self.t >= self.T:
                 raise SystemError('ERROR Simulation stopped prematurely due to missing input to IORSim (missing RFT-file). Try increasing the number of days.')
         self.suspend()
-        self.t = self.time()
-        self.print_times()
+        print(self.rft.check.data())
+        self.t = self.rft.check.data()[-1] or self.time()
+        #self.print_times()
 
 
     #--------------------------------------------------------------------------------
@@ -270,12 +271,12 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         if self.delete_interface:
             self.interface_file(self.n).delete()
         self.n += 1
-        self.t = self.time()
+        self.t = self.check_rft and self.rft.check.data()[-1] or self.time()
         if self.check_rft and self.rft.not_in_sync(self.t):
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
             self._print(f' Date is {self.unrst.dates(N=-1)} ({self.t} days)')
-        self.print_times()
+        #self.print_times()
 
 
     #--------------------------------------------------------------------------------
@@ -586,6 +587,12 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.t = self.time()
         if log:
             self._print(f' {self.t:.3f}/{self.T} days')
+            key = 'Silica'
+            data = [-1]
+            for b in self.funrst.blocks():
+                if b.key() == key:
+                    data = b.data()
+            self._print(f'{key}: max, min = {max(data)},{min(data)}')
 
 
     #--------------------------------------------------------------------------------
