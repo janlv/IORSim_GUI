@@ -242,8 +242,9 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             if self.t >= self.T:
                 raise SystemError('ERROR Simulation stopped prematurely due to missing input to IORSim (missing RFT-file). Try increasing the number of days.')
         self.suspend()
-        print(self.rft.check.data())
+        # print(self.rft.check.data())
         self.t = self.rft.check.data()[-1] or self.time()
+        self._print(f'Days: {self.t}')
         #self.print_times()
 
 
@@ -276,6 +277,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
             self._print(f' Date is {self.unrst.dates(N=-1)} ({self.t} days)')
+        self._print(f'Days: {self.t}')
         #self.print_times()
 
 
