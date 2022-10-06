@@ -187,7 +187,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.schedule = schedule
         self.nwell = 0
         self.del_satnum = False
-        self.print_times = lambda : self._print(f'Days: log: {self.time()}, MSG: {self.msg.get("time", N=-1)}, PRT: {self.prt.get("time", N=-1)}')
+        self.print_times = lambda : self._print(f'Days: log: {self.time()}, MSG: {self.msg.get("time", N=-1, raise_error=False)}, PRT: {self.prt.get("time", N=-1, raise_error=False)}')
 
 
     #--------------------------------------------------------------------------------
@@ -548,7 +548,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         if tsteps is None:
             tsteps = self.init_tsteps
         #self.run_steps(1+tsteps, start=True)
-        self.run_steps(tsteps, start=True)
+        self.run_steps(1+tsteps, start=True)
 
 
     #--------------------------------------------------------------------------------
