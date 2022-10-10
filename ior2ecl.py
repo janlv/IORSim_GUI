@@ -242,10 +242,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             if self.t >= self.T:
                 raise SystemError('ERROR Simulation stopped prematurely due to missing input to IORSim (missing RFT-file). Try increasing the number of days.')
         self.suspend()
-        # print(self.rft.check.data())
         self.t = self.rft.check.data()[-1] or self.time()
         self._print(f'Days: {self.t}')
-        #self.print_times()
 
 
     #--------------------------------------------------------------------------------
@@ -277,8 +275,16 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
             self._print(f' Date is {self.unrst.dates(N=-1)} ({self.t} days)')
+            ### REMOVE
+            for b in UNRST_file(self.unrst.file).tail_blocks():
+                if b.key() == 'SEQNUM':
+                    self._print(f'SEQNUM: {b.data()[-1]}' )
+                    break
+                if b.key() == 'CLEF':
+                    data = b.data()
+                    self._print(f'CLEF: min: {min(data)}, max: {max(data)}')
+            ### REMOVE
         self._print(f'Days: {self.t}')
-        #self.print_times()
 
 
     #--------------------------------------------------------------------------------
@@ -569,15 +575,12 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
             if n > 0:
                 self.update_function(plot=True)
             self.n += 1
-            # self.interface_file(self.n).create_empty()
             self.interface_file(self.n).create()
             self.OK_file.create()
             silentdelete(self.satnum)
             if n == 0:
                 if start:
-                    # self.update and self.update.status(value=f'Starting {self.name}...')
                     super().start()
-                    # self.update and self.update.status(value=f'{self.name} running...')
                 else:
                     self.resume()
             self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted')
@@ -589,12 +592,14 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.t = self.time()
         if log:
             self._print(f' {self.t:.3f}/{self.T} days')
+            ### REMOVE
             key = 'Silica'
             data = [-1]
             for b in self.funrst.blocks():
                 if b.key() == key:
                     data = b.data()
             self._print(f'{key}: max, min = {max(data)},{min(data)}')
+            ### REMOVE
 
 
     #--------------------------------------------------------------------------------
@@ -637,10 +642,12 @@ class Schedule:
         if self.file:
             self._schedule = self.days_and_actions()
             self.end = (len(self._schedule) > 0) and self._schedule[-1][0] or 0
-        # Add simulation end time 
+        ### Add simulation end time 
         self.insert(days=T, remove=True)
+        ### If days match first schedule event we will have sync problems
+        if self._schedule[0][0] <= float(self.days):
+            raise SystemError(f'WARNING Eclipse schedule starts too early, reduce TSTEP or START in {self.case.name+".DATA"}')
         DEBUG and print(f'Creating {self}')
-
 
     #--------------------------------------------------------------------------------
     def __str__(self):                                                     # Schedule
@@ -649,10 +656,15 @@ class Schedule:
 
 
     #--------------------------------------------------------------------------------
-    def __del__(self):
+    def __del__(self):                                                     # Schedule
     #--------------------------------------------------------------------------------
         DEBUG and print(f'Deleting {self}')
 
+    #--------------------------------------------------------------------------------
+    def to_file(self, name):                                               # Schedule
+    #--------------------------------------------------------------------------------
+        with open(self.case.parent/name, 'w') as file:
+            file.write(''.join([str(s) for s in flat_list(self._schedule)]))
 
     #--------------------------------------------------------------------------------
     def next_tstep(self):                                                  # Schedule
@@ -730,28 +742,28 @@ class Schedule:
         #    * : 0 or more rep.
 
         schfile = remove_comments(file=self.file)
-        # Remove entries after END 
+        ### Remove entries after END 
         if remove_end:
             found = search(r'\bEND\b', schfile)
             if found:
                 schfile = schfile[0:found.start()]
-        # Determine type, DATES or TSTEP
+        ### Determine type, DATES or TSTEP
         use_dates = self.get_type(schfile)
         if use_dates:
             regex = compile(r'\n?\s*\bDATES\b\s+(\d+)\s+\'?(\w+)\'?\s+(\d+)\s*/\s+/')
         else:
             regex = compile(r'\n?\s*\bTSTEP\b\s+([0-9 *.]+)\s*/\s+')
-        # Create list of (time, (start, end))-tuple
+        ### Create list of (time, (start, end))-tuple
         date_span = [(' '.join(m.groups()), m.span()) for m in regex.finditer(schfile)]
         #print(date_span)
         pos = [s for d,s in date_span] + [(len(schfile), 0)]
-        # Extract actions
+        ### Extract actions
         actions = [schfile[pos[i][1]:pos[i+1][0]].rstrip() for i in range(len(pos)-1)]
-        # Calculate number of days from the simulation start (given by START in .DATA-file)
+        ### Calculate number of days from the simulation start (given by START in .DATA-file)
         if use_dates:
             days = [(datetime.strptime(d, '%d %b %Y').date()-self.start).days for d,s in date_span]
         else:   
-            # Process x*y statements
+            ### Process x*y statements
             prod = lambda x, y : int(x)*float(y) 
             days = list(accumulate([sum([prod(*i.split('*')) if '*' in i else float(i) for i in d.split()]) for d,s in date_span]))
         if self.skip_empty:
@@ -883,7 +895,7 @@ class Simulation:                                                        # Simul
                 self.run_sim = self.init_runs()
             except SystemError as e:
                 self.update.message(f'{e}')
-                self.update.status(value=f'{e}')
+                #self.update.status(value=f'{e}')
 
 
     #--------------------------------------------------------------------------------

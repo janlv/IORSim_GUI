@@ -2049,9 +2049,7 @@ class main_window(QMainWindow):                                    # main_window
         inp = self.input
         inp['ecl_days'] = inp['species'] = inp['tracers'] = None
         if inp['root']:
-            #tsteps = ECL_input(f'{inp["root"]}.DATA').get('TSTEP')
             tsteps = ECL_input(inp['root']).tsteps()
-            #inp['ecl_days'] = int(sum(tsteps))
             inp['ecl_days'] = sum(tsteps)
             inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
             inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
