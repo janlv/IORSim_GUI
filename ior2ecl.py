@@ -37,7 +37,7 @@ from traceback import print_exc as trace_print_exc, format_exc as trace_format_e
 from re import search, compile
 from os.path import relpath
 
-from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_dict, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
 from IORlib.ECL import FUNRST_file, Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
 
@@ -1291,8 +1291,9 @@ class Simulation:                                                        # Simul
         with open(self.runlog.name, 'a') as self.runlog:   
             self.print2log(f'\n Comparing {ecl.unrst.name()} and {ior.funrst.name()}:')
             for a,b in zip(ecl.unrst.data(*ecl_keys), ior.funrst.data(*ior_keys)):
-                self.print2log(f'  ECL: {a}')
-                self.print2log(f'  IOR: {b}')
+                self.print2log(f'  ECL: {print_dict(a)}')
+                self.print2log(f'  IOR: {print_dict(b)}')
+                self.print2log('\n')
 
 
 
