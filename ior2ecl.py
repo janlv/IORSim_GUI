@@ -1291,8 +1291,8 @@ class Simulation:                                                        # Simul
         with open(self.runlog.name, 'a') as self.runlog:   
             self.print2log(f'\n Comparing {ecl.unrst.name()} and {ior.funrst.name()}:')
             for a,b in zip(ecl.unrst.data(*ecl_keys), ior.funrst.data(*ior_keys)):
-                self.print2log('  ECL:', a)
-                self.print2log('  IOR:', b)
+                self.print2log(f'  ECL: {a}')
+                self.print2log(f'  IOR: {b}')
 
 
 
