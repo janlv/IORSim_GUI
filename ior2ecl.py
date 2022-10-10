@@ -282,7 +282,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
                     break
                 if b.key() == 'CLEF':
                     data = b.data()
-                    self._print(f'CLEF: min: {min(data)}, max: {max(data)}')
+                    self._print(f'CLEF: min={min(data)}, max={max(data)}')
             ### REMOVE
         self._print(f'Days: {self.t}')
 
@@ -597,8 +597,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
             data = [-1]
             for b in self.funrst.blocks():
                 if b.key() == key:
-                    data = b.data()
-            self._print(f'{key}: max, min = {max(data)},{min(data)}')
+                    data = b.data
+            self._print(f'{key}: max={data.max()}, min={data.min()}')
             ### REMOVE
 
 
