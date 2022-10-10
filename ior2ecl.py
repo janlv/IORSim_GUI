@@ -1146,12 +1146,6 @@ class Simulation:                                                        # Simul
             return False, f'ERROR Unable to convert IORSim output: {ior.funrst.file} is missing'
         start = datetime.now()
         try:
-            # if fast:
-            #     convert = ior.funrst.fast_convert
-            # else:
-            #     N = number_of_blocks(file=ior.funrst.file, blockstart='SEQNUM')
-            #     self.update.progress(value=-(N-1))
-            #     convert = ior.funrst.convert 
             ior.funrst.fast_convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
                                     progress=lambda n: self.update.progress(value=n), 
                                     cancel=ior.stop_if_canceled)
@@ -1287,11 +1281,17 @@ class Simulation:                                                        # Simul
     def cancel(self):                                                    # Simulation
     #--------------------------------------------------------------------------------
         [run.cancel() for run in self.runs if isinstance(run, Runner)]
-        # for run in self.runs:
-        #     if isinstance(run, Runner):
-        #         run.cancel()
-        #     else:
-        #         raise SystemError('INFO Run stopped')
+
+
+    #--------------------------------------------------------------------------------
+    def compare_restart(self, ecl_keys=[], ior_keys=[]):                 # Simulation              # Simulation
+    #--------------------------------------------------------------------------------
+        ecl = self.ecl or Eclipse(root=self.root)   
+        ior = self.ior or Iorsim(root=self.root)   
+        self.print2log(f'\n Comparing {ecl.unrst.name()} and {ior.funrst.name()}:')
+        for a,b in zip(ecl.unrst.data(*ecl_keys), ior.funrst.data(*ior_keys)):
+            self.print2log('  ECL:', a)
+            self.print2log('  IOR:', b)
 
 
 
@@ -1421,6 +1421,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         print(sim.info_header())
     result, msg = sim.run()
     print()
+    return sim
 
 
 @print_error
