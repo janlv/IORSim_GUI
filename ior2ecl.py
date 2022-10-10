@@ -275,15 +275,15 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
             self._print(f' Date is {self.unrst.dates(N=-1)} ({self.t} days)')
-            ### REMOVE
-            for b in UNRST_file(self.unrst.file).tail_blocks():
-                if b.key() == 'SEQNUM':
-                    self._print(f'SEQNUM: {b.data()[-1]}' )
-                    break
-                if b.key() == 'CLEF':
-                    data = b.data()
-                    self._print(f'CLEF: min={min(data)}, max={max(data)}')
-            ### REMOVE
+            # ### REMOVE
+            # for b in UNRST_file(self.unrst.file).tail_blocks():
+            #     if b.key() == 'SEQNUM':
+            #         self._print(f'SEQNUM: {b.data()[-1]}' )
+            #         break
+            #     if b.key() == 'CLEF':
+            #         data = b.data()
+            #         self._print(f'CLEF: min={min(data)}, max={max(data)}')
+            # ### REMOVE
         self._print(f'Days: {self.t}')
 
 
@@ -592,14 +592,14 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.t = self.time()
         if log:
             self._print(f' {self.t:.3f}/{self.T} days')
-            ### REMOVE
-            key = 'Silica'
-            data = [-1]
-            for b in self.funrst.blocks():
-                if b.key() == key:
-                    data = b.data
-            self._print(f'{key}: max={data.max()}, min={data.min()}')
-            ### REMOVE
+            # ### REMOVE
+            # key = 'Silica'
+            # data = [-1]
+            # for b in self.funrst.blocks():
+            #     if b.key() == key:
+            #         data = b.data
+            # self._print(f'{key}: max={data.max()}, min={data.min()}')
+            # ### REMOVE
 
 
     #--------------------------------------------------------------------------------
@@ -789,9 +789,10 @@ class Schedule:
             return
         if tstep == 0:
             raise SystemError(f'ERROR Schedule gave TSTEP 0 at {self.days} days, simulation stopped. Check {self.file}')
-        match = self.ifacefile.get('TSTEP', pos=True)
+        ### Get TSTEP value and position in file
+        match = self.ifacefile.get('TSTEP', pos=True) 
         if match:
-            file_tstep, pos = match[0]
+            file_tstep, pos = match[0] # Get first match
         else:
             raise SystemError(f'ERROR Missing TSTEP in schedule file {self.ifacefile.file.name}')
         #print('UPDATE:', file_tstep, pos)
