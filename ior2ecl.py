@@ -1293,7 +1293,7 @@ class Simulation:                                                        # Simul
             for a,b in zip(ecl.unrst.data(*ecl_keys), ior.funrst.data(*ior_keys)):
                 self.print2log(f'  ECL: {print_dict(a)}')
                 self.print2log(f'  IOR: {print_dict(b)}')
-                self.print2log('\n')
+                self.print2log('')
 
 
 
