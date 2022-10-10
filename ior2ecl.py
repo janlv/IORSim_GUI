@@ -1287,11 +1287,12 @@ class Simulation:                                                        # Simul
     def compare_restart(self, ecl_keys=[], ior_keys=[]):                 # Simulation              # Simulation
     #--------------------------------------------------------------------------------
         ecl = self.ecl or Eclipse(root=self.root)   
-        ior = self.ior or Iorsim(root=self.root)   
-        self.print2log(f'\n Comparing {ecl.unrst.name()} and {ior.funrst.name()}:')
-        for a,b in zip(ecl.unrst.data(*ecl_keys), ior.funrst.data(*ior_keys)):
-            self.print2log('  ECL:', a)
-            self.print2log('  IOR:', b)
+        ior = self.ior or Iorsim(root=self.root)
+        with open(self.runlog.name, 'a') as self.runlog:   
+            self.print2log(f'\n Comparing {ecl.unrst.name()} and {ior.funrst.name()}:')
+            for a,b in zip(ecl.unrst.data(*ecl_keys), ior.funrst.data(*ior_keys)):
+                self.print2log('  ECL:', a)
+                self.print2log('  IOR:', b)
 
 
 
