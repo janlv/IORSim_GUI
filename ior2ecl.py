@@ -945,12 +945,11 @@ class Simulation:                                                        # Simul
                 return False
             self.restart_days = time[n.index(step)]
             self.restart = True
-        self.tsteps = ECL_input(self.root).tsteps()
-        if self.tsteps == [0]:
-            ### If no tstep, look for tstep in include-files
-            # self.update.status(value='Reading include-files...')
-            self.tsteps = ECL_input(self.root, include=True).tsteps()
-        if self.tsteps == [0]:
+        self.tsteps = ECL_input(self.root, include='SCHEDULE').tsteps()
+        # if self.tsteps == []:
+        #     ### If no tstep, look for tstep in include-files
+        #     self.tsteps = ECL_input(self.root, include=True).tsteps()
+        if self.tsteps == []:
             self.update.message(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
             return False
         self.mode = self.mode or self.mode_from_case()
