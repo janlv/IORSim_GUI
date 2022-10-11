@@ -1283,7 +1283,7 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def compare_restart(self, ecl_keys=[], ior_keys=[]):                 # Simulation              # Simulation
+    def compare_restart(self, ecl_keys=[], ior_keys=[]):                 # Simulation
     #--------------------------------------------------------------------------------
         ecl_unrst = UNRST_file(f'{self.root}_ECLIPSE.UNRST')
         ior = self.ior or Iorsim(root=self.root)   

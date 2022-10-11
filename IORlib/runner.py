@@ -375,7 +375,6 @@ class Runner:                                                               # Ru
         self.cmd = cmd
         self.logname = Path(case).parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log'
         self.log = None
-        # self.log = safeopen(Path(case).parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log', 'w' )
         self.runlog = runlog
         log4 = lambda x: self._print(x, v=4)
         self.interface_file = Control_file(self.case, *ext_iface, log=log4)
@@ -431,25 +430,6 @@ class Runner:                                                               # Ru
             raise SystemError('WARNING Executable not found: ' + self.exe)
         return True
 
-    # #--------------------------------------------------------------------------------
-    # def interface_file(self, nr, log=4):                                     # Runner
-    # #--------------------------------------------------------------------------------
-    #     log_func = False
-    #     if log:
-    #         log_func = lambda x : self._print(x, v=log)    
-    #     if isinstance(nr, int):
-    #         return Control_file(ext=self.ext_iface.format(nr), root=self.case, log=log_func) 
-    #     elif nr == 'all':
-    #         ext, num = self.ext_iface.split('{')
-    #         n = int(num.split('d')[0][-1])
-    #         return Control_file(ext=ext+'?'*n, root=self.case)
-                
-        
-    # #--------------------------------------------------------------------------------
-    # def OK_file(self):                                                       # Runner
-    # #--------------------------------------------------------------------------------
-    #     return Control_file(ext=self.ext_OK, root=self.case)
-
 
     #--------------------------------------------------------------------------------
     def unexpected_stop_error(self):                                         # Runner
@@ -460,8 +440,8 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def start(self, error_func=None):                                        # Runner
     #--------------------------------------------------------------------------------
-        self.starttime = datetime.now()
         self.log = safeopen(self.logname, 'w')
+        self.starttime = datetime.now()
         if self.pipe:
             self._print(f"Starting in PIPE-mode", v=1)
             self.popen = Popen(self.cmd, stdin=PIPE, stdout=self.log, stderr=STDOUT)
@@ -500,7 +480,7 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def get_logfile(self):                                                   # Runner
     #--------------------------------------------------------------------------------
-        return self.log.name
+        return self.log and self.log.name
 
     #--------------------------------------------------------------------------------
     def suspend_active(self):                                                # Runner
@@ -662,7 +642,8 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
         self.reset_processes()
         # Close log-file
-        self.log.close()
+        self.log and self.log.close()
+        self.log = None
         # Stop and delete the suspend-timer-thread
         self.suspend_timer and self.suspend_timer.close()
         self.suspend_timer = None # For garbage collector (__del__)
