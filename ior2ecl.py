@@ -1228,7 +1228,7 @@ class Simulation:                                                        # Simul
     def info_header(self):                                               # Simulation
     #--------------------------------------------------------------------------------
         format = '10s'
-        logfiles = [run.log.name for run in self.runs]+[log.name for log in (self.runlog,) if log]
+        logfiles = [run.logname for run in self.runs]+[log.name for log in (self.runlog,) if log]
         case = Path(self.root).name
         s  = '\n'
         s += f'    {"Case":{format}}: {case}\n'
