@@ -60,84 +60,6 @@ def pass_KeyboardInterrupt(func):
     return inner
 
 
-# #====================================================================================
-# class Control_file:
-# #====================================================================================
-#     #--------------------------------------------------------------------------------
-#     def __init__(self, ext=None, root=None, log=False):
-#     #--------------------------------------------------------------------------------
-#         #self._name = lambda nr: f'{root}.{ext}{nr:{format}}'
-#         self._name = Path(f'{root}.{ext}')
-#         self.log = log
-
-#     #--------------------------------------------------------------------------------
-#     def name(self):
-#     #--------------------------------------------------------------------------------
-#         return self._name.name
-        
-#     #--------------------------------------------------------------------------------
-#     def path(self):
-#     #--------------------------------------------------------------------------------
-#         return self._name
-
-#     #--------------------------------------------------------------------------------
-#     def print(self):
-#     #--------------------------------------------------------------------------------
-#         print(self._name)
-        
-#     @catch_permission_error
-#     #--------------------------------------------------------------------------------
-#     def create_empty(self, delete=False):
-#     #--------------------------------------------------------------------------------
-#         self.log and self.log(f'Create empty {self._name.name}')
-#         self._name.touch()
-    
-#     @catch_permission_error
-#     #--------------------------------------------------------------------------------
-#     def create_from_string(self, string):    
-#     #--------------------------------------------------------------------------------
-#         self.log and self.log(f'Create {self._name.name} from string')
-#         with open(self._name, 'w') as f:
-#             f.write(string)
-
-#     @catch_permission_error
-#     #--------------------------------------------------------------------------------
-#     def copy(self, src, delete=False):
-#     #--------------------------------------------------------------------------------
-#         self.log and self.log(f'Create {self._name.name} from file')
-#         copy(src, self._name)
-#         if delete:
-#             silentdelete(src)
-#             #src.unlink(missing_ok=True)
-        
-#     @catch_permission_error
-#     #--------------------------------------------------------------------------------
-#     def append(self, _ascii):
-#     #--------------------------------------------------------------------------------
-#         self.log and self.log(f'Append to {self._name.name}')
-#         with open(self._name, 'a') as f:
-#             f.write(f'{_ascii}\n')
-
-#     @ignore_permission_error
-#     #--------------------------------------------------------------------------------
-#     def delete(self):
-#     #--------------------------------------------------------------------------------
-#         if self._name.is_file():
-#             self.log and self.log(f'Delete {self._name.name}')
-#             self._name.unlink()
-#         else:
-#             [f.unlink() for f in self._name.parent.glob(self._name.name) if f.is_file()]    
-
-
-#     #@ignore_permission_error
-#     #--------------------------------------------------------------------------------
-#     def is_deleted(self):
-#     #--------------------------------------------------------------------------------
-#         try:
-#             if not self._name.is_file():
-#                 return True
-#         except PermissionError:
-#             return False
 
 #====================================================================================
 class Control_file:
@@ -451,7 +373,9 @@ class Runner:                                                               # Ru
         self.case = Path(case)
         self.exe = exe
         self.cmd = cmd
-        self.log = safeopen(Path(case).parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log', 'w' )
+        self.logname = Path(case).parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log'
+        self.log = None
+        # self.log = safeopen(Path(case).parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log', 'w' )
         self.runlog = runlog
         log4 = lambda x: self._print(x, v=4)
         self.interface_file = Control_file(self.case, *ext_iface, log=log4)
@@ -537,6 +461,7 @@ class Runner:                                                               # Ru
     def start(self, error_func=None):                                        # Runner
     #--------------------------------------------------------------------------------
         self.starttime = datetime.now()
+        self.log = safeopen(self.logname, 'w')
         if self.pipe:
             self._print(f"Starting in PIPE-mode", v=1)
             self.popen = Popen(self.cmd, stdin=PIPE, stdout=self.log, stderr=STDOUT)

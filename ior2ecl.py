@@ -421,7 +421,6 @@ class Iorsim(Runner):                                                        # i
         cmd = [exe, str(root)] + args.split()
         super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, time_regex=r'\bTime\b:\s+([0-9.e+-]+)', **kwargs)
         self.update = kwargs.get('update') or None
-        #self.funrst = fmt_file(abs_root+'_IORSim_PLOT', '.FUNRST')
         self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
         self.unrst = UNRST_file(self.funrst.file, end='SATNUM')
         self.inputfile = IORSim_input(root)
@@ -1288,7 +1287,8 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
         #ecl = self.ecl or Eclipse(root=self.root)
         ecl_unrst = UNRST_file(f'{self.root}_ECLIPSE.UNRST')
-        ior = self.ior or Iorsim(root=self.root)
+        ior = self.ior or Iorsim(root=self.root)   
+        # ior_funrst = FUNRST_file(f'{self.root}_IORSim_PLOT.FUNRST')
         with open(self.runlog.name, 'a') as self.runlog:   
             self.print2log(f'\n Comparing {ecl_unrst.name()} and {ior.funrst.name()}:')
             for a,b in zip(ecl_unrst.data(*ecl_keys), ior.funrst.data(*ior_keys)):
