@@ -643,16 +643,20 @@ class Schedule:
             self.end = (len(self._schedule) > 0) and self._schedule[-1][0] or 0
         ### Add simulation end time 
         self.insert(days=T, remove=True)
-        ### If days match first schedule event we will have sync problems
-        if self._schedule[0][0] <= float(self.days):
-            raise SystemError(f'WARNING Eclipse schedule starts too early, reduce TSTEP or START in {self.case.name+".DATA"}')
+        # ### If days match first schedule event we will have sync problems
+        # if self._schedule[0][0] <= float(self.days):
+        #     raise SystemError(f'WARNING Eclipse schedule starts too early, reduce TSTEP or START in {self.case.name+".DATA"}')
         DEBUG and print(f'Creating {self}')
+
+    #--------------------------------------------------------------------------------
+    def __repr__(self):                                                     # Schedule
+    #--------------------------------------------------------------------------------
+        return f'<Schedule(file={self.file}, start={self.start}, end={self.end}, init_days={self.days}, length={len(self._schedule)})>'
 
     #--------------------------------------------------------------------------------
     def __str__(self):                                                     # Schedule
     #--------------------------------------------------------------------------------
-        return f'<Schedule(file={self.file}, start={self.start}, end={self.end}, init_days={self.days}, length={len(self._schedule)})>'
-
+        return f'{self.file.name}'
 
     #--------------------------------------------------------------------------------
     def __del__(self):                                                     # Schedule
@@ -935,30 +939,35 @@ class Simulation:                                                        # Simul
             ### Get time and step from the restart-file
             self.restart_file = UNRST_file(file)
             if not self.restart_file.is_file():
-                self.update.message(f'ERROR Restart file {self.restart_file.file.relative_to(Path.cwd())} is missing')
-                return False
+                # self.update.message(f'ERROR Restart file {self.restart_file.file.relative_to(Path.cwd())} is missing')
+                # return False
+                raise SystemError(f'ERROR Restart file {self.restart_file.file.relative_to(Path.cwd())} is missing')
             self.restart_step = step
             time, n = self.restart_file.get('time', 'step', stop=('step', step))
             if step > n[-1] or not step in n: 
                 new_step = min(n, key=lambda x:abs(x-step))
-                self.update.message(f'ERROR Error in the Eclipse input-file ({self.ECL_inp.file.name}): Unable to restart from step {step}, use {new_step} instead')
-                return False
+                # self.update.message(f'ERROR Error in the Eclipse input-file ({self.ECL_inp.file.name}): Unable to restart from step {step}, use {new_step} instead')
+                # return False
+                raise SystemError(f'ERROR Error in the Eclipse input-file ({self.ECL_inp.file.name}): Unable to restart from step {step}, use {new_step} instead')
             self.restart_days = time[n.index(step)]
             self.restart = True
         self.tsteps = ECL_input(self.root, include='SCHEDULE').tsteps()
+        if any(t<=0 for t in self.tsteps):
+            raise SystemError(f'ERROR Zero or negative timestep in {self.ECL_inp}, probably caused by a too long TSTEP that jumps over a DATES keyword')
         # if self.tsteps == []:
         #     ### If no tstep, look for tstep in include-files
         #     self.tsteps = ECL_input(self.root, include=True).tsteps()
         if self.tsteps == []:
-            self.update.message(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
-            return False
+            # self.update.message(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
+            # return False
+            raise SystemError(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
         self.mode = self.mode or self.mode_from_case()
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
         check_OK = False
         self.runs = init_func(**self.kwargs)
         # Check input
-        check_OK = self.runs and all([run.check_input() for run in self.runs])
+        check_OK = self.runs and all(run.check_input() for run in self.runs)
         return check_OK and run_func
 
 
@@ -1083,7 +1092,7 @@ class Simulation:                                                        # Simul
         except (SystemError, ProcessLookupError, NoSuchProcess) as e:
             msg = str(e)
             success = 'simulation complete' in msg.lower()
-            if not type(e) is SystemError and any([r.canceled for r in self.runs]):
+            if not type(e) is SystemError and any(r.canceled for r in self.runs):
                 msg = 'INFO Run stopped'
             #print(type(e).__name__, e, msg)
         except KeyboardInterrupt:
@@ -1104,7 +1113,7 @@ class Simulation:                                                        # Simul
             #self.update.status(value=msg, newline=True)
             conv_msg = ''
             try:
-                if self.output.convert and success and any([run.is_iorsim for run in self.runs]):
+                if self.output.convert and success and any(run.is_iorsim for run in self.runs):
                     sleep(0.05)  # Need a short break here to make the GUI progressbar responsive
                     conv_msg = self.convert_and_merge(case=self.root)
             except SystemError as e:

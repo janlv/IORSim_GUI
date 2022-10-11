@@ -333,7 +333,7 @@ class Process:                                                              # Pr
             children = self._process.children(recursive=True)
             log is not False and log(children and children or '  child-process search ...', v=3)
             # Stop if named child process is found
-            if any([p.name().lower().startswith(name) for p in children]):
+            if any(p.name().lower().startswith(name) for p in children):
                 #found = True
                 time = wait*i
                 break
