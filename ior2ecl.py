@@ -270,7 +270,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         if self.delete_interface:
             self.interface_file(self.n).delete()
         self.n += 1
-        self.t = self.check_rft and self.rft.check.data()[-1] or self.time()
+        self.t = (data := self.rft.check.data()) and data[-1] or self.time()
         if self.check_rft and self.rft.not_in_sync(self.t):
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
