@@ -789,7 +789,7 @@ class Schedule:
 
 
     #--------------------------------------------------------------------------------
-    def append(self, action=None, tstep=None, append_line=-4):             # Schedule
+    def append(self, action=None, tstep=None):             # Schedule
     #--------------------------------------------------------------------------------
         '''
         line : line number of TSTEP
@@ -799,19 +799,22 @@ class Schedule:
             return
         if tstep == 0:
             raise SystemError(f'ERROR Schedule gave TSTEP 0 at {self.days} days, simulation stopped. Check {self.file}')
-        ### Get TSTEP value and position in file
-        match = self.ifacefile.get('TSTEP', pos=True) 
-        if match:
-            file_tstep, pos = match[0] # Get first match
-        else:
-            raise SystemError(f'ERROR Missing TSTEP in schedule file {self.ifacefile.file.name}')
-        #print('UPDATE:', file_tstep, pos)
-        with open(self.ifacefile.file, 'r') as f:
-            lines = ''.join(f.readlines())
-        out = lines[:pos[0]] + (action and action or '') + f'TSTEP\n{tstep} /\n' + lines[pos[1]:]
-        #print(out)
-        with open(self.ifacefile.file, 'w') as f:
-            f.write(out)
+        new_action_and_tstep = (action and action or '') + f'TSTEP\n{tstep} /\n'
+        self.ifacefile.replace_keyword('TSTEP', string=new_action_and_tstep)
+
+        # ### Get TSTEP value and position in file
+        # match = self.ifacefile.get('TSTEP', pos=True) 
+        # if match:
+        #     file_tstep, pos = match[0] # Get first match
+        # else:
+        #     raise SystemError(f'ERROR Missing TSTEP in schedule file {self.ifacefile}')
+        # #print('UPDATE:', file_tstep, pos)
+        # with open(self.ifacefile.file, 'r') as f:
+        #     lines = ''.join(f.readlines())
+        # out = lines[:pos[0]] + (action and action or '') + f'TSTEP\n{tstep} /\n' + lines[pos[1]:]
+        # #print(out)
+        # with open(self.ifacefile.file, 'w') as f:
+        #     f.write(out)
 
 
     #--------------------------------------------------------------------------------
