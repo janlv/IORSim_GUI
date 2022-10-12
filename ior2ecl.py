@@ -800,7 +800,7 @@ class Schedule:
         if tstep == 0:
             raise SystemError(f'ERROR Schedule gave TSTEP 0 at {self.days} days, simulation stopped. Check {self.file}')
         new_action_and_tstep = (action and action or '') + f'TSTEP\n{tstep} /\n'
-        self.ifacefile.replace_keyword('TSTEP', string=new_action_and_tstep)
+        self.ifacefile.replace_keyword('TSTEP', new_action_and_tstep)
 
         # ### Get TSTEP value and position in file
         # match = self.ifacefile.get('TSTEP', pos=True) 
