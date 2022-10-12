@@ -9,7 +9,7 @@ SUSPEND_TIMER_PRECICION = 0.1  # Precision of the delayed-suspend-timer in secon
 DEBUG = False
 
 from datetime import datetime
-from subprocess import DEVNULL, Popen, PIPE, STDOUT
+from subprocess import Popen, PIPE, STDOUT
 import psutil
 from shutil import SameFileError, which
 from time import sleep

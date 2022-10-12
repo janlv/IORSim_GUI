@@ -18,7 +18,7 @@ IOR_ALIVE_LIMIT   = -1   # Negative value = never suspended
 LOG_LEVEL_MAX     = 4
 LOG_LEVEL_MIN     = 1
 DEFAULT_LOG_LEVEL = 3      
-CHECK_PAUSE       = 0.01  # Default sleep-time during wait-loops
+CHECK_PAUSE       = 0.02  # Default sleep-time during wait-loops
 RFT_CHECK_ITER    = 100   # Number of iterations before reducing number of expected RFT blocks
 MERGE_OK_FILE     = '.merge_OK' # To avoid re-merging merged UNRST-files
 
@@ -249,12 +249,9 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     #--------------------------------------------------------------------------------
     def run_one_step(self, satnum_file, log=True, start_stop=True, nwell=False):       # ecl_backward
     #--------------------------------------------------------------------------------
-        # self.interface_file(self.n).copy(satnum_file, delete=self.del_satnum)
-        # self.OK_file().create_empty()
         self.interface_file(self.n).create_from(file=satnum_file, delete=self.del_satnum)
         self.OK_file.create()
-        # Create next interface-file to avoid Eclipse from reading END
-        # self.interface_file(self.n+1).create_empty()
+        ### Create next interface-file to avoid Eclipse from reading END
         self.interface_file(self.n+1).create()
         start_stop and self.resume()
         self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted' )
@@ -275,15 +272,6 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
             self._print(f' Date is {self.unrst.dates(N=-1)} ({self.t} days)')
-            # ### REMOVE
-            # for b in UNRST_file(self.unrst.file).tail_blocks():
-            #     if b.key() == 'SEQNUM':
-            #         self._print(f'SEQNUM: {b.data()[-1]}' )
-            #         break
-            #     if b.key() == 'CLEF':
-            #         data = b.data()
-            #         self._print(f'CLEF: min={min(data)}, max={max(data)}')
-            # ### REMOVE
         self._print(f'Days: {self.t}')
 
 
@@ -437,15 +425,6 @@ class Iorsim(Runner):                                                        # i
         self.copied_chemfiles = []
 
 
-    # #--------------------------------------------------------------------------------
-    # def check_input(self):                                                   # iorsim
-    # #--------------------------------------------------------------------------------
-    #     #self.update and self.update.status(value=f'Checking {self.name} input...')
-    #     super().check_input()
-    #     self.inputfile.check(error_msg=f'Unable to start {self.name}', check_kw=self.check_input_kw)
-    #     return True
-
-
     #--------------------------------------------------------------------------------
     def start(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
@@ -482,7 +461,6 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
         super().close()
         ### Delete chem-files copied to working directory
-        #[silentdelete(file) for file in self.copied_chemfiles]
         silentdelete(*self.copied_chemfiles)
 
 
@@ -508,12 +486,6 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.endtag = IOR_SATNUM_ENDTAG
         self.schedule = schedule
 
-
-    # #--------------------------------------------------------------------------------
-    # def delete_output_files(self):                                     # ior_backward
-    # #--------------------------------------------------------------------------------
-    #     super().delete_output_files()
-    #     silentdelete(self.satnum)
 
 
     #--------------------------------------------------------------------------------
@@ -558,11 +530,9 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
         # Start IORSim backward run
         self.n = 0 
-        # self.interface_file('all').delete()
         self.interface_file.delete_all()
         if tsteps is None:
             tsteps = self.init_tsteps
-        #self.run_steps(1+tsteps, start=True)
         self.run_steps(1+tsteps, start=True)
 
 
@@ -590,7 +560,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
                 else:
                     self.resume()
             self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted')
-        self.wait_for(self.satnum_flushed)
+        self.wait_for(self.satnum_flushed, pause=CHECK_PAUSE)
         warn_empty_file(self.satnum, comment='--')
         self.suspend()
         if self.delete_interface:
