@@ -369,21 +369,24 @@ class IORSim_input:                                                    # iorsim_
     #--------------------------------------------------------------------------------
     def check(self, error_msg='', check_kw=True):                      # iorsim_input
     #--------------------------------------------------------------------------------
-        #super().check_input()
-        #msg = f'WARNING Unable to start {self.name}:'
+        msg = error_msg and error_msg+': ' or ''
 
-        # Check if input-file exists
+        ### Check if input-file exists
         if not self.file.is_file():
-            raise SystemError(f'ERROR {error_msg}: missing input file {self.file.name}')
+            raise SystemError(f'ERROR {msg}missing input file {self.file.name}')
 
-        # Check if included files exists
-        #include = flat_list(get_keyword(self.inputfile, '\*CHEMFILE', end='\*'))
-        for file in self.include_files(): #include:
-            #if not self.file.with_name(file).is_file():
-            if not file.is_file():
-                raise SystemError(f"ERROR {error_msg}: '{file.name}' included from {self.file.name} is missing in folder {file.parent}")
+        ### Check if included files exists
+        if not all((file:=f).is_file() for f in self.include_files()):
+        # for file in self.include_files():
+        #     if not file.is_file():
+            raise SystemError(f"ERROR {msg}'{file.name}' included from {self.file.name} is missing in folder {file.parent}")
 
-        # Check if required keywords are used, and if the order is correct 
+        ### Check if tstart == 0
+        inte = get_keyword(self.file, '\*INTEGRATION', end='\*')
+        if inte and (tstart := inte[0][0]) > 0:
+            raise SystemError(f'ERROR {msg}The IORSim start-time must be 0 but is currently {tstart}. Update the first entry of the *INTEGRATION keyword in {self.file.name}')
+
+        ### Check if required keywords are used, and if the order is correct 
         if check_kw:
             self.check_keywords()
         return True
@@ -396,9 +399,10 @@ class IORSim_input:                                                    # iorsim_
         Return full path to files included in the IORSim .trcinp-file
         '''
         files = flat_list(get_keyword(self.file, '\*CHEMFILE', end='\*', comment='#'))
-        files = [self.file.parent/Path(f) for f in files]
+        return (self.file.parent/Path(f) for f in files) 
+        # files = [self.file.parent/Path(f) for f in files]
         #print('IOR:', files) 
-        return files
+        #return files
 
 
 #====================================================================================
