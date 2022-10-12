@@ -1302,7 +1302,7 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def compare_restart(self, ecl_keys=[], ior_keys=[]):                 # Simulation
+    def compare_restart(self, ecl_keys=[], ior_keys=[], limit=None):     # Simulation
     #--------------------------------------------------------------------------------
         ecl_unrst = UNRST_file(f'{self.root}_ECLIPSE.UNRST')
         ior = self.ior or Iorsim(root=self.root)   
@@ -1311,10 +1311,14 @@ class Simulation:                                                        # Simul
                 self.runlog = open(self.runlog.name, 'a')
             #with open(self.runlog.name, 'a') as self.runlog:   
             self.print2log(f'\n Comparing {ecl_unrst.name()} and {ior.funrst.name()}:')
+            n = 0
             for a,b in zip(ecl_unrst.data(*ecl_keys), ior.funrst.data(*ior_keys)):
                 self.print2log(f'  ECL: {print_dict(a)}')
                 self.print2log(f'  IOR: {print_dict(b)}')
                 self.print2log('')
+                n += 1
+                if limit and n > limit:
+                    break
         finally:
             self.runlog and self.runlog.close()
 
