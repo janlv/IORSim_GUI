@@ -606,7 +606,11 @@ class Runner:                                                               # Ru
             loop_func = self.assert_running_and_stop_if_canceled
         passed_args = ','.join([f'{k}={v}' for k,v in kwargs.items()])
         self._print(f'Calling wait_for( {func.__qualname__}({passed_args}), limit={limit}, pause={pause} )... ', v=v, end='')
-        n = loop_until(func, *args, pause=pause, limit=limit, loop_func=loop_func, **kwargs)
+        try:
+            n = loop_until(func, *args, pause=pause, limit=limit, loop_func=loop_func, **kwargs)
+        except Exception as e:
+            print('EXCEPTION in wait_for', e)
+            raise SystemError(e)
         time = timer and f' ({(datetime.now()-starttime).total_seconds():.2f} sec)' or ''
         if n<0:
             if raise_error:
