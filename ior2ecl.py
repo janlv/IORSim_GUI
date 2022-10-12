@@ -1305,7 +1305,7 @@ class Simulation:                                                        # Simul
                 self.print2log(f'  IOR: {print_dict(b)}')
                 self.print2log('')
         finally:
-            self.runlog.close()
+            self.runlog and self.runlog.close()
 
 
 
