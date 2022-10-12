@@ -2049,7 +2049,7 @@ class main_window(QMainWindow):                                    # main_window
         inp = self.input
         inp['ecl_days'] = inp['species'] = inp['tracers'] = None
         if inp['root']:
-            tsteps = ECL_input(inp['root']).tsteps()
+            tsteps = ECL_input(inp['root']).tsteps(missing_ok=True, negative_ok=True)
             inp['ecl_days'] = sum(tsteps)
             inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
             inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
@@ -3020,7 +3020,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        days = self.schedule and (ECL_input(self.input['root']+'.DATA') + ECL_input(self.schedule)).tsteps() or 0
+        days = self.schedule and (ECL_input(self.input['root']+'.DATA') + ECL_input(self.schedule)).tsteps(missing_ok=True) or 0
         self.view_input_file(self.schedule, title=f'Schedule file {self.schedule.name}, total days = {sum(days):.0f}', editor=self.editor)
         
     #-----------------------------------------------------------------------

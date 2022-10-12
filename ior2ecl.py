@@ -59,7 +59,7 @@ class Eclipse(Runner):                                                      # ec
         self.unsmry = UNSMRY_file(root)
         self.msg = MSG_file(root)
         self.prt = PRT_file(root)
-        self.inputfile = ECL_input(root)
+        self.inputfile = ECL_input(root, check=True)
         self.is_iorsim = False
         self.is_eclipse = True
 
@@ -71,24 +71,24 @@ class Eclipse(Runner):                                                      # ec
         delete_files_matching(self.case.parent/'fort??????')
 
 
-    #--------------------------------------------------------------------------------
-    def check_input(self):                                                  # eclipse
-    #--------------------------------------------------------------------------------
-        #self.update and self.update.status(value=f'Checking {self.name} input...')
-        super().check_input()
-        msg = f'ERROR Unable to start {self.name}:'
+    # #--------------------------------------------------------------------------------
+    # def check_input(self):                                                  # eclipse
+    # #--------------------------------------------------------------------------------
+    #     ### Check if executable exists
+    #     super().check_input()
+    #     self.inputfile.check(msg=f'ERROR Unable to start {self.name}:')
 
-        # Check if root.DATA exists
-        if not self.inputfile.is_file():
-            raise SystemError(f'{msg} missing input file {self.inputfile}')
+    #     # ### Check if root.DATA exists
+    #     # if not self.inputfile.is_file():
+    #     #     raise SystemError(f'{msg} missing input file {self.inputfile}')
 
-        # Check if included files exists
-        for file in self.inputfile.include_files():
-            # if self.canceled:
-            #     raise SystemError('INFO Run cancelled')
-            if not file.is_file():
-                raise SystemError(f"{msg} '{file.name}' included from {self.inputfile.file.name} is missing")
-        return True
+    #     # self.inputfile.check(msg=msg)
+    #     # # Check if included files exists
+    #     # if not all((file:=f).is_file() for f in self.inputfile.include_files()):
+    #     # # for file in self.inputfile.include_files():
+    #     # #     if not file.is_file():
+    #     #     raise SystemError(f"{msg} '{file.name}' included from {self.inputfile} is missing")
+    #     return True
 
 
     #--------------------------------------------------------------------------------
@@ -326,9 +326,12 @@ class IORSim_input:                                                    # iorsim_
         solution_key = '*SOLUTION'
 
     #--------------------------------------------------------------------------------
-    def __init__(self, root):                                          # iorsim_input
+    def __init__(self, root, check_format=True):                                          # iorsim_input
     #--------------------------------------------------------------------------------
         self.file = Path(root).with_suffix('.trcinp')
+        self.check()
+        ### Check if required keywords are used, and if the order is correct 
+        check_format and self.check_keywords()
 
 
     #--------------------------------------------------------------------------------
@@ -386,9 +389,9 @@ class IORSim_input:                                                    # iorsim_
         if inte and (tstart := inte[0][0]) > 0:
             raise SystemError(f'ERROR {msg}The IORSim start-time must be 0 but is currently {tstart}. Update the first entry of the *INTEGRATION keyword in {self.file.name}')
 
-        ### Check if required keywords are used, and if the order is correct 
-        if check_kw:
-            self.check_keywords()
+        # ### Check if required keywords are used, and if the order is correct 
+        # if check_kw:
+        #     self.check_keywords()
         return True
 
 
@@ -427,20 +430,20 @@ class Iorsim(Runner):                                                        # i
         self.update = kwargs.get('update') or None
         self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
         self.unrst = UNRST_file(self.funrst.file, end='SATNUM')
-        self.inputfile = IORSim_input(root)
-        self.check_input_kw = kwargs.get('check_input_kw') or False
+        self.inputfile = IORSim_input(root, check_format=kwargs.get('check_input_kw') or False)
+        #self.check_input_kw = kwargs.get('check_input_kw') or False
         self.is_iorsim = True
         self.is_eclipse = False
         self.copied_chemfiles = []
 
 
-    #--------------------------------------------------------------------------------
-    def check_input(self):                                                   # iorsim
-    #--------------------------------------------------------------------------------
-        #self.update and self.update.status(value=f'Checking {self.name} input...')
-        super().check_input()
-        self.inputfile.check(error_msg=f'Unable to start {self.name}:', check_kw=self.check_input_kw)
-        return True
+    # #--------------------------------------------------------------------------------
+    # def check_input(self):                                                   # iorsim
+    # #--------------------------------------------------------------------------------
+    #     #self.update and self.update.status(value=f'Checking {self.name} input...')
+    #     super().check_input()
+    #     self.inputfile.check(error_msg=f'Unable to start {self.name}', check_kw=self.check_input_kw)
+    #     return True
 
 
     #--------------------------------------------------------------------------------
@@ -952,19 +955,20 @@ class Simulation:                                                        # Simul
                 new_step = min(n, key=lambda x:abs(x-step))
                 # self.update.message(f'ERROR Error in the Eclipse input-file ({self.ECL_inp.file.name}): Unable to restart from step {step}, use {new_step} instead')
                 # return False
-                raise SystemError(f'ERROR Error in the Eclipse input-file ({self.ECL_inp.file.name}): Unable to restart from step {step}, use {new_step} instead')
+                raise SystemError(f'ERROR Error in the Eclipse input-file ({self.ECL_inp}): Unable to restart from step {step}, use {new_step} instead')
             self.restart_days = time[n.index(step)]
             self.restart = True
-        self.tsteps = ECL_input(self.root, include='SCHEDULE').tsteps()
-        if any(t<=0 for t in self.tsteps):
-            raise SystemError(f'ERROR Zero or negative timestep in {self.ECL_inp}, probably caused by a too long TSTEP that jumps over a DATES keyword')
+        #self.tsteps = ECL_input(self.root, include='SCHEDULE').tsteps()
+        self.tsteps = self.ECL_inp.tsteps()
+        # if any(t<=0 for t in self.tsteps):
+        #     raise SystemError(f'ERROR Zero or negative timestep in {self.ECL_inp}, probably caused by a too long TSTEP that jumps over a DATES keyword')
         # if self.tsteps == []:
         #     ### If no tstep, look for tstep in include-files
         #     self.tsteps = ECL_input(self.root, include=True).tsteps()
-        if self.tsteps == []:
-            # self.update.message(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
-            # return False
-            raise SystemError(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
+        # if self.tsteps == []:
+        #     # self.update.message(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
+        #     # return False
+        #     raise SystemError(f'ERROR No TSTEP or DATES in {self.ECL_inp} (or the included files), simulation stopped...')
         self.mode = self.mode or self.mode_from_case()
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
