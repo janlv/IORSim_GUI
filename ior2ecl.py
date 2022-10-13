@@ -467,7 +467,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.tsteps = kwargs.get('tsteps') or ECL_input(self.case).tsteps()
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
-        self.satnum = File(IOR_SATNUM_FILE, '')   # Output-file from IORSim, read by Eclipse as an interface-file
+        self.satnum = ECL_input(IOR_SATNUM_FILE, '')   # Output-file from IORSim, read by Eclipse as an interface-file
         self.endtag = IOR_SATNUM_ENDTAG
         self.schedule = schedule
 
