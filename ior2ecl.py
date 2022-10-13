@@ -1024,7 +1024,7 @@ class Simulation:                                                        # Simul
         while ior.t < ior.T:
             self.print2log(f'\nStep {ecl.n+1}')
             self.update.status(run=ecl, mode=self.mode)
-            ecl.run_one_step(ior.satnum)
+            ecl.run_one_step(ior.satnum.file)
             # Run IORSim to prepare satnum input for the next Eclipse run
             self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
