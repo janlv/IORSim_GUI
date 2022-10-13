@@ -37,7 +37,7 @@ from traceback import print_exc as trace_print_exc, format_exc as trace_format_e
 from re import search, compile
 from os.path import relpath
 
-from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_dict, print_error, is_file_ignore_suffix_case, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_dict, print_error, is_file_ignore_suffix_case, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching
 from IORlib.runner import Runner
 from IORlib.ECL import FUNRST_file, File, Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
 
@@ -129,7 +129,8 @@ class Ecl_forward(Forward_mixin, Eclipse):                              # ecl_fo
     #--------------------------------------------------------------------------------
         super().check_input()
         ### Check root.DATA exists and that READDATA keyword is NOT present
-        if file_contains(str(self.case)+'.DATA', text='READDATA', comment='--', end='END'):
+        #if file_contains(str(self.case)+'.DATA', text='READDATA', comment='--', end='END'):
+        if 'READDATA' in self.inputfile.data():
             raise SystemError('WARNING The current case cannot run in forward-mode: '+
                               'Eclipse input contains the READDATA keyword.')
         return True
@@ -178,13 +179,15 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             raise SystemError(f'ERROR To run the current case in backward-mode you need to {msg}')
         ### Check that root.DATA exists 
         super().check_input()
-        kwargs = {'comment':'--', 'end':'END'}
+        #kwargs = {'comment':'--', 'end':'END'}
         ### Check presence of READDATA
-        DATA_file = str(self.case)+'.DATA'
-        if not file_contains(DATA_file, text='READDATA', **kwargs):
+        #DATA_file = str(self.case)+'.DATA'
+        #if not file_contains(DATA_file, text='READDATA', **kwargs):
+        if not 'READDATA' in self.inputfile.data():
             raise_error("insert 'READDATA /' in the DATA-file between 'TSTEP' and 'END'.")
         ### Check presence of RPTSOL RESTART>1
-        if not file_contains(DATA_file, regex=r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}", **kwargs):
+        #if not file_contains(DATA_file, regex=r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}", **kwargs):
+        if not self.inputfile.contains(r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
             raise_error("insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in the DATA-file.")
         return True
 
@@ -820,7 +823,7 @@ class Simulation:                                                        # Simul
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.name = 'ior2ecl'
         self.root = root
-        self.ECL_inp = ECL_input(root, check=True)
+        self.ECL_inp = ECL_input(root, check=False)
         self.merge_OK = Path(root).with_name(MERGE_OK_FILE)        
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
@@ -922,7 +925,7 @@ class Simulation:                                                        # Simul
         #     # self.update.message(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
         #     # return False
         #     raise SystemError(f'ERROR No TSTEP or DATES in {self.ECL_inp} (or the included files), simulation stopped...')
-        self.mode = self.mode or self.mode_from_case()
+        self.mode = self.mode or (('READDATA' in self.ECL_inp.data()) and 'backward' or 'forward')
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
         check_OK = False
@@ -1232,17 +1235,19 @@ class Simulation:                                                        # Simul
         return self.T
 
 
-    #--------------------------------------------------------------------------------
-    def mode_from_case(self):                                            # Simulation
-    #--------------------------------------------------------------------------------
-        data = str(self.root)+'.DATA'
-        if Path(data).is_file():
-            if file_contains(data, text='READDATA', comment='--', end='END'):
-                return 'backward'
-            else:
-                return 'forward'
-        else:
-            return None
+    # #--------------------------------------------------------------------------------
+    # def mode_from_case(self):                                            # Simulation
+    # #--------------------------------------------------------------------------------
+    #     # data = str(self.root)+'.DATA'
+    #     # if Path(data).is_file():
+    #     #     if file_contains(data, text='READDATA', comment='--', end='END'):
+    #     return ('READDATA' in self.ECL_inp) and 'backward' or 'forward'
+    #     # if 'READDATA' in self.ECL_inp:
+    #     #     return 'backward'
+    #     # else:
+    #     #     return 'forward'
+    #     # else:
+    #     #     return None
 
 
     #--------------------------------------------------------------------------------

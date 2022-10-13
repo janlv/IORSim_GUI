@@ -2339,7 +2339,8 @@ class main_window(QMainWindow):                                    # main_window
             mode = 'forward'
             #print(self.case, self.input['root'])
             try:
-                if file_contains(self.case+'.DATA', text='READDATA', comment='--', end='END'):
+                #if file_contains(self.case+'.DATA', text='READDATA', comment='--', end='END'):
+                if 'READDATA' in ECL_input(self.case).data():
                     mode = 'backward'
                     self.days_box.setEnabled(False)
             except (FileNotFoundError, SystemError) as e:
