@@ -24,7 +24,7 @@ MERGE_OK_FILE     = '.merge_OK' # To avoid re-merging merged UNRST-files
 
 
 from collections import Counter, namedtuple
-from mmap import ACCESS_READ, mmap
+#from mmap import ACCESS_READ, mmap
 from pathlib import Path
 from sys import exc_info, platform
 from argparse import ArgumentParser
@@ -37,9 +37,9 @@ from traceback import print_exc as trace_print_exc, format_exc as trace_format_e
 from re import search, compile
 from os.path import relpath
 
-from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_dict, print_error, is_file_ignore_suffix_case, number_of_blocks, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
+from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_dict, print_error, is_file_ignore_suffix_case, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching, file_contains
 from IORlib.runner import Runner
-from IORlib.ECL import FUNRST_file, Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
+from IORlib.ECL import FUNRST_file, File, Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
 
 
 #====================================================================================
@@ -59,7 +59,7 @@ class Eclipse(Runner):                                                      # ec
         self.unsmry = UNSMRY_file(root)
         self.msg = MSG_file(root)
         self.prt = PRT_file(root)
-        self.inputfile = ECL_input(root, check=True)
+        self.inputfile = ECL_input(root, check=False)
         self.is_iorsim = False
         self.is_eclipse = True
 
@@ -71,46 +71,27 @@ class Eclipse(Runner):                                                      # ec
         delete_files_matching(self.case.parent/'fort??????')
 
 
-    # #--------------------------------------------------------------------------------
-    # def check_input(self):                                                  # eclipse
-    # #--------------------------------------------------------------------------------
-    #     ### Check if executable exists
-    #     super().check_input()
-    #     self.inputfile.check(msg=f'ERROR Unable to start {self.name}:')
-
-    #     # ### Check if root.DATA exists
-    #     # if not self.inputfile.is_file():
-    #     #     raise SystemError(f'{msg} missing input file {self.inputfile}')
-
-    #     # self.inputfile.check(msg=msg)
-    #     # # Check if included files exists
-    #     # if not all((file:=f).is_file() for f in self.inputfile.include_files()):
-    #     # # for file in self.inputfile.include_files():
-    #     # #     if not file.is_file():
-    #     #     raise SystemError(f"{msg} '{file.name}' included from {self.inputfile} is missing")
-    #     return True
-
-
     #--------------------------------------------------------------------------------
     def unexpected_stop_error(self):                                        # eclipse
     #--------------------------------------------------------------------------------
         error = 'unexpectedly, check the log'
-        # Check for license failure
-        with open(str(self.case)+'.MSG') as file:
-            for line in file:
-                if 'LICENSE FAILURE' in line:
-                    error = 'due to a license failure'
-                    break
-        # ifile = self.interface_file('all').path()
-        # ifiles = list(ifile.parent.glob(ifile.name))
-        # if len(ifiles) == 1:
-        #     error = f'due to missing interface-files (last file is {ifiles[-1].name})'
+        ### Check for license failure
+        if self.msg.contains('LICENSE FAILURE'):
+            error = 'due to a license failure'
         raise SystemError(f'ERROR {self.name} stopped {error}')
+        # with open(str(self.case)+'.MSG') as file:
+        #     for line in file:
+        #         if 'LICENSE FAILURE' in line:
+        #             error = 'due to a license failure'
+        #             break
+        # raise SystemError(f'ERROR {self.name} stopped {error}')
 
 
     #--------------------------------------------------------------------------------
     def start(self):                                                        # eclipse
     #--------------------------------------------------------------------------------
+        self.update and self.update.status(value='Checking input...')
+        self.inputfile.check()
         self.update and self.update.status(value=f'Starting {self.name}...')
         super().start(error_func=self.unexpected_stop_error)
         self.update and self.update.status(value=f'{self.name} running...')
@@ -314,12 +295,11 @@ class IORSim_input:                                                    # iorsim_
         solution_key = '*SOLUTION'
 
     #--------------------------------------------------------------------------------
-    def __init__(self, root, check_format=True):                                          # iorsim_input
+    def __init__(self, root, check=False, check_format=False):                        # iorsim_input
     #--------------------------------------------------------------------------------
         self.file = Path(root).with_suffix('.trcinp')
-        self.check()
-        ### Check if required keywords are used, and if the order is correct 
-        check_format and self.check_keywords()
+        self.check_format = check_format
+        check and self.check()
 
 
     #--------------------------------------------------------------------------------
@@ -358,7 +338,7 @@ class IORSim_input:                                                    # iorsim_
 
 
     #--------------------------------------------------------------------------------
-    def check(self, error_msg='', check_kw=True):                      # iorsim_input
+    def check(self, error_msg=''):                      # iorsim_input
     #--------------------------------------------------------------------------------
         msg = error_msg and error_msg+': ' or ''
 
@@ -377,9 +357,9 @@ class IORSim_input:                                                    # iorsim_
         if inte and (tstart := inte[0][0]) > 0:
             raise SystemError(f'ERROR {msg}The IORSim start-time must be 0 but is currently {tstart}. Update the first entry of the *INTEGRATION keyword in {self.file.name}')
 
-        # ### Check if required keywords are used, and if the order is correct 
-        # if check_kw:
-        #     self.check_keywords()
+        ### Check if required keywords are used, and if the order is correct 
+        self.check_format and self.check_keywords()
+ 
         return True
 
 
@@ -418,7 +398,7 @@ class Iorsim(Runner):                                                        # i
         self.update = kwargs.get('update') or None
         self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
         self.unrst = UNRST_file(self.funrst.file, end='SATNUM')
-        self.inputfile = IORSim_input(root, check_format=kwargs.get('check_input_kw') or False)
+        self.inputfile = IORSim_input(root, check=False, check_format=kwargs.get('check_input_kw') or False)
         #self.check_input_kw = kwargs.get('check_input_kw') or False
         self.is_iorsim = True
         self.is_eclipse = False
@@ -428,6 +408,8 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
     def start(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
+        self.update and self.update.status(value='Checking input...')
+        self.inputfile.check()
         self.update and self.update.status(value=f'Starting {self.name}...')
         ### Copy chem-files to working dir 
         if COPY_CHEMFILE:
@@ -482,7 +464,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.tsteps = kwargs.get('tsteps') or ECL_input(self.case).tsteps()
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
-        self.satnum = Path(IOR_SATNUM_FILE)   # Output-file from IORSim, read by Eclipse as an interface-file
+        self.satnum = File(IOR_SATNUM_FILE, '')   # Output-file from IORSim, read by Eclipse as an interface-file
         self.endtag = IOR_SATNUM_ENDTAG
         self.schedule = schedule
 
@@ -491,20 +473,26 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
     def satnum_flushed(self):                                          # ior_backward
     #--------------------------------------------------------------------------------
-        file = Path(self.satnum)
-        nchar = len(self.endtag) + 3
-        endtag = self.endtag.encode()
-        if not file.is_file() or file.stat().st_size < nchar:
+        if not self.satnum.is_file() or self.satnum.size() < len(self.endtag)+3:
             return False
-        with open(file) as f:
-            try:
-                with mmap(f.fileno(), length=0, access=ACCESS_READ) as data:
-                    if endtag in data[-nchar:]:
-                        #print(data[-nchar:])
-                        return True
-            except ValueError:  # Catch 'cannot mmap empty file'
-                return False
+        if self.satnum.contains(self.endtag):
+            return True
         return False
+        # file = Path(self.satnum)
+        # nchar = len(self.endtag) + 3
+        # endtag = self.endtag.encode()
+        # if not file.is_file() or file.stat().st_size < nchar:
+        #     return False
+
+        # with open(file) as f:
+        #     try:
+        #         with mmap(f.fileno(), length=0, access=ACCESS_READ) as data:
+        #             if endtag in data[-nchar:]:
+        #                 #print(data[-nchar:])
+        #                 return True
+        #     except ValueError:  # Catch 'cannot mmap empty file'
+        #         return False
+        # return False
 
 
     #--------------------------------------------------------------------------------
@@ -568,14 +556,6 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.t = self.time()
         if log:
             self._print(f' {self.t:.3f}/{self.T} days')
-            # ### REMOVE
-            # key = 'Silica'
-            # data = [-1]
-            # for b in self.funrst.blocks():
-            #     if b.key() == key:
-            #         data = b.data
-            # self._print(f'{key}: max={data.max()}, min={data.min()}')
-            # ### REMOVE
 
 
     #--------------------------------------------------------------------------------
