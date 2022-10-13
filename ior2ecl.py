@@ -590,7 +590,7 @@ class Schedule:
         self.case = Path(case)
         self.skip_empty = skip_empty
         self.comment = comment
-        self.ifacefile = ECL_input(interface_file, reread=True)
+        self.ifacefile = ECL_input(interface_file.file, reread=True)
         self.days = init_days 
         self.start = start
         self.tstep = 0
