@@ -359,7 +359,7 @@ class IORSim_input:                                                    # iorsim_
         ### Check if tstart == 0
         inte = get_keyword(self.file, '\*INTEGRATION', end='\*')
         if inte and (tstart := inte[0][0]) > 0:
-            warn = f'The IORSim start-time must be 0 but is currently {tstart}. Update the first entry of the *INTEGRATION keyword in {self.file.name}')
+            warn = f'The IORSim start-time must be 0 but is currently {tstart}. Update the first entry of the *INTEGRATION keyword in {self.file.name}'
 
         ### Check if required keywords are used, and if the order is correct 
         self.check_format and self.check_keywords()
