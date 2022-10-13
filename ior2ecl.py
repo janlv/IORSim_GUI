@@ -478,7 +478,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
         if not self.satnum.is_file() or self.satnum.size() < len(self.endtag)+3:
             return False
-        if self.satnum.contains(self.endtag):
+        if self.endtag in self.satnum:
             return True
         return False
         # file = Path(self.satnum)
@@ -504,7 +504,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         '''
         Return the distribution of SATNUM numbers as a dict
         '''
-        lines = remove_comments(file=self.satnum, comment='--') 
+        lines = remove_comments(file=self.satnum.file, comment='--') 
         values = compile(r'SATNUM\s+([0-9\s]+)').findall(lines) 
         if values:
             values = [int(v) for v in values[0].split('\n') if v.strip()]
@@ -544,7 +544,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
             self.n += 1
             self.interface_file(self.n).create()
             self.OK_file.create()
-            silentdelete(self.satnum)
+            # silentdelete(self.satnum)
+            self.satnum.delete()
             if n == 0:
                 if start:
                     super().start()
