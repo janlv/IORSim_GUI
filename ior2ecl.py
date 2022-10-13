@@ -553,7 +553,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
                     self.resume()
             self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted')
         self.wait_for(self.satnum_flushed, pause=CHECK_PAUSE)
-        warn_empty_file(self.satnum, comment='--')
+        #warn_empty_file(self.satnum, comment='--')
+        self.satnum.is_empty() and print(f'WARNING {self.satnum} is empty!')
         self.suspend()
         if self.delete_interface:
             [self.interface_file(self.n-n).delete() for n in range(N)] 
