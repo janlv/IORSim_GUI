@@ -237,12 +237,14 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         if self.delete_interface:
             self.interface_file(self.n).delete()
         self.n += 1
-        self.t = (data := self.rft.check.data()) and data[-1] or self.time()
+        # self.t = (data := self.rft.check.data()) and data[-1] or self.time()
+        self.t = self.rft.last_day() or self.unrst.last_day() or self.time()
         if self.check_rft and self.rft.not_in_sync(self.t):
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
             self._print(f' Date is {self.unrst.dates(N=-1)} ({self.t} days)')
         self._print(f'Days: {self.t}')
+        #self._print(f'Days: log:{self.time()}, RFT:{(data:=self.rft.check.data()) and data[-1]}, UNRST:{self.unrst.get("time", N=-1)}')
 
 
     #--------------------------------------------------------------------------------
