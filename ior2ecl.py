@@ -187,8 +187,10 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             raise_error("insert 'READDATA /' in the DATA-file between 'TSTEP' and 'END'.")
         ### Check presence of RPTSOL RESTART>1
         #if not file_contains(DATA_file, regex=r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}", **kwargs):
-        if not self.inputfile.contains(r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
+        print('A')
+        if not self.inputfile.include(section='SOLUTION').contains(r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
             raise_error("insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in the DATA-file.")
+        print('B')
         return True
 
 
