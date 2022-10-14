@@ -358,7 +358,7 @@ class IORSim_input:                                                    # iorsim_
         ### Check if tstart == 0
         inte = get_keyword(self.file, '\*INTEGRATION', end='\*')
         if inte and (tstart := inte[0][0]) > 0:
-            warn += f'The IORSim start-time must be 0 but is currently {tstart}. Update the first entry of the *INTEGRATION keyword in {self.file.name}'
+            warn += f'WARNING The IORSim start-time should be 0 but is currently {tstart}. Update the *INTEGRATION keyword in {self.file.name} to avoid sync problems.'
 
         ### Check if required keywords are used, and if the order is correct 
         self.check_format and self.check_keywords()
@@ -413,9 +413,6 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
     def start(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
-        # self.update and self.update.status(value='Checking input...')
-        # warn = self.inputfile.check()
-        # warn and self.update and self.update.message(warn)
         self.update and self.update.status(value=f'Starting {self.name}...')
         ### Copy chem-files to working dir 
         if COPY_CHEMFILE:
