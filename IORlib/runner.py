@@ -547,7 +547,8 @@ class Runner:                                                               # Ru
     def time(self):                                                          # Runner
     #--------------------------------------------------------------------------------
         t = 0
-        if self.log: 
+        if self.log:
+            self.log.flush() 
             match = matches(file=self.log.name, pattern=self.time_regex)
             time = [m.group(1) for m in match]
             t = time and time[-1] or 0           

@@ -79,19 +79,11 @@ class Eclipse(Runner):                                                      # ec
         if 'LICENSE FAILURE'.encode() in self.msg.binarydata():
             error = 'due to a license failure'
         raise SystemError(f'ERROR {self.name} stopped {error}')
-        # with open(str(self.case)+'.MSG') as file:
-        #     for line in file:
-        #         if 'LICENSE FAILURE' in line:
-        #             error = 'due to a license failure'
-        #             break
-        # raise SystemError(f'ERROR {self.name} stopped {error}')
 
 
     #--------------------------------------------------------------------------------
     def start(self):                                                        # eclipse
     #--------------------------------------------------------------------------------
-        #self.update and self.update.status(value='Checking input...')
-        #self.inputfile.check()
         self.update and self.update.status(value=f'Starting {self.name}...')
         super().start(error_func=self.unexpected_stop_error)
         self.update and self.update.status(value=f'{self.name} running...')
@@ -129,7 +121,6 @@ class Ecl_forward(Forward_mixin, Eclipse):                              # ecl_fo
     #--------------------------------------------------------------------------------
         super().check_input()
         ### Check root.DATA exists and that READDATA keyword is NOT present
-        #if file_contains(str(self.case)+'.DATA', text='READDATA', comment='--', end='END'):
         if 'READDATA' in self.inputfile.data():
             raise SystemError('WARNING The current case cannot run in forward-mode: '+
                               'Eclipse input contains the READDATA keyword.')
@@ -179,16 +170,11 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             raise SystemError(f'ERROR To run the current case in backward-mode you need to {msg}')
         ### Check that root.DATA exists 
         super().check_input()
-        #kwargs = {'comment':'--', 'end':'END'}
-        ### Check presence of READDATA
-        #DATA_file = str(self.case)+'.DATA'
-        #if not file_contains(DATA_file, text='READDATA', **kwargs):
         if not 'READDATA' in self.inputfile.data():
-            raise_error("insert 'READDATA /' in the DATA-file between 'TSTEP' and 'END'.")
+            raise_error(f"insert 'READDATA /' between 'TSTEP' and 'END' in {self.inputfile}.")
         ### Check presence of RPTSOL RESTART>1
-        #if not file_contains(DATA_file, regex=r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}", **kwargs):
         if not self.inputfile.include(section='SOLUTION').contains(r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
-            raise_error("insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in the DATA-file.")
+            raise_error(f"insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in {self.inputfile}.")
         return True
 
 
@@ -262,8 +248,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ecl_backward
     #--------------------------------------------------------------------------------
-        #self._print(f'appending END to {self.interface_file(self.n).name()}')
         self.print_suspend_errors()
+        ### Append END to interface-file
         self.interface_file(self.n).create_from(string='END')
         self.OK_file.create()
         super().quit()
@@ -374,9 +360,6 @@ class IORSim_input:                                                    # iorsim_
         '''
         files = flat_list(get_keyword(self.file, '\*CHEMFILE', end='\*', comment='#'))
         return (self.file.parent/Path(f) for f in files) 
-        # files = [self.file.parent/Path(f) for f in files]
-        #print('IOR:', files) 
-        #return files
 
 
 #====================================================================================
@@ -480,21 +463,6 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         if self.endtag.encode() in self.satnum.binarydata():
             return True
         return False
-        # file = Path(self.satnum)
-        # nchar = len(self.endtag) + 3
-        # endtag = self.endtag.encode()
-        # if not file.is_file() or file.stat().st_size < nchar:
-        #     return False
-
-        # with open(file) as f:
-        #     try:
-        #         with mmap(f.fileno(), length=0, access=ACCESS_READ) as data:
-        #             if endtag in data[-nchar:]:
-        #                 #print(data[-nchar:])
-        #                 return True
-        #     except ValueError:  # Catch 'cannot mmap empty file'
-        #         return False
-        # return False
 
 
     #--------------------------------------------------------------------------------
@@ -566,7 +534,6 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
     def quit(self):                                                    # ior_backward
     #--------------------------------------------------------------------------------
-        #print('Quit: ',self.n+1)
         self.interface_file(self.n+1).append('Quit')
         self.OK_file.create()
         super().quit()
@@ -605,9 +572,6 @@ class Schedule:
             self.end = (len(self._schedule) > 0) and self._schedule[-1][0] or 0
         ### Add simulation end time 
         self.insert(days=T, remove=True)
-        # ### If days match first schedule event we will have sync problems
-        # if self._schedule[0][0] <= float(self.days):
-        #     raise SystemError(f'WARNING Eclipse schedule starts too early, reduce TSTEP or START in {self.case.name+".DATA"}')
         DEBUG and print(f'Creating {self}')
 
     #--------------------------------------------------------------------------------
@@ -757,20 +721,6 @@ class Schedule:
         new_action_and_tstep = (action and action or '') + f'TSTEP\n{tstep} /\n'
         self.ifacefile.replace_keyword('TSTEP', new_action_and_tstep)
 
-        # ### Get TSTEP value and position in file
-        # match = self.ifacefile.get('TSTEP', pos=True) 
-        # if match:
-        #     file_tstep, pos = match[0] # Get first match
-        # else:
-        #     raise SystemError(f'ERROR Missing TSTEP in schedule file {self.ifacefile}')
-        # #print('UPDATE:', file_tstep, pos)
-        # with open(self.ifacefile.file, 'r') as f:
-        #     lines = ''.join(f.readlines())
-        # out = lines[:pos[0]] + (action and action or '') + f'TSTEP\n{tstep} /\n' + lines[pos[1]:]
-        # #print(out)
-        # with open(self.ifacefile.file, 'w') as f:
-        #     f.write(out)
-
 
     #--------------------------------------------------------------------------------
     def check(self):                                                       # Schedule
@@ -850,11 +800,7 @@ class Simulation:                                                        # Simul
         self.restart_step = self.restart_days = 0
         kwargs.update({'root':str(root), 'runlog':self.runlog, 'update':self.update})
         self.kwargs = kwargs
-        # if self.root:
-        #     try:
-        #         self.run_sim = self.init_runs()
-        #     except SystemError as e:
-        #         self.update.message(f'{e}')
+
 
     #--------------------------------------------------------------------------------
     def prepare(self):                                                     # Simulation
@@ -897,42 +843,27 @@ class Simulation:                                                        # Simul
         '''
         Read Eclipse and IORSim input files, run the init_func, and return the run_func
         '''
-        # self.update.status(value='Preparing run...')
         ### Check if this is a restart-run
         file, step = self.ECL_inp.get('RESTART')
         if file and step:
             ### Get time and step from the restart-file
             self.restart_file = UNRST_file(file)
             if not self.restart_file.is_file():
-                # self.update.message(f'ERROR Restart file {self.restart_file.file.relative_to(Path.cwd())} is missing')
-                # return False
                 raise SystemError(f'ERROR Restart file {self.restart_file.file.relative_to(Path.cwd())} is missing')
             self.restart_step = step
             time, n = self.restart_file.get('time', 'step', stop=('step', step))
             if step > n[-1] or not step in n: 
                 new_step = min(n, key=lambda x:abs(x-step))
-                # self.update.message(f'ERROR Error in the Eclipse input-file ({self.ECL_inp.file.name}): Unable to restart from step {step}, use {new_step} instead')
-                # return False
                 raise SystemError(f'ERROR Error in the Eclipse input-file ({self.ECL_inp}): Unable to restart from step {step}, use {new_step} instead')
             self.restart_days = time[n.index(step)]
             self.restart = True
-        #self.tsteps = ECL_input(self.root, include='SCHEDULE').tsteps()
         self.tsteps = self.ECL_inp.tsteps()
-        # if any(t<=0 for t in self.tsteps):
-        #     raise SystemError(f'ERROR Zero or negative timestep in {self.ECL_inp}, probably caused by a too long TSTEP that jumps over a DATES keyword')
-        # if self.tsteps == []:
-        #     ### If no tstep, look for tstep in include-files
-        #     self.tsteps = ECL_input(self.root, include=True).tsteps()
-        # if self.tsteps == []:
-        #     # self.update.message(f'ERROR No TSTEP or DATES in {self.ECL_inp.file.name} or the included files, simulation stopped...')
-        #     # return False
-        #     raise SystemError(f'ERROR No TSTEP or DATES in {self.ECL_inp} (or the included files), simulation stopped...')
         self.mode = self.mode or (('READDATA' in self.ECL_inp.data()) and 'backward' or 'forward')
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
         check_OK = False
         self.runs = init_func(**self.kwargs)
-        # Check input
+        ### Check input
         check_OK = self.runs and all(run.check_input() for run in self.runs)
         return check_OK and run_func
 
