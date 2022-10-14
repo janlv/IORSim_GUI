@@ -76,7 +76,7 @@ class Eclipse(Runner):                                                      # ec
     #--------------------------------------------------------------------------------
         error = 'unexpectedly, check the log'
         ### Check for license failure
-        if self.msg.contains('LICENSE FAILURE'):
+        if 'LICENSE FAILURE'.encode() in self.msg.binarydata():
             error = 'due to a license failure'
         raise SystemError(f'ERROR {self.name} stopped {error}')
         # with open(str(self.case)+'.MSG') as file:
