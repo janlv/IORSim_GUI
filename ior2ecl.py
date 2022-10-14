@@ -59,7 +59,7 @@ class Eclipse(Runner):                                                      # ec
         self.unsmry = UNSMRY_file(root)
         self.msg = MSG_file(root)
         self.prt = PRT_file(root)
-        self.inputfile = ECL_input(root, check=False)
+        self.inputfile = ECL_input(root, check=True)
         self.is_iorsim = False
         self.is_eclipse = True
 
@@ -90,8 +90,8 @@ class Eclipse(Runner):                                                      # ec
     #--------------------------------------------------------------------------------
     def start(self):                                                        # eclipse
     #--------------------------------------------------------------------------------
-        self.update and self.update.status(value='Checking input...')
-        self.inputfile.check()
+        #self.update and self.update.status(value='Checking input...')
+        #self.inputfile.check()
         self.update and self.update.status(value=f'Starting {self.name}...')
         super().start(error_func=self.unexpected_stop_error)
         self.update and self.update.status(value=f'{self.name} running...')
@@ -302,7 +302,7 @@ class IORSim_input:                                                    # iorsim_
     #--------------------------------------------------------------------------------
         self.file = Path(root).with_suffix('.trcinp')
         self.check_format = check_format
-        check and self.check()
+        self.warnings = check and self.check() or ''
 
 
     #--------------------------------------------------------------------------------
@@ -351,19 +351,18 @@ class IORSim_input:                                                    # iorsim_
             raise SystemError(f'ERROR {msg}missing input file {self.file.name}')
 
         ### Check if included files exists
-        if not all((file:=f).is_file() for f in self.include_files()):
-        # for file in self.include_files():
-        #     if not file.is_file():
-            raise SystemError(f"ERROR {msg}'{file.name}' included from {self.file.name} is missing in folder {file.parent}")
+        if (missing := [f for f in self.include_files() if not f.is_file()]):
+        #if not all((file:=f).is_file() for f in self.include_files()):
+            raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.file.name} is missing in folder {missing[0].parent}")
 
         ### Check if tstart == 0
         inte = get_keyword(self.file, '\*INTEGRATION', end='\*')
         if inte and (tstart := inte[0][0]) > 0:
-            warn = f'The IORSim start-time must be 0 but is currently {tstart}. Update the first entry of the *INTEGRATION keyword in {self.file.name}'
+            warn += f'The IORSim start-time must be 0 but is currently {tstart}. Update the first entry of the *INTEGRATION keyword in {self.file.name}'
 
         ### Check if required keywords are used, and if the order is correct 
         self.check_format and self.check_keywords()
- 
+
         return warn
 
 
@@ -402,7 +401,9 @@ class Iorsim(Runner):                                                        # i
         self.update = kwargs.get('update') or None
         self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
         self.unrst = UNRST_file(self.funrst.file, end='SATNUM')
-        self.inputfile = IORSim_input(root, check=False, check_format=kwargs.get('check_input_kw') or False)
+        self.inputfile = IORSim_input(root, check=True, check_format=kwargs.get('check_input_kw') or False)
+        #warn = self.inputfile.check()
+        (warn:=self.inputfile.warnings) and self.update and self.update.message(warn)
         #self.check_input_kw = kwargs.get('check_input_kw') or False
         self.is_iorsim = True
         self.is_eclipse = False
@@ -412,9 +413,9 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
     def start(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
-        self.update and self.update.status(value='Checking input...')
-        warn = self.inputfile.check()
-        warn and self.update and self.update.message(warn)
+        # self.update and self.update.status(value='Checking input...')
+        # warn = self.inputfile.check()
+        # warn and self.update and self.update.message(warn)
         self.update and self.update.status(value=f'Starting {self.name}...')
         ### Copy chem-files to working dir 
         if COPY_CHEMFILE:
@@ -469,10 +470,9 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.tsteps = kwargs.get('tsteps') or ECL_input(self.case).tsteps()
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
-        self.satnum = ECL_input(IOR_SATNUM_FILE, '')   # Output-file from IORSim, read by Eclipse as an interface-file
+        self.satnum = ECL_input(IOR_SATNUM_FILE, '', reread=True)   # Output-file from IORSim, read by Eclipse as an interface-file
         self.endtag = IOR_SATNUM_ENDTAG
         self.schedule = schedule
-
 
 
     #--------------------------------------------------------------------------------
@@ -480,7 +480,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
     #--------------------------------------------------------------------------------
         if not self.satnum.is_file() or self.satnum.size() < len(self.endtag)+3:
             return False
-        if self.endtag in self.satnum:
+        if self.endtag.encode() in self.satnum.binarydata():
             return True
         return False
         # file = Path(self.satnum)
@@ -556,7 +556,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
             self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted')
         self.wait_for(self.satnum_flushed, pause=CHECK_PAUSE)
         #warn_empty_file(self.satnum, comment='--')
-        self.satnum.is_empty() and print(f'WARNING {self.satnum} is empty!')
+        if self.satnum.is_empty():
+            self.update and self.update.message(f'WARNING {self.satnum} is empty!')
         self.suspend()
         if self.delete_interface:
             [self.interface_file(self.n-n).delete() for n in range(N)] 
