@@ -1,3 +1,20 @@
+============= Release 2.28 =================
+
+- Better implementation Control_file-class
+- Faster recursive search for include-files in Eclipse .DATA-files
+- Faster merge of IORSim and Eclipse UNRST-files
+
+
+============= Release 2.27 =================
+
+- Explicitly delete satnum-file before each IORSim iteration
+- Use Github Actions to build linux and windows executables for new releases
+- Better handling of the skip_empty option for schedule-files
+- Bug fixes
+
+
+============= Release 2.26 =================
+
 - Different log-levels (1-4)
 - Cleaner implementation of Eclipse-file-classes in ECL.py
 - Create interface-files on the fly (no need to create all files at startup)
@@ -11,6 +28,10 @@
 - Add include-files in a single .DATA-file
 - Run Eclipse at statup until a least one well is producing (and an RFT-file is created)
 - New Eclipse and IORSim menu
+- Fixed "copy of chemfile to cwd" bug
+- Better version check
 
-============= Release 2.26 =================
+============= Release 2.25 =================
 
+- Increased the search for child processes to 0.5 * 500 = 250 seconds
+- Abort simulation if child process eclipse.exe, spawned by eclrun.exe, is not found
