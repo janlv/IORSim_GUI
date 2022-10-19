@@ -798,7 +798,7 @@ class Simulation:                                                        # Simul
         self.restart = False
         self.restart_file = None
         self.restart_step = self.restart_days = 0
-        kwargs.update({'root':str(root), 'runlog':self.runlog, 'update':self.update})
+        kwargs.update({'root':str(root), 'runlog':self.runlog, 'update':self.update, 'to_screen':to_screen})
         self.kwargs = kwargs
 
 

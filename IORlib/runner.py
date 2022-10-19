@@ -396,6 +396,7 @@ class Runner:                                                               # Ru
         self.keep_alive = keep_alive
         self.suspend_timer = None
         self.time_regex = time_regex
+        self.kwargs = kwargs
         DEBUG and print(f'Creating {self}')
 
     #--------------------------------------------------------------------------------
@@ -440,7 +441,7 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def start(self, error_func=None):                                        # Runner
     #--------------------------------------------------------------------------------
-        self.log = safeopen(self.logname, 'w')
+        self.log = self.kwargs.get('to_screen', False) and safeopen(self.logname, 'w')
         self.starttime = datetime.now()
         if self.pipe:
             self._print(f"Starting in PIPE-mode", v=1)
