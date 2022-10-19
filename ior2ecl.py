@@ -37,9 +37,9 @@ from traceback import print_exc as trace_print_exc, format_exc as trace_format_e
 from re import search, compile
 from os.path import relpath
 
-from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_dict, print_error, is_file_ignore_suffix_case, remove_comments, safeopen, Progress, warn_empty_file, silentdelete, delete_files_matching
+from IORlib.utils import flat_list, get_keyword, get_python_version, list2text, print_dict, print_error, is_file_ignore_suffix_case, remove_comments, safeopen, Progress, silentdelete, delete_files_matching
 from IORlib.runner import Runner
-from IORlib.ECL import FUNRST_file, File, Input_file as ECL_input, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
+from IORlib.ECL import FUNRST_file, DATA_file, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
 
 
 #====================================================================================
@@ -59,7 +59,7 @@ class Eclipse(Runner):                                                      # ec
         self.unsmry = UNSMRY_file(root)
         self.msg = MSG_file(root)
         self.prt = PRT_file(root)
-        self.inputfile = ECL_input(root, check=True)
+        self.data_file = DATA_file(root, check=True)
         self.is_iorsim = False
         self.is_eclipse = True
 
@@ -121,7 +121,7 @@ class Ecl_forward(Forward_mixin, Eclipse):                              # ecl_fo
     #--------------------------------------------------------------------------------
         super().check_input()
         ### Check root.DATA exists and that READDATA keyword is NOT present
-        if 'READDATA' in self.inputfile.data():
+        if 'READDATA' in self.data_file.data():
             raise SystemError('WARNING The current case cannot run in forward-mode: '+
                               'Eclipse input contains the READDATA keyword.')
         return True
@@ -152,7 +152,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
     #--------------------------------------------------------------------------------
         # super().__init__(ext_iface='I{:04d}', ext_OK='OK', keep_alive=keep_alive, **kwargs)
         super().__init__(ext_iface=('.I','04d'), ext_OK=('.OK',), keep_alive=keep_alive, **kwargs)
-        self.tsteps = kwargs.get('tsteps') or self.inputfile.get('TSTEP')
+        self.tsteps = kwargs.get('tsteps') or self.data_file.get('TSTEP')
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps) 
         self.check_unrst = check_unrst
@@ -170,11 +170,11 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             raise SystemError(f'ERROR To run the current case in backward-mode you need to {msg}')
         ### Check that root.DATA exists 
         super().check_input()
-        if not 'READDATA' in self.inputfile.data():
-            raise_error(f"insert 'READDATA /' between 'TSTEP' and 'END' in {self.inputfile}.")
+        if not 'READDATA' in self.data_file.data():
+            raise_error(f"insert 'READDATA /' between 'TSTEP' and 'END' in {self.data_file}.")
         ### Check presence of RPTSOL RESTART>1
-        if not self.inputfile.include(section='SOLUTION').contains(r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
-            raise_error(f"insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in {self.inputfile}.")
+        if not self.data_file.with_includes('SOLUTION').contains(r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
+            raise_error(f"insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in {self.data_file}.")
         return True
 
 
@@ -299,7 +299,7 @@ class IORSim_input:                                                    # iorsim_
         # Check if required keywords are used, and if the order is correct 
         def raise_error(error):
             raise SystemError(f'ERROR Error in IORSim input file: {error}')    
-        text = remove_comments(file=self.file, comment='#')
+        text = remove_comments(self.file, comment='#')
         file_kw = [kw.upper() for kw in compile(r'(\*[A-Za-z_-]+)').findall(text)]
         # Remove repeated keywords, i.e. make unique list
         file_kw = list(dict.fromkeys(file_kw))
@@ -387,9 +387,7 @@ class Iorsim(Runner):                                                        # i
         self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
         self.unrst = UNRST_file(self.funrst.file, end='SATNUM')
         self.inputfile = IORSim_input(root, check=True, check_format=kwargs.get('check_input_kw') or False)
-        #warn = self.inputfile.check()
         (warn:=self.inputfile.warnings) and self.update and self.update.message(warn)
-        #self.check_input_kw = kwargs.get('check_input_kw') or False
         self.is_iorsim = True
         self.is_eclipse = False
         self.copied_chemfiles = []
@@ -449,10 +447,10 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         #keep_alive = keep_alive and IOR_ALIVE_LIMIT or False
         # super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
         super().__init__(args='-readdata', ext_iface=('.IORSimI','04d'), ext_OK=('.IORSimOK',), keep_alive=keep_alive, **kwargs)
-        self.tsteps = kwargs.get('tsteps') or ECL_input(self.case).tsteps()
+        self.tsteps = kwargs.get('tsteps') or DATA_file(self.case).tsteps()
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
-        self.satnum = ECL_input(IOR_SATNUM_FILE, '', reread=True)   # Output-file from IORSim, read by Eclipse as an interface-file
+        self.satnum = DATA_file(IOR_SATNUM_FILE, '', reread=True)   # Output-file from IORSim, read by Eclipse as an interface-file
         self.endtag = IOR_SATNUM_ENDTAG
         self.schedule = schedule
 
@@ -473,7 +471,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         '''
         Return the distribution of SATNUM numbers as a dict
         '''
-        lines = remove_comments(file=self.satnum.file, comment='--') 
+        lines = remove_comments(self.satnum.file, comment='--') 
         values = compile(r'SATNUM\s+([0-9\s]+)').findall(lines) 
         if values:
             values = [int(v) for v in values[0].split('\n') if v.strip()]
@@ -561,7 +559,7 @@ class Schedule:
         self.case = Path(case)
         self.skip_empty = skip_empty
         self.comment = comment
-        self.ifacefile = ECL_input(interface_file.file, reread=True)
+        self.ifacefile = DATA_file(interface_file.file, reread=True)
         self.days = init_days 
         self.start = start
         self.tstep = 0
@@ -672,7 +670,7 @@ class Schedule:
         #    + : 1 or more rep.
         #    * : 0 or more rep.
 
-        schfile = remove_comments(file=self.file)
+        schfile = remove_comments(self.file, comment=self.comment)
         ### Remove entries after END 
         if remove_end:
             found = search(r'\bEND\b', schfile)
@@ -777,7 +775,7 @@ class Simulation:                                                        # Simul
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.name = 'ior2ecl'
         self.root = root
-        self.ECL_inp = ECL_input(root, check=False)
+        self.ECL_inp = DATA_file(root, check=False)
         self.merge_OK = Path(root).with_name(MERGE_OK_FILE)        
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause

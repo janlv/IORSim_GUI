@@ -93,7 +93,7 @@ disable_warnings()
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
-from IORlib.ECL import Input_file as ECL_input, SMSPEC_file, UNSMRY_file, unfmt_file, keywords as ECL_keywords
+from IORlib.ECL import DATA_file, SMSPEC_file, UNSMRY_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
 
@@ -272,7 +272,7 @@ def get_eclipse_well_yaxis_fluid(root, include=False, raise_error=True):
     #     encoding = 'latin-1'
     # with open(fil, encoding=encoding) as f:
     #     for line in f:
-    for line in ECL_input(root, include=include).lines():
+    for line in DATA_file(root, include=include).lines():
         # if line.lstrip().startswith('--') or line.isspace():
         #     continue
         if line.lstrip().upper().startswith('SUMMARY'):
@@ -1060,37 +1060,6 @@ class Highlight_editor(Editor):
     #-----------------------------------------------------------------------
         super(Highlight_editor, self).__init__(*args, **kwargs)
         self.highlighter = Highlighter(self.document(), comment=comment, keywords=keywords)
-
-
-
-# #===========================================================================
-# class Eclipse_editor(Editor):                                              
-# #===========================================================================
-#     #-----------------------------------------------------------------------
-#     def __init__(self, *args, **kwargs):
-#     #-----------------------------------------------------------------------
-#         super(Eclipse_editor, self).__init__(*args, **kwargs)
-#         # Sections
-#         sections = [color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b'] + ECL_keywords.sections
-#         # Global keywords
-#         globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b'] + ECL_keywords.globals
-#         # Common keywords
-#         common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b'] + ECL_keywords.common
-#         self.highlighter = Highlighter(self.document(), comment='--', keywords=[sections, globals, common])
-
-
-# #===========================================================================
-# class IORSim_editor(Editor):                                              
-# #===========================================================================
-#     #-----------------------------------------------------------------------
-#     def __init__(self, *args, **kwargs):
-#     #-----------------------------------------------------------------------
-#         super(IORSim_editor, self).__init__(*args, **kwargs)
-#         ### Mandatory keywords
-#         mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.required
-#         ### Optional keywords
-#         optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + Iorsim.keywords.optional
-#         self.highlighter = Highlighter(self.document(), comment='#', keywords=[mandatory, optional])
 
 
 
@@ -1974,9 +1943,9 @@ class main_window(QMainWindow):                                    # main_window
         self.plot = Plot() 
         self.editor = Editor(name='editor', save_func=self.prepare_case)
         ### Eclipse editor
-        sections = [color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b'] + ECL_keywords.sections
-        globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b'] + ECL_keywords.globals
-        common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b'] + ECL_keywords.common
+        sections = [color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b'] + DATA_file.section_names
+        globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b'] + DATA_file.global_kw
+        common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b'] + DATA_file.common_kw
         self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=[sections, globals, common], save_func=self.prepare_case)
         ### IORSim editor
         mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + IORSim_input.keywords.required
@@ -2049,7 +2018,7 @@ class main_window(QMainWindow):                                    # main_window
         inp = self.input
         inp['ecl_days'] = inp['species'] = inp['tracers'] = None
         if inp['root']:
-            tsteps = ECL_input(inp['root']).tsteps(missing_ok=True, negative_ok=True)
+            tsteps = DATA_file(inp['root']).tsteps(missing_ok=True, negative_ok=True)
             inp['ecl_days'] = sum(tsteps)
             inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
             inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
@@ -2182,7 +2151,7 @@ class main_window(QMainWindow):                                    # main_window
         optional = ('.SCH',)             
         inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in mandatory + optional]
         ### Included files, same name but different folders
-        inc_files = [(path, dst.parent/path.name) for path in list(ECL_input(src).include_files()) + IORSim_input(src).include_files()]
+        inc_files = [(path, dst.parent/path.name) for path in list(DATA_file(src).include_files()) + IORSim_input(src).include_files()]
         missing_files = []
         for src_fil, dst_fil in inp_files + inc_files:
             if src_fil.is_file():
@@ -2340,7 +2309,7 @@ class main_window(QMainWindow):                                    # main_window
             #print(self.case, self.input['root'])
             try:
                 #if file_contains(self.case+'.DATA', text='READDATA', comment='--', end='END'):
-                if 'READDATA' in ECL_input(self.case).data():
+                if 'READDATA' in DATA_file(self.case).data():
                     mode = 'backward'
                     self.days_box.setEnabled(False)
             except (FileNotFoundError, SystemError) as e:
@@ -2625,7 +2594,7 @@ class main_window(QMainWindow):                                    # main_window
         #self.update_file_menu(ior_include_files(root), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files', editor=self.chem_editor)
         #try:
         self.update_file_menu(IORSim_input(root).include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry file', editor=self.chem_editor)
-        self.update_file_menu(ECL_input(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include file', editor=self.editor)
+        self.update_file_menu(DATA_file(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include file', editor=self.editor)
         #except SystemError as e:
         #    self.show_message_text(e)
 
@@ -3021,7 +2990,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        days = self.schedule and (ECL_input(self.input['root']+'.DATA') + ECL_input(self.schedule)).tsteps(missing_ok=True) or 0
+        days = self.schedule and (DATA_file(self.input['root']) + DATA_file(self.schedule)).tsteps(missing_ok=True) or 0
         self.view_input_file(self.schedule, title=f'Schedule file {self.schedule.name}, total days = {sum(days):.0f}', editor=self.editor)
         
     #-----------------------------------------------------------------------
@@ -3223,7 +3192,7 @@ class main_window(QMainWindow):                                    # main_window
         numbers = compile(r'[0-9]+')
         for file in files:
             try:
-                if not file.exists() or numbers.search(remove_comments(file=file, comment='#', raise_error=False) or '') is None:
+                if not file.exists() or numbers.search(remove_comments(file, comment='#', raise_error=False) or '') is None:
                     continue
             except PermissionError:
                 continue
