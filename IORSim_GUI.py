@@ -92,7 +92,7 @@ disable_warnings()
 
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, flat_list, get_keyword, get_substrings, is_file_ignore_suffix_case, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
+from IORlib.utils import Progress, flatten, get_keyword, get_substrings, is_file_ignore_suffix_case, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
 from IORlib.ECL import DATA_file, SMSPEC_file, UNSMRY_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -208,7 +208,7 @@ def get_species_iorsim(root, raise_error=True):
         species = species[0][1::2]
     else:
         # Read old input format
-        species = flat_list(get_keyword(file, '\*SPECIES', end='\*'))
+        species = flatten(get_keyword(file, '\*SPECIES', end='\*'))
         species = [s for s in species if isinstance(s, str)]
     # Change pH to H 
     species = [s if s.lower() != 'ph' else 'H' for s in species]
@@ -223,7 +223,7 @@ def get_tracers_iorsim(root, raise_error=True):
             raise SystemError(f'ERROR {Path(file).name} is missing')
         else:
             return []
-    tracers = flat_list(get_keyword(file, '\*NAME', end='\*'))
+    tracers = flatten(get_keyword(file, '\*NAME', end='\*'))
     if tracers:
         tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
     #print(tracers)
@@ -237,8 +237,8 @@ def get_wells_iorsim(root):
     if not Path(file).is_file():
         return [],[]
     in_wells, out_wells = [], []
-    out_wells = flat_list(get_keyword(file, '\*PRODUCER', end='\*'))
-    in_wells = flat_list(get_keyword(file, '\*INJECTOR', end='\*'))
+    out_wells = flatten(get_keyword(file, '\*PRODUCER', end='\*'))
+    in_wells = flatten(get_keyword(file, '\*INJECTOR', end='\*'))
     if not out_wells or not in_wells:
         # Read old input format
         ow = get_keyword(file, '\*OUTPUT', end='\*')
