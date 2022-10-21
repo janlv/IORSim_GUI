@@ -1157,10 +1157,10 @@ class Simulation:                                                        # Simul
             s += f' (edit TSTEP in the DATA-file to change days)'
         if self.restart:
             days = timedelta(days=self.restart_days)
-            s += f' (restart after {days.days} days, at {self.schedule.start + days})'
+            s += f' (restart after {days.days} days, at {self.schedule.start.date() + days})'
         s += '\n'
         s += self.dt and f'    {"Timestep":{format}}: {self.dt} days\n' or ''
-        s += (self.schedule and self.schedule.file) and f'    {"Schedule":{format}}: start={self.schedule.start}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
+        s += (self.schedule and self.schedule.file) and f'    {"Schedule":{format}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         s += f'    {"Case-path":{format}}: {Path(self.root).parent}\n'
         s += f'    {"Log-files":{format}}: {", ".join([Path(file).name for file in logfiles])}\n'
         s += '\n'
