@@ -657,7 +657,7 @@ class Schedule:
         '''
         tstep_pos = self.file.tsteps(start=self.start, pos=True)
         filedata = self.file.data()
-        tstep_act = ((tstep, filedata[a:b]) for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
+        tstep_act = ((tstep, filedata[a:b]+'\n') for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
         if self.skip_empty:
             tstep_act = (x for x in tstep_act if x[1])
         return list(tstep_act)
