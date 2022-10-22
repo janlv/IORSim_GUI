@@ -655,9 +655,10 @@ class Schedule:
         Return a list of tuples with days at index 0 and actions at index 1, such as:
         schedule = [(2.0, "WCONHIST \r\n    'P-15P'      'OPEN' "), (9.0, "WCONHIST")]
         '''
-        tstep_pos = self.file.tsteps(start=self.start, pos=True)
+        tstep_pos = self.file.tsteps(start=self.start, pos=True) + ['',(len(self.file),0)]
         filedata = self.file.data()
-        tstep_act = ((tstep, filedata[a:b]+'\n') for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
+        #tstep_act = ((tstep, filedata[a:b]+'\n') for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
+        tstep_act = ((tstep, filedata[a:b]) for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
         if self.skip_empty:
             tstep_act = (x for x in tstep_act if x[1])
         return list(tstep_act)
