@@ -441,7 +441,7 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def start(self, error_func=None):                                        # Runner
     #--------------------------------------------------------------------------------
-        self.log = self.kwargs.get('to_screen', False) or safeopen(self.logname, 'w')
+        self.log = not self.kwargs.get('to_screen', False) and safeopen(self.logname, 'w') or None
         self.starttime = datetime.now()
         if self.pipe:
             self._print(f"Starting in PIPE-mode", v=1)
