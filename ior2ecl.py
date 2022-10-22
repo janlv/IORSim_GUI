@@ -24,6 +24,7 @@ MERGE_OK_FILE     = '.merge_OK' # To avoid re-merging merged UNRST-files
 
 
 from collections import Counter, namedtuple
+from itertools import chain, dropwhile, takewhile
 #from mmap import ACCESS_READ, mmap
 from pathlib import Path
 from sys import exc_info, platform
@@ -558,7 +559,7 @@ class Schedule:
         self.case = Path(case)
         self.skip_empty = skip_empty
         self.comment = comment
-        self.ifacefile = DATA_file(interface_file.file, reread=True)
+        self.ifacefile = interface_file and DATA_file(interface_file.file, reread=True) or None
         self.days = init_days 
         self.start = start
         self.tstep = 0
@@ -566,7 +567,7 @@ class Schedule:
         self.end = 0
         ### Ignore case in file extension
         #self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
-        self.file = DATA_file(self.case.with_suffix(ext))
+        self.file = DATA_file(self.case.with_suffix(ext), ignore_case=True)
         if self.file.exists():
             self._schedule = self.get_schedule()
             self.end = (len(self._schedule) > 0) and self._schedule[-1][0] or 0
@@ -618,18 +619,23 @@ class Schedule:
 
 
     #--------------------------------------------------------------------------------
-    def insert(self, index=None, days=None, action='', remove=False):      # Schedule
+    def insert(self, days=0, action='', remove=False):      # Schedule
     #--------------------------------------------------------------------------------
-        if action:
-            # Add newline
-            action += '\n'
-        index = [i for i,(d,a) in enumerate(self._schedule) if d>=days]
-        if index:
-            self._schedule.insert(index[0], [days, action])
-            if remove:
-                self._schedule = self._schedule[0:index[0]+1]
-        else:
-            self._schedule.append([days, action])
+        action = action and action+'\n' or ''
+        lt_days = lambda x: x[0] < days
+        front = takewhile(lt_days, self._schedule)
+        back = not remove and dropwhile(lt_days, self._schedule) or ()
+        self._schedule = list( chain(front, ((float(days), action),), back) )
+        # if action:
+        #     # Add newline
+        #     action += '\n'
+        # index = [i for i,(d,a) in enumerate(self._schedule) if d>=days]
+        # if index:
+        #     self._schedule.insert(index[0], [days, action])
+        #     if remove:
+        #         self._schedule = self._schedule[0:index[0]+1]
+        # else:
+        #     self._schedule.append([days, action])
 
 
     # #--------------------------------------------------------------------------------
@@ -655,7 +661,9 @@ class Schedule:
         Return a list of tuples with days at index 0 and actions at index 1, such as:
         schedule = [(2.0, "WCONHIST \r\n    'P-15P'      'OPEN' "), (9.0, "WCONHIST")]
         '''
-        tstep_pos = self.file.tsteps(start=self.start, pos=True) + ['',(len(self.file),0)]
+        tstep_pos = self.file.tsteps(start=self.start, pos=True) # + [('',(len(self.file),0),)]
+        ### Append end to make pairwise pick up the last entry
+        tstep_pos.append(tstep_pos[-1])
         filedata = self.file.data()
         #tstep_act = ((tstep, filedata[a:b]+'\n') for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
         tstep_act = ((tstep, filedata[a:b]) for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
