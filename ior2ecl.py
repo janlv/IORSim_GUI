@@ -24,7 +24,7 @@ MERGE_OK_FILE     = '.merge_OK' # To avoid re-merging merged UNRST-files
 
 
 from collections import Counter, namedtuple
-from itertools import chain, dropwhile, takewhile
+from itertools import accumulate, chain, dropwhile, takewhile
 #from mmap import ACCESS_READ, mmap
 from pathlib import Path
 from sys import exc_info, platform
@@ -625,9 +625,10 @@ class Schedule:
     #--------------------------------------------------------------------------------
         action = action and action+'\n' or ''
         lt_days = lambda x: x[0] < days
-        front = takewhile(lt_days, self._schedule)
-        back = not remove and dropwhile(lt_days, self._schedule) or ()
-        self._schedule = list( chain(front, ((float(days), action),), back) )
+        before = takewhile(lt_days, self._schedule)
+        after = not remove and dropwhile(lt_days, self._schedule) or ()
+        inset = ((float(days), action),)
+        self._schedule = list( chain(before, inset, after) )
         # if action:
         #     # Add newline
         #     action += '\n'
@@ -663,7 +664,9 @@ class Schedule:
         Return a list of tuples with days at index 0 and actions at index 1, such as:
         schedule = [(2.0, "WCONHIST \r\n    'P-15P'      'OPEN' "), (9.0, "WCONHIST")]
         '''
-        tstep_pos = self.file.tsteps(start=self.start, pos=True) # + [('',(len(self.file),0),)]
+        ### Split, accumulate tsteps, and then zip tsteps and pos  
+        tstep, pos = zip(*self.file.tsteps(start=self.start, pos=True)) # + [('',(len(self.file),0),)]
+        tstep_pos = list(zip(accumulate(tstep), pos))
         ### Append end to make pairwise pick up the last entry
         tstep_pos.append(tstep_pos[-1])
         filedata = self.file.data()
