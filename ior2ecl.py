@@ -563,7 +563,7 @@ class Schedule:
         self.days = init_days 
         self.start = start
         self.tstep = 0
-        self._schedule = []
+        self._schedule = ()
         self.end = 0
         ### Ignore case in file extension
         #self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
@@ -571,6 +571,8 @@ class Schedule:
         if self.file.exists():
             self._schedule = self.get_schedule()
             self.end = (len(self._schedule) > 0) and self._schedule[-1][0] or 0
+        else:
+            self.file = None
         ### Add simulation end time 
         self.insert(days=T, remove=True)
         DEBUG and print(f'Creating {self}')
@@ -583,7 +585,7 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def __str__(self):                                                     # Schedule
     #--------------------------------------------------------------------------------
-        return f'{self.file.name}'
+        return f'{self.file and self.file.name}'
 
     #--------------------------------------------------------------------------------
     def __del__(self):                                                     # Schedule
