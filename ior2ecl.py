@@ -1173,7 +1173,7 @@ class Simulation:                                                        # Simul
             s += f' (restart after {days.days} days, at {self.schedule.start.date() + days})'
         s += '\n'
         inte = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')
-        s += inte and f'    {"Timestep":{format}}: {inte[0][4]}-{inte[0][5]} days\n' or ''
+        s += inte and f'    {"Timestep":{format}}: {inte[0][4]} - {inte[0][5]} days\n' or ''
         s += (self.schedule and self.schedule.file) and f'    {"Schedule":{format}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         s += f'    {"Case-path":{format}}: {Path(self.root).parent}\n'
         s += f'    {"Log-files":{format}}: {", ".join([Path(file).name for file in logfiles])}\n'
