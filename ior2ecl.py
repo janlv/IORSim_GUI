@@ -819,7 +819,7 @@ class Simulation:                                                        # Simul
         self.run_sim = None
         self.ior = self.ecl = None
         self.T = 0
-        self.dt = None
+        #self.dt = None
         self.mode = mode
         self.schedule = None
         self.restart = False
@@ -922,7 +922,6 @@ class Simulation:                                                        # Simul
             time = time_ecl + 1
             self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
         self.T = time 
-        self.dt = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')[0][4]
         kwargs.update({'T':self.T, 'tsteps':self.tsteps})
         # Init runs
         self.ecl = Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs)
@@ -1173,7 +1172,8 @@ class Simulation:                                                        # Simul
             days = timedelta(days=self.restart_days)
             s += f' (restart after {days.days} days, at {self.schedule.start.date() + days})'
         s += '\n'
-        s += self.dt and f'    {"Timestep":{format}}: {self.dt} days\n' or ''
+        inte = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')
+        s += inte and f'    {"Timestep":{format}}: {inte[0][4]}-{inte[0][5]} days\n' or ''
         s += (self.schedule and self.schedule.file) and f'    {"Schedule":{format}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         s += f'    {"Case-path":{format}}: {Path(self.root).parent}\n'
         s += f'    {"Log-files":{format}}: {", ".join([Path(file).name for file in logfiles])}\n'
