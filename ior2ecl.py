@@ -1024,7 +1024,8 @@ class Simulation:                                                        # Simul
         except:  # Catch all other exceptions 
             self.print2log(f'\nAn exception occured:\n{trace_format_exc()}')
             e = exc_info()
-            msg = f'{e[0].__name__}: {e[1]}, check the application log for details'
+            n = [run.n for run in self.runs if run] or [-1]
+            msg += f'(step {max(n)}) {e[0].__name__}: {e[1]}, check the application log for details'
         finally:
             # Kill possible remaining processes
             self.print2log('')
