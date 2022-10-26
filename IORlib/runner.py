@@ -194,9 +194,9 @@ class Process:                                                              # Pr
 
 
     #--------------------------------------------------------------------------------
-    def raise_error(self):                                                  # Process
+    def raise_error(self, log=None):                                        # Process
     #--------------------------------------------------------------------------------
-        raise SystemError(f'ERROR {self._app_name} stopped unexpectedly, check the log')
+        raise SystemError(f'ERROR {self._app_name} stopped unexpectedly' + (log and f', check {log} for details' or ''))
 
     #--------------------------------------------------------------------------------
     def process(self):                                                      # Process
@@ -261,7 +261,7 @@ class Process:                                                              # Pr
         return ''
 
     #--------------------------------------------------------------------------------
-    def is_running(self, raise_error=False):                                # Process
+    def is_running(self, raise_error=False, **kwargs):                                # Process
     #--------------------------------------------------------------------------------
         try:
             if self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE:
@@ -274,7 +274,7 @@ class Process:                                                              # Pr
                 #if raise_error is not True:
                 #    msg = raise_error
                 #raise SystemError(f'ERROR {self.app_name} stopped unexpectedly' + msg)        
-                self._error_func()
+                self._error_func(**kwargs)
             else:
                 return False
         except AttributeError:
@@ -305,9 +305,9 @@ class Process:                                                              # Pr
 
                 
     #--------------------------------------------------------------------------------
-    def assert_running(self, raise_error=True):                             # Process
+    def assert_running(self, raise_error=True, **kwargs):                   # Process
     #--------------------------------------------------------------------------------
-        return self.is_running(raise_error=raise_error)
+        return self.is_running(raise_error=raise_error, **kwargs)
 
 
     #--------------------------------------------------------------------------------
@@ -433,9 +433,9 @@ class Runner:                                                               # Ru
 
 
     #--------------------------------------------------------------------------------
-    def unexpected_stop_error(self):                                         # Runner
+    def unexpected_stop_error(self, **kwargs):                               # Runner
     #--------------------------------------------------------------------------------
-        raise SystemError(f'ERROR {self.name} stopped unexpectedly, check the log')
+        raise SystemError(f'ERROR {self.name} stopped unexpectedly' + (self.log and f', check {Path(self.log.name).name} for details' or '') )
 
 
     #--------------------------------------------------------------------------------
@@ -569,7 +569,8 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
         #self.parent.assert_running(raise_error=raise_error)
         #self.main.assert_running(raise_error=raise_error)
-        [p.assert_running(raise_error=raise_error) for p in self.active]
+        log = self.log and self.log.name
+        [p.assert_running(raise_error=raise_error, log=log) for p in self.active]
         self.stop_if_canceled()
 
 
@@ -588,7 +589,7 @@ class Runner:                                                               # Ru
 
 
     #--------------------------------------------------------------------------------
-    def stop_if_timelimit_reached(self):                                     # Runner
+    def get_time_and_stop_if_limit_reached(self):                          # Runner
     #--------------------------------------------------------------------------------
         time = self.time()
         # if time > self.T:

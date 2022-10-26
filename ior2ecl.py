@@ -63,18 +63,23 @@ class Eclipse(Runner):                                                      # ec
         self.is_iorsim = False
         self.is_eclipse = True
 
+    #--------------------------------------------------------------------------------
+    def time(self):                                                         # eclipse
+    #--------------------------------------------------------------------------------
+        return self.rft.last_day() or self.unrst.last_day() or super().time()
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                          # eclipse
     #--------------------------------------------------------------------------------
         delete_files_matching( [f'{self.case}*.{ext}' for ext in ('*UNRST','RFT','SMSPEC','UNSMRY','RTELOG','RTEMSG','MSG', 'session*', 'dbprtx.lock*')])
         delete_files_matching(self.case.parent/'fort??????')
+        delete_files_matching(self.case.parent/'hostfile.*')
 
 
     #--------------------------------------------------------------------------------
-    def unexpected_stop_error(self):                                        # eclipse
+    def unexpected_stop_error(self, **kwargs):                              # eclipse
     #--------------------------------------------------------------------------------
-        error = 'unexpectedly, check the log'
+        error = 'unexpectedly' + (self.log and f', check {Path(self.log.name).name} for details' or '')
         ### Check for license failure
         if 'LICENSE FAILURE'.encode() in self.msg.binarydata():
             error = 'due to a license failure'
@@ -93,11 +98,12 @@ class Eclipse(Runner):                                                      # ec
 class Forward_mixin:
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def init_control_func(self, update=(), pause=0.01, count=5, **kwargs):
+    #def init_control_func(self, update=(), pause=0.01, count=5, **kwargs):
+    def init_control_func(self, update=(), count=5, **kwargs):
     #--------------------------------------------------------------------------------
         self.update = update
         self.loop_count = 0
-        self.pause = pause
+        #self.pause = pause
         self.count = count
 
     #--------------------------------------------------------------------------------
@@ -107,7 +113,7 @@ class Forward_mixin:
         self.loop_count += 1
         if self.loop_count == self.count:
             self.loop_count = 0
-            self.t = self.stop_if_timelimit_reached()
+            self.t = self.get_time_and_stop_if_limit_reached()
             for func in self.update:
                 func(run=self)
 
@@ -238,7 +244,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             self.interface_file(self.n).delete()
         self.n += 1
         # self.t = (data := self.rft.check.data()) and data[-1] or self.time()
-        self.t = self.rft.last_day() or self.unrst.last_day() or self.time()
+        # self.t = self.rft.last_day() or self.unrst.last_day() or self.time()
+        self.t = self.time()
         if self.check_rft and self.rft.not_in_sync(self.t):
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
@@ -800,7 +807,7 @@ class Simulation:                                                        # Simul
         #print('mode',mode,'root',root,'pause',pause,'runs',runs,'to_screen',to_screen,
         #      'convert',convert,'merge',merge,'del_merge',del_merge,'del_convert',del_convert,
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
-        self.name = 'ior2ecl'
+        self.logname = 'ior2ecl'
         self.root = root
         self.ECL_inp = DATA_file(root, check=False)
         self.merge_OK = Path(root).with_name(MERGE_OK_FILE)        
@@ -812,19 +819,21 @@ class Simulation:                                                        # Simul
         self.runlog = None
         if root and not to_screen:
             lognr = kwargs.get('lognr')
-            self.runlog = safeopen(Path(root).parent/f'{self.name}{lognr and "_" or ""}{lognr or ""}.log', 'w')
+            self.runlog = safeopen(Path(root).parent/f'{self.logname}{lognr and "_" or ""}{lognr or ""}.log', 'w')
         self.print2log = lambda txt, **kwargs: print(txt, file=self.runlog, flush=True, **kwargs)
         self.current_run = None
         self.runs = runs
         self.run_sim = None
         self.ior = self.ecl = None
         self.T = 0
-        #self.dt = None
+        self.init_days = 0
         self.mode = mode
         self.schedule = None
+        self.start = None
         self.restart = False
         self.restart_file = None
         self.restart_step = self.restart_days = 0
+        self.skiprest = False
         kwargs.update({'root':str(root), 'runlog':self.runlog, 'update':self.update, 'to_screen':to_screen})
         self.kwargs = kwargs
 
@@ -867,9 +876,8 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def init_runs(self):                                                 # Simulation
     #--------------------------------------------------------------------------------
-        '''
-        Read Eclipse and IORSim input files, run the init_func, and return the run_func
-        '''
+        'Read Eclipse and IORSim input files, run the init_func, and return the run_func'
+
         ### Check if this is a restart-run
         file, step = self.ECL_inp.get('RESTART')
         if file and step:
@@ -884,7 +892,18 @@ class Simulation:                                                        # Simul
                 raise SystemError(f'ERROR Error in the Eclipse input-file ({self.ECL_inp}): Unable to restart from step {step}, use {new_step} instead')
             self.restart_days = time[n.index(step)]
             self.restart = True
+        # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
+        self.start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
         self.tsteps = self.ECL_inp.tsteps()
+        self.init_days = sum(self.tsteps)
+        if 'SKIPREST' in self.ECL_inp.data():
+            self.skiprest = True
+            ### Stop after restart if restart > tsteps
+            if self.restart_days > self.init_days:
+                self.init_days = self.restart_days
+        else:
+            ### No SKIPREST, add tsteps to restart
+            self.init_days += self.restart_days 
         self.mode = self.mode or (('READDATA' in self.ECL_inp.data()) and 'backward' or 'forward')
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
@@ -896,13 +915,16 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def init_forward_run(self, iorexe=None, eclexe=None, time=0, **kwargs): # Simulation
+    def init_forward_run(self, iorexe=None, eclexe=None, **kwargs): # Simulation
     #--------------------------------------------------------------------------------
-        time_ecl = sum(self.tsteps)
-        if time != time_ecl:
-            time = time_ecl
-        self.T = time
-        #print(f'time: {time}, time_ecl: {time_ecl}')
+        #time_ecl = sum(self.tsteps)
+        # if time != time_ecl:
+        #     time = time_ecl
+        #self.T = time + self.restart_days
+        # self.T = time - self.restart_days
+        # if self.T <= 0:
+        #     raise SystemError(f'ERROR Restart time {self.restart_days} {self.restart_days > time and "exceeds" or "matches"} the simulation time {time}')
+        self.T = self.init_days
         kwargs.update({'T':self.T})
         if not self.runs:
             self.runs = ('eclipse','iorsim')
@@ -917,19 +939,21 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def init_backward_run(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, **kwargs): # Simulation
     #--------------------------------------------------------------------------------
-        time_ecl = sum(self.tsteps) + self.restart_days
-        if time < time_ecl:
-            time = time_ecl + 1
-            self.update.message(text=f'INFO Simulation time set to sum of TSTEP ({sum(self.tsteps)}) and RESTART ({self.restart_days}) in Eclipse input')
-        self.T = time 
+        #init_days = self.T
+        if time > self.init_days:
+            self.T = time
+        else:
+            self.T = self.init_days + 1
+            self.update.message(text=f'INFO Simulation time increased to advance past the READDATA keyword in {self.ECL_inp}')
+        #self.T = time 
         kwargs.update({'T':self.T, 'tsteps':self.tsteps})
         # Init runs
         self.ecl = Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs)
         self.ior = Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
-        start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
+        #start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
         # Set up schedule of commands to pass to satnum-file
-        self.schedule = Schedule(self.root, T=self.T, start=start, init_days=time_ecl, interface_file=self.ior.satnum, 
+        self.schedule = Schedule(self.root, T=self.T, start=self.start, init_days=self.init_days, interface_file=self.ior.satnum, 
                                  skip_empty=self.kwargs.get('skip_empty', False))
         self.ecl.schedule = self.ior.schedule = self.schedule
         return [self.ecl, self.ior]
@@ -943,9 +967,11 @@ class Simulation:                                                        # Simul
         for run in self.runs:
             self.current_run = run.name.lower()
             run.delete_output_files()
-            self.update.progress(value=-run.T)
             run.start()
-            run.init_control_func(update=self.update) 
+            self.update.progress(value=-run.T, min=run is self.ecl and self.restart_days or 0)
+            ### Progress is updated after 25*0.2 = 5 sec
+            ### Check for cancelled run every 0.2 sec
+            run.init_control_func(update=self.update, count=15) 
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             run.t = run.time()
             # print(run.name, run.t, run.T)
@@ -1025,7 +1051,8 @@ class Simulation:                                                        # Simul
             self.print2log(f'\nAn exception occured:\n{trace_format_exc()}')
             e = exc_info()
             n = [run.n for run in self.runs if run] or [-1]
-            msg += f'(step {max(n)}) {e[0].__name__}: {e[1]}, check the application log for details'
+            msg += f'(step {max(n)}) {e[0].__name__}: {e[1]}'
+            msg += self.runlog and f', check {Path(self.runlog.name).name} for details' or ''
         finally:
             # Kill possible remaining processes
             self.print2log('')
@@ -1167,16 +1194,20 @@ class Simulation:                                                        # Simul
         mode = len(self.runs)<2 and self.runs[0].name or self.mode
         s += f'    {"Mode":{format}}: {mode.capitalize()}\n'
         s += f'    {"Days":{format}}: {self.T}' 
-        if self.mode=='forward':
-            s += f' (edit TSTEP in the DATA-file to change days)'
+        # if self.mode=='forward':
+        #     s += f' (edit TSTEP in the DATA-file to change days)'
         if self.restart:
             days = timedelta(days=self.restart_days)
-            s += f' (restart after {days.days} days, at {self.schedule.start.date() + days})'
+            # s += f' (restart after {days.days} days, at  {self.schedule.start.date() + days})'
+            s += f' (restart after {days.days} days, at {self.start})'
+            s += self.skiprest and ' (SKIPREST)' or ''
         s += '\n'
         inte = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')
         s += inte and f'    {"Timestep":{format}}: {inte[0][4]} - {inte[0][5]} days\n' or ''
         s += (self.schedule and self.schedule.file) and f'    {"Schedule":{format}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
-        s += f'    {"Case-path":{format}}: {Path(self.root).parent}\n'
+        s += f'    {"Run-dir":{format}}: {Path.cwd()}\n'
+        #s += f'    {"Case-dir":{format}}: {Path(self.root).parent.relative_to(Path.cwd())}\n'
+        s += f'    {"Case-dir":{format}}: {Path(self.root).parent}\n'
         s += f'    {"Log-files":{format}}: {", ".join([Path(file).name for file in logfiles])}\n'
         s += '\n'
         return s
@@ -1322,6 +1353,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
     #----------------------------------------
     def progress(run=None, value=None, min=None, n0=None):
     #----------------------------------------
+        #print('progress in:', value, min, n0)
         if n0 is not None:
             prog.reset_time(n=n0)
         if min is not None:
@@ -1330,11 +1362,12 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
             value = run.t
         if value is not None:
             if value<0:
-                prog.reset(N=abs(value))
+                prog.reset(N=abs(value), min=min)
                 return
             elif value==0:
-                prog.reset_time()
+                prog.reset_time(min=prog.min)
             prog.print(value)
+        #print('progress out:', value, prog)
             
     #----------------------------------------
     def message(text=None, **x):
