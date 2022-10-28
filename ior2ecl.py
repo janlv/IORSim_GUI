@@ -11,7 +11,7 @@ COPY_CHEMFILE = True
 SCHEDULE_SKIP_EMPTY = False
 
 # Constants
-CHECK_PAUSE       = 0.05  # Default sleep-time during file-flush checks. Too low value might lead to errors on some systems.
+CHECK_PAUSE       = 0.01  # Default sleep-time during file-flush checks. Too low value might lead to errors on some systems.
 IOR_SATNUM_FILE   = 'satnum.dat'       # Interface-file from IORSim with statements for next Eclipse run
 IOR_SATNUM_ENDTAG = '-- IORSimX done.' # Signature from IORSim at end of interface-file
 ECL_ALIVE_LIMIT   = 90   # Seconds to wait before Eclipse is suspended (if option is on)
