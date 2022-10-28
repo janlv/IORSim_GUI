@@ -407,7 +407,7 @@ class Iorsim(Runner):                                                        # i
         if line := next(tail_file(file, n=1), None):
             line = line.strip()   # Remove leading and trailing space
             time = line and line.split()[0] 
-            time = not time.startswith('#') and float(time)
+            time = time and not time.startswith('#') and float(time)
         return time or super().time()
 
 
