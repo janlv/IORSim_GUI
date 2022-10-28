@@ -399,6 +399,13 @@ class Iorsim(Runner):                                                        # i
         self.is_eclipse = False
         self.copied_chemfiles = []
 
+    # #--------------------------------------------------------------------------------
+    # def time(self):                                                         # iorsim
+    # #--------------------------------------------------------------------------------
+    #     outfile = next(self.root.parent.glob('*.trcconc'), None)
+    #     tail = outfile and tail(outfile)
+    #     return or super().time()
+
 
     #--------------------------------------------------------------------------------
     def start(self):                                                         # iorsim
