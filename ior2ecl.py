@@ -402,8 +402,12 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
     def time(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
-        last_line = tail_file(next(self.case.parent.glob('*.trcconc'), None), n=1)
-        time = last_line and float(last_line[0].split()[0]) or 0
+        time = None
+        file = next(self.case.parent.glob('*.trcconc'), None)
+        if line := next(tail_file(file, n=1), None):
+            line = line.strip()   # Remove leading and trailing space
+            time = line and line.split()[0] 
+            time = not time.startswith('#') and float(time)
         return time or super().time()
 
 
