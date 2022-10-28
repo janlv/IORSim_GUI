@@ -37,7 +37,7 @@ from traceback import print_exc as trace_print_exc, format_exc as trace_format_e
 from re import compile
 from os.path import relpath
 
-from IORlib.utils import flatten, get_keyword, get_python_version, list2text, pairwise, print_dict, print_error, remove_comments, safeopen, Progress, silentdelete, delete_files_matching
+from IORlib.utils import flatten, get_keyword, get_python_version, list2text, pairwise, print_dict, print_error, remove_comments, safeopen, Progress, silentdelete, delete_files_matching, tail_file
 from IORlib.runner import Runner
 from IORlib.ECL import FUNRST_file, DATA_file, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
 
@@ -399,12 +399,12 @@ class Iorsim(Runner):                                                        # i
         self.is_eclipse = False
         self.copied_chemfiles = []
 
-    # #--------------------------------------------------------------------------------
-    # def time(self):                                                         # iorsim
-    # #--------------------------------------------------------------------------------
-    #     outfile = next(self.root.parent.glob('*.trcconc'), None)
-    #     tail = outfile and tail(outfile)
-    #     return or super().time()
+    #--------------------------------------------------------------------------------
+    def time(self):                                                         # iorsim
+    #--------------------------------------------------------------------------------
+        last_line = tail_file(next(self.root.parent.glob('*.trcconc'), None), n=1)
+        time = last_line and float(last_line[0].split()[0]) or 0
+        return time or super().time()
 
 
     #--------------------------------------------------------------------------------
