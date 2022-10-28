@@ -402,7 +402,7 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
     def time(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
-        last_line = tail_file(next(self.root.parent.glob('*.trcconc'), None), n=1)
+        last_line = tail_file(next(self.case.parent.glob('*.trcconc'), None), n=1)
         time = last_line and float(last_line[0].split()[0]) or 0
         return time or super().time()
 
