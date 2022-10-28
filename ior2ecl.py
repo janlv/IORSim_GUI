@@ -408,7 +408,7 @@ class Iorsim(Runner):                                                        # i
             line = line.strip()   # Remove leading and trailing space
             time = line and line.split()[0] 
             time = time and not time.startswith('#') and float(time)
-        return time or super().time()
+        return time #or super().time()
 
 
     #--------------------------------------------------------------------------------
