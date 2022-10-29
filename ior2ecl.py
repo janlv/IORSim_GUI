@@ -975,7 +975,7 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
         run_time = timedelta()
         ret = ''
-        self.update.progress(value=-self.runs[0].T, min=self.restart_days or 0)
+        self.update.progress(value=-self.T, min=self.restart_days or 0)
         for run in self.runs:
             self.current_run = run.name.lower()
             run.delete_output_files()
@@ -998,7 +998,7 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def backward(self):                                                  # Simulation
     #--------------------------------------------------------------------------------
-        self.update.progress(value=-self.runs[0].T)
+        self.update.progress(value=-self.T)
         ecl, ior = self.runs
         # Start runs
         #for run in self.runs:
