@@ -975,7 +975,7 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
         run_time = timedelta()
         ret = ''
-        self.update.progress(value=-run.T, min=self.restart_days or 0)
+        self.update.progress(value=-self.runs[0].T, min=self.restart_days or 0)
         for run in self.runs:
             self.current_run = run.name.lower()
             run.delete_output_files()
