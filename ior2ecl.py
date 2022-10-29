@@ -979,7 +979,8 @@ class Simulation:                                                        # Simul
             self.current_run = run.name.lower()
             run.delete_output_files()
             run.start()
-            self.update.progress(value=-run.T, min=run is self.ecl and self.restart_days or 0)
+            self.update.progress(value=-run.T, min=self.restart_days or 0)
+            #self.update.progress(value=-run.T, min=run is self.ecl and self.restart_days or 0)
             ### Progress is updated after 25*0.2 = 5 sec
             ### Check for cancelled run every 0.2 sec
             run.init_control_func(update=self.update, count=15) 
@@ -1371,13 +1372,16 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
             prog.set_min(min)
         if run:
             value = run.t
-        if value is not None:
+        if value is None:
+            prog.reset_time(min=prog.min)
+        else:
             if value<0:
                 prog.reset(N=abs(value), min=min)
                 return
-            # elif value==0:
-            #     prog.reset_time(min=prog.min)
+            elif value==0:
+                prog.reset_time(min=prog.min)
             prog.print(value)
+            
         #print('progress out:', value, prog)
             
     #----------------------------------------
