@@ -908,8 +908,10 @@ class Simulation:                                                        # Simul
             self.restart = True
             ### Skip the restarted tsteps
             ind = next((i for i,x in enumerate(self.tsteps) if x > self.restart_days), None)
+            print('A', self.tsteps)
             if ind:
                 self.tsteps = self.tsteps[ind:]
+            print('B', self.tsteps)
         #self.start = self.ECL_inp.get('START')[0]
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
         print('data start:', self.ECL_inp.get('START')[0])
