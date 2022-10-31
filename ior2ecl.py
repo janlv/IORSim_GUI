@@ -908,12 +908,12 @@ class Simulation:                                                        # Simul
             self.restart_days = time[n.index(step)]
             self.restart = True
             ### Skip the restarted tsteps
-            acc_tsteps = chain((0,),(x for t in accumulate(self.tsteps) if (x:=t-self.restart_days) > 0))
-            self.tsteps = (b-a for a,b in pairwise(acc_tsteps))
+            #acc_tsteps = chain((0,),(x for t in accumulate(self.tsteps) if (x:=t-self.restart_days) > 0))
+            #self.tsteps = (b-a for a,b in pairwise(acc_tsteps))
         #self.start = self.ECL_inp.get('START')[0]
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
         self.start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
-        self.init_days = sum(self.tsteps) + self.restart_days
+        self.init_days = sum(self.tsteps)
         # if 'SKIPREST' in self.ECL_inp.data():
         #     self.skiprest = True
         #     ### Stop after restart if restart > tsteps
