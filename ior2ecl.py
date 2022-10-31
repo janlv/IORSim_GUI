@@ -891,7 +891,6 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
         'Read Eclipse and IORSim input files, run the init_func, and return the run_func'
 
-        self.tsteps = self.ECL_inp.tsteps()
         self.restart_days = 0
         ### Check if this is a restart-run
         file, step = self.ECL_inp.get('RESTART')
@@ -913,7 +912,6 @@ class Simulation:                                                        # Simul
         #self.start = self.ECL_inp.get('START')[0]
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
         self.start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
-        self.init_days = sum(self.tsteps)
         # if 'SKIPREST' in self.ECL_inp.data():
         #     self.skiprest = True
         #     ### Stop after restart if restart > tsteps
@@ -935,6 +933,9 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def init_forward_run(self, iorexe=None, eclexe=None, **kwargs): # Simulation
     #--------------------------------------------------------------------------------
+        start = self.start + timedelta(days=self.restart_days)
+        self.tsteps = self.ECL_inp.tsteps(start=start)
+        self.init_days = sum(self.tsteps) + self.restart_days
         self.T = self.init_days
         kwargs.update({'T':self.T})
         if not self.runs:
@@ -950,7 +951,8 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def init_backward_run(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, **kwargs): # Simulation
     #--------------------------------------------------------------------------------
-        #init_days = self.T
+        self.tsteps = self.ECL_inp.tsteps()
+        self.init_days = sum(self.tsteps)
         if time > self.init_days:
             self.T = time
         else:
