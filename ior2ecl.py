@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '2.29'
+__version__ = '2.30.1'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -11,7 +11,7 @@ COPY_CHEMFILE = True
 SCHEDULE_SKIP_EMPTY = False
 
 # Constants
-CHECK_PAUSE       = 0.01  # Default sleep-time during file-flush checks. Too low value might lead to errors on some systems.
+CHECK_PAUSE       = 0.03  # Default sleep-time during file-flush checks. Too low value might lead to errors on some systems.
 IOR_SATNUM_FILE   = 'satnum.dat'       # Interface-file from IORSim with statements for next Eclipse run
 IOR_SATNUM_ENDTAG = '-- IORSimX done.' # Signature from IORSim at end of interface-file
 ECL_ALIVE_LIMIT   = 90   # Seconds to wait before Eclipse is suspended (if option is on)
@@ -408,7 +408,7 @@ class Iorsim(Runner):                                                        # i
             line = line.strip()   # Remove leading and trailing space
             time = line and line.split()[0] 
             time = time and not time.startswith('#') and float(time)
-        return time or 0 #or super().time()
+        return time or super().time()
 
 
     #--------------------------------------------------------------------------------
@@ -525,7 +525,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         ### run IORSim
         for n in range(N):
             if n > 0:
-                self.update_function(plot=True)
+                self.update_function(progress=True, plot=True)
             self.n += 1
             self.interface_file(self.n).create()
             self.OK_file.create()
@@ -537,6 +537,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
                 else:
                     self.resume()
             self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted')
+            self.t = self.time()
         self.wait_for(self.satnum_flushed, pause=CHECK_PAUSE)
         #warn_empty_file(self.satnum, comment='--')
         if self.satnum.is_empty():
@@ -544,7 +545,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.suspend()
         if self.delete_interface:
             [self.interface_file(self.n-n).delete() for n in range(N)] 
-        self.t = self.time()
+#        self.t = self.time()
         if log:
             self._print(f' {self.t:.3f}/{self.T} days')
 
