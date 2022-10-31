@@ -905,18 +905,26 @@ class Simulation:                                                        # Simul
                 raise SystemError(f'ERROR Error in the Eclipse input-file ({self.ECL_inp}): Unable to restart from step {step}, use {new_step} instead')
             self.restart_days = time[n.index(step)]
             self.restart = True
+            ### Skip the restarted tsteps
+            ind = next((i for i,x in enumerate(self.tsteps) if x > self.restart_days), None)
+            if ind:
+                self.tsteps = self.tsteps[ind:]
+            print('restart start:',self.restart_file.dates(N=1))
+        #self.start = self.ECL_inp.get('START')[0]
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
+        print('data start:', self.ECL_inp.get('START')[0])
         self.start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
+        print('start:', self.start)
         self.tsteps = self.ECL_inp.tsteps()
         self.init_days = sum(self.tsteps)
-        if 'SKIPREST' in self.ECL_inp.data():
-            self.skiprest = True
-            ### Stop after restart if restart > tsteps
-            if self.restart_days > self.init_days:
-                self.init_days = self.restart_days
-        else:
-            ### No SKIPREST, add tsteps to restart
-            self.init_days += self.restart_days 
+        # if 'SKIPREST' in self.ECL_inp.data():
+        #     self.skiprest = True
+        #     ### Stop after restart if restart > tsteps
+        #     if self.restart_days > self.init_days:
+        #         self.init_days = self.restart_days
+        # else:
+        #     ### No SKIPREST, add tsteps to restart
+        #     self.init_days += self.restart_days 
         self.mode = self.mode or (('READDATA' in self.ECL_inp.data()) and 'backward' or 'forward')
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
@@ -930,13 +938,6 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def init_forward_run(self, iorexe=None, eclexe=None, **kwargs): # Simulation
     #--------------------------------------------------------------------------------
-        #time_ecl = sum(self.tsteps)
-        # if time != time_ecl:
-        #     time = time_ecl
-        #self.T = time + self.restart_days
-        # self.T = time - self.restart_days
-        # if self.T <= 0:
-        #     raise SystemError(f'ERROR Restart time {self.restart_days} {self.restart_days > time and "exceeds" or "matches"} the simulation time {time}')
         self.T = self.init_days
         kwargs.update({'T':self.T})
         if not self.runs:
