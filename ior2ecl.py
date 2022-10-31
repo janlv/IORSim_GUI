@@ -1382,7 +1382,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
                 return
             # elif value==0:
             #     prog.reset_time(min=prog.min)
-            prog.print(value)
+            prog.print(value, text=run.name+' ')
             
         #print('progress out:', value, prog)
             
