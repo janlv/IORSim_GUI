@@ -892,6 +892,7 @@ class Simulation:                                                        # Simul
         'Read Eclipse and IORSim input files, run the init_func, and return the run_func'
 
         self.tsteps = self.ECL_inp.tsteps()
+        self.restart_days = 0
         ### Check if this is a restart-run
         file, step = self.ECL_inp.get('RESTART')
         if file and step:
@@ -907,17 +908,12 @@ class Simulation:                                                        # Simul
             self.restart_days = time[n.index(step)]
             self.restart = True
             ### Skip the restarted tsteps
-            ind = next((i for i,x in enumerate(self.tsteps) if x > self.restart_days), None)
-            print('A', self.tsteps)
-            if ind:
-                self.tsteps = self.tsteps[ind:]
-            print('B', self.tsteps)
+            acc_tsteps = chain((0,),(x for t in accumulate(self.tsteps) if (x:=t-self.restart_days) > 0))
+            self.tsteps = (b-a for a,b in pairwise(acc_tsteps))
         #self.start = self.ECL_inp.get('START')[0]
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
-        print('data start:', self.ECL_inp.get('START')[0])
         self.start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
-        print('start:', self.start)
-        self.init_days = sum(self.tsteps)
+        self.init_days = sum(self.tsteps) + self.restart_days
         # if 'SKIPREST' in self.ECL_inp.data():
         #     self.skiprest = True
         #     ### Stop after restart if restart > tsteps
