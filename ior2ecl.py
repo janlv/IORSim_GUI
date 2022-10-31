@@ -910,7 +910,6 @@ class Simulation:                                                        # Simul
             ind = next((i for i,x in enumerate(self.tsteps) if x > self.restart_days), None)
             if ind:
                 self.tsteps = self.tsteps[ind:]
-            print('restart start:',self.restart_file.dates(N=1))
         #self.start = self.ECL_inp.get('START')[0]
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
         print('data start:', self.ECL_inp.get('START')[0])
@@ -1221,7 +1220,7 @@ class Simulation:                                                        # Simul
         if self.restart:
             days = timedelta(days=self.restart_days)
             # s += f' (restart after {days.days} days, at  {self.schedule.start.date() + days})'
-            s += f' (restart after {days.days} days, at {self.start})'
+            s += f' (restart after {days.days} days, at {self.start + days})'
             s += self.skiprest and ' (SKIPREST)' or ''
         s += '\n'
         inte = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')
