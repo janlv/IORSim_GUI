@@ -1021,18 +1021,20 @@ class Simulation:                                                        # Simul
         # Start timestep loop
         while ior.t < ior.T:
             self.print2log(f'\nStep {ecl.n+1}')
+            self.update.progress(run=ecl)
             self.update.status(run=ecl, mode=self.mode)
             ecl.run_one_step(ior.satnum.file)
-            self.update.progress(run=ecl)
             # Run IORSim to prepare satnum input for the next Eclipse run
+            self.update.progress(run=ior)
             self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
             # ecl.t = ior.t = self.schedule.update()
             self.schedule.update()
             self.print2log(f'Step {ecl.n} ({self.schedule.now()}) completed')
             #self.update.progress(value=ior.t)
-            self.update.progress(run=ior)
             self.update.plot()
+        self.update.progress(run=ior)
+        self.update.status(run=ior, mode=self.mode)
         # Timestep loop finished
         for run in self.runs:
             self.update.status(value=f'Stopping {run.name}...')
@@ -1222,7 +1224,8 @@ class Simulation:                                                        # Simul
             s += self.skiprest and ' (SKIPREST)' or ''
         s += '\n'
         inte = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')
-        s += inte and f'    {"Timestep":{format}}: {inte[0][4]} - {inte[0][5]} days\n' or ''
+        a, b = inte and (inte[0][4],inte[0][5]) or (0,0) 
+        s += f'    {"Timestep":{format}}: {a}{(a!=b and f" - {b}" or "")} days\n'
         s += (self.schedule and self.schedule.file) and f'    {"Schedule":{format}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         s += f'    {"Run-dir":{format}}: {Path.cwd()}\n'
         #s += f'    {"Case-dir":{format}}: {Path(self.root).parent.relative_to(Path.cwd())}\n'
