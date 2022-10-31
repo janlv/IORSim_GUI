@@ -891,6 +891,7 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
         'Read Eclipse and IORSim input files, run the init_func, and return the run_func'
 
+        self.tsteps = self.ECL_inp.tsteps()
         ### Check if this is a restart-run
         file, step = self.ECL_inp.get('RESTART')
         if file and step:
@@ -915,7 +916,6 @@ class Simulation:                                                        # Simul
         print('data start:', self.ECL_inp.get('START')[0])
         self.start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
         print('start:', self.start)
-        self.tsteps = self.ECL_inp.tsteps()
         self.init_days = sum(self.tsteps)
         # if 'SKIPREST' in self.ECL_inp.data():
         #     self.skiprest = True
