@@ -145,7 +145,8 @@ class Backward_mixin:
         # self.t = self.time_and_step()[0]
         self.t = self.time()
         self.update.status(run=self)
-        progress and self.update.progress(value=self.t)
+        #progress and self.update.progress(value=self.t)
+        progress and self.update.progress(run=self)
         plot and self.update.plot()
 
 
@@ -1022,13 +1023,15 @@ class Simulation:                                                        # Simul
             self.print2log(f'\nStep {ecl.n+1}')
             self.update.status(run=ecl, mode=self.mode)
             ecl.run_one_step(ior.satnum.file)
+            self.update.progress(run=ecl)
             # Run IORSim to prepare satnum input for the next Eclipse run
             self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
             # ecl.t = ior.t = self.schedule.update()
             self.schedule.update()
             self.print2log(f'Step {ecl.n} ({self.schedule.now()}) completed')
-            self.update.progress(value=ior.t)
+            #self.update.progress(value=ior.t)
+            self.update.progress(run=ior)
             self.update.plot()
         # Timestep loop finished
         for run in self.runs:
@@ -1073,7 +1076,8 @@ class Simulation:                                                        # Simul
             [run.kill() for run in self.runs]
             self.print2log(f'\n=====  {msg.replace("INFO","")}  =====')
             self.current_run = None
-            self.update.progress(value=0)   # Reset progress time
+            #self.update.progress(value=0)   # Reset progress time
+            self.update.progress()   # Reset progress time
             self.update.plot()
             #self.update.status(value=msg, newline=True)
             conv_msg = ''
@@ -1142,7 +1146,8 @@ class Simulation:                                                        # Simul
     def merge_restart(self, case=None, check=False):                     # Simulation
     #--------------------------------------------------------------------------------
         # Merge Eclipse and IORSim restart files
-        self.update.progress(value=0)   # Reset progress time
+        #self.update.progress(value=0)   # Reset progress time
+        self.update.progress()   # Reset progress time
         sleep(0.05) # Give progress-bar time to respond
         self.update.status(value='Merging Eclipse and IORSim restart files...')
         if self.merge_OK.exists():

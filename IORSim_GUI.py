@@ -514,9 +514,11 @@ class sim_worker(base_worker):
         #------------------------------------
             if min is not None:
                 self.progress_min = min
-            if value == 0:
+            #if value == 0:
+            if value is None:
                 self.progress_min = None
-            if run and value is None:
+            #if run and value is None:
+            if run:# and value is None:
                 value = run.t
             self.update_progress((int(value), min, n0))
         #------------------------------------
