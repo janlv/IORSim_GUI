@@ -250,7 +250,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         if self.check_rft and self.rft.not_in_sync(self.t):
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
-            self._print(f' Date is {self.unrst.dates(N=-1)} ({self.t} days)')
+            self._print(f' Date is {self.unrst.dates(N=-1).date()} ({self.t} days)')
         self._print(f'Days: {self.t}')
         #self._print(f'Days: log:{self.time()}, RFT:{(data:=self.rft.check.data()) and data[-1]}, UNRST:{self.unrst.get("time", N=-1)}')
 
@@ -1030,7 +1030,7 @@ class Simulation:                                                        # Simul
             ior.run_one_step()
             # ecl.t = ior.t = self.schedule.update()
             self.schedule.update()
-            self.print2log(f'Step {ecl.n} ({self.schedule.now()}) completed')
+            self.print2log(f'Step {ecl.n} ({self.schedule.now().date()}) completed')
             #self.update.progress(value=ior.t)
             self.update.plot()
         self.update.progress(run=ior)
