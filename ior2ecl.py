@@ -1220,7 +1220,7 @@ class Simulation:                                                        # Simul
         if self.restart:
             days = timedelta(days=self.restart_days)
             # s += f' (restart after {days.days} days, at  {self.schedule.start.date() + days})'
-            s += f' (restart after {days.days} days, at {self.start + days})'
+            s += f' (restart after {days.days} days, at {(self.start + days).date()})'
             s += self.skiprest and ' (SKIPREST)' or ''
         s += '\n'
         inte = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')
