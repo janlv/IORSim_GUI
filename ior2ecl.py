@@ -25,6 +25,7 @@ MERGE_OK_FILE     = '.merge_OK' # To avoid re-merging merged UNRST-files
 
 from collections import Counter, namedtuple
 from itertools import accumulate, chain, dropwhile, takewhile
+from operator import itemgetter
 #from mmap import ACCESS_READ, mmap
 from pathlib import Path
 from sys import exc_info, platform
@@ -404,7 +405,10 @@ class Iorsim(Runner):                                                        # i
     def time(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
         time = None
-        file = next(self.case.parent.glob('*.trcconc'), None)
+        ### Find most recently modified file
+        files = sorted(((f, f.stat().st_size) for f in self.case.parent.glob('*.trcconc')), key=itemgetter(1))
+        file = files and files[-1][0] or None
+        #file = next(self.case.parent.glob('*.trcconc'), None)
         if line := next(tail_file(file, n=1), None):
             line = line.strip()   # Remove leading and trailing space
             time = line and line.split()[0] 
