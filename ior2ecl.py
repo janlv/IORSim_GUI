@@ -938,7 +938,8 @@ class Simulation:                                                        # Simul
     def init_forward_run(self, iorexe=None, eclexe=None, **kwargs): # Simulation
     #--------------------------------------------------------------------------------
         start = self.start + timedelta(days=self.restart_days)
-        self.tsteps = self.ECL_inp.tsteps(start=start)
+        skiprest = 'SKIPREST' in self.ECL_inp.data()
+        self.tsteps = self.ECL_inp.tsteps(start=start, skiprest=skiprest)
         self.init_days = sum(self.tsteps) + self.restart_days
         self.T = self.init_days
         kwargs.update({'T':self.T})
