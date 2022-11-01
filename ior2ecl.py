@@ -939,7 +939,7 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
         start = self.start + timedelta(days=self.restart_days)
         skiprest = 'SKIPREST' in self.ECL_inp.data()
-        self.tsteps = self.ECL_inp.tsteps(start=start, skiprest=skiprest, negative_ok=True)
+        self.tsteps = self.ECL_inp.tsteps(start=start, skiprest=skiprest)
         self.init_days = sum(self.tsteps) + self.restart_days
         self.T = self.init_days
         kwargs.update({'T':self.T})
