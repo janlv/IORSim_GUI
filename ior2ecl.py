@@ -1076,7 +1076,10 @@ class Simulation:                                                        # Simul
             e = exc_info()
             n = [run.n for run in self.runs if run] or [-1]
             msg += f'(step {max(n)}) {e[0].__name__}: {e[1]}'
-            msg += self.runlog and f', check {Path(self.runlog.name).name} for details' or ''
+            if '\x00\x00\x00\x00' in e[1]:
+                msg += f', try increasing the CHECK_PAUSE value ({CHECK_PAUSE}).'
+            else:
+                msg += self.runlog and f', check {Path(self.runlog.name).name} for details' or ''
         finally:
             # Kill possible remaining processes
             self.print2log('')
