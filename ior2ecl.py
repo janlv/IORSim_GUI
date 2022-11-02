@@ -653,33 +653,7 @@ class Schedule:
         after = not remove and dropwhile(lt_days, self._schedule) or ()
         inset = ((float(days), action),)
         self._schedule = list( chain(before, inset, after) )
-        # if action:
-        #     # Add newline
-        #     action += '\n'
-        # index = [i for i,(d,a) in enumerate(self._schedule) if d>=days]
-        # if index:
-        #     self._schedule.insert(index[0], [days, action])
-        #     if remove:
-        #         self._schedule = self._schedule[0:index[0]+1]
-        # else:
-        #     self._schedule.append([days, action])
 
-
-    # #--------------------------------------------------------------------------------
-    # def get_type(self, string):                                            # Schedule
-    # #--------------------------------------------------------------------------------
-    #     # Determine if schedule file contains DATES or TSTEP
-    #     regex = compile(r'\n?\s*(\bDATES|TSTEP\b)')
-    #     tstep_or_dates = [m.group(1) for m in regex.finditer(string)]
-    #     #print(tstep_or_dates)
-    #     N = len(tstep_or_dates)
-    #     if tstep_or_dates.count('TSTEP') == N:
-    #         use_dates = False
-    #     elif tstep_or_dates.count('DATES') == N:
-    #         use_dates = True
-    #     else:
-    #         raise SystemError('WARNING Schedule-file contains a mix of TSTEP and DATES')
-    #     return use_dates
 
     #--------------------------------------------------------------------------------
     def get_schedule(self):                                                # Schedule
@@ -694,68 +668,10 @@ class Schedule:
         ### Append end to make pairwise pick up the last entry
         tstep_pos.append(tstep_pos[-1])
         filedata = self.file.data()
-        #tstep_act = ((tstep, filedata[a:b]+'\n') for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
         tstep_act = ((tstep, filedata[a:b]) for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
         if self.skip_empty:
             tstep_act = (x for x in tstep_act if x[1])
         return list(tstep_act)
-
-    # #--------------------------------------------------------------------------------
-    # def days_and_actions(self, remove_end=True):               # Schedule
-    # #--------------------------------------------------------------------------------
-    #     '''
-    #     Use regexp to extract DATES or TSTEP values from the .SCH-file together
-    #     with the file-positions (span) of these keywords. The file-positions are used
-    #     to extract the scheduling commands contained between the DATES/TSTEP commands
-
-    #     Returns: 
-    #         A list of lists with days at index 0 and actions at index 1, such as:
-    #         schedule = [[2.0, "WCONHIST \r\n    'P-15P'      'OPEN' "], [9.0, "WCONHIST"]]
-    #     '''
-    #     # Short Python regexp guide:
-    #     #   \s : whitespace, [ \t\n\r\f\v]
-    #     #   \w : alphanumeric, [a-zA-Z0-9_]
-    #     #   \d : decimal digit, [0-9]
-    #     #   \b : word-delimiter
-    #     #    ? : 0 or 1 repetitions
-    #     #    + : 1 or more rep.
-    #     #    * : 0 or more rep.
-
-    #     schfile = remove_comments(self.file, comment=self.comment)
-    #     ### Remove entries after END 
-    #     if remove_end:
-    #         found = search(r'\bEND\b', schfile)
-    #         if found:
-    #             schfile = schfile[0:found.start()]
-    #     ### Determine type, DATES or TSTEP
-    #     use_dates = self.get_type(schfile)
-    #     if use_dates:
-    #         regex = compile(r'\n?\s*\bDATES\b\s+(\d+)\s+\'?(\w+)\'?\s+(\d+)\s*/\s+/')
-    #     else:
-    #         regex = compile(r'\n?\s*\bTSTEP\b\s+([0-9 *.]+)\s*/\s+')
-    #     ### Create list of (time, (start, end))-tuple
-    #     date_span = [(' '.join(m.groups()), m.span()) for m in regex.finditer(schfile)]
-    #     #print(date_span)
-    #     pos = [s for d,s in date_span] + [(len(schfile), 0)]
-    #     ### Extract actions
-    #     actions = [schfile[pos[i][1]:pos[i+1][0]].rstrip() for i in range(len(pos)-1)]
-    #     ### Calculate number of days from the simulation start (given by START in .DATA-file)
-    #     if use_dates:
-    #         days = [(datetime.strptime(d, '%d %b %Y').date()-self.start).days for d,s in date_span]
-    #     else:   
-    #         ### Process x*y statements
-    #         prod = lambda x, y : int(x)*float(y) 
-    #         days = list(accumulate([sum([prod(*i.split('*')) if '*' in i else float(i) for i in d.split()]) for d,s in date_span]))
-    #     if self.skip_empty:
-    #         ### Return only non-empty [day, action] pairs        
-    #         day_act = [[float(d), a+'\n'] for (d,a) in zip(days, actions) if a]
-    #         ### Include last entry also if it is empty
-    #         if day_act[-1][0] < days[-1]:
-    #             day_act.append([float(days[-1]), '\n'])
-    #         return day_act
-    #     else:
-    #         ### Keep all DATES/TSTEP entries
-    #         return [[float(d), a+'\n'] for (d,a) in zip(days, actions)]
 
 
     #--------------------------------------------------------------------------------
