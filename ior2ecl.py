@@ -1076,8 +1076,8 @@ class Simulation:                                                        # Simul
             e = exc_info()
             n = [run.n for run in self.runs if run] or [-1]
             msg += f'(step {max(n)}) {e[0].__name__}: {e[1]}'
-            print(e[1].decode())
-            if b'\x00\x00' in e[1]:
+            print(fr'{e[1]}')
+            if r'\x00\x00' in fr'{e[1]}':
                 msg += f', try increasing the CHECK_PAUSE value ({CHECK_PAUSE}).'
                 print('MSG', msg)
             else:
