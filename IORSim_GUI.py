@@ -520,7 +520,7 @@ class sim_worker(base_worker):
             #if run and value is None:
             if run:# and value is None:
                 value = run.t
-            self.update_progress((int(value), min, n0))
+            self.update_progress((value and int(value), min, n0))
         #------------------------------------
         def status(run=None, value=None, mode=None, **x):
         #------------------------------------
