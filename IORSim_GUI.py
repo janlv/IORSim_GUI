@@ -2738,32 +2738,24 @@ class main_window(QMainWindow):                                    # main_window
         if not smspec.is_file() or not self.unsmry.is_file():
             self.unsmry = None
             return False
-        #self.unsmry = unfmt_file(unsmry)
-        #smspec = unfmt_file(smspec)
 
         ### read variable specifications
         ecl_data = namedtuple('ecl_data','time fluid wells yaxis units indx', defaults=(None,))
         varnames = measure = None
-        #try:
         for block in smspec.blocks():
-            #block.print(details=True)
-            #print(block.data())
             if block.key() == 'KEYWORDS':
                 varnames = get_substrings(block.data()[0], 8)
+                #print(varnames, block.data(0))
             elif block.key() == 'WGNAMES':
                 ecl_data.wells = [s for s in get_substrings(block.data()[0], 8)]
             elif block.key() == 'MEASRMNT':
+                #print(block.data((0,10),nchar=5, raise_error=True))
                 data = block.data()[0].lower()
                 width = len(data)/max(len(varnames), 1)
                 measure = get_substrings(data, width or 1)
             elif block.key() == 'UNITS':
                 ecl_data.units = get_substrings(block.data()[0], 8)                
-        #except (SystemError,TypeError) as e:
-        #    print(e)
-        #    self.unsmry = None # so that we call this function again
-        #    return
-        #if not varnames:
-        if any([not v for v in (varnames, ecl_data.wells, measure, ecl_data.units)]):
+        if any(not v for v in (varnames, ecl_data.wells, measure, ecl_data.units)):
             self.unsmry = None # so that we call this function again
             #print('return in ecl_init_data()')
             return
@@ -2774,6 +2766,7 @@ class main_window(QMainWindow):                                    # main_window
         ecl_data.yaxis = {var:return_matching_string(yaxis_type, measure[i]) for i,var in enumerate(varnames)}
         ecl_data.yaxis['WTPCHEA'] = 'rate'
         ecl_data.indx = {var:[] for var in varlist}
+        #print('ecl_data.yaxis', ecl_data.yaxis)
 
         ### prepare data dict 
         ecl = {}
@@ -2802,6 +2795,7 @@ class main_window(QMainWindow):                                    # main_window
             if not match:
                 del ecl_data.indx[var]
                 #print('WARNING! Variable {} not found in {}'.format(var, self.unsmry.name()))
+        #time fluid wells yaxis units indx
         self.ecl_data = ecl_data
         self.data['ecl'] = ecl
         return True
@@ -2840,6 +2834,12 @@ class main_window(QMainWindow):                                    # main_window
         for well in wells:
             self.data['ecl'][well]['days'] = self.data['ecl']['days']
         # print('return True')
+        # print('time',self.ecl_data.time)
+        # print('fluid',self.ecl_data.fluid)
+        # print('wells', self.ecl_data.wells)
+        # print('yaxis', self.ecl_data.yaxis)
+        # print('units', self.ecl_data.units)
+        # print('indx', self.ecl_data.indx)
         return True
 
                         
