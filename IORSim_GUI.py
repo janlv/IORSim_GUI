@@ -2839,7 +2839,7 @@ class main_window(QMainWindow):                                    # main_window
         # print('wells', self.ecl_data.wells)
         # print('yaxis', self.ecl_data.yaxis)
         # print('units', self.ecl_data.units)
-        # print('indx', self.ecl_data.indx)
+        print('indx', self.ecl_data.indx)
         return True
 
                         
