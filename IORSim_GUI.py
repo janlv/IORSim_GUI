@@ -2744,30 +2744,41 @@ class main_window(QMainWindow):                                    # main_window
         varnames = measure = None
         for block in smspec.blocks():
             if block.key() == 'KEYWORDS':
-                varnames = get_substrings(block.data()[0], 8)
-                #print(varnames, block.data(0))
+                #varnames = get_substrings(block.data()[0], 8)
+                varnames = block.data(strip=True)
+                #print(varnames)
             elif block.key() == 'WGNAMES':
-                ecl_data.wells = [s for s in get_substrings(block.data()[0], 8)]
+                # ecl_data.wells = [s for s in get_substrings(block.data()[0], 8)]
+                ecl_data.wells = block.data(strip=True)
             elif block.key() == 'MEASRMNT':
                 #print(block.data((0,10),nchar=5, raise_error=True))
-                data = block.data()[0].lower()
-                width = len(data)/max(len(varnames), 1)
-                measure = get_substrings(data, width or 1)
+                width = block.length()//max(len(varnames), 1)
+                measure = block.data(strip=True, nchar=width)
+                #data = block.data()[0].lower()
+                #measure = get_substrings(data, width or 1)
             elif block.key() == 'UNITS':
-                ecl_data.units = get_substrings(block.data()[0], 8)                
+                #ecl_data.units = get_substrings(block.data()[0], 8)                
+                ecl_data.units = block.data(strip=True)                
         if any(not v for v in (varnames, ecl_data.wells, measure, ecl_data.units)):
             self.unsmry = None # so that we call this function again
             #print('return in ecl_init_data()')
             return
         ecl_data.time = varnames.index('TIME')
         fluid_type = {'O':'Oil', 'W':'Water', 'G':'Gas'}
-        ecl_data.fluid = {var:('Temp_ecl' if ecl_data.units[i]=='DEG C' else fluid_type.get(var[1])) for i,var in enumerate(varnames)}
+        #ecl_data.fluid = {var:('Temp_ecl' if ecl_data.units[i]=='DEG C' else fluid_type.get(var[1])) for i,var in enumerate(varnames)}
+        ecl_data.fluid = {var: 'Temp_ecl' if unit=='DEG C' else fluid_type.get(var[1]) for var,unit in zip(varnames, ecl_data.units)}
         yaxis_type = ['prod','rate']
-        ecl_data.yaxis = {var:return_matching_string(yaxis_type, measure[i]) for i,var in enumerate(varnames)}
-        ecl_data.yaxis['WTPCHEA'] = 'rate'
+        #ecl_data.yaxis = {var:return_matching_string(yaxis_type, measure[i].lower()) for i,var in enumerate(varnames)}
+        ecl_data.yaxis = {var:y for var,mes in zip(varnames, measure) if any((y:=s) in mes.lower() for s in ('prod','rate'))}
+        ecl_data.yaxis['WTPCHEA'] = 'rate' # Production temperature
         ecl_data.indx = {var:[] for var in varlist}
-        #print('ecl_data.yaxis', ecl_data.yaxis)
-
+        #print(list(zip(varnames, measure)))
+        #print('time',ecl_data.time)
+        #print('fluid',ecl_data.fluid)
+        #print('wells', ecl_data.wells)
+        #print('yaxis', ecl_data.yaxis)
+        #print('units', ecl_data.units)
+        #print('indx', ecl_data.indx)
         ### prepare data dict 
         ecl = {}
         ecl['days'] = []
@@ -2789,6 +2800,7 @@ class main_window(QMainWindow):                                    # main_window
                     ecl_data.indx[var].append(i)
                     y = ecl_data.yaxis[var]
                     f = ecl_data.fluid[var]
+                    #print(well, y, f, var)
                     ecl[well][y][f+' var'] = [var]
                     if 'Temp' in f:
                         ecl[well]['prod'][f] = ecl[well]['rate'][f] 
@@ -2834,12 +2846,6 @@ class main_window(QMainWindow):                                    # main_window
         for well in wells:
             self.data['ecl'][well]['days'] = self.data['ecl']['days']
         # print('return True')
-        # print('time',self.ecl_data.time)
-        # print('fluid',self.ecl_data.fluid)
-        # print('wells', self.ecl_data.wells)
-        # print('yaxis', self.ecl_data.yaxis)
-        # print('units', self.ecl_data.units)
-        print('indx', self.ecl_data.indx)
         return True
 
                         
