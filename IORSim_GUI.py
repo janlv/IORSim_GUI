@@ -2864,7 +2864,7 @@ class main_window(QMainWindow):                                    # main_window
         [ecl[w].update({y:{f:[] for f in fluids.values()} for y in yaxes.values()}) for w in smry.well_names]
         ecl['days'] = []
         ### Index to map read data to ecl[well][yaxis][fluid]
-        self.ecl_index = [(w, fluids[k[1]], yaxes[k[2:4]]) for w,k in zip(smry.wells, smry.keys)]
+        self.ecl_index = [(w, yaxes[k[2:4]], fluids[k[1]]) for w,k in zip(smry.wells, smry.keys)]
         self.data['ecl'] = ecl
         self.unsmry = smry
         return True
@@ -2880,11 +2880,13 @@ class main_window(QMainWindow):                                    # main_window
         if reinit or not self.unsmry:
             if not self.init_ecl_data_v2(case=case):
                 return False
-        days, data = self.unsmry.get('days', 'welldata', only_new=True, raise_error=False)
-        ecl = self.data['ecl']
-        ecl['days'].extend(days)
-        [ecl[w]['days'].extend(days) for w in self.unsmry.well_names]
-        [ecl[w][y][f].extend(d) for (w,y,f),*d in zip(self.ecl_index, *data)]
+        data = self.unsmry.get('days', 'welldata', only_new=True, raise_error=False)
+        if data:
+            days, welldata = data
+            ecl = self.data['ecl']
+            ecl['days'].extend(days)
+            [ecl[w]['days'].extend(days) for w in self.unsmry.well_names]
+            [ecl[w][y][f].extend(d) for (w,y,f),*d in zip(self.ecl_index, *welldata)]
 
 
     #-----------------------------------------------------------------------
