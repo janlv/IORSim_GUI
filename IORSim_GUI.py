@@ -2855,27 +2855,24 @@ class main_window(QMainWindow):                                    # main_window
         keys = ('WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT', 'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWIT','FWIR')
         fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl'}
         yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'irate', 'IT':'iprod'}
-        root = case or self.input['root']
-        smry = UNSMRY_file(root, keys=keys, fluids=fluids, yaxes=yaxes)
-        print(smry.file)
+        smry = UNSMRY_file(case or self.input['root'], keys=keys)
         if not smry.ready():
             self.unsmry = None
             return False
         ### Create dict of format [well][yaxis][fluid] = []
-        self.ecl_data = {w:{y:{f:[] for f in fluids.values()} for y in yaxes.values()} for w in smry.wells}
-        for w in smry.wells:
-            self.ecl_data[w]['days'] = []
-        self.ecl_data['days'] = []
-        self.data['ecl'] = self.ecl_data
+        ecl = {w:{'days':[]} for w in smry.well_names}
+        [ecl[w].update({y:{f:[] for f in fluids.values()} for y in yaxes.values()}) for w in smry.well_names]
+        ecl['days'] = []
+        ### Index to map read data to ecl[well][yaxis][fluid]
+        self.ecl_index = [(w, fluids[k[1]], yaxes[k[2:4]]) for w,k in zip(smry.wells, smry.keys)]
+        self.data['ecl'] = ecl
         self.unsmry = smry
         return True
 
     #-----------------------------------------------------------------------
     def read_ecl_data(self, case=None, reinit=False):            # main_window
     #-----------------------------------------------------------------------
-        datafile = self.input['root']
-        if case:
-            datafile = case
+        datafile = case or self.input['root']
         if not datafile:
             self.data['ecl'] = {}
             return False
@@ -2883,10 +2880,11 @@ class main_window(QMainWindow):                                    # main_window
         if reinit or not self.unsmry:
             if not self.init_ecl_data_v2(case=case):
                 return False
-        days, data = self.unsmry.get('days', 'welldata', only_new=True)
-        self.data['ecl']['days'].extend(days)
-        [self.data['ecl'][w]['days'].extend(days) for w in set(self.unsmry.wells)]
-        [self.data['ecl'][w][y][f].extend(d) for w,y,f,*d in zip(self.unsmry.wells, self.unsmry.yaxes, self.unsmry.fluids, *data)]
+        days, data = self.unsmry.get('days', 'welldata', only_new=True, raise_error=False)
+        ecl = self.data['ecl']
+        ecl['days'].extend(days)
+        [ecl[w]['days'].extend(days) for w in self.unsmry.well_names]
+        [ecl[w][y][f].extend(d) for (w,y,f),*d in zip(self.ecl_index, *data)]
 
 
     #-----------------------------------------------------------------------
