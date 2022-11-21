@@ -2855,8 +2855,8 @@ class main_window(QMainWindow):                                    # main_window
         keys = ('WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT', 'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWIT','FWIR')
         fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl'}
         yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'irate', 'IT':'iprod'}
-        smry = UNSMRY_file(case or self.input['root'], keys=keys)
-        if not smry.ready():
+        smry = UNSMRY_file(case or self.input['root'])
+        if not smry.init_welldata(keys=keys):
             self.unsmry = None
             return False
         ### Create dict of format [well][yaxis][fluid] = []
@@ -2865,7 +2865,7 @@ class main_window(QMainWindow):                                    # main_window
         ecl['days'] = []
         ### Index to map read data to ecl[well][yaxis][fluid]
         self.ecl_index = [(w, yaxes[k[2:4]], fluids[k[1]]) for w,k in zip(smry.wells, smry.keys)]
-        ### Index into temp-data for copying temp to prod
+        ### Index into temp-data for adding temp to 'prod' (not only 'rate')
         self.temp_index = [(n,ind[0]) for n,ind in enumerate(self.ecl_index) if ind[1]=='Temp_ecl']
         self.data['ecl'] = ecl
         self.unsmry = smry
@@ -2885,6 +2885,9 @@ class main_window(QMainWindow):                                    # main_window
         data = self.unsmry.get('days', 'welldata', only_new=True, raise_error=False)
         if data:
             days, welldata = data
+            ### Skip zero-time data
+            if days < 1e-8:
+                return
             ecl = self.data['ecl']
             ecl['days'].extend(days)
             [ecl[w]['days'].extend(days) for w in self.unsmry.well_names]
