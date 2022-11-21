@@ -2872,7 +2872,7 @@ class main_window(QMainWindow):                                    # main_window
         return True
 
     #-----------------------------------------------------------------------
-    def read_ecl_data(self, case=None, reinit=False):            # main_window
+    def read_ecl_data(self, case=None, reinit=False, skip_zero=True):   # main_window
     #-----------------------------------------------------------------------
         datafile = case or self.input['root']
         if not datafile:
@@ -2886,8 +2886,9 @@ class main_window(QMainWindow):                                    # main_window
         if data:
             days, welldata = data
             ### Skip zero-time data
-            if days < 1e-8:
-                return
+            if skip_zero and days[0] < 1e-8:
+               days.pop(0)
+               welldata.pop(0)
             ecl = self.data['ecl']
             ecl['days'].extend(days)
             [ecl[w]['days'].extend(days) for w in self.unsmry.well_names]
