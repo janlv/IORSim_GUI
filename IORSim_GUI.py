@@ -2865,7 +2865,7 @@ class main_window(QMainWindow):                                    # main_window
         ecl['days'] = []
         ### Index to map read data to ecl[well][yaxis][fluid]
         self.ecl_index = [(w, yaxes[k[2:4]], fluids[k[1]]) for w,k in zip(smry.wells, smry.keys)]
-        ### Index into temp-data for adding temp to 'prod' (not only 'rate')
+        ### Index into temp-data (for adding temp to 'prod', not only 'rate')
         self.temp_index = [(n,ind[0]) for n,ind in enumerate(self.ecl_index) if ind[1]=='Temp_ecl']
         self.data['ecl'] = ecl
         self.unsmry = smry
@@ -2893,7 +2893,7 @@ class main_window(QMainWindow):                                    # main_window
             ecl['days'].extend(days)
             [ecl[w]['days'].extend(days) for w in self.unsmry.well_names]
             [ecl[w][y][f].extend(d) for (w,y,f),*d in zip(self.ecl_index, *welldata)]
-            ### Update temp-data also for 'prod'
+            ### Add temp-data to 'prod'
             [ecl[w]['prod']['Temp_ecl'].append(d[i]) for i,w in self.temp_index for d in data]
 
 
