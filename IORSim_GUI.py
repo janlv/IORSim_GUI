@@ -262,6 +262,7 @@ def get_eclipse_well_yaxis_fluid(root, include=False, raise_error=True):
     summary = well = False
     vars = []
     wells = []
+    #print('TEST',DATA_file(root).with_includes(section='SUMMARY').get('SUMMARY'))
     # encoding = None
     # try:
     #     with open(fil) as f:
@@ -319,6 +320,9 @@ def get_eclipse_well_yaxis_fluid(root, include=False, raise_error=True):
     if any([v[0]=='F' and v[-1] in ('P','R') for v in vars]):
         wells.insert(0, 'Field')
     #fluids.insert(-1, 'Temp')
+    #print(wells)
+    #print(yaxis)
+    #print(fluids)
     return wells, yaxis, fluids 
             
     
