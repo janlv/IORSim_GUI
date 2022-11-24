@@ -1231,6 +1231,9 @@ def case_from_casedir(case_dir, root):
     case_dir = Path(case_dir)
     if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
         return case_dir/root/root
+    ### Return path to case not in the case-folder (if it exists)
+    if (path := Path.cwd()/(root+'.DATA')).is_file():
+        return path.with_suffix('').resolve()
     raise SystemError('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
 
 

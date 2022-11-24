@@ -40,7 +40,7 @@ def resource_path():
     return path
 
 # Default settings
-default_casedir = Path.cwd()/'IORSim_cases'
+default_casedir = Path.cwd()/'cases'
 default_savedir = Path.cwd()/'download'
 default_settings_file = Path.home()/'.iorsim_settings.dat'
 
