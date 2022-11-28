@@ -474,7 +474,8 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         self.tsteps = kwargs.get('tsteps') or DATA_file(self.case).tsteps()
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps)
-        self.satnum = DATA_file(IOR_SATNUM_FILE, '', reread=True)   # Output-file from IORSim, read by Eclipse as an interface-file
+        #self.satnum = DATA_file(IOR_SATNUM_FILE, '', reread=True)   # Output-file from IORSim, read by Eclipse as an interface-file
+        self.satnum = DATA_file(IOR_SATNUM_FILE)   # Output-file from IORSim, read by Eclipse as an interface-file
         self.endtag = IOR_SATNUM_ENDTAG
         self.schedule = schedule
 
@@ -584,7 +585,8 @@ class Schedule:
         self.case = Path(case)
         self.skip_empty = skip_empty
         self.comment = comment
-        self.ifacefile = interface_file and DATA_file(interface_file.file, reread=True) or None
+        #self.ifacefile = interface_file and DATA_file(interface_file.file, reread=True) or None
+        self.ifacefile = interface_file and DATA_file(interface_file.file) or None
         self.days = init_days 
         self.start = start
         self.tstep = 0
