@@ -128,7 +128,7 @@ class Ecl_forward(Forward_mixin, Eclipse):                              # ecl_fo
     #--------------------------------------------------------------------------------
         super().check_input()
         ### Check root.DATA exists and that READDATA keyword is NOT present
-        if 'READDATA' in self.data_file.data():
+        if 'READDATA' in self.data_file: #.data():
             raise SystemError('WARNING The current case cannot run in forward-mode: '+
                               'Eclipse input contains the READDATA keyword.')
         return True
@@ -178,11 +178,11 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             raise SystemError(f'ERROR To run the current case in backward-mode you need to {msg}')
         ### Check that root.DATA exists 
         super().check_input()
-        if not 'READDATA' in self.data_file.data():
+        if not 'READDATA' in self.data_file: #.data():
             raise_error(f"insert 'READDATA /' between 'TSTEP' and 'END' in {self.data_file}.")
         ### Check presence of RPTSOL RESTART>1
         #if not self.data_file.with_includes('SOLUTION').contains(r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
-        if not self.data_file.section('SOLUTION').contains('RPTSOL',r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
+        if not self.data_file.section('SOLUTION').search('RPTSOL',r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
             raise_error(f"insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in {self.data_file}.")
         return True
 
@@ -668,8 +668,8 @@ class Schedule:
         tstep_pos = list(zip(accumulate(tstep), pos))
         ### Append end to make pairwise pick up the last entry
         tstep_pos.append(tstep_pos[-1])
-        filedata = self.file.data()
-        tstep_act = ((tstep, filedata[a:b]) for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
+        #filedata = self.file.data()
+        tstep_act = ((tstep, self.file.data[a:b]) for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
         if self.skip_empty:
             tstep_act = (x for x in tstep_act if x[1])
         return list(tstep_act)
@@ -841,7 +841,7 @@ class Simulation:                                                        # Simul
         # else:
         #     ### No SKIPREST, add tsteps to restart
         #     self.init_days += self.restart_days 
-        self.mode = self.mode or (('READDATA' in self.ECL_inp.data()) and 'backward' or 'forward')
+        self.mode = self.mode or (('READDATA' in self.ECL_inp) and 'backward' or 'forward')
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
         check_OK = False
@@ -855,8 +855,8 @@ class Simulation:                                                        # Simul
     def init_forward_run(self, iorexe=None, eclexe=None, **kwargs): # Simulation
     #--------------------------------------------------------------------------------
         start = self.start + timedelta(days=self.restart_days)
-        skiprest = 'SKIPREST' in self.ECL_inp.data()
-        self.tsteps = self.ECL_inp.tsteps(start=start, skiprest=skiprest)
+        #skiprest =  #.data()
+        self.tsteps = self.ECL_inp.tsteps(start=start, skiprest='SKIPREST' in self.ECL_inp)
         self.init_days = sum(self.tsteps) + self.restart_days
         self.T = self.init_days
         kwargs.update({'T':self.T})
