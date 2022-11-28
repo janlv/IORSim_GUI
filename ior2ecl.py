@@ -181,7 +181,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         if not 'READDATA' in self.data_file.data():
             raise_error(f"insert 'READDATA /' between 'TSTEP' and 'END' in {self.data_file}.")
         ### Check presence of RPTSOL RESTART>1
-        if not self.data_file.with_includes('SOLUTION').contains(r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
+        #if not self.data_file.with_includes('SOLUTION').contains(r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
+        if not self.data_file.section('SOLUTION').contains('RPTSOL',r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
             raise_error(f"insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in {self.data_file}.")
         return True
 
@@ -675,7 +676,7 @@ class Schedule:
 
 
     #--------------------------------------------------------------------------------
-    def append(self, action=None, tstep=None):             # Schedule
+    def append(self, action=None, tstep=None):                             # Schedule
     #--------------------------------------------------------------------------------
         '''
         line : line number of TSTEP

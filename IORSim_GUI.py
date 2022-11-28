@@ -3050,7 +3050,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        days = self.schedule and (DATA_file(self.input['root']) + DATA_file(self.schedule)).tsteps(missing_ok=True) or 0
+        #days = self.schedule and (DATA_file(self.input['root']) + DATA_file(self.schedule)).tsteps(missing_ok=True) or 0
+        days = self.schedule and (sum(DATA_file(name).tsteps(missing_ok=True)) for name in (self.input['root'], self.schedule)) or 0
         self.view_input_file(self.schedule, title=f'Schedule file {self.schedule.name}, total days = {sum(days):.0f}', editor=self.editor)
         
     #-----------------------------------------------------------------------
