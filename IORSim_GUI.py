@@ -1949,13 +1949,14 @@ class main_window(QMainWindow):                                    # main_window
         self.plot = Plot() 
         self.editor = Editor(name='editor', save_func=self.prepare_case)
         ### Eclipse editor
-        sections = (color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b') + DATA_file.section_names
-        globals = (color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b') + DATA_file.global_kw
-        common = (color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b') + DATA_file.common_kw
+        rules = namedtuple('rules',('color weight option front back words'))
+        sections = rules(color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b', DATA_file.section_names)
+        globals = rules(color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b', DATA_file.global_kw)
+        common = rules(color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b', DATA_file.common_kw)
         self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common), save_func=self.prepare_case)
         ### IORSim editor
-        mandatory = (color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b') + IORSim_input.keywords.required
-        optional = (color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b') + IORSim_input.keywords.optional
+        mandatory = rules(color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b', IORSim_input.keywords.required)
+        optional = rules(color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b', IORSim_input.keywords.optional)
         self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=(mandatory, optional), save_func=self.prepare_case)
         ### Chemfile editor
         self.chem_editor = Highlight_editor(name='Chemistry editor', comment='#')
@@ -3771,21 +3772,22 @@ class main_window(QMainWindow):                                    # main_window
 ###  https://github.com/pyside/Examples/blob/master/examples/richtext/syntaxhighlighter.py
 ###
 class Highlighter(QSyntaxHighlighter):
-    def __init__(self, parent=None, comment='#', color=Qt.gray, keywords=[]):
+    def __init__(self, parent=None, comment='#', color=Qt.gray, keywords=()):
         super(Highlighter, self).__init__(parent)
 
         self.highlightingRules = []
         #print(keywords)
-        while keywords:
-            kword = keywords.pop(0)
+        #while keywords:
+        for kw in keywords:
+            #kword = keywords.pop(0)
             keywordFormat = QTextCharFormat()
-            keywordFormat.setForeground(kword.pop(0))
-            keywordFormat.setFontWeight(kword.pop(0))
-            option = kword.pop(0)
-            front = kword.pop(0)
-            back = kword.pop(0)
-            keywordPatterns = [front + kw + back for kw in kword]            
-            self.highlightingRules.extend( [(QRegularExpression(pattern, option), keywordFormat) for pattern in keywordPatterns] )
+            keywordFormat.setForeground(kw.color)
+            keywordFormat.setFontWeight(kw.weight)
+            #option = kword.pop(0)
+            #front = kword.pop(0)
+            #back = kword.pop(0)
+            keywordPatterns = [kw.front + k + kw.back for k in kw.words]            
+            self.highlightingRules.extend( [(QRegularExpression(pattern, kw.option), keywordFormat) for pattern in keywordPatterns] )
         singleLineCommentFormat = QTextCharFormat()
         singleLineCommentFormat.setForeground(color)
         self.highlightingRules.append((QRegularExpression(comment+'[^\n]*'), singleLineCommentFormat))
