@@ -586,7 +586,7 @@ class Schedule:
         self.skip_empty = skip_empty
         self.comment = comment
         #self.ifacefile = interface_file and DATA_file(interface_file.file, reread=True) or None
-        self.ifacefile = interface_file and DATA_file(interface_file.file) or None
+        self.ifacefile = interface_file and DATA_file(interface_file.file, sections=False) or None
         self.days = init_days 
         self.start = start
         self.tstep = 0
@@ -594,7 +594,7 @@ class Schedule:
         self.end = 0
         ### Ignore case in file extension
         #self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
-        self.file = DATA_file(self.case.with_suffix(ext), ignore_case=True)
+        self.file = DATA_file(self.case.with_suffix(ext), sections=False, ignore_case=True)
         if self.file.exists():
             self._schedule = self.get_schedule()
             self.end = (len(self._schedule) > 0) and self._schedule[-1][0] or 0
