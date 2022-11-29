@@ -287,11 +287,11 @@ class IORSim_input:                                                    # iorsim_
                 '*MODELINSTANCE':1, '*WELLSPECIES':1, '*INJECTOR': 0, '*TIME': 0, '*OUTPUT':1,
                 '*PRODUCER': 0, '*WELLPLOT_INTERVAL':1, '*PRINTLEVEL':1, '*END':1}
         keys = all_.keys()
-        ignored = ['*GRIDPLOT_FILE', '*N_TRACER']
-        required = [k for k,v in all_.items() if v>0]
-        optional = [k for k,v in all_.items() if v==0]
-        specie = [k for k,v in all_.items() if v>0 and v!=3]
-        solution = [k for k,v in all_.items() if v>0 and v!=2]
+        ignored = ('*GRIDPLOT_FILE', '*N_TRACER')
+        required = tuple(k for k,v in all_.items() if v>0)
+        optional = tuple(k for k,v in all_.items() if v==0)
+        specie   = tuple(k for k,v in all_.items() if v>0 and v!=3)
+        solution = tuple(k for k,v in all_.items() if v>0 and v!=2)
         specie_key = '*SPECIES'
         solution_key = '*SOLUTION'
 

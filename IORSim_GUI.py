@@ -1949,14 +1949,14 @@ class main_window(QMainWindow):                                    # main_window
         self.plot = Plot() 
         self.editor = Editor(name='editor', save_func=self.prepare_case)
         ### Eclipse editor
-        sections = [color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b'] + DATA_file.section_names
-        globals = [color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b'] + DATA_file.global_kw
-        common = [color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b'] + DATA_file.common_kw
-        self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=[sections, globals, common], save_func=self.prepare_case)
+        sections = (color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b') + DATA_file.section_names
+        globals = (color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b') + DATA_file.global_kw
+        common = (color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b') + DATA_file.common_kw
+        self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common), save_func=self.prepare_case)
         ### IORSim editor
-        mandatory = [color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + IORSim_input.keywords.required
-        optional = [color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b'] + IORSim_input.keywords.optional
-        self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=[mandatory, optional], save_func=self.prepare_case)
+        mandatory = (color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b') + IORSim_input.keywords.required
+        optional = (color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b') + IORSim_input.keywords.optional
+        self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=(mandatory, optional), save_func=self.prepare_case)
         ### Chemfile editor
         self.chem_editor = Highlight_editor(name='Chemistry editor', comment='#')
         self.log_viewer = Editor(name='log_viewer', read_only=True)
