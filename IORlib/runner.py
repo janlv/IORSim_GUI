@@ -370,7 +370,7 @@ class Runner:                                                               # Ru
         #print('runner.__init__: ',keep_alive, N,T,name,case,exe,cmd,ext_iface,ext_OK)
         self.reset_processes()
         self.name = name
-        self.case = Path(case).resolve()
+        self.case = Path(case)
         self.exe = exe
         self.cmd = cmd
         self.logname = self.case.parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log'
