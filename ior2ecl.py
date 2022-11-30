@@ -744,7 +744,7 @@ class Simulation:                                                        # Simul
         #      'convert',convert,'merge',merge,'del_merge',del_merge,'del_convert',del_convert,
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.logname = 'ior2ecl'
-        self.root = Path(root).with_suffix('')
+        self.root = Path(root).with_suffix('').resolve()
         self.ECL_inp = DATA_file(self.root, check=False)
         self.merge_OK = self.root.with_name(MERGE_OK_FILE)        
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
@@ -1154,9 +1154,10 @@ class Simulation:                                                        # Simul
         a, b = inte and (inte[0][4],inte[0][5]) or (0,0) 
         s += f'    {"Timestep":{format}}: {a}{(a!=b and f" - {b}" or "")} days\n'
         s += (self.schedule and self.schedule.file) and f'    {"Schedule":{format}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
-        s += f'    {"Run-dir":{format}}: {Path.cwd()}\n'
-        #s += f'    {"Case-dir":{format}}: {Path(self.root).parent.relative_to(Path.cwd())}\n'
-        s += f'    {"Case-dir":{format}}: {Path(self.root).parent}\n'
+        rundir = Path.cwd()
+        s += f'    {"Run-dir":{format}}: {rundir}\n'
+        casedir = str(Path(self.root).parent).replace(rundir, '< Run-dir >') 
+        s += f'    {"Case-dir":{format}}: {casedir}\n'
         s += f'    {"Log-files":{format}}: {", ".join([Path(file).name for file in logfiles])}\n'
         s += '\n'
         return s
