@@ -3527,7 +3527,7 @@ class main_window(QMainWindow):                                    # main_window
                 self.progress = Progress(N=N)
                 return  
             self.update_progressbar(t)
-            self.update_remaining_time( self.progress.remaining_time(t) )
+            self.update_remaining_time(text=self.progress.remaining_time(t))
         #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
         
     #-----------------------------------------------------------------------
