@@ -744,18 +744,18 @@ class Simulation:                                                        # Simul
         #      'convert',convert,'merge',merge,'del_merge',del_merge,'del_convert',del_convert,
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.logname = 'ior2ecl'
-        self.root = root
-        self.ECL_inp = DATA_file(root, check=False)
-        self.merge_OK = Path(root).with_name(MERGE_OK_FILE)        
+        self.root = Path(root).with_suffix('')
+        self.ECL_inp = DATA_file(self.root, check=False)
+        self.merge_OK = self.root.with_name(MERGE_OK_FILE)        
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
         if delete:
             del_convert = del_merge = True
         self.output = namedtuple('output',['convert','merge','del_convert','del_merge'])(convert, merge, del_convert, del_merge)
         self.runlog = None
-        if root and not to_screen:
+        if self.root and not to_screen:
             lognr = kwargs.get('lognr')
-            self.runlog = safeopen(Path(root).parent/f'{self.logname}{lognr and "_" or ""}{lognr or ""}.log', 'w')
+            self.runlog = safeopen(self.root.parent/f'{self.logname}{lognr and "_" or ""}{lognr or ""}.log', 'w')
         self.print2log = lambda txt, **kwargs: print(txt, file=self.runlog, flush=True, **kwargs)
         self.current_run = None
         self.runs = runs
@@ -770,7 +770,7 @@ class Simulation:                                                        # Simul
         self.restart_file = None
         self.restart_step = self.restart_days = 0
         self.skiprest = False
-        kwargs.update({'root':str(root), 'runlog':self.runlog, 'update':self.update, 'to_screen':to_screen})
+        kwargs.update({'root':str(self.root), 'runlog':self.runlog, 'update':self.update, 'to_screen':to_screen})
         self.kwargs = kwargs
 
 
