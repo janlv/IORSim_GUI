@@ -1156,7 +1156,7 @@ class Simulation:                                                        # Simul
         s += (self.schedule and self.schedule.file) and f'    {"Schedule":{format}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         rundir = Path.cwd()
         s += f'    {"Run-dir":{format}}: {rundir}\n'
-        casedir = str(Path(self.root).parent).replace(rundir, '< Run-dir >') 
+        casedir = str(Path(self.root).parent).replace(str(rundir), '< Run-dir >') 
         s += f'    {"Case-dir":{format}}: {casedir}\n'
         s += f'    {"Log-files":{format}}: {", ".join([Path(file).name for file in logfiles])}\n'
         s += '\n'
