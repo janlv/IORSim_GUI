@@ -25,16 +25,17 @@ MERGE_OK_FILE     = '.merge_OK' # To avoid re-merging merged UNRST-files
 
 from collections import Counter, namedtuple
 from itertools import accumulate, chain, dropwhile, takewhile
+from locale import getpreferredencoding
 from operator import itemgetter
 from pathlib import Path
-from sys import exc_info, platform
+from sys import platform
 from argparse import ArgumentParser
 from datetime import datetime, timedelta
 from time import sleep
 from psutil import NoSuchProcess, __version__ as psutil_version
 from shutil import copy as shutil_copy 
-from traceback import print_exc as trace_print_exc, format_exc as trace_format_exc
-from re import compile
+from traceback import print_exc as trace_print_exc #, format_exc as trace_format_exc
+from re import compile as re_compile
 from os.path import relpath
 
 from IORlib.utils import flatten, get_keyword, get_python_version, list2text, pairwise, print_dict, print_error, remove_comments, safeopen, Progress, silentdelete, delete_files_matching, tail_file
@@ -87,11 +88,14 @@ class Eclipse(Runner):                                                      # ec
 
 
     #--------------------------------------------------------------------------------
-    def start(self):                                                        # eclipse
+    def start(self, error_func=None):                                       # eclipse
     #--------------------------------------------------------------------------------
-        self.update and self.update.status(value=f'Starting {self.name}...')
-        super().start(error_func=self.unexpected_stop_error)
-        self.update and self.update.status(value=f'{self.name} running...')
+        if self.update:
+            self.update.status(value=f'Starting {self.name}...')
+        error_func = error_func or self.unexpected_stop_error
+        super().start(error_func)
+        if self.update:
+            self.update.status(value=f'{self.name} running...')
 
 
 #====================================================================================
@@ -146,8 +150,10 @@ class Backward_mixin:
         self.t = self.time()
         self.update.status(run=self)
         #progress and self.update.progress(value=self.t)
-        progress and self.update.progress(run=self)
-        plot and self.update.plot()
+        if progress:
+            self.update.progress(run=self)
+        if plot:
+            self.update.plot()
 
 
 
@@ -177,7 +183,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             raise SystemError(f'ERROR To run the current case in backward-mode you need to {msg}')
         ### Check that root.DATA exists 
         super().check_input()
-        if not 'READDATA' in self.data_file: #.data():
+        if 'READDATA' not in self.data_file: #.data():
             raise_error(f"insert 'READDATA /' between 'TSTEP' and 'END' in {self.data_file}.")
         ### Check presence of RPTSOL RESTART>1
         #if not self.data_file.with_includes('SOLUTION').contains(r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
@@ -187,7 +193,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
 
 
     #--------------------------------------------------------------------------------
-    def start(self, restart=False):                                    # ecl_backward
+    def start(self, error_func=None, restart=False):                  # ecl_backward
     #--------------------------------------------------------------------------------
         # Start Eclipse in backward mode
         if self.n > 0 or self.t > 0:
@@ -208,7 +214,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.nwell = self.unrst.get('nwell')[0][-1]
         # Wait for flushed RFT-file
         msg = self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
-        msg and self._print(msg)
+        if msg:
+            self._print(msg)
         while self.nwell < 1:
             ### Run Eclipse until at least one well is producing and the RFT-file is created
             self.schedule.update(tstep=self.T)
@@ -231,7 +238,8 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.OK_file.create()
         ### Create next interface-file to avoid Eclipse from reading END
         self.interface_file(self.n+1).create()
-        start_stop and self.resume()
+        if start_stop:
+            self.resume()
         self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted' )
         if self.check_unrst:
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE) 
@@ -240,8 +248,10 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             if nwell:
                 self.nwell = nblocks = self.unrst.get('nwell')[0][-1]
             msg = self.rft.check.data_saved_maxmin(nblocks=nblocks, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE) 
-            msg and self._print(msg)
-        start_stop and self.suspend()
+            if msg:
+                self._print(msg)
+        if start_stop:
+            self.suspend()
         if self.delete_interface:
             self.interface_file(self.n).delete()
         self.n += 1
@@ -257,13 +267,13 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
 
 
     #--------------------------------------------------------------------------------
-    def quit(self):                                                    # ecl_backward
+    def quit(self, v=1, loop_func=lambda:None):                        # ecl_backward
     #--------------------------------------------------------------------------------
         self.print_suspend_errors()
         ### Append END to interface-file
         self.interface_file(self.n).create_from(string='END')
         self.OK_file.create()
-        super().quit()
+        super().quit(v, loop_func)
 
 
 #====================================================================================
@@ -309,7 +319,7 @@ class IORSim_input:                                                    # iorsim_
         def raise_error(error):
             raise SystemError(f'ERROR Error in IORSim input file: {error}')    
         text = remove_comments(self.file, comment='#')
-        file_kw = [kw.upper() for kw in compile(r'(\*[A-Za-z_-]+)').findall(text)]
+        file_kw = [kw.upper() for kw in re_compile(r'(\*[A-Za-z_-]+)').findall(text)]
         # Remove repeated keywords, i.e. make unique list
         file_kw = list(dict.fromkeys(file_kw))
         # Is this a species- or a solutions-case
@@ -496,7 +506,7 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
         Return the distribution of SATNUM numbers as a dict
         '''
         lines = remove_comments(self.satnum.file, comment='--') 
-        values = compile(r'SATNUM\s+([0-9\s]+)').findall(lines) 
+        values = re_compile(r'SATNUM\s+([0-9\s]+)').findall(lines) 
         if values:
             values = [int(v) for v in values[0].split('\n') if v.strip()]
             count = Counter(values)
@@ -557,11 +567,11 @@ class Ior_backward(Backward_mixin, Iorsim):                             # ior_ba
 
 
     #--------------------------------------------------------------------------------
-    def quit(self):                                                    # ior_backward
+    def quit(self, v=1, loop_func=lambda:None):                        # ior_backward
     #--------------------------------------------------------------------------------
         self.interface_file(self.n+1).append('Quit')
         self.OK_file.create()
-        super().quit()
+        super().quit(v, loop_func)
 
 
 #====================================================================================
@@ -621,7 +631,8 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def to_file(self, name):                                               # Schedule
     #--------------------------------------------------------------------------------
-        with open(self.case.parent/name, 'w') as file:
+        ' Write schedule to file '
+        with open(self.case.parent/name, 'w', encoding=getpreferredencoding()) as file:
             file.write(''.join([str(s) for s in flatten(self._schedule)]))
 
     # #--------------------------------------------------------------------------------
@@ -734,9 +745,9 @@ class Schedule:
 class Simulation:                                                        # Simulation
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, mode=None, root=None, pause=0, runs=[], to_screen=False, 
+    def __init__(self, mode=None, root=None, pause=0, run_names=(), to_screen=False,
                  convert=True, merge=True, del_convert=False, del_merge=False, delete=False,
-                 status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None, 
+                 status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None,
                  message=lambda **x:None, **kwargs):
     #--------------------------------------------------------------------------------
         #print('mode',mode,'root',root,'pause',pause,'runs',runs,'to_screen',to_screen,
@@ -745,7 +756,7 @@ class Simulation:                                                        # Simul
         self.logname = 'ior2ecl'
         self.root = Path(root).with_suffix('').resolve()
         self.ECL_inp = DATA_file(self.root, check=False)
-        self.merge_OK = self.root.with_name(MERGE_OK_FILE)        
+        self.merge_OK = self.root.with_name(MERGE_OK_FILE)
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
         if delete:
@@ -757,10 +768,12 @@ class Simulation:                                                        # Simul
             self.runlog = safeopen(self.root.parent/f'{self.logname}{lognr and "_" or ""}{lognr or ""}.log', 'w')
         self.print2log = lambda txt, **kwargs: print(txt, file=self.runlog, flush=True, **kwargs)
         self.current_run = None
-        self.runs = runs
+        self.run_names = run_names
+        self.runs = ()
         self.run_sim = None
         self.ior = self.ecl = None
         self.T = 0
+        self.tsteps = 0
         self.init_days = 0
         self.mode = mode
         self.schedule = None
@@ -779,15 +792,15 @@ class Simulation:                                                        # Simul
         if not self.run_sim and self.root:
             try:
                 self.run_sim = self.init_runs()
-            except SystemError as e:
-                self.update.message(f'{e}')
+            except SystemError as error:
+                self.update.message(f'{error}')
                 #self.update.status(value=f'{e}')
 
 
     #--------------------------------------------------------------------------------
     def close(self):                                                     # Simulation
     #--------------------------------------------------------------------------------
-        self.runs = []
+        self.runs = self.run_names = ()
         self.ior = self.ecl = self.current_run = self.schedule = None
         if self.runlog:
             self.runlog.close()
@@ -828,42 +841,28 @@ class Simulation:                                                        # Simul
                 raise SystemError(f'ERROR Error in the Eclipse input-file ({self.ECL_inp}): Unable to restart from step {step}, use {new_step} instead')
             self.restart_days = time[n.index(step)]
             self.restart = True
-            ### Skip the restarted tsteps
-            #acc_tsteps = chain((0,),(x for t in accumulate(self.tsteps) if (x:=t-self.restart_days) > 0))
-            #self.tsteps = (b-a for a,b in pairwise(acc_tsteps))
-        #self.start = self.ECL_inp.get('START')[0]
-        # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
+        ### Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
         self.start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
-        # if 'SKIPREST' in self.ECL_inp.data():
-        #     self.skiprest = True
-        #     ### Stop after restart if restart > tsteps
-        #     if self.restart_days > self.init_days:
-        #         self.init_days = self.restart_days
-        # else:
-        #     ### No SKIPREST, add tsteps to restart
-        #     self.init_days += self.restart_days 
         self.mode = self.mode or (('READDATA' in self.ECL_inp) and 'backward' or 'forward')
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
-        check_OK = False
+        check_ok = False
         self.runs = init_func(**self.kwargs)
         ### Check input
-        check_OK = self.runs and all(run.check_input() for run in self.runs)
-        return check_OK and run_func
-
+        check_ok = self.runs and all(run.check_input() for run in self.runs)
+        return check_ok and run_func
 
     #--------------------------------------------------------------------------------
     def init_forward_run(self, iorexe=None, eclexe=None, **kwargs): # Simulation
     #--------------------------------------------------------------------------------
         start = self.start + timedelta(days=self.restart_days)
-        #skiprest =  #.data()
         self.tsteps = self.ECL_inp.tsteps(start=start, skiprest='SKIPREST' in self.ECL_inp)
         self.init_days = sum(self.tsteps) + self.restart_days
         self.T = self.init_days
         kwargs.update({'T':self.T})
-        if not self.runs:
-            self.runs = ('eclipse','iorsim')
-        for name in self.runs:
+        if not self.run_names:
+            self.run_names = ('eclipse','iorsim')
+        for name in self.run_names:
             if name=='eclipse':
                 self.ecl = Ecl_forward(exe=eclexe, **kwargs)
             if name=='iorsim':
@@ -872,7 +871,8 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def init_backward_run(self, iorexe=None, eclexe=None, ior_keep_alive=False, ecl_keep_alive=False, time=0, **kwargs): # Simulation
+    def init_backward_run(self, iorexe=None, eclexe=None, ior_keep_alive=False,
+                          ecl_keep_alive=False, time=0, **kwargs):       # Simulation
     #--------------------------------------------------------------------------------
         self.tsteps = self.ECL_inp.tsteps()
         self.init_days = sum(self.tsteps)
@@ -980,21 +980,24 @@ class Simulation:                                                        # Simul
                 success = True
             else:
                 return False, ''
-        except (SystemError, ProcessLookupError, NoSuchProcess) as e:
-            msg = str(e)
+        except (SystemError, ProcessLookupError, NoSuchProcess) as error:
+            msg = str(error)
             success = 'simulation complete' in msg.lower()
-            if not type(e) is SystemError and any(r.canceled for r in self.runs):
+            if not isinstance(error, SystemError) and any(r.canceled for r in self.runs):
                 msg = 'INFO Run stopped'
             #print(type(e).__name__, e, msg)
         except KeyboardInterrupt:
             self.cancel()
-            msg = 'Simulation cancelled' 
-        except:  # Catch all other exceptions 
-            self.print2log(f'\nAn exception occured:\n{trace_format_exc()}')
-            e = exc_info()
+            msg = 'Simulation cancelled'
+        except Exception as exception:  # Catch all other exceptions 
+            #self.print2log(f'\nAn exception occured:\n{trace_format_exc()}')
+            self.print2log(f'\nAn exception occured:\n{exception}')
+            #error = exc_info()
             n = [run.n for run in self.runs if run] or [-1]
-            msg += f'(step {max(n)}) {e[0].__name__}: {e[1]}'
-            if r'\x00\x00\x00\x00' in fr'{e[1]}':
+            #msg += f'(step {max(n)}) {error[0].__name__}: {error[1]}'
+            msg += f'(step {max(n)}) {type(exception)}: {exception}'
+            #if r'\x00\x00\x00\x00' in fr'{error[1]}':
+            if r'\x00\x00\x00\x00' in fr'{exception}':
                 msg += f', try increasing the CHECK_PAUSE value ({CHECK_PAUSE}).'
             else:
                 msg += self.runlog and f', check {Path(self.runlog.name).name} for details' or ''
@@ -1013,8 +1016,8 @@ class Simulation:                                                        # Simul
                 if self.output.convert and success and any(run.is_iorsim for run in self.runs):
                     sleep(0.05)  # Need a short break here to make the GUI progressbar responsive
                     conv_msg = self.convert_and_merge(case=self.root)
-            except SystemError as e:
-                self.update.message(f'{e}')
+            except SystemError as error:
+                self.update.message(f'{error}')
             finally:
                 self.close()
                 self.update.status(value=msg+conv_msg, newline=True)
@@ -1115,14 +1118,14 @@ class Simulation:                                                        # Simul
                 merged_file.replace(ecl.unrst.file)
             else:
                 return False, error_msg
-        except (Exception, KeyboardInterrupt) as e:
+        except (Exception, KeyboardInterrupt) as error:
             ### Delete merged file
             silentdelete(merge_unrst.file)
-            if isinstance(e, KeyboardInterrupt):
+            if isinstance(error, KeyboardInterrupt):
                 return False, 'Merge cancelled'
-            else:
-                DEBUG and trace_print_exc()
-                raise SystemError(f'{error_msg}: {exc_info()[1]}')
+            DEBUG and trace_print_exc()
+            raise SystemError(f'{error_msg}: {error}') from error
+            #raise SystemError(f'{error_msg}: {exc_info()[1]}')
         if self.output.del_merge:
             silentdelete(ecl_backup, ior.unrst.file)
         ### Create this file to avoid re-merging the merged UNRST-file 
@@ -1133,14 +1136,14 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def info_header(self):                                               # Simulation
     #--------------------------------------------------------------------------------
-        format = '10s'
+        width = '10s'
         logfiles = [run.logname for run in self.runs]+[log.name for log in (self.runlog,) if log]
         case = Path(self.root).name
         s  = '\n'
-        s += f'    {"Case":{format}}: {case}\n'
+        s += f'    {"Case":{width}}: {case}\n'
         mode = len(self.runs)<2 and self.runs[0].name or self.mode
-        s += f'    {"Mode":{format}}: {mode.capitalize()}\n'
-        s += f'    {"Days":{format}}: {self.T}' 
+        s += f'    {"Mode":{width}}: {mode.capitalize()}\n'
+        s += f'    {"Days":{width}}: {self.T}' 
         # if self.mode=='forward':
         #     s += f' (edit TSTEP in the DATA-file to change days)'
         if self.restart:
@@ -1151,13 +1154,13 @@ class Simulation:                                                        # Simul
         s += '\n'
         inte = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')
         a, b = inte and (inte[0][4],inte[0][5]) or (0,0) 
-        s += f'    {"Timestep":{format}}: {a}{(a!=b and f" - {b}" or "")} days\n'
-        s += (self.schedule and self.schedule.file) and f'    {"Schedule":{format}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
+        s += f'    {"Timestep":{width}}: {a}{(a!=b and f" - {b}" or "")} days\n'
+        s += (self.schedule and self.schedule.file) and f'    {"Schedule":{width}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         rundir = str(Path.cwd())
-        s += f'    {"Run-dir":{format}}: {rundir}\n'
+        s += f'    {"Run-dir":{width}}: {rundir}\n'
         casedir = str(Path(self.root).parent).replace(rundir, '<Run-dir>')
-        s += f'    {"Case-dir":{format}}: {casedir}\n'
-        s += f'    {"Log-files":{format}}: {", ".join([Path(file).name for file in logfiles])}\n'
+        s += f'    {"Case-dir":{width}}: {casedir}\n'
+        s += f'    {"Log-files":{width}}: {", ".join([Path(file).name for file in logfiles])}\n'
         s += '\n'
         return s
 
@@ -1339,7 +1342,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
                      check_unrst=check_unrst, check_rft=check_rft, keep_files=keep_files, 
                      progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert, merge=merge, delete=delete, ecl_keep_alive=ecl_alive,
-                     ior_keep_alive=ior_alive, runs=runs, mode=mode, check_input_kw=check_input, verbose=verbose,
+                     ior_keep_alive=ior_alive, run_names=runs, mode=mode, check_input_kw=check_input, verbose=verbose,
                      lognr=lognr, skip_empty=skip_empty)
     sim.prepare()
     if not sim.ready():

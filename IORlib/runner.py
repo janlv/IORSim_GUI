@@ -388,7 +388,7 @@ class Runner:                                                               # Ru
             self.timer = Timer(name.lower())
         self.keep_files = keep_files
         self.canceled = False
-        self.t = t  
+        self.t = t
         self.n = int(n)
         self.T = T   # Max time
         #self.N = int(N)   # Max number of steps
@@ -397,7 +397,9 @@ class Runner:                                                               # Ru
         self.suspend_timer = None
         self.time_regex = time_regex
         self.kwargs = kwargs
-        DEBUG and print(f'Creating {self}')
+        self.stdin = None
+        if DEBUG:
+            print(f'Creating {self}')
 
     #--------------------------------------------------------------------------------
     def __str__(self):                                                       # Runner
@@ -444,7 +446,7 @@ class Runner:                                                               # Ru
         self.log = not self.kwargs.get('to_screen', False) and safeopen(self.logname, 'w') or None
         self.starttime = datetime.now()
         if self.pipe:
-            self._print(f"Starting in PIPE-mode", v=1)
+            self._print("Starting in PIPE-mode", v=1)
             self.popen = Popen(self.cmd, stdin=PIPE, stdout=self.log, stderr=STDOUT)
             self.stdin = self.popen.stdin
         else:

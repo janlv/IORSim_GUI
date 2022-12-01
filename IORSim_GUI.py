@@ -1382,7 +1382,7 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
     def restart_now(self):                                 # settings
     #-----------------------------------------------------------------------
-        msg = f'The application must restart to apply the new case directory. Restart now?'
+        msg = 'The application must restart to apply the new case directory. Restart now?'
         restart = User_input(self, title='Restart application?', head=msg)
         restart.set_func(self.parent.reboot)
         restart.open()
