@@ -252,78 +252,77 @@ def get_wells_iorsim(root):
     #print(out_wells, in_wells)
     return out_wells, in_wells
 
-
-#-----------------------------------------------------------------------
-def get_eclipse_well_yaxis_fluid(root, include=False, raise_error=True):
-#-----------------------------------------------------------------------
-    fil = str(root)+'.DATA'
-    if not Path(fil).is_file():
-        raise SystemError(fil + ' is missing!')
-    summary = well = False
-    vars = []
-    wells = []
-    #print('TEST',DATA_file(root).with_includes(section='SUMMARY').get('SUMMARY'))
-    # encoding = None
-    # try:
-    #     with open(fil) as f:
-    #         for line in f:
-    #             l = f.readline()
-    # except UnicodeDecodeError:
-    #     #encoding = 'ISO-8859-1'
-    #     encoding = 'latin-1'
-    # with open(fil, encoding=encoding) as f:
-    #     for line in f:
-    for line in DATA_file(root, include=include).lines():
-        # if line.lstrip().startswith('--') or line.isspace():
-        #     continue
-        if line.lstrip().upper().startswith('SUMMARY'):
-            summary = True
-            continue
-        if line.lstrip().upper().startswith('SCHEDULE'):
-            break
-        if summary:
-            kw = line.strip()
-            #print('kw:', kw)
-            if kw[0] in ('F','R'):
-                vars.append(kw)
-                #print('add: '+kw)
-            if kw[0] == 'W':
-                vars.append(kw)
-                well = True
-                continue
-            if well:
-                if '/' in kw:
-                    kw = kw[:-1].strip()
-                    well = False
-                if ',' in kw:
-                    kw = kw.split(',')
-                elif ' ' in kw:
-                    kw = kw.split()
-                elif len(kw)>0:
-                    kw = (kw,)
-                else:
-                    kw = []
-                for k in kw:
-                    wells.append(k.strip())                  
-    vars = list(set(vars))
-    #print('vars',vars)
-    if len(vars)==0 and raise_error:
-        raise SystemError('No variables in SUMMARY section.'+
-                          '\n\nEclipse plotting disabled.')
-    wells = list(set(wells))
-    wells = [w.replace("'","") for w in wells]
-    #print(wells)
-    F = {'O':'Oil', 'W':'Water', 'G':'Gas'}
-    P = {'P':'prod', 'R':'rate'}
-    fluids = list(set([F[v[1]] for v in vars if v[1] in F.keys()]))
-    yaxis = list(set([P[v[-1]] for v in vars if v[-1] in P.keys()]))
-    if any([v[0]=='F' and v[-1] in ('P','R') for v in vars]):
-        wells.insert(0, 'Field')
-    #fluids.insert(-1, 'Temp')
-    #print(wells)
-    #print(yaxis)
-    #print(fluids)
-    return wells, yaxis, fluids 
+# #-----------------------------------------------------------------------
+# def get_eclipse_well_yaxis_fluid_old(root, include=False, raise_error=True):
+# #-----------------------------------------------------------------------
+#     fil = str(root)+'.DATA'
+#     if not Path(fil).is_file():
+#         raise SystemError(fil + ' is missing!')
+#     summary = well = False
+#     vars = []
+#     wells = []
+#     #print('TEST',DATA_file(root).with_includes(section='SUMMARY').get('SUMMARY'))
+#     # encoding = None
+#     # try:
+#     #     with open(fil) as f:
+#     #         for line in f:
+#     #             l = f.readline()
+#     # except UnicodeDecodeError:
+#     #     #encoding = 'ISO-8859-1'
+#     #     encoding = 'latin-1'
+#     # with open(fil, encoding=encoding) as f:
+#     #     for line in f:
+#     for line in DATA_file(root, include=include).lines():
+#         # if line.lstrip().startswith('--') or line.isspace():
+#         #     continue
+#         if line.lstrip().upper().startswith('SUMMARY'):
+#             summary = True
+#             continue
+#         if line.lstrip().upper().startswith('SCHEDULE'):
+#             break
+#         if summary:
+#             kw = line.strip()
+#             #print('kw:', kw)
+#             if kw[0] in ('F','R'):
+#                 vars.append(kw)
+#                 #print('add: '+kw)
+#             if kw[0] == 'W':
+#                 vars.append(kw)
+#                 well = True
+#                 continue
+#             if well:
+#                 if '/' in kw:
+#                     kw = kw[:-1].strip()
+#                     well = False
+#                 if ',' in kw:
+#                     kw = kw.split(',')
+#                 elif ' ' in kw:
+#                     kw = kw.split()
+#                 elif len(kw)>0:
+#                     kw = (kw,)
+#                 else:
+#                     kw = []
+#                 for k in kw:
+#                     wells.append(k.strip())                  
+#     vars = list(set(vars))
+#     #print('vars',vars)
+#     if len(vars)==0 and raise_error:
+#         raise SystemError('No variables in SUMMARY section.'+
+#                           '\n\nEclipse plotting disabled.')
+#     wells = list(set(wells))
+#     wells = [w.replace("'","") for w in wells]
+#     #print(wells)
+#     F = {'O':'Oil', 'W':'Water', 'G':'Gas'}
+#     P = {'P':'prod', 'R':'rate'}
+#     fluids = list(set([F[v[1]] for v in vars if v[1] in F.keys()]))
+#     yaxis = list(set([P[v[-1]] for v in vars if v[-1] in P.keys()]))
+#     if any([v[0]=='F' and v[-1] in ('P','R') for v in vars]):
+#         wells.insert(0, 'Field')
+#     #fluids.insert(-1, 'Temp')
+#     #print(wells)
+#     #print(yaxis)
+#     #print(fluids)
+#     return wells, yaxis, fluids 
             
     
 #-----------------------------------------------------------------------
@@ -1492,6 +1491,8 @@ class main_window(QMainWindow):                                    # main_window
         self.silent_upgrade = False
         self.menu_fontsize = 7
         self.plot_lines = None
+        self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl'}
+        self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'irate', 'IT':'iprod'}
         self.data = {}
         self.plot_ref_data = {}
         self.ecl_boxes = {}
@@ -2718,8 +2719,159 @@ class main_window(QMainWindow):                                    # main_window
             box.setChecked(checked)
 
 
+    # #-----------------------------------------------------------------------
+    # def init_ecl_data(self, case=None):
+    # #-----------------------------------------------------------------------
+    #     #  WOPR    - well oil rate,
+    #     #  WWPR    - well water rate
+    #     #  WTPCHEA - well temp (Temp_ecl)
+    #     #  WOPT    - well oil prod
+    #     #  WWCT    - well water cut (prod)
+    #     #  WWIR    - well water injection rate
+    #     #  WWIT    - well water injection prod
+    #     #  FOPT    - field oil prod total
+    #     #  FWIT    - field water injection total
+    #     #  FWCT    - field water cut total (prod)
+    #     #  ROIP    - Reservoir oil in place
+
+    #     varlist = ['WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT',
+    #                'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT'] #,'FWIT','FWIR'] 
+    #     datafile = self.input['root']
+    #     if case:
+    #         datafile = case
+    #     smspec = SMSPEC_file(datafile)
+    #     self.unsmry = UNSMRY_file(datafile)
+    #     if not smspec.is_file() or not self.unsmry.is_file():
+    #         self.unsmry = None
+    #         return False
+
+    #     ### read variable specifications
+    #     ecl_data = namedtuple('ecl_data','time fluid wells yaxis units indx', defaults=(None,))
+    #     varnames = measure = None
+    #     for block in smspec.blocks():
+    #         if block.key() == 'KEYWORDS':
+    #             #varnames = get_substrings(block.data()[0], 8)
+    #             varnames = block.data(strip=True)
+    #             #print(varnames)
+    #         elif block.key() == 'WGNAMES':
+    #             # ecl_data.wells = [s for s in get_substrings(block.data()[0], 8)]
+    #             ecl_data.wells = block.data(strip=True)
+    #         elif block.key() == 'MEASRMNT':
+    #             #print(block.data((0,10),nchar=5, raise_error=True))
+    #             width = block.length()//max(len(varnames), 1)
+    #             measure = block.data(strip=True, nchar=width)
+    #             #data = block.data()[0].lower()
+    #             #measure = get_substrings(data, width or 1)
+    #         elif block.key() == 'UNITS':
+    #             #ecl_data.units = get_substrings(block.data()[0], 8)                
+    #             ecl_data.units = block.data(strip=True)                
+    #     if any(not v for v in (varnames, ecl_data.wells, measure, ecl_data.units)):
+    #         self.unsmry = None # so that we call this function again
+    #         #print('return in ecl_init_data()')
+    #         return
+    #     ecl_data.time = varnames.index('TIME')
+    #     fluid_type = {'O':'Oil', 'W':'Water', 'G':'Gas'}
+    #     #ecl_data.fluid = {var:('Temp_ecl' if ecl_data.units[i]=='DEG C' else fluid_type.get(var[1])) for i,var in enumerate(varnames)}
+    #     ecl_data.fluid = {var: 'Temp_ecl' if unit=='DEG C' else fluid_type.get(var[1]) for var,unit in zip(varnames, ecl_data.units)}
+    #     yaxis_type = ['prod','rate']
+    #     #ecl_data.yaxis = {var:return_matching_string(yaxis_type, measure[i].lower()) for i,var in enumerate(varnames)}
+    #     ecl_data.yaxis = {var:y for var,mes in zip(varnames, measure) if any((y:=s) in mes.lower() for s in ('prod','rate'))}
+    #     ecl_data.yaxis['WTPCHEA'] = 'rate' # Production temperature
+    #     ecl_data.indx = {var:[] for var in varlist}
+    #     #print(list(zip(varnames, measure)))
+    #     #print('time',ecl_data.time)
+    #     #print('fluid',ecl_data.fluid)
+    #     #print('wells', ecl_data.wells)
+    #     #print('yaxis', ecl_data.yaxis)
+    #     #print('units', ecl_data.units)
+    #     #print('indx', ecl_data.indx)
+    #     ### prepare data dict 
+    #     ecl = {}
+    #     ecl['days'] = []
+    #     for w in [wn for wn in  set(ecl_data.wells) if not ':+:' in wn]:
+    #         ecl[w] = {}
+    #         ecl[w]['days'] = []
+    #         for y in set(yaxis_type):
+    #             ecl[w][y] = {}
+    #             for f in list(fluid_type.values())+['Temp_ecl']:
+    #                 #print(w,y,f)
+    #                 ecl[w][y][f] = []
+                    
+    #     for var in varlist:
+    #         match = False
+    #         for i,name in enumerate(varnames):
+    #             well = ecl_data.wells[i]
+    #             if var==name and not ':+:' in well:
+    #                 match = True
+    #                 ecl_data.indx[var].append(i)
+    #                 y = ecl_data.yaxis[var]
+    #                 f = ecl_data.fluid[var]
+    #                 #print(well, y, f, var)
+    #                 ecl[well][y][f+' var'] = [var]
+    #                 if 'Temp' in f:
+    #                     ecl[well]['prod'][f] = ecl[well]['rate'][f] 
+    #         if not match:
+    #             del ecl_data.indx[var]
+    #             #print('WARNING! Variable {} not found in {}'.format(var, self.unsmry.name()))
+    #     #time fluid wells yaxis units indx
+    #     self.ecl_data = ecl_data
+    #     self.data['ecl'] = ecl
+    #     return True
+
+        
+    # #-----------------------------------------------------------------------
+    # #def read_ecl_data(self, case=None, reinit=False):
+    # def read_ecl_data_old(self, case=None, reinit=False):
+    # #-----------------------------------------------------------------------
+    #     # print('read_ecl_data', case, reinit, self.unsmry)
+    #     datafile = self.input['root']
+    #     if case:
+    #         datafile = case
+    #     if not datafile:
+    #         self.data['ecl'] = {}
+    #         # print('return False')
+    #         return False
+    #     ### read data
+    #     if reinit or not self.unsmry:
+    #         if not self.init_ecl_data(case=case):
+    #             # print('return False')
+    #             return False
+    #     for block in self.unsmry.blocks(only_new=True):
+    #         if block.key()=='PARAMS':
+    #             data = block.data()
+    #             time = data[self.ecl_data.time]
+    #             if time==0.0:
+    #                 continue
+    #             self.data['ecl']['days'].append( time )
+    #             for var,index in self.ecl_data.indx.items():
+    #                 yaxis = self.ecl_data.yaxis[var]
+    #                 fluid = self.ecl_data.fluid[var]
+    #                 wells = self.ecl_data.wells
+    #                 for i in index:
+    #                     self.data['ecl'][wells[i]][yaxis][fluid].append(data[i])
+    #     wells = (w for w in self.ecl_data.wells if not ':+:' in w)
+    #     for well in wells:
+    #         self.data['ecl'][well]['days'] = self.data['ecl']['days']
+    #     # print('return True')
+    #     return True
+
     #-----------------------------------------------------------------------
-    def init_ecl_data(self, case=None):
+    def get_eclipse_well_yaxis_fluid(self, case=None, raise_error=True):
+    #-----------------------------------------------------------------------
+        ecl = DATA_file(case or self.input['root'])
+        ecl.check(include=False)
+        vars = [line for line in ecl.section('SUMMARY').lines() if line[0] in ('W','F','R')]
+        if not vars and raise_error:
+            raise SystemError('SUMMARY keywords missing,\n\nEclipse plotting disabled.')
+        fy = ((f,y) for v in set(vars) if (f:=self.ecl_fluids.get(v[1])) and (y:=self.ecl_yaxes.get(v[2:4])))
+        fluids, yaxis = zip(*fy)
+        wells = sorted(ecl.wellnames())
+        if any(v[0]=='F' and v[2:4] in ('PR','PT') for v in vars):
+            wells.insert(0, 'Field')
+        return wells, ('prod','rate'), list(set(fluids))        
+
+    #-----------------------------------------------------------------------
+    def init_ecl_data_v2(self, case=None):            # main_window
     #-----------------------------------------------------------------------
         #  WOPR    - well oil rate,
         #  WWPR    - well water rate
@@ -2733,143 +2885,22 @@ class main_window(QMainWindow):                                    # main_window
         #  FWCT    - field water cut total (prod)
         #  ROIP    - Reservoir oil in place
 
-        varlist = ['WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT',
-                   'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT'] #,'FWIT','FWIR'] 
-        datafile = self.input['root']
-        if case:
-            datafile = case
-        smspec = SMSPEC_file(datafile)
-        self.unsmry = UNSMRY_file(datafile)
-        if not smspec.is_file() or not self.unsmry.is_file():
-            self.unsmry = None
-            return False
+        # NB! Could also read wellnames and summary keys from DATA_file(case).wellnames and .section('SUMMARY')
+        #
 
-        ### read variable specifications
-        ecl_data = namedtuple('ecl_data','time fluid wells yaxis units indx', defaults=(None,))
-        varnames = measure = None
-        for block in smspec.blocks():
-            if block.key() == 'KEYWORDS':
-                #varnames = get_substrings(block.data()[0], 8)
-                varnames = block.data(strip=True)
-                #print(varnames)
-            elif block.key() == 'WGNAMES':
-                # ecl_data.wells = [s for s in get_substrings(block.data()[0], 8)]
-                ecl_data.wells = block.data(strip=True)
-            elif block.key() == 'MEASRMNT':
-                #print(block.data((0,10),nchar=5, raise_error=True))
-                width = block.length()//max(len(varnames), 1)
-                measure = block.data(strip=True, nchar=width)
-                #data = block.data()[0].lower()
-                #measure = get_substrings(data, width or 1)
-            elif block.key() == 'UNITS':
-                #ecl_data.units = get_substrings(block.data()[0], 8)                
-                ecl_data.units = block.data(strip=True)                
-        if any(not v for v in (varnames, ecl_data.wells, measure, ecl_data.units)):
-            self.unsmry = None # so that we call this function again
-            #print('return in ecl_init_data()')
-            return
-        ecl_data.time = varnames.index('TIME')
-        fluid_type = {'O':'Oil', 'W':'Water', 'G':'Gas'}
-        #ecl_data.fluid = {var:('Temp_ecl' if ecl_data.units[i]=='DEG C' else fluid_type.get(var[1])) for i,var in enumerate(varnames)}
-        ecl_data.fluid = {var: 'Temp_ecl' if unit=='DEG C' else fluid_type.get(var[1]) for var,unit in zip(varnames, ecl_data.units)}
-        yaxis_type = ['prod','rate']
-        #ecl_data.yaxis = {var:return_matching_string(yaxis_type, measure[i].lower()) for i,var in enumerate(varnames)}
-        ecl_data.yaxis = {var:y for var,mes in zip(varnames, measure) if any((y:=s) in mes.lower() for s in ('prod','rate'))}
-        ecl_data.yaxis['WTPCHEA'] = 'rate' # Production temperature
-        ecl_data.indx = {var:[] for var in varlist}
-        #print(list(zip(varnames, measure)))
-        #print('time',ecl_data.time)
-        #print('fluid',ecl_data.fluid)
-        #print('wells', ecl_data.wells)
-        #print('yaxis', ecl_data.yaxis)
-        #print('units', ecl_data.units)
-        #print('indx', ecl_data.indx)
-        ### prepare data dict 
-        ecl = {}
-        ecl['days'] = []
-        for w in [wn for wn in  set(ecl_data.wells) if not ':+:' in wn]:
-            ecl[w] = {}
-            ecl[w]['days'] = []
-            for y in set(yaxis_type):
-                ecl[w][y] = {}
-                for f in list(fluid_type.values())+['Temp_ecl']:
-                    #print(w,y,f)
-                    ecl[w][y][f] = []
-                    
-        for var in varlist:
-            match = False
-            for i,name in enumerate(varnames):
-                well = ecl_data.wells[i]
-                if var==name and not ':+:' in well:
-                    match = True
-                    ecl_data.indx[var].append(i)
-                    y = ecl_data.yaxis[var]
-                    f = ecl_data.fluid[var]
-                    #print(well, y, f, var)
-                    ecl[well][y][f+' var'] = [var]
-                    if 'Temp' in f:
-                        ecl[well]['prod'][f] = ecl[well]['rate'][f] 
-            if not match:
-                del ecl_data.indx[var]
-                #print('WARNING! Variable {} not found in {}'.format(var, self.unsmry.name()))
-        #time fluid wells yaxis units indx
-        self.ecl_data = ecl_data
-        self.data['ecl'] = ecl
-        return True
-
-        
-    #-----------------------------------------------------------------------
-    #def read_ecl_data(self, case=None, reinit=False):
-    def read_ecl_data_old(self, case=None, reinit=False):
-    #-----------------------------------------------------------------------
-        # print('read_ecl_data', case, reinit, self.unsmry)
-        datafile = self.input['root']
-        if case:
-            datafile = case
-        if not datafile:
-            self.data['ecl'] = {}
-            # print('return False')
-            return False
-        ### read data
-        if reinit or not self.unsmry:
-            if not self.init_ecl_data(case=case):
-                # print('return False')
-                return False
-        for block in self.unsmry.blocks(only_new=True):
-            if block.key()=='PARAMS':
-                data = block.data()
-                time = data[self.ecl_data.time]
-                if time==0.0:
-                    continue
-                self.data['ecl']['days'].append( time )
-                for var,index in self.ecl_data.indx.items():
-                    yaxis = self.ecl_data.yaxis[var]
-                    fluid = self.ecl_data.fluid[var]
-                    wells = self.ecl_data.wells
-                    for i in index:
-                        self.data['ecl'][wells[i]][yaxis][fluid].append(data[i])
-        wells = (w for w in self.ecl_data.wells if not ':+:' in w)
-        for well in wells:
-            self.data['ecl'][well]['days'] = self.data['ecl']['days']
-        # print('return True')
-        return True
-
-    #-----------------------------------------------------------------------
-    def init_ecl_data_v2(self, case=None):            # main_window
-    #-----------------------------------------------------------------------
         keys = ('WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT', 'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWIT','FWIR')
-        fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl'}
-        yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'irate', 'IT':'iprod'}
+        #fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl'}
+        #yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'irate', 'IT':'iprod'}
         smry = UNSMRY_file(case or self.input['root'])
         if not smry.init_welldata(keys=keys):
             self.unsmry = None
             return False
         ### Create dict of format [well][yaxis][fluid] = []
         ecl = {w:{'days':[]} for w in smry.well_names}
-        [ecl[w].update({y:{f:[] for f in fluids.values()} for y in yaxes.values()}) for w in smry.well_names]
+        [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in smry.well_names]
         ecl['days'] = []
         ### Index to map read data to ecl[well][yaxis][fluid]
-        self.ecl_index = [(w, yaxes[k[2:4]], fluids[k[1]]) for w,k in zip(smry.wells, smry.keys)]
+        self.ecl_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(smry.wells, smry.keys)]
         ### Index into temp-data (for adding temp to 'prod', not only 'rate')
         self.temp_index = [(n,ind[0]) for n,ind in enumerate(self.ecl_index) if ind[1]=='Temp_ecl']
         self.data['ecl'] = ecl
@@ -2906,17 +2937,17 @@ class main_window(QMainWindow):                                    # main_window
     def update_ecl_menu(self, case=None, checked=False):         # main_window
     #-----------------------------------------------------------------------
         menu = self.ecl_menu
-        root = self.input['root']
-        if case:
-            root = case
+        case = case or self.input['root']
+        #if case:
+        #    root = case
         # Delete checkboxes before creating new
         delete_all_widgets_in_layout(menu.layout())
-        if not root: 
+        if not case: 
             return False
         try:
-            wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root, include=False, raise_error=False)
-            if any([l == [] for l in (wells, yaxis, fluids)]):
-                wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root, include=True, raise_error=True)
+            wells, yaxis, fluids = self.get_eclipse_well_yaxis_fluid(case)
+            # if any([l == [] for l in (wells, yaxis, fluids)]):
+            #     wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root, include=True, raise_error=True)
         except SystemError as e:
             lbl = QLabel()
             lbl.setText(str(e))
