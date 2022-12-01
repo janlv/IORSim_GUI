@@ -373,7 +373,7 @@ class Runner:                                                               # Ru
         self.case = Path(case)
         self.exe = exe
         self.cmd = cmd
-        self.logname = Path(case).parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log'
+        self.logname = self.case.parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log'
         self.log = None
         self.runlog = runlog
         log4 = lambda x: self._print(x, v=4)

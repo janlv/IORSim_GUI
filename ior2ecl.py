@@ -1153,9 +1153,9 @@ class Simulation:                                                        # Simul
         a, b = inte and (inte[0][4],inte[0][5]) or (0,0) 
         s += f'    {"Timestep":{format}}: {a}{(a!=b and f" - {b}" or "")} days\n'
         s += (self.schedule and self.schedule.file) and f'    {"Schedule":{format}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
-        rundir = Path.cwd()
+        rundir = str(Path.cwd())
         s += f'    {"Run-dir":{format}}: {rundir}\n'
-        casedir = str(Path(self.root).parent).replace(str(rundir), '< Run-dir >') 
+        casedir = str(Path(self.root).parent).replace(rundir, '<Run-dir>')
         s += f'    {"Case-dir":{format}}: {casedir}\n'
         s += f'    {"Log-files":{format}}: {", ".join([Path(file).name for file in logfiles])}\n'
         s += '\n'
@@ -1234,6 +1234,9 @@ def case_from_casedir(case_dir, root):
     case_dir = Path(case_dir)
     if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
         return case_dir/root/root
+    ### Return path to case not in the case-folder (if it exists)
+    if (path := Path.cwd()/(root+'.DATA')).is_file():
+        return path.with_suffix('').resolve()
     raise SystemError('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
 
 
