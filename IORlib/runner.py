@@ -1,5 +1,15 @@
 
 # -*- coding: utf-8 -*-
+from datetime import datetime
+from subprocess import Popen, PIPE, STDOUT
+from shutil import SameFileError, which, copy
+from time import sleep
+from pathlib import Path
+from locale import getpreferredencoding
+
+import psutil
+from .utils import loop_until, matches, safeopen, Timer, silentdelete, timer_thread
+
 
 # Constants
 CHILD_SEARCH_WAIT = 0.5        # Seconds to sleep during child process search
@@ -8,14 +18,6 @@ SUSPEND_TIMER_PRECICION = 0.1  # Precision of the delayed-suspend-timer in secon
 
 DEBUG = False
 
-from datetime import datetime
-from subprocess import Popen, PIPE, STDOUT
-import psutil
-from shutil import SameFileError, which
-from time import sleep
-from pathlib import Path 
-from shutil import copy
-from .utils import loop_until, matches, safeopen, Timer, silentdelete, timer_thread
 
 #--------------------------------------------------------------------------------
 def catch_permission_error(func):
@@ -23,8 +25,8 @@ def catch_permission_error(func):
     def inner(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except PermissionError as e:
-            raise SystemError(f'WARNING PermissionError in {func.__qualname__}()')
+        except PermissionError as error:
+            raise SystemError(f'WARNING PermissionError in {func.__qualname__}()') from error
             #print('PermissionError in ' + func.__qualname__)
             #print('PermissionError in ' + func.__qualname__ + ': ',e)
     return inner
@@ -35,7 +37,7 @@ def ignore_permission_error(func):
     def inner(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except PermissionError as e:
+        except PermissionError:
             pass
     return inner
 
@@ -98,60 +100,70 @@ class Control_file:
     def name(self):
     #--------------------------------------------------------------------------------
         return self._path.name
-        
+
     #--------------------------------------------------------------------------------
     def path(self):
     #--------------------------------------------------------------------------------
         return self._path
-        
+
     @catch_permission_error
     #--------------------------------------------------------------------------------
     def create(self):
     #--------------------------------------------------------------------------------
-        self._log and self._log(f'Create empty {self}')
+        if self._log:
+            self._log(f'Create empty {self}')
         self._path.touch()
-    
+
     @catch_permission_error
     #--------------------------------------------------------------------------------
     def create_from(self, file=None, string=None, delete=False):
     #--------------------------------------------------------------------------------
         if file is None and string is None:
-            raise SyntaxError("ERROR Both 'file' and 'string' argument missing in Control_file.create_from()!")
+            raise SyntaxError(
+                "ERROR Both 'file' and 'string' argument missing in Control_file.create_from()!"
+            )
         file = file and Path(file)
         ### Create from file
         if file and file.is_file:
-            self._log and self._log(f'Create {self} from file {file.name}')
+            if self._log:
+                self._log(f'Create {self} from file {file.name}')
             try:
                 copy(file, self._path)
             except SameFileError:
-                self._log and self._log(f'WARNING in {self}: trying to copy same files {file.name}!')
+                if self._log:
+                    self._log(f'WARNING in {self}: trying to copy same files {file.name}!')
             if delete:
                 silentdelete(file)
         ### Create from string
         elif string:
-            self._log and self._log(f'Create {self} from text')
-            self._path.write_text(string)
+            if self._log:
+                self._log(f'Create {self} from text')
+            self._path.write_text(string, encoding=getpreferredencoding)
 
     @catch_permission_error
     #--------------------------------------------------------------------------------
     def append(self, string):
     #--------------------------------------------------------------------------------
-        self._log and self._log(f'Append text to {self}')
-        with open(self._path, 'a') as f:
-            f.write(f'{string}\n')
+        if self._log:
+            self._log(f'Append text to {self}')
+        with open(self._path, 'a', encoding=getpreferredencoding) as file:
+            file.write(f'{string}\n')
 
     @ignore_permission_error
     #--------------------------------------------------------------------------------
     def delete(self):
     #--------------------------------------------------------------------------------
         if self._path.is_file():
-            self._log and self._log(f'Delete {self}')
+            if self._log:
+                self._log(f'Delete {self}')
             self._path.unlink()
 
     #--------------------------------------------------------------------------------
     def delete_all(self):
     #--------------------------------------------------------------------------------
-        [file.delete() for file in self.glob()]
+        for file in self.glob():
+            file.delete()
+        #[file.delete() for file in self.glob()]
 
     #--------------------------------------------------------------------------------
     def is_deleted(self):
@@ -179,10 +191,16 @@ class Process:                                                              # Pr
         self._suspend_errors = 0
         self._error_func = error_func or self.raise_error
         #self.name = proc.name()
-        DEBUG and print(f'Creating {self}')
+        if DEBUG:
+            print(f'Creating {self}')
 
     #--------------------------------------------------------------------------------
     def __str__(self):                                                      # Process
+    #--------------------------------------------------------------------------------
+        return f"'{self._name}' ({self._pid})"
+
+    #--------------------------------------------------------------------------------
+    def __repr__(self):                                                      # Process
     #--------------------------------------------------------------------------------
         return f'<Process(name={self._name}, pid={self._pid}>'
 
@@ -190,13 +208,15 @@ class Process:                                                              # Pr
     #--------------------------------------------------------------------------------
     def __del__(self):                                                      # Process
     #--------------------------------------------------------------------------------
-        DEBUG and print(f'Deleting {self}')
+        if DEBUG:
+            print(f'Deleting {self}')
 
 
     #--------------------------------------------------------------------------------
     def raise_error(self, log=None):                                        # Process
     #--------------------------------------------------------------------------------
-        raise SystemError(f'ERROR {self._app_name} stopped unexpectedly' + (log and f', check {log} for details' or ''))
+        log = f', check {log}' if log else ''
+        raise SystemError(f'ERROR {self._app_name} stopped unexpectedly{log}')
 
     #--------------------------------------------------------------------------------
     def process(self):                                                      # Process
@@ -218,11 +238,11 @@ class Process:                                                              # Pr
     # #--------------------------------------------------------------------------------
     #     return f"\'{self._name}\' ({self.pid}, {self._user})"
 
-    #--------------------------------------------------------------------------------
-    def info(self):                                                     # Process
-    #--------------------------------------------------------------------------------
-        #return f"\'{self._name}\' ({self._pid}, {self._user})"
-        return f"\'{self._name}\' ({self._pid})"
+    # #--------------------------------------------------------------------------------
+    # def info(self):                                                     # Process
+    # #--------------------------------------------------------------------------------
+    #     #return f"\'{self._name}\' ({self._pid}, {self._user})"
+    #     return f"'{self._name}' ({self._pid})"
 
     #--------------------------------------------------------------------------------
     def suspend(self):                                                      # Process
@@ -267,27 +287,26 @@ class Process:                                                              # Pr
             if self._process.is_running() and self._process.status() != psutil.STATUS_ZOMBIE:
                 return True
             if raise_error:
-                raise SystemError(f'ERROR {self._app_name} is not running ({self._name} is {self._process.status()})')
+                raise SystemError(
+                    f'ERROR {self._app_name} is not running ({self._name} is {self._process.status()})'
+                )
         except (psutil.NoSuchProcess, ProcessLookupError):
             if raise_error:
-                #msg = ', check the log'
-                #if raise_error is not True:
-                #    msg = raise_error
-                #raise SystemError(f'ERROR {self.app_name} stopped unexpectedly' + msg)        
                 self._error_func(**kwargs)
             else:
                 return False
-        except AttributeError:
+        except AttributeError as error:
             if raise_error:
-                raise SystemError(f'ERROR {self._app_name} process is {self._process}')        
-            else:
-                return True
-            
+                raise SystemError(f'ERROR {self._app_name} process is {self._process}') from error
+            return True
+
     #--------------------------------------------------------------------------------
     def is_not_running(self):                                               # Process
     #--------------------------------------------------------------------------------
         try:
-            if not self._process or not self._process.is_running() or self._process.status() == psutil.STATUS_ZOMBIE:
+            if (not self._process or
+                    not self._process.is_running() or
+                    self._process.status() == psutil.STATUS_ZOMBIE):
                 return True
         except (psutil.NoSuchProcess, ProcessLookupError):
             return True
@@ -296,12 +315,14 @@ class Process:                                                              # Pr
     def is_sleeping(self):                                                  # Process
     #--------------------------------------------------------------------------------
         try:
-            if self._process.status() in (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED): 
+            if self._process.status() in (psutil.STATUS_SLEEPING, psutil.STATUS_STOPPED):
                 return True
-            elif not self._process.is_running() or self._process.status() == psutil.STATUS_ZOMBIE:
+            if not self._process.is_running() or self._process.status() == psutil.STATUS_ZOMBIE:
                 raise SystemError(f'ERROR Process {self.name()} disappeared while trying to sleep')
-        except (psutil.NoSuchProcess, ProcessLookupError, AttributeError):
-            raise SystemError(f'ERROR Process {self._process} disappeared while trying to sleep')
+        except (psutil.NoSuchProcess, ProcessLookupError, AttributeError) as error:
+            raise SystemError(
+                f'ERROR Process {self._process} disappeared while trying to sleep'
+            ) from error
 
                 
     #--------------------------------------------------------------------------------
@@ -318,8 +339,7 @@ class Process:                                                              # Pr
         if not self._process:
             if raise_error:
                 raise SystemError('Parent-process missing, unable to look for child-processes')
-            else:  
-                return [], None
+            return [], None
         name = self._app_name.lower()
         # Return if this is the main process
         if self._process.name().lower().startswith(name):
@@ -329,16 +349,21 @@ class Process:                                                              # Pr
         for i in range(limit):
             sleep(wait)
             if self.is_not_running():
-                raise SystemError(f'ERROR {self.info()} disappeared while searching for child-processes!')
+                raise SystemError(
+                    f'ERROR {self} disappeared while searching for child-processes!'
+                )
             children = self._process.children(recursive=True)
-            log is not False and log(children and children or '  child-process search ...', v=3)
+            if log:
+                log(children and children or '  child-process search ...', v=3)
             # Stop if named child process is found
             if any(p.name().lower().startswith(name) for p in children):
                 #found = True
                 time = wait*i
                 break
         if time is None and raise_error:
-            raise SystemError(f'Unable to find child process of {self._name} in {wait*limit:.1f} seconds, aborting...')
+            raise SystemError(
+                f'Unable to find child process of {self} in {wait*limit:.1f} seconds, aborting...'
+            )
         return children, time
 
 
@@ -370,6 +395,8 @@ class Runner:                                                               # Ru
         #print('runner.__init__: ',keep_alive, N,T,name,case,exe,cmd,ext_iface,ext_OK)
         self.reset_processes()
         self.name = name
+        self.parent = None
+        self.children = ()
         self.case = Path(case)
         self.exe = exe
         self.cmd = cmd
@@ -466,12 +493,16 @@ class Runner:                                                               # Ru
         # Parent process
         kwargs = {'app_name':self.name, 'error_func':error_func}
         self.parent = self.main = Process(psutil.Process(pid=self.popen.pid), **kwargs)
-        self._print(f'Parent process : {self.parent.info()}, ')
+        self._print(f'Parent process : {self.parent}, ')
         #self.parent.assert_running()
         # Child processes (if they exists)
         children, time = self.parent.get_children(log=self.verbose>3 and self._print)
         self.children = [Process(c, **kwargs) for c in children]
-        self._print('Child process' + (len(self.children)>1 and 'es' or '') + (time is not None and f' ({time:.1f} sec)' or '') + f' : {", ".join([p.info() for p in self.children])}')
+        self._print(
+            'Child process' + (len(self.children)>1 and 'es' or '')
+            + (time is not None and f' ({time:.1f} sec)' or '')
+            + f' : {", ".join([str(p) for p in self.children])}'
+        )
         # Set active and main processes
         if self.children:
             self.main = self.children[-1]
@@ -634,7 +665,7 @@ class Runner:                                                               # Ru
             time = (limit or 0)*(pause or 0)/60
             self._print('', tag='')
             self._print(f'process did not finish within {time:.2f} minutes and will be killed', v=v)
-            self._print([p.proc.name() for p in self.active if p])
+            self._print([p.name() for p in self.active if p])
             self.kill()
 
     #--------------------------------------------------------------------------------
@@ -688,15 +719,15 @@ class Runner:                                                               # Ru
         self.close()
 
     
-    #--------------------------------------------------------------------------------
-    def write_to_stdin(self, i):                                             # Runner
-    #--------------------------------------------------------------------------------
-        if not self.pipe:
-            raise SystemError('STDIN is not piped, unable to write. Aborting...')
-        self._print(f'writing {i} to STDIN')
-        inp = f'{i:d}\n'
-        self.P.stdin.write(inp.encode())
-        self.P.stdin.flush()
+    # #--------------------------------------------------------------------------------
+    # def write_to_stdin(self, i):                                             # Runner
+    # #--------------------------------------------------------------------------------
+    #     if not self.pipe:
+    #         raise SystemError('STDIN is not piped, unable to write. Aborting...')
+    #     self._print(f'writing {i} to STDIN')
+    #     inp = f'{i:d}\n'
+    #     self.P.stdin.write(inp.encode())
+    #     self.P.stdin.flush()
 
         
     #--------------------------------------------------------------------------------
