@@ -215,8 +215,9 @@ class Process:                                                              # Pr
     #--------------------------------------------------------------------------------
     def raise_error(self, log=None):                                        # Process
     #--------------------------------------------------------------------------------
-        log = f', check {log}' if log else ''
-        raise SystemError(f'ERROR {self._app_name} stopped unexpectedly{log}')
+        raise SystemError(
+            f'ERROR {self._app_name} stopped unexpectedly' + (f', check {log}' if log else '')
+        )
 
     #--------------------------------------------------------------------------------
     def process(self):                                                      # Process
