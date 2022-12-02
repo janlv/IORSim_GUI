@@ -46,6 +46,8 @@ from IORlib.ECL import FUNRST_file, DATA_file, RFT_file, UNRST_file, UNSMRY_file
 #====================================================================================
 class Eclipse(Runner):                                                      # eclipse
 #====================================================================================
+    ' Eclipse runner class '
+
     #--------------------------------------------------------------------------------
     def __init__(self, root=None, exe='eclrun', **kwargs):
     #--------------------------------------------------------------------------------
@@ -72,7 +74,9 @@ class Eclipse(Runner):                                                      # ec
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                          # eclipse
     #--------------------------------------------------------------------------------
-        delete_files_matching( [f'{self.case}*.{ext}' for ext in ('*UNRST','RFT','SMSPEC','UNSMRY','RTELOG','RTEMSG','MSG', 'session*', 'dbprtx.lock*')])
+        ' Delete these output-files before starting Eclipse '
+        file_ext = ('*UNRST','RFT','SMSPEC','UNSMRY','RTELOG','RTEMSG','MSG','session*','dbprtx.lock*')
+        delete_files_matching( [f'{self.case}*.{ext}' for ext in file_ext] )
         delete_files_matching(self.case.parent/'fort??????')
         delete_files_matching(self.case.parent/'hostfile.*')
 
@@ -99,12 +103,14 @@ class Eclipse(Runner):                                                      # ec
 
 
 #====================================================================================
-class Forward_mixin:
+class ForwardMixin:
 #====================================================================================
+    ' Common functions for forward runs '
+
     #--------------------------------------------------------------------------------
-    #def init_control_func(self, update=(), pause=0.01, count=5, **kwargs):
-    def init_control_func(self, update=(), count=5, **kwargs):
+    def init_control_func(self, update=(), count=5):
     #--------------------------------------------------------------------------------
+        ' Set up control for forward runs '
         self.update = update
         self.loop_count = 0
         #self.pause = pause
@@ -113,6 +119,7 @@ class Forward_mixin:
     #--------------------------------------------------------------------------------
     def control_func(self):
     #--------------------------------------------------------------------------------
+        ' Enable plotting, progress and stop during forward runs '
         self.stop_if_canceled()
         self.loop_count += 1
         if self.loop_count == self.count:
@@ -123,11 +130,12 @@ class Forward_mixin:
 
 
 #====================================================================================
-class Ecl_forward(Forward_mixin, Eclipse):                              # ecl_forward
+class EclipseForward(ForwardMixin, Eclipse):                         # EclipseForward
 #====================================================================================
+    ' Eclipse forward runner'
 
     #--------------------------------------------------------------------------------
-    def check_input(self):                                             # ecl_forward
+    def check_input(self):                                           # EclipseForward
     #--------------------------------------------------------------------------------
         super().check_input()
         ### Check root.DATA exists and that READDATA keyword is NOT present
@@ -138,18 +146,16 @@ class Ecl_forward(Forward_mixin, Eclipse):                              # ecl_fo
 
 
 #====================================================================================
-class Backward_mixin:
+class BackwardMixin:
 #====================================================================================
+    ' Common functions for backward runs '
+
     #--------------------------------------------------------------------------------
-    def update_function(self, progress=True, plot=False):            # backward_mixin
+    def update_function(self, progress=True, plot=False):            # BackwardMixin
     #--------------------------------------------------------------------------------
-        #print(f'update_function(progress={progress}, plot={plot}')
         self.assert_running_and_stop_if_canceled()
-        #if self.update:
-        # self.t = self.time_and_step()[0]
         self.t = self.time()
         self.update.status(run=self)
-        #progress and self.update.progress(value=self.t)
         if progress:
             self.update.progress(run=self)
         if plot:
@@ -158,8 +164,10 @@ class Backward_mixin:
 
 
 #====================================================================================
-class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_backward
+class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBackward
 #====================================================================================
+    ' Eclipse backward mode runner '
+
     #--------------------------------------------------------------------------------
     def __init__(self, check_unrst=True, check_rft=True, keep_alive=False, schedule=None, **kwargs):
     #--------------------------------------------------------------------------------
@@ -173,11 +181,10 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         self.schedule = schedule
         self.nwell = 0
         self.del_satnum = False
-        #self.print_times = lambda : self._print(f'Days: log: {self.time()}, MSG: {self.msg.get("time", N=-1, raise_error=False)}, PRT: {self.prt.get("time", N=-1, raise_error=False)}')
 
 
     #--------------------------------------------------------------------------------
-    def check_input(self):                                             # ecl_backward
+    def check_input(self):                                             # EclipseBackward
     #--------------------------------------------------------------------------------
         def raise_error(msg):
             raise SystemError(f'ERROR To run the current case in backward-mode you need to {msg}')
@@ -186,14 +193,14 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
         if 'READDATA' not in self.data_file: #.data():
             raise_error(f"insert 'READDATA /' between 'TSTEP' and 'END' in {self.data_file}.")
         ### Check presence of RPTSOL RESTART>1
-        #if not self.data_file.with_includes('SOLUTION').contains(r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
-        if not self.data_file.section('SOLUTION').search('RPTSOL',r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"):
-            raise_error(f"insert 'RPTSOL \\n RESTART=2 /' at the top of the SOLUTION section in {self.data_file}.")
+        regex = r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"
+        if not self.data_file.section('SOLUTION').search('RPTSOL', regex):
+            raise_error(f"'RPTSOL \\n RESTART=2 /' is missing in the SOLUTION section of {self.data_file}.")
         return True
 
 
     #--------------------------------------------------------------------------------
-    def start(self, error_func=None, restart=False):                  # ecl_backward
+    def start(self, error_func=None, restart=False):                  # EclipseBackward
     #--------------------------------------------------------------------------------
         # Start Eclipse in backward mode
         if self.n > 0 or self.t > 0:
@@ -232,8 +239,9 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
 
 
     #--------------------------------------------------------------------------------
-    def run_one_step(self, satnum_file, log=True, start_stop=True, nwell=False):       # ecl_backward
+    def run_one_step(self, satnum_file, log=True, start_stop=True, nwell=False):  # EclipseBackward
     #--------------------------------------------------------------------------------
+        ' Advance Eclipse to next report step '
         self.interface_file(self.n).create_from(file=satnum_file, delete=self.del_satnum)
         self.OK_file.create()
         ### Create next interface-file to avoid Eclipse from reading END
@@ -247,7 +255,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
             nblocks = 1
             if nwell:
                 self.nwell = nblocks = self.unrst.get('nwell')[0][-1]
-            msg = self.rft.check.data_saved_maxmin(nblocks=nblocks, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE) 
+            msg = self.rft.check.data_saved_maxmin(nblocks=nblocks, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
             if msg:
                 self._print(msg)
         if start_stop:
@@ -267,7 +275,7 @@ class Ecl_backward(Backward_mixin, Eclipse):                           # ecl_bac
 
 
     #--------------------------------------------------------------------------------
-    def quit(self, v=1, loop_func=lambda:None):                        # ecl_backward
+    def quit(self, v=1, loop_func=lambda:None):                     # EclipseBackward
     #--------------------------------------------------------------------------------
         self.print_suspend_errors()
         ### Append END to interface-file
@@ -467,12 +475,12 @@ class Iorsim(Runner):                                                        # i
 
 
 #====================================================================================
-class Ior_forward(Forward_mixin, Iorsim):                               # ior_forward
+class Ior_forward(ForwardMixin, Iorsim):                               # ior_forward
 #====================================================================================
     pass
 
 #====================================================================================
-class Ior_backward(Backward_mixin, Iorsim):                             # ior_backward
+class Ior_backward(BackwardMixin, Iorsim):                             # ior_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, keep_alive=False, schedule=None, **kwargs):
@@ -864,7 +872,7 @@ class Simulation:                                                        # Simul
             self.run_names = ('eclipse','iorsim')
         for name in self.run_names:
             if name=='eclipse':
-                self.ecl = Ecl_forward(exe=eclexe, **kwargs)
+                self.ecl = EclipseForward(exe=eclexe, **kwargs)
             if name=='iorsim':
                 self.ior = Ior_forward(exe=iorexe, **kwargs)
         return [run for run in (self.ecl, self.ior) if run]
@@ -884,7 +892,7 @@ class Simulation:                                                        # Simul
         #self.T = time 
         kwargs.update({'T':self.T, 'tsteps':self.tsteps})
         # Init runs
-        self.ecl = Ecl_backward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs)
+        self.ecl = EclipseBackward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs)
         self.ior = Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)
         # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
         #start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
