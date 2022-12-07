@@ -34,7 +34,7 @@ from datetime import datetime, timedelta
 from time import sleep
 from psutil import NoSuchProcess, __version__ as psutil_version
 from shutil import copy as shutil_copy 
-from traceback import print_exc as trace_print_exc #, format_exc as trace_format_exc
+from traceback import print_exc as trace_print_exc, format_exc as trace_format_exc
 from re import compile as re_compile
 from os.path import relpath
 
@@ -998,12 +998,12 @@ class Simulation:                                                        # Simul
             self.cancel()
             msg = 'Simulation cancelled'
         except Exception as exception:  # Catch all other exceptions 
-            #self.print2log(f'\nAn exception occured:\n{trace_format_exc()}')
-            self.print2log(f'\nAn exception occured:\n{exception}')
+            self.print2log(f'\nAn exception occured:\n{trace_format_exc()}')
+            #self.print2log(f'\nAn exception occured:\n{exception}')
             #error = exc_info()
             n = [run.n for run in self.runs if run] or [-1]
             #msg += f'(step {max(n)}) {error[0].__name__}: {error[1]}'
-            msg += f'(step {max(n)}) {type(exception)}: {exception}'
+            msg += f'(step {max(n)}) {type(exception).__name__}: {exception}'
             #if r'\x00\x00\x00\x00' in fr'{error[1]}':
             if r'\x00\x00\x00\x00' in fr'{exception}':
                 msg += f', try increasing the CHECK_PAUSE value ({CHECK_PAUSE}).'

@@ -138,7 +138,7 @@ class Control_file:
         elif string:
             if self._log:
                 self._log(f'Create {self} from text')
-            self._path.write_text(string, encoding=getpreferredencoding)
+            self._path.write_text(string, encoding=getpreferredencoding())
 
     @catch_permission_error
     #--------------------------------------------------------------------------------
@@ -146,7 +146,7 @@ class Control_file:
     #--------------------------------------------------------------------------------
         if self._log:
             self._log(f'Append text to {self}')
-        with open(self._path, 'a', encoding=getpreferredencoding) as file:
+        with open(self._path, 'a', encoding=getpreferredencoding()) as file:
             file.write(f'{string}\n')
 
     @ignore_permission_error
