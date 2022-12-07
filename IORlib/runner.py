@@ -398,6 +398,8 @@ class Runner:                                                               # Ru
         self.name = name
         self.parent = None
         self.children = ()
+        self.main = None
+        self.active = ()
         self.case = Path(case)
         self.exe = exe
         self.cmd = cmd
@@ -520,49 +522,54 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def suspend_active(self):                                                # Runner
     #--------------------------------------------------------------------------------
-        return all([p.suspend() for p in self.active])
+        suspended = [p.suspend() for p in self.active]
+        return all(suspended)
 
     #--------------------------------------------------------------------------------
     def resume_active(self):                                                # Runner
     #--------------------------------------------------------------------------------
-        return all([p.resume() for p in self.active])
+        resumed = [p.resume() for p in self.active]
+        return all(resumed)
 
 
     #--------------------------------------------------------------------------------
-    def suspend(self, check=False, v=1):                                     # Runner
+    def suspend(self, check=False, v=2):                                     # Runner
     #--------------------------------------------------------------------------------
         if self.keep_alive > 0:
-            self._print('Delayed suspend', v=2)
+            self._print('Delayed suspend', v=v)
             self.suspend_timer.start()
         elif self.keep_alive < 0:
-            self._print('No suspend', v=2)
+            self._print('No suspend', v=v)
         else:
-            self._print('Suspend', v=2)
+            self._print('Suspend', v=v)
             self.suspend_active()
             if check:
-                [self.wait_for(p.is_sleeping, limit=100) for p in self.active]
-            self.timer and self.timer.stop()
+                for proc in self.active:
+                    self.wait_for(proc.is_sleeping, limit=100)
+            if self.timer:
+                self.timer.stop()
         self.print_process_status()
 
 
     #--------------------------------------------------------------------------------
-    def resume(self, check=False, v=1):                                      # Runner
+    def resume(self, check=False, v=2):                                      # Runner
     #--------------------------------------------------------------------------------
         if self.keep_alive > 0 and self.suspend_timer.cancel_if_alive():
-            self._print(f'No resume (suspend delayed {self.suspend_timer.endtime():.0f} sec)', v=2)
+            self._print(f'No resume (suspend delayed {self.suspend_timer.endtime():.0f} sec)', v=v)
         elif self.keep_alive < 0:
-            self._print('No resume (not suspended)', v=2)
+            self._print('No resume (not suspended)', v=v)
         else:
             msg = 'Resume'
             if self.suspend_timer and not self.suspend_timer.is_alive():
                 msg += f' (suspended {-self.suspend_timer.uptime():.0f} sec ago)'
-            self._print(msg, v=2)
+            self._print(msg, v=v)
             self.resume_active()
             if check:
-                [self.wait_for(p.is_running, limit=100) for p in self.active]
-            self.timer and self.timer.start()
+                for proc in self.active:
+                    self.wait_for(proc.is_running, limit=100)
+            if self.timer:
+                self.timer.start()
         self.print_process_status()
-
 
     #--------------------------------------------------------------------------------
     def print_process_status(self, v=2):                                     # Runner
@@ -575,7 +582,8 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
         errors = [p.suspend_errors() for p in self.active if p]
         text = ', '.join([e for e in errors if e])
-        text and self._print(text, v=v)
+        if text:
+            self._print(text, v=v)
 
 
     #--------------------------------------------------------------------------------
@@ -595,7 +603,8 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
         if self.canceled:
             self._print('', tag='')
-            raise SystemError(f'INFO Run stopped after {self.time():.2f}'.rstrip('0').rstrip('.') + f' {unit}')    
+            raise SystemError(
+                f'INFO Run stopped after {self.time():.2f}'.rstrip('0').rstrip('.') + f' {unit}')
 
 
     #--------------------------------------------------------------------------------
@@ -604,7 +613,8 @@ class Runner:                                                               # Ru
         #self.parent.assert_running(raise_error=raise_error)
         #self.main.assert_running(raise_error=raise_error)
         log = self.log and self.log.name
-        [p.assert_running(raise_error=raise_error, log=log) for p in self.active]
+        for proc in self.active:
+            proc.assert_running(raise_error=raise_error, log=log)
         self.stop_if_canceled()
 
 
