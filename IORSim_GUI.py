@@ -1519,6 +1519,7 @@ class main_window(QMainWindow):                                    # main_window
         self.pdf_view = None #PDF_viewer()
         self.user_guide = None #Window(widget=self.pdf_view, title='IORSim User Guide', size=(1000, 800))
         self.case = None
+        self.schedule = None
         self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 'species':[], 'mode':None}
         self.input_to_save = ['root','days','mode']
         self.settings = Settings(self, file=str(settings_file))
@@ -2518,6 +2519,7 @@ class main_window(QMainWindow):                                    # main_window
     def prepare_case(self):
     #-----------------------------------------------------------------------
         root = self.case or self.input['root']
+        self.schedule = next(Path(root).parent.glob('*.[Ss][Cc][Hh]'), None)
         #print('prepare_case: ',root)
         self.reset_progress_and_message()
         self.plot_lines = {}
@@ -2554,10 +2556,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_schedule_act(self):
     #-----------------------------------------------------------------------
-        self.schedule = None
-        if self.input['root']:
-            data = Path(self.input['root']+'.DATA')
-            self.schedule = next(data.parent.glob('*.[Ss][Cc][Hh]'), None)
+        # self.schedule = None
+        # if self.input['root']:
+        #     data = Path(self.input['root']+'.DATA')
+        #     self.schedule = next(data.parent.glob('*.[Ss][Cc][Hh]'), None)
         self.schedule_file_act.setEnabled(bool(self.schedule))
         ### Uncheck schedule act if it was checked but is no longer available
         if not self.schedule and self.schedule_file_act is self.get_checked_act():
@@ -2858,7 +2860,7 @@ class main_window(QMainWindow):                                    # main_window
     #     return True
 
     #-----------------------------------------------------------------------
-    def get_eclipse_well_yaxis_fluid(self, case=None, raise_error=True):
+    def get_eclipse_well_yaxis_fluid(self, case=None, raise_error=True):    # main_window
     #-----------------------------------------------------------------------
         ecl = DATA_file(case or self.input['root'])
         ecl.check(include=False)
@@ -2867,7 +2869,8 @@ class main_window(QMainWindow):                                    # main_window
             raise SystemError('SUMMARY keywords missing,\n\nEclipse plotting disabled.')
         fy = ((f,y) for v in set(vars) if (f:=self.ecl_fluids.get(v[1])) and (y:=self.ecl_yaxes.get(v[2:4])))
         fluids, yaxis = zip(*fy)
-        wells = sorted(ecl.wellnames())
+        schedule = DATA_file(self.schedule, sections=False) if self.schedule else ecl
+        wells = sorted(schedule.wellnames())
         if any(v[0]=='F' and v[2:4] in ('PR','PT') for v in vars):
             wells.insert(0, 'Field')
         return wells, ('prod','rate'), list(set(fluids))        
@@ -2929,10 +2932,15 @@ class main_window(QMainWindow):                                    # main_window
                welldata.pop(0)
             ecl = self.data['ecl']
             ecl['days'].extend(days)
-            [ecl[w]['days'].extend(days) for w in self.unsmry.well_names]
-            [ecl[w][y][f].extend(d) for (w,y,f),*d in zip(self.ecl_index, *welldata)]
-            ### Add temp-data to 'prod'
-            [ecl[w]['prod']['Temp_ecl'].append(d[i]) for i,w in self.temp_index for d in data]
+            for w in self.unsmry.well_names:
+                ecl[w]['days'].extend(days)
+            for (w,y,f),*d in zip(self.ecl_index, *welldata):
+                ecl[w][y][f].extend(d)
+            # Add temp-data to 'prod'
+            for d in data:
+                for i,w in self.temp_index:
+                    ecl[w]['prod']['Temp_ecl'].append(d[i])
+            #[ecl[w]['prod']['Temp_ecl'].append(d[i]) for i,w in self.temp_index for d in data]
 
 
     #-----------------------------------------------------------------------
@@ -2974,12 +2982,24 @@ class main_window(QMainWindow):                                    # main_window
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
         menu.column(0).addWidget(lbl)
         self.ecl_boxes['well'] = {}
-        for i,well in enumerate(wells):
+        active_wells = sorted(self.unsmry.well_names) if self.unsmry else []
+        if 'FIELD' in active_wells:
+            active_wells.pop(active_wells.index('FIELD'))
+            active_wells = ['Field'] + active_wells
+        inactive_wells = set(wells) - set(active_wells)
+        all_wells = [(a, True) for a in active_wells] + [(i, False) for i in sorted(inactive_wells)]
+        #for i,well in enumerate(wells):
+        for well, enable in all_wells:
             box = self.new_checkbox(text=well, name='well '+well+' ecl', func=self.on_ecl_plot_click)
+            box.setEnabled(enable)
             if well=='Field':
                 box.setObjectName('well FIELD ecl')
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ecl_boxes['well'][well] = box
+        # # Enable wells that are active during this case
+        # for well in self.unsmry.well_names:
+        #     if box := self.ecl_boxes['well'].get(well):
+        #         box.setEnabled(True)
         # variables
         box = QCheckBox('Variables')
         box.setChecked(True)
