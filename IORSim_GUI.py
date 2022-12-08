@@ -1508,9 +1508,11 @@ class main_window(QMainWindow):                                    # main_window
         self.setObjectName('main_window')
         #self.setContentsMargins(2,2,2,2)
         self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
-        self.font = QFont().defaultFamily()
+        # Fonts
+        font = 'Segoe UI' #QFont().defaultFamily()
+        self.menu_font = QFont(font, 10)
+        self.label_font = QFont(font, 7)
         self.silent_upgrade = False
-        self.menu_fontsize = 7
         self.plot_lines = None
         self.data = {}
         self.plot_ref_data = {}
@@ -1625,7 +1627,7 @@ class main_window(QMainWindow):                                    # main_window
                 
         
     #-----------------------------------------------------------------------
-    def create_menus(self):                                          # main_window
+    def create_menus(self):                                    # main_window
     #-----------------------------------------------------------------------
         ### Menu
         menu = self.menuBar()
@@ -1672,7 +1674,8 @@ class main_window(QMainWindow):                                    # main_window
         help_menu.addAction(self.download_act)
         help_menu.addSeparator()
         help_menu.addAction(self.about_act)
-
+        for m in (menu, file_menu, ecl_menu, ior_menu, view_menu, help_menu):
+            m.setFont(self.menu_font)
 
     #-----------------------------------------------------------------------
     def about_app(self):
@@ -1933,6 +1936,7 @@ class main_window(QMainWindow):                                    # main_window
         self.progressbar.setFormat('')
         self.reset_progressbar()
         statusbar = QStatusBar()
+        statusbar.setFont(self.menu_font)
         statusbar.setStyleSheet("QStatusBar { border-top: 1px solid lightgrey; }\nQStatusBar::item { border:None; };"); 
         self.messages = QLabel()
         statusbar.addPermanentWidget(self.messages)
@@ -2589,7 +2593,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_file_menu(self, files, menu, viewer=None, editor=None, title=''):
     #-----------------------------------------------------------------------
-
         ### Clear menu
         menu.clear()
         ### Disable if empty 
@@ -2658,7 +2661,8 @@ class main_window(QMainWindow):                                    # main_window
             line.setStyleSheet('border: 3px '+linestyle+' '+color)
         label = QLabel(name)
         #font = QFont()
-        label.setFont(QFont(self.font, self.menu_fontsize))
+        #label.setFont(QFont(self.font, self.menu_fontsize))
+        label.setFont(self.label_font)
         layout = QHBoxLayout()
         layout.addWidget(box,1)
         layout.addWidget(line,1)
@@ -2670,7 +2674,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         box = QCheckBox(text)
         box.setObjectName(name)
-        box.setFont(QFont(self.font, self.menu_fontsize))
+        #box.setFont(QFont(self.font, self.menu_fontsize))
+        box.setFont(self.label_font)
         #box.setStyleSheet('padding-left: 10px;')
         box.setStyleSheet('QCheckBox { padding-left: '+str(pad_left)+'px; }\nQCheckBox::indicator { width: '+str(size)+'px; height: '+str(size)+'px;};')
         if toggle:
