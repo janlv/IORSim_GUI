@@ -152,9 +152,24 @@ class color:
 #===========================================================================
 class FloatEdit(QLineEdit):
 #===========================================================================
+    #-----------------------------------------------------------------------
     def __init__(self, *args, **kwargs):
+    #-----------------------------------------------------------------------
         super().__init__(*args, **kwargs)
-        self.float = 0
+        #self._value = 0
+
+    #-----------------------------------------------------------------------
+    def setText(self, value, *args, precision=2, **kwargs):
+    #-----------------------------------------------------------------------
+        #self._value = value
+        # Convert to string with given precision and remove trailing .0
+        super().setText(f'{value:.{precision}f}'.rstrip('0').rstrip('.'), *args, **kwargs)
+
+    # #-----------------------------------------------------------------------
+    # def value(self):
+    # #-----------------------------------------------------------------------
+    #     return self._value
+
 
 #--------------------------------------------------------------------------------
 def show_error(func):
@@ -555,7 +570,8 @@ class sim_worker(base_worker):
         self.sim = Simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
         self.sim.prepare()
         if self.sim.ready():
-            self.days_box.setText(str(self.sim.get_time()).rstrip('0').rstrip('.'))
+            #self.days_box.setText(str(self.sim.get_time()).rstrip('0').rstrip('.'))
+            self.days_box.setText(self.sim.get_time())
             result, msg = self.sim.run()
         else:
             DEBUG and print('Simulation not ready in sim_worker!')
@@ -1891,9 +1907,10 @@ class main_window(QMainWindow):                                    # main_window
         self.case_cb = widgets['case']
         self.case_cb.setStyleSheet('QComboBox {min-width: 100px;}')
         self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
-        # steps
+        # days
         self.days_box = widgets['days']
-        self.days_box.setFixedWidth(60)
+        self.days_box.setMinimumWidth(60)
+        self.days_box.setMaximumWidth(120)
         self.days_box.setObjectName('days')
         self.days_box.textChanged[str].connect(self.on_input_change)
         # reference
@@ -1981,7 +1998,9 @@ class main_window(QMainWindow):                                    # main_window
         self.case = self.input.get('root')
         self.create_caselist(choose=self.case)
         ### number of days
-        self.days_box.setText(f"{(self.input.get('days') or days):.2f}".rstrip('0').rstrip('.')) # Remove trailing .0
+        #self.days_box.float = self.input.get('days') or days
+        #self.days_box.setText(f"{self.days_box.float:.2f}".rstrip('0').rstrip('.')) # Remove trailing .0
+        self.days_box.setText(self.input.get('days') or days)
         #self.days_box.setText(str(self.input.get('days') or days).rstrip('0').rstrip('.')) # Remove trailing .0
         
         
@@ -2245,7 +2264,8 @@ class main_window(QMainWindow):                                    # main_window
             return False
         self.mode = self.input['mode'] = mode
         if days:
-            self.days_box.setText(str(days).rstrip('0').rstrip('.'))
+            #self.days_box.setText(str(days).rstrip('0').rstrip('.'))
+            self.days_box.setText(days)
         if tip:
             self.days_box.setStatusTip(tip)
         self.days_box.setEnabled(box)
