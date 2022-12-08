@@ -149,6 +149,13 @@ class color:
     as_tuple = (blue, orange, green, red, violet, brown, pink, gray, yellow, turq)
 
 
+#===========================================================================
+class FloatEdit(QLineEdit):
+#===========================================================================
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.float = 0
+
 #--------------------------------------------------------------------------------
 def show_error(func):
 #--------------------------------------------------------------------------------
@@ -1846,7 +1853,7 @@ class main_window(QMainWindow):                                    # main_window
         ### simulation controls
         widgets = {'run'    : QComboBox(),
                    'case'    : QComboBox(),
-                   'days'    : QLineEdit(),
+                   'days'    : FloatEdit(),
                    'compare' : QComboBox()} 
         tips = ('Set running mode',
                 'Choose a case, or add a new from the Case-menu',

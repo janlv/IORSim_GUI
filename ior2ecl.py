@@ -1244,7 +1244,7 @@ def parse_input(case_dir=None, settings_file=None):
     description = 'Script for running IORSim and Eclipse in backward and forward mode'
     parser = ArgumentParser(description=description)
     parser.add_argument('root',            help='Eclipse case folder or full path of the DATA-file')
-    parser.add_argument('days',            help='Simulation time interval', type=int)
+    parser.add_argument('days',            help='Simulation time interval', type=float)
     parser.add_argument('-eclexe',         default='eclrun', help="Name of excecutable, default is 'eclrun'")
     parser.add_argument('-iorexe',         help="Name of IORSim executable, default is 'IORSimX'"                  )
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
