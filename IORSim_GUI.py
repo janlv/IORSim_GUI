@@ -1575,8 +1575,8 @@ class main_window(QMainWindow):                                    # main_window
         self.exit_act = create_action(self, text='&Exit', icon='control-power.png', shortcut='Ctrl+Q',
                                       tip='Exit application', func=self.quit)
         ### Add case
-        self.add_case_act = create_action(self, text='Import case...', icon='document--plus.png',
-                                          func=self.add_case_from_file)
+        self.import_case_act = create_action(self, text='Import case...', icon='document--plus.png',
+                                          func=self.import_case_from_file)
         self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy.png',
                                            func=self.duplicate_current_case)
         self.rename_case_act = create_action(self, text='Rename current case...', icon='document-rename.png',
@@ -1609,7 +1609,7 @@ class main_window(QMainWindow):                                    # main_window
         self.view_group = QActionGroup(self)
         ### File
         file_menu = menu.addMenu('&File')
-        file_menu.addAction(self.add_case_act)
+        file_menu.addAction(self.import_case_act)
         file_menu.addAction(self.dupl_case_act) 
         file_menu.addAction(self.rename_case_act)
         file_menu.addAction(self.clear_case_act)
@@ -2377,7 +2377,7 @@ class main_window(QMainWindow):                                    # main_window
         
         
     #-----------------------------------------------------------------------
-    def add_case_from_file(self):                   # main_window
+    def import_case_from_file(self):                   # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
         case = open_file_dialog(self, 'Locate Eclipse DATA-file', 'DATA files (*.DATA)')
@@ -3589,7 +3589,7 @@ class main_window(QMainWindow):                                    # main_window
     
         
     #-----------------------------------------------------------------------
-    def set_toolbar_enabled(self, value):                                  # main_window
+    def set_toolbar_enabled(self, value):                      # main_window
     #-----------------------------------------------------------------------
         self.start_act.setEnabled(value)
         self.case_cb.setEnabled(value)
@@ -3599,7 +3599,7 @@ class main_window(QMainWindow):                                    # main_window
         #self.sim_cb.setEnabled(value)
 
     #-----------------------------------------------------------------------
-    def run_sim(self):                                    # main_window
+    def run_sim(self):                                         # main_window
     #-----------------------------------------------------------------------
         #print('run_mode:',self.mode, self.run)
         if not self.input_OK():
