@@ -2126,7 +2126,7 @@ class main_window(QMainWindow):                                    # main_window
                     #vals = [val1, *rest] if (rest:=list(valgen)) else [val1]
                     vals = list(convert_float_or_str(val))
                     self.input[var] = vals[0] if len(vals) == 1 else vals
-                    print(var, self.input[var])
+                    #print(var, self.input[var])
                 # for line in f:
                 #     if line.lstrip().startswith('#'):
                 #         continue
@@ -2234,8 +2234,8 @@ class main_window(QMainWindow):                                    # main_window
         # Make unique item names
         # Reverse list because newest case is first
         unique = unique_names(items[::-1])[::-1]
-        print('unique', unique)
-        print('items', items)
+        #print('unique', unique)
+        #print('items', items)
         if insert:
             ind = (i for i,(a,b) in enumerate(zip(unique, items)) if a != b)
             changed = [f'{self.cases[i]} listed as {unique[i]}' for i in ind]
@@ -2661,7 +2661,6 @@ class main_window(QMainWindow):                                    # main_window
         delete = User_input(self, title='Delete case-folder?', text=f'Folder {folder} will be deleted, continue?')
         delete.set_func(lambda: delete_all(folder))
         delete.exec()
-        print('END OF FUNC')
         
     # #-----------------------------------------------------------------------
     # def duplicate_current_case(self):                              # main_window
@@ -2787,6 +2786,7 @@ class main_window(QMainWindow):                                    # main_window
             enable = True
             act = create_action(self, text=file.name, checkable=True, func=partial(viewer, file, title=f'{title} {Path(file).name}', editor=editor), icon='document-c')
             act.setIconText('include')
+            act.setFont(SMALL_FONT)
             self.view_group.addAction(act)
             ### Disable for non-existing file
             act.setEnabled(file.is_file())
@@ -2811,12 +2811,8 @@ class main_window(QMainWindow):                                    # main_window
         ### Remove old include-files from the view-group
         [self.view_group.removeAction(act) for act in include_act]
         ### Add case-specific include files
-        #self.update_file_menu(ior_include_files(root), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files', editor=self.chem_editor)
-        #try:
         self.update_file_menu(IORSim_input(root).include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry file', editor=self.chem_editor)
         self.update_file_menu(DATA_file(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include file', editor=self.editor)
-        #except SystemError as e:
-        #    self.show_message_text(e)
 
         
     #-----------------------------------------------------------------------

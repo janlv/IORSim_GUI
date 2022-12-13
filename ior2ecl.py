@@ -35,12 +35,12 @@ from time import sleep
 from psutil import NoSuchProcess, __version__ as psutil_version
 from shutil import copy as shutil_copy 
 from traceback import print_exc as trace_print_exc, format_exc as trace_format_exc
-from re import compile
+from re import MULTILINE, compile
 from os.path import relpath
 
 from IORlib.utils import flatten, get_keyword, get_python_version, list2text, pairwise, print_dict, print_error, remove_comments, safeopen, Progress, silentdelete, delete_files_matching, tail_file
 from IORlib.runner import Runner
-from IORlib.ECL import FUNRST_file, DATA_file, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
+from IORlib.ECL import FUNRST_file, DATA_file, File, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
 
 
 #====================================================================================
@@ -350,7 +350,7 @@ class IORSim_input:                                                    # iorsim_
         ### Check if included files exists
         if (missing := [f for f in self.include_files() if not f.is_file()]):
         #if not all((file:=f).is_file() for f in self.include_files()):
-            raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.file.name} is missing in folder {missing[0].parent}")
+            raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.file.name} is missing in folder {missing[0].parent.resolve()}")
 
         ### Check if tstart == 0
         inte = get_keyword(self.file, '\*INTEGRATION', end='\*')
@@ -369,8 +369,16 @@ class IORSim_input:                                                    # iorsim_
         '''
         Return full path to files included in the IORSim .trcinp-file
         '''
+        parent = self.file.parent
         files = flatten(get_keyword(self.file, '\*CHEMFILE', end='\*', comment='#'))
-        return (self.file.parent/Path(f) for f in files) 
+        # Use negative lookahead (?!) to ignore commented lines
+        regex = compile(rb'^(?!#)\s*add_species[\s"\']*(.*?)[\s"\']*$', flags=MULTILINE)
+        for file in set(files):
+            yield parent/file
+            for match in regex.finditer(File(parent/file,'').binarydata()):
+                yield parent/match.group(1).decode()
+
+        #return set(self.file.parent/Path(f) for f in files)
 
 
 #====================================================================================
@@ -412,7 +420,7 @@ class Iorsim(Runner):                                                        # i
         if line := next(tail_file(file, n=1), None):
             line = line.strip()   # Remove leading and trailing space
             time = line and line.split()[0] 
-            time = time and not time.startswith('#') and float(time)
+            time = time and not time.startswith('#') and float(time)       
         return time or super().time()
 
 
@@ -910,8 +918,9 @@ class Simulation:                                                        # Simul
             run.init_control_func(update=self.update, count=15) 
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             run.t = run.time()
-            # print(run.name, run.t, run.T)
-            if run.t < run.T:
+            dec = min(len(str(t).split('.')[-1]) for t in (run.t, run.T))
+            #print(run.name, dec, run.t, run.T)
+            if round(run.t, dec) < round(run.T, dec):
                 run.unexpected_stop_error()
             run_time += run.run_time()
             ret = run.complete_msg(run_time=run_time)
