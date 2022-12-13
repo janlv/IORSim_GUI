@@ -13,17 +13,17 @@ import os
 from psutil import Popen
 
 ### Check if this is a bundle version (pyinstaller)
-bundle_version = getattr(sys, 'frozen', False)
+BUNDLE_VERSION = getattr(sys, 'frozen', False)
 
 ### Fix SSL certificates for bundle version
-if bundle_version and sys.platform == 'win32':
-    import certifi
-    import certifi_win32.wincerts
-    certifi_win32.wincerts.CERTIFI_PEM = certifi.where()
-    certifi.where =  certifi_win32.wincerts.where
-    from certifi_win32.wincerts import generate_pem, verify_combined_pem
-    if not verify_combined_pem():
-        generate_pem()
+# if bundle_version and sys.platform == 'win32':
+#     import certifi
+#     import certifi_win32.wincerts
+#     certifi_win32.wincerts.CERTIFI_PEM = certifi.where()
+#     certifi.where =  certifi_win32.wincerts.where
+#     from certifi_win32.wincerts import generate_pem, verify_combined_pem
+#     if not verify_combined_pem():
+#         generate_pem()
 
 from pathlib import Path
 from urllib.parse import urlparse
@@ -31,7 +31,7 @@ from urllib.parse import urlparse
 #-----------------------------------------------------------------------
 def resource_path():
 #-----------------------------------------------------------------------
-    if bundle_version: 
+    if BUNDLE_VERSION:
         ### Running in a bundle
         path = Path(sys._MEIPASS)
     else:
@@ -90,6 +90,7 @@ from shutil import copy as shutil_copy
 import warnings
 from copy import deepcopy 
 from functools import partial
+#import pip_system_certs.wrapt_requests
 from requests import get as requests_get, exceptions as req_exceptions
 # Suppress warnings about using verify=False in requests_get
 from urllib3 import disable_warnings
@@ -1878,13 +1879,13 @@ class main_window(QMainWindow):                                    # main_window
             return error(f'WARNING Error during upgrade!\n\nFile: {file}, downloaded version: {version}, current version {__version__}')
         ### Proceed with upgrade
         self.close()
-        ext = bundle_version and '.exe' or '.py'
+        ext = BUNDLE_VERSION and '.exe' or '.py'
         upgrader = resource_path()/('upgrader'+ext)
         if not Path(upgrader).exists():
             return error('WARNING Upgrade script not found!')
         pid = str(os.getpid())
         cmd = [str(upgrader), pid, self.download_dest]
-        if not bundle_version:
+        if not BUNDLE_VERSION:
             exec = [sys.executable]
             cmd = exec + cmd + exec
         cmd.extend(sys.argv)
