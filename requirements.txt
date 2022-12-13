@@ -1,5 +1,4 @@
 PySide6 
 matplotlib 
-requests 
-python-certifi-win32
+requests
 psutil
