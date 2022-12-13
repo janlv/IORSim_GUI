@@ -349,7 +349,6 @@ class IORSim_input:                                                    # iorsim_
 
         ### Check if included files exists
         if (missing := [f for f in self.include_files() if not f.is_file()]):
-        #if not all((file:=f).is_file() for f in self.include_files()):
             raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.file.name} is missing in folder {missing[0].parent.resolve()}")
 
         ### Check if tstart == 0
@@ -1336,7 +1335,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
     #----------------------------------------
     def message(text=None, **x):
     #----------------------------------------
-        text and print('\n\n     ' + text + '\n')
+        text and print(f'\n\n     {text}\n')
 
     # Check if we only run eclipse or iorsim
     mode, runs = None, []

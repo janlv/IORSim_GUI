@@ -1990,6 +1990,8 @@ class main_window(QMainWindow):                                    # main_window
         self.mode_cb.currentIndexChanged[int].connect(self.on_mode_select)
         # case
         self.case_cb = widgets['case']
+        self.case_cb.setMinimumWidth(120)
+        #self.case_cb.setMaximumWidth(200)
         self.case_cb.setStyleSheet('QComboBox {min-width: 100px;}')
         self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
         # days
@@ -2000,6 +2002,7 @@ class main_window(QMainWindow):                                    # main_window
         self.days_box.textChanged[str].connect(self.on_input_change)
         # reference
         self.ref_case = widgets['compare']
+        self.ref_case.setMinimumWidth(120)
         self.ref_case.setObjectName('compare')
         self.ref_case.setStyleSheet('QComboBox {min-width: 100px;}')
         self.ref_case.currentIndexChanged[int].connect(self.on_compare_select)
