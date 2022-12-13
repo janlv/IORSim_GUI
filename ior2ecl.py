@@ -1225,21 +1225,22 @@ class Simulation:                                                        # Simul
 #############################################################################
 
 
-#--------------------------------------------------------------------------------
-def case_from_casedir(case_dir, root):
-#--------------------------------------------------------------------------------
-    # Find case in casedir if given DATA-file is missing
-    case_dir = Path(case_dir)
-    if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
-        return case_dir/root/root
-    ### Return path to case not in the case-folder (if it exists)
-    if (path := Path.cwd()/(root+'.DATA')).is_file():
-        return path.with_suffix('').resolve()
-    raise SystemError('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
+# #--------------------------------------------------------------------------------
+# def case_from_casedir(case_dir, root):
+# #--------------------------------------------------------------------------------
+#     # Find case in casedir if given DATA-file is missing
+#     case_dir = Path(case_dir)
+#     if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
+#         return case_dir/root/root
+#     ### Return path to case not in the case-folder (if it exists)
+#     if (path := Path.cwd()/(root+'.DATA')).is_file():
+#         return path.with_suffix('').resolve()
+#     raise SystemError('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
 
 
 #--------------------------------------------------------------------------------
-def parse_input(case_dir=None, settings_file=None):
+#def parse_input(case_dir=None, settings_file=None):
+def parse_input(settings_file=None):
 #--------------------------------------------------------------------------------
     description = 'Script for running IORSim and Eclipse in backward and forward mode'
     parser = ArgumentParser(description=description)
@@ -1269,10 +1270,11 @@ def parse_input(case_dir=None, settings_file=None):
     if SCHEDULE_SKIP_EMPTY: 
         args['skip_empty'] = not args['not_skip_empty']
     # Look for case in case_dir if root is not a file
-    if case_dir and not Path(args['root']).is_file():
-        args['root'] = case_from_casedir(case_dir, args['root'])
+    # if case_dir and not Path(args['root']).is_file():
+    #     args['root'] = case_from_casedir(case_dir, args['root'])
     # Remove suffix from root
-    args['root'] = Path(args['root']).parent/Path(args['root']).stem
+    #args['root'] = Path(args['root']).parent/Path(args['root']).stem
+    args['root'] = Path(args['root']).with_suffix('')
     #print(args['root'])
     # Read iorexe from settings if argument is missing
     if settings_file and not args['iorexe']:
@@ -1356,10 +1358,11 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
 
 @print_error
 #--------------------------------------------------------------------------------
-def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
+#def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
+def main(settings_file=None):
 #--------------------------------------------------------------------------------
     from os import _exit as os_exit
-    args = parse_input(case_dir=case_dir, settings_file=settings_file)
+    args = parse_input(settings_file=settings_file)
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']),  
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
