@@ -2,3 +2,4 @@ PySide6
 matplotlib 
 requests
 psutil
+pip_system_certs
