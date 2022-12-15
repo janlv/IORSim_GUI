@@ -108,7 +108,7 @@ QDir.addSearchPath('icons', resource_path()/'icons/')
 
 # Font settings
 FONT = 'Segoe UI'
-LARGE_FONT = QFont(FONT, 10)
+LARGE_FONT = QFont(FONT, 9)
 SMALL_FONT = QFont(FONT, 8)
 
 
@@ -649,6 +649,7 @@ class download_worker(base_worker):
     #-----------------------------------------------------------------------
         if self.savename.is_file():
             ### File already downloaded!
+            self.log(f'{self.savename} already downloaded!')
             return
         self.running = True
         ### Remove old files
@@ -1926,7 +1927,7 @@ class main_window(QMainWindow):                                    # main_window
             return error(f'WARNING Error during upgrade!\n\nFile: {file}, downloaded version: {version}, current version {__version__}')
         ### Proceed with upgrade
         self.close()
-        ext = BUNDLE_VERSION and '.exe' or '.py'
+        ext = '.exe' if BUNDLE_VERSION else '.py'
         upgrader = resource_path()/('upgrader'+ext)
         if not Path(upgrader).exists():
             return error('WARNING Upgrade script not found!')
@@ -1935,6 +1936,7 @@ class main_window(QMainWindow):                                    # main_window
         if not BUNDLE_VERSION:
             exec = [sys.executable]
             cmd = exec + cmd + exec
+        # Append script arguments for the restart
         cmd.extend(sys.argv)
         #print(f'Calling: {cmd}')
         Popen(cmd)
