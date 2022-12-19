@@ -194,3 +194,8 @@ upgrade*
 download
 fil1
 fil2
+testdir
+*.out
+*ipynb
+*.txt
+*.bat

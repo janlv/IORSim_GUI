@@ -10,6 +10,8 @@ from datetime import datetime
 from itertools import chain
 import sys
 import os
+from tempfile import TemporaryDirectory
+from zipfile import ZipFile
 
 from psutil import Popen
 
@@ -101,7 +103,7 @@ disable_warnings()
 
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, convert_float_or_str, flatten, get_keyword, get_substrings, get_tuple, is_file_ignore_suffix_case, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, file_contains, strip_zero, unique_names, write_file
+from IORlib.utils import Progress, convert_float_or_str, copy_recursive, flatten, get_keyword, get_substrings, get_tuple, is_file_ignore_suffix_case, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, file_contains, strip_zero, try_except_loop, unique_names, write_file
 from IORlib.ECL import DATA_file, SMSPEC_file, UNSMRY_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -131,6 +133,97 @@ def new_version(version_str):
     if next((d>0 for d in diff if d!=0), False):
         return version_str
     return False
+
+
+
+#====================================================================================
+class Upgrader:
+#====================================================================================
+
+    LOG_FILE = IORSIM_DIR/'upgrader.log'
+
+    #--------------------------------------------------------------------------------
+    def __init__(self, argv):
+    #--------------------------------------------------------------------------------
+        self.pid = int(argv[1])
+        self.new_file = Path(argv[2])
+        self.cmd = argv[3:]
+        self.target = Path.cwd()
+        self._clear_log = True
+
+    #--------------------------------------------------------------------------------
+    def __str__(self) -> str:
+    #--------------------------------------------------------------------------------
+        return '\n'.join(f'{k}: {v}' for k,v in self.__dict__.items() if k[0] != '_')
+
+    #--------------------------------------------------------------------------------
+    def upgrade(self):
+    #--------------------------------------------------------------------------------
+        self.log(f'Time: {datetime.now()}\n{self}')
+        ### Stop app
+        kill_process(self.pid)
+        ### Move new files over old ones (with backup)
+        if self.new_file.suffix == '.zip':
+            ### Upgrader called from python script
+            self.unzip_and_copy()
+        else:
+            ### Upgrader called from bundeled version (suffix is '.exe' or '' )
+            self.copy_bundle()
+        ### Delete file
+        try:
+            self.new_file.unlink()
+        except PermissionError as error:
+            self.log(error)
+        ### Restart app
+        with Popen(self.cmd) as proc:
+            self.log(f'Started {self.cmd} as {proc}')
+
+    #--------------------------------------------------------------------------------
+    def unzip_and_copy(self):
+    #--------------------------------------------------------------------------------
+        self.log('Upgrade from python')
+        with TemporaryDirectory() as tmpdir:
+            with ZipFile(self.new_file, 'r') as zipfile:
+                zipfile.extractall(tmpdir)
+            #backup = self.make_backup_dir()
+            ### Loop over files in extracted dir
+            src = next(Path(tmpdir).iterdir())  # Extracted dir
+            # self.log(f'tmpdir, {tmpdir}')
+            # self.log(f'src, {src}')
+            # self.log(f'backup, {backup}')
+            #copy_recursive(self.target, backup, log=self.log)
+            copy_recursive(src, self.target, log=self.log)
+            # for item in extract.iterdir():
+            #     dest = self.target/item.name
+            #     self.copy(item, dest, backup=backup)
+
+
+    #--------------------------------------------------------------------------------
+    def copy_bundle(self, limit=100, pause=0.05):
+    #--------------------------------------------------------------------------------
+        self.log('Upgrade from bundle')
+        #self.log('Make backup')
+        #copy_recursive(self.new_file, self.make_backup_dir(), log=self.log)
+        #dest = self.target/Path(self.cmd[0]).name
+        dest = self.cmd[0]
+        self.log(f'Copy {self.new_file} to {dest}')
+        #if dest.exists():
+        ### Keep trying to overwrite if PermissionError
+        try_except_loop(self.new_file, dest, log=self.log, func=copy_recursive,
+            limit=limit, pause=pause, error=PermissionError)
+        # try_except_loop(self.new_file, dest, backup=self.make_backup_dir(),
+        #     func=self.copy, limit=limit, pause=pause, error=PermissionError)
+        self.log('Copy complete!')
+
+    #--------------------------------------------------------------------------------
+    def log(self, text):
+    #--------------------------------------------------------------------------------
+        mode = 'a'
+        if self._clear_log:
+            self._clear_log = False
+            mode = 'w'
+        with open(self.LOG_FILE, mode) as file:
+            file.write(text+'\n')
 
 
 #===========================================================================
@@ -619,7 +712,7 @@ class download_worker(base_worker):
     def __init__(self, new_version, folder):
     #-----------------------------------------------------------------------
         super().__init__(print_exception=False, log='download.log')
-        self.running = False         
+        self.running = False
         self.new_version = new_version
         #print('new_version:',new_version)
         folder = Path(folder)
@@ -627,7 +720,8 @@ class download_worker(base_worker):
         #files = sorted(folder.iterdir(), key=os.path.getmtime)
         self.url = github_url(new_version)
         ext = Path(urlparse(self.url).path).suffix
-        self.savename = folder/f'{THIS_FILE.stem}_{new_version}{ext}'
+        stem = THIS_FILE.stem.split('_v')[0]
+        self.savename = folder/f'{stem}_{new_version}{ext}'
         #self.log = folder/'download.log'
         self.log(f'Time: {datetime.now()}\nSavename: {self.savename}')
 
@@ -1773,6 +1867,8 @@ class main_window(QMainWindow):                                    # main_window
         file_menu.addSeparator()
         file_menu.addAction(self.set_act)
         file_menu.addSeparator()
+        file_menu.addAction(self.download_act)
+        file_menu.addSeparator()
         file_menu.addAction(self.exit_act)
         ### Eclipse
         ecl_menu = menu.addMenu('&Eclipse')
@@ -1801,8 +1897,6 @@ class main_window(QMainWindow):                                    # main_window
         help_menu = menu.addMenu('&Help')
         help_menu.addAction(self.iorsim_guide_act)
         help_menu.addAction(self.script_guide_act)
-        help_menu.addSeparator()
-        help_menu.addAction(self.download_act)
         help_menu.addSeparator()
         help_menu.addAction(self.about_act)
         for m in (menu, file_menu, ecl_menu, ior_menu, view_menu, help_menu):
@@ -1928,17 +2022,19 @@ class main_window(QMainWindow):                                    # main_window
         ### Proceed with upgrade
         self.close()
         ext = '.exe' if BUNDLE_VERSION else '.py'
-        upgrader = resource_path()/('upgrader'+ext)
+        #upgrader = resource_path()/('upgrader'+ext)
+        upgrader = self.download_dest
         if not Path(upgrader).exists():
             return error('WARNING Upgrade script not found!')
         pid = str(os.getpid())
-        cmd = [str(upgrader), pid, self.download_dest]
+        #cmd = [str(upgrader), pid, self.download_dest]
+        cmd = [str(upgrader), '-upgrade', pid, self.download_dest]
         if not BUNDLE_VERSION:
             exec = [sys.executable]
             cmd = exec + cmd + exec
-        # Append script arguments for the restart
+        # Appent arguments given to this script must be re-applied for the restart
         cmd.extend(sys.argv)
-        #print(f'Calling: {cmd}')
+        print(f'Calling: {cmd}')
         Popen(cmd)
 
 
@@ -1951,6 +2047,10 @@ class main_window(QMainWindow):                                    # main_window
         self.download_act.setEnabled(False)
         # print('enabled 1:',self.download_act.isEnabled())
         self.reset_progress_and_message()
+        ### Remove old files
+        if SAVE_DIR.exists():
+            for f in SAVE_DIR.iterdir():
+                f.unlink()
         self.download_worker = download_worker(self.new_version, SAVE_DIR)
         signals = self.download_worker.signals
         signals.finished.connect(self.download_finished) 
@@ -4014,16 +4114,14 @@ if __name__ == '__main__':
     args = []
 
     if len(sys.argv) > 1:
-        # case_dir = str(CASEDIR)
-        # workdir = get_keyword(SETTINGS_FILE, 'workdir', comment='#')
-        # if any(workdir):
-        #     case_dir = workdir[0][0]
-        print()
-        print('   This is the terminal-version of IORSim_GUI')
-        print('   Start IORSim_GUI without arguments to open the GUI')
-        print()
-        #ior2ecl_main(case_dir=case_dir, settings_file=SETTINGS_FILE)
-        ior2ecl_main(settings_file=SETTINGS_FILE)
+        if sys.argv[1] == '-upgrade':
+            Upgrader(sys.argv[2:]).upgrade()
+        else:
+            print()
+            print('   This is the terminal-version of IORSim_GUI')
+            print('   Start IORSim_GUI without arguments to open the GUI')
+            print()
+            ior2ecl_main(settings_file=SETTINGS_FILE)
     else:
         IORSIM_DIR.mkdir(exist_ok=True)
         exit_code = main_window.EXIT_CODE_REBOOT
