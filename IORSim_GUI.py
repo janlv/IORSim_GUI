@@ -4113,8 +4113,10 @@ if __name__ == '__main__':
     #os.putenv('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-logging')
     args = []
 
+    print(sys.argv)
     if len(sys.argv) > 1:
         if sys.argv[1] == '-upgrade':
+            print(sys.argv[2:])
             Upgrader(sys.argv[2:]).upgrade()
         else:
             print()
