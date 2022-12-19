@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '2.30'
+__version__ = '2.31.7.4'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
