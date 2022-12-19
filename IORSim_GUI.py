@@ -717,6 +717,8 @@ class download_worker(base_worker):
         #print('new_version:',new_version)
         folder = Path(folder)
         folder.mkdir(exist_ok=True)
+        # Remove old files
+        delete_all(folder, keep_folder=True)
         #files = sorted(folder.iterdir(), key=os.path.getmtime)
         self.url = github_url(new_version)
         ext = Path(urlparse(self.url).path).suffix
@@ -2047,19 +2049,15 @@ class main_window(QMainWindow):                                    # main_window
         self.download_act.setEnabled(False)
         # print('enabled 1:',self.download_act.isEnabled())
         self.reset_progress_and_message()
-        ### Remove old files
-        if SAVE_DIR.exists():
-            for f in SAVE_DIR.iterdir():
-                f.unlink()
         self.download_worker = download_worker(self.new_version, SAVE_DIR)
         signals = self.download_worker.signals
-        signals.finished.connect(self.download_finished) 
-        signals.result.connect(self.download_success) 
+        signals.finished.connect(self.download_finished)
+        signals.result.connect(self.download_success)
         if not self.silent_upgrade:
             signals.status_message.connect(self.update_message)
             signals.show_message.connect(self.show_message_text)
             signals.progress.connect(self.update_progress)
-            signals.error.connect(self.download_error) 
+            signals.error.connect(self.download_error)
         self.threadpool.start(self.download_worker)
 
 
