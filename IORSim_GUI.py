@@ -145,9 +145,9 @@ class Upgrader:
     #--------------------------------------------------------------------------------
     def __init__(self, argv):
     #--------------------------------------------------------------------------------
-        self.pid = int(argv[1])
-        self.new_file = Path(argv[2])
-        self.cmd = argv[3:]
+        self.pid = int(argv[0])
+        self.new_file = Path(argv[1])
+        self.cmd = argv[2:]
         self.target = Path.cwd()
         self._clear_log = True
 
