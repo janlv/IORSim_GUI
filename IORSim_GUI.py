@@ -718,7 +718,7 @@ class download_worker(base_worker):
         folder = Path(folder)
         folder.mkdir(exist_ok=True)
         # Remove old files
-        delete_all(folder, keep_folder=True)
+        delete_all(folder, keep_folder=True, ignore_error=PermissionError)
         #files = sorted(folder.iterdir(), key=os.path.getmtime)
         self.url = github_url(new_version)
         ext = Path(urlparse(self.url).path).suffix
