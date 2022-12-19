@@ -157,7 +157,7 @@ class Upgrader:
         return '\n'.join(f'{k}: {v}' for k,v in self.__dict__.items() if k[0] != '_')
 
     #--------------------------------------------------------------------------------
-    def upgrade(self, limit=100, pause=0.05):
+    def upgrade(self, limit=100, pause=0.5):
     #--------------------------------------------------------------------------------
         self.log(f'Time: {datetime.now()}\n{self}')
         ### Stop app
@@ -174,6 +174,7 @@ class Upgrader:
             #self.log('Upgrading ')
             dest = self.cmd[0]
             ### Keep trying to overwrite if PermissionError
+        self.log(f'Copy {self.new_file} to {dest}')
         try_except_loop(self.new_file, dest, log=self.log, func=copy_recursive,
             limit=limit, pause=pause, error=PermissionError)
         ### Restart app
