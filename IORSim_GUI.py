@@ -170,10 +170,10 @@ class Upgrader:
             ### Upgrader called from bundeled version (suffix is '.exe' or '' )
             self.copy_bundle()
         ### Delete file
-        try:
-            self.new_file.unlink()
-        except PermissionError as error:
-            self.log(error)
+        #try:
+        #    self.new_file.unlink()
+        #except PermissionError as error:
+        #    self.log(error)
         ### Restart app
         with Popen(self.cmd) as proc:
             self.log(f'Started {self.cmd} as {proc}')
@@ -223,7 +223,7 @@ class Upgrader:
             self._clear_log = False
             mode = 'w'
         with open(self.LOG_FILE, mode) as file:
-            file.write(text+'\n')
+            file.write(f'{text}\n')
 
 
 #===========================================================================
