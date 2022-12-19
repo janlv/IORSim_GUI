@@ -157,14 +157,15 @@ class Upgrader:
         return '\n'.join(f'{k}: {v}' for k,v in self.__dict__.items() if k[0] != '_')
 
     #--------------------------------------------------------------------------------
-    def upgrade(self, limit=100, pause=0.5):
+    def upgrade(self, limit=100, pause=0.05):
     #--------------------------------------------------------------------------------
         self.log(f'Time: {datetime.now()}\n{self}')
         ### Stop app
         procs = kill_process(self.pid)
         self.log(f'Killed {self.pid}: {procs}')
         ### Move new files over old ones
-        if self.new_file.suffix == '.py':
+        #if self.new_file.suffix == '.py':
+        if self.new_file.is_dir():
             ### Upgrader called from python script
             dest = self.target
             #copy_recursive(self.new_file, self.target, log=self.log)
