@@ -10,8 +10,8 @@ from datetime import datetime
 from itertools import chain
 import sys
 import os
-from tempfile import TemporaryDirectory
-from zipfile import ZipFile
+#from tempfile import TemporaryDirectory
+from zipfile import ZipFile, is_zipfile
 
 from psutil import Popen
 
@@ -157,63 +157,66 @@ class Upgrader:
         return '\n'.join(f'{k}: {v}' for k,v in self.__dict__.items() if k[0] != '_')
 
     #--------------------------------------------------------------------------------
-    def upgrade(self):
+    def upgrade(self, limit=100, pause=0.05):
     #--------------------------------------------------------------------------------
         self.log(f'Time: {datetime.now()}\n{self}')
         ### Stop app
-        kill_process(self.pid)
-        ### Move new files over old ones (with backup)
-        if self.new_file.suffix == '.zip':
+        procs = kill_process(self.pid)
+        self.log(f'Killed {self.pid}: {procs}')
+        ### Move new files over old ones
+        if self.new_file.suffix == '.py':
             ### Upgrader called from python script
-            self.unzip_and_copy()
+            dest = self.target
+            #copy_recursive(self.new_file, self.target, log=self.log)
+            #self.unzip_and_copy()
         else:
             ### Upgrader called from bundeled version (suffix is '.exe' or '' )
-            self.copy_bundle()
-        ### Delete file
-        #try:
-        #    self.new_file.unlink()
-        #except PermissionError as error:
-        #    self.log(error)
+            #self.log('Upgrading ')
+            dest = self.cmd[0]
+            ### Keep trying to overwrite if PermissionError
+        try_except_loop(self.new_file, dest, log=self.log, func=copy_recursive,
+            limit=limit, pause=pause, error=PermissionError)
         ### Restart app
         with Popen(self.cmd) as proc:
             self.log(f'Started {self.cmd} as {proc}')
+        self.log('Upgrade complete!')
 
-    #--------------------------------------------------------------------------------
-    def unzip_and_copy(self):
-    #--------------------------------------------------------------------------------
-        self.log('Upgrade from python')
-        with TemporaryDirectory() as tmpdir:
-            with ZipFile(self.new_file, 'r') as zipfile:
-                zipfile.extractall(tmpdir)
-            #backup = self.make_backup_dir()
-            ### Loop over files in extracted dir
-            src = next(Path(tmpdir).iterdir())  # Extracted dir
-            # self.log(f'tmpdir, {tmpdir}')
-            # self.log(f'src, {src}')
-            # self.log(f'backup, {backup}')
-            #copy_recursive(self.target, backup, log=self.log)
-            copy_recursive(src, self.target, log=self.log)
-            # for item in extract.iterdir():
-            #     dest = self.target/item.name
-            #     self.copy(item, dest, backup=backup)
+    # #--------------------------------------------------------------------------------
+    # def unzip_and_copy(self):
+    # #--------------------------------------------------------------------------------
+    #     self.log('Upgrade from python')
+    #     with TemporaryDirectory() as tmpdir:
+    #         with ZipFile(self.new_file, 'r') as zipfile:
+    #             zipfile.extractall(tmpdir)
+    #         #backup = self.make_backup_dir()
+    #         ### Loop over files in extracted dir
+    #         src = next(Path(tmpdir).iterdir())  # Extracted dir
+    #         # self.log(f'tmpdir, {tmpdir}')
+    #         # self.log(f'src, {src}')
+    #         # self.log(f'backup, {backup}')
+    #         #copy_recursive(self.target, backup, log=self.log)
+    #         copy_recursive(src, self.target, log=self.log)
+    #         # for item in extract.iterdir():
+    #         #     dest = self.target/item.name
+    #         #     self.copy(item, dest, backup=backup)
 
 
-    #--------------------------------------------------------------------------------
-    def copy_bundle(self, limit=100, pause=0.05):
-    #--------------------------------------------------------------------------------
-        self.log('Upgrade from bundle')
-        #self.log('Make backup')
-        #copy_recursive(self.new_file, self.make_backup_dir(), log=self.log)
-        #dest = self.target/Path(self.cmd[0]).name
-        dest = self.cmd[0]
-        self.log(f'Copy {self.new_file} to {dest}')
-        #if dest.exists():
-        ### Keep trying to overwrite if PermissionError
-        try_except_loop(self.new_file, dest, log=self.log, func=copy_recursive,
-            limit=limit, pause=pause, error=PermissionError)
-        # try_except_loop(self.new_file, dest, backup=self.make_backup_dir(),
-        #     func=self.copy, limit=limit, pause=pause, error=PermissionError)
-        self.log('Copy complete!')
+    # #--------------------------------------------------------------------------------
+    # def copy_bundle(self, limit=100, pause=0.05):
+    # #--------------------------------------------------------------------------------
+    #     self.log('Upgrade from bundle')
+    #     #self.log('Make backup')
+    #     #copy_recursive(self.new_file, self.make_backup_dir(), log=self.log)
+    #     #dest = self.target/Path(self.cmd[0]).name
+    #     dest = self.cmd[0]
+    #     self.log(f'Copy {self.new_file} to {dest}')
+    #     #if dest.exists():
+    #     ### Keep trying to overwrite if PermissionError
+    #     try_except_loop(self.new_file, dest, log=self.log, func=copy_recursive,
+    #         limit=limit, pause=pause, error=PermissionError)
+    #     # try_except_loop(self.new_file, dest, backup=self.make_backup_dir(),
+    #     #     func=self.copy, limit=limit, pause=pause, error=PermissionError)
+    #     self.log('Copy complete!')
 
     #--------------------------------------------------------------------------------
     def log(self, text):
@@ -778,9 +781,17 @@ class download_worker(base_worker):
                 file.write(data)
         self.log(f'End-time: {datetime.now()}')
         if tot_size != 0 and tot_size != size:
-            msg = f'Size mismatch when downloading {self.filename}: got {size} bytes, expected {tot_size} bytes'
+            msg = f'Size mismatch when downloading {self.savename}: got {size} bytes, expected {tot_size} bytes'
             self.raise_error(msg=msg)
             #raise SystemError(msg)
+        if is_zipfile(self.savename):
+            #with TemporaryDirectory() as tmpdir:
+            savedir = self.savename.parent
+            with ZipFile(self.savename, 'r') as zipfile:
+                #zipfile.extractall(tmpdir)
+                zipfile.extractall(savedir)
+            self.savename.unlink()
+            self.savename = next(savedir.iterdir(), None)
 
 
 #===========================================================================
@@ -2013,17 +2024,17 @@ class main_window(QMainWindow):                                    # main_window
         def error(msg):
             self.download_act_check_version()
             self.show_message_text(msg)
-        file = upgrade_file()
-        # print('upgrade, file: ',file)
-        if not file:
-            return error('WARNING Upgrade file is missing')
-        version = file and file.stem.split('_')[-1] or None
-        version = version and new_version(version) or None
-        if not version:
-            return error(f'WARNING Error during upgrade!\n\nFile: {file}, downloaded version: {version}, current version {__version__}')
-        ### Proceed with upgrade
+        # file = upgrade_file()
+        # # print('upgrade, file: ',file)
+        # if not file:
+        #     return error('WARNING Upgrade file is missing')
+        # version = file and file.stem.split('_')[-1] or None
+        # version = version and new_version(version) or None
+        # if not version:
+        #     return error(f'WARNING Error during upgrade!\n\nFile: {file}, downloaded version: {version}, current version {__version__}')
+        # ### Proceed with upgrade
         self.close()
-        ext = '.exe' if BUNDLE_VERSION else '.py'
+        #ext = '.exe' if BUNDLE_VERSION else '.py'
         #upgrader = resource_path()/('upgrader'+ext)
         upgrader = self.download_dest
         if not Path(upgrader).exists():
@@ -2032,11 +2043,12 @@ class main_window(QMainWindow):                                    # main_window
         #cmd = [str(upgrader), pid, self.download_dest]
         cmd = [str(upgrader), '-upgrade', pid, self.download_dest]
         if not BUNDLE_VERSION:
+            cmd[0] = str(Path(cmd[0])/'IORSim_GUI.py')
             exec = [sys.executable]
             cmd = exec + cmd + exec
         # Appent arguments given to this script must be re-applied for the restart
         cmd.extend(sys.argv)
-        print(f'Calling: {cmd}')
+        #print(f'Calling: {cmd}')
         Popen(cmd)
 
 
@@ -4111,10 +4123,10 @@ if __name__ == '__main__':
     #os.putenv('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-logging')
     args = []
 
-    print(sys.argv)
+    #print(sys.argv)
     if len(sys.argv) > 1:
         if sys.argv[1] == '-upgrade':
-            print(sys.argv[2:])
+            #print(sys.argv[2:])
             Upgrader(sys.argv[2:]).upgrade()
         else:
             print()
