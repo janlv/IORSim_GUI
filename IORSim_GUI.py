@@ -47,7 +47,7 @@ def resource_path():
 MAX_CASES = 10
 IORSIM_DIR = Path.home()/'.iorsim'
 #SAVEDIR = Path.cwd()/'download'
-SAVE_DIR = IORSIM_DIR/'download'
+DOWNLOAD_DIR = IORSIM_DIR/'download'
 SETTINGS_FILE = IORSIM_DIR/'settings.dat'
 SESSION_FILE = IORSIM_DIR/'session.txt'
 
@@ -91,19 +91,19 @@ from traceback import format_exc, print_exc, format_exc
 from time import sleep
 from collections import namedtuple
 from shutil import copy as shutil_copy
-import warnings
+#import warnings
 from copy import deepcopy 
 from functools import partial
 if BUNDLE_VERSION:
     import pip_system_certs.wrapt_requests
 from requests import get as requests_get, exceptions as req_exceptions
 # Suppress warnings about using verify=False in requests_get
-from urllib3 import disable_warnings
-disable_warnings()
+#from urllib3 import disable_warnings
+#disable_warnings()
 
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, convert_float_or_str, copy_recursive, flatten, get_keyword, get_substrings, get_tuple, is_file_ignore_suffix_case, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, file_contains, strip_zero, try_except_loop, unique_names, write_file
+from IORlib.utils import Progress, convert_float_or_str, copy_recursive, flatten, get_keyword, get_substrings, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, strip_zero, try_except_loop, unique_names, write_file
 from IORlib.ECL import DATA_file, SMSPEC_file, UNSMRY_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -114,11 +114,11 @@ LARGE_FONT = QFont(FONT, 9)
 SMALL_FONT = QFont(FONT, 8)
 
 
-#-----------------------------------------------------------------------
-def upgrade_file():
-#-----------------------------------------------------------------------
-    ### Get first (and only) file from savedir
-    return SAVE_DIR.is_dir() and next(SAVE_DIR.iterdir(), None) or None
+# #-----------------------------------------------------------------------
+# def upgrade_file():
+# #-----------------------------------------------------------------------
+#     ### Get first (and only) file from savedir
+#     return DOWNLOAD_DIR.is_dir() and next(DOWNLOAD_DIR.iterdir(), None) or None
 
 #-----------------------------------------------------------------------
 def new_version(version_str):
@@ -160,65 +160,25 @@ class Upgrader:
     def upgrade(self, limit=100, pause=0.05):
     #--------------------------------------------------------------------------------
         self.log(f'Time: {datetime.now()}\n{self}')
-        ### Stop app
+        # Stop app
         procs = kill_process(self.pid)
         self.log(f'Killed {self.pid}: {procs}')
-        ### Move new files over old ones
-        #if self.new_file.suffix == '.py':
         if self.new_file.is_dir():
-            ### Upgrader called from python script
+            # Upgrader called from python script
             dest = self.target
-            #copy_recursive(self.new_file, self.target, log=self.log)
-            #self.unzip_and_copy()
         else:
-            ### Upgrader called from bundeled version (suffix is '.exe' or '' )
-            #self.log('Upgrading ')
+            # Upgrader called from bundeled version (suffix is '.exe' or '' )
             dest = self.cmd[0]
-            ### Keep trying to overwrite if PermissionError
         self.log(f'Copy {self.new_file} to {dest}')
+        # Move new files over old ones
+        # Keep trying to overwrite if PermissionError
         try_except_loop(self.new_file, dest, log=self.log, func=copy_recursive,
             limit=limit, pause=pause, error=PermissionError)
-        ### Restart app
+        # Start new version 
         with Popen(self.cmd) as proc:
             self.log(f'Started {self.cmd} as {proc}')
         self.log('Upgrade complete!')
 
-    # #--------------------------------------------------------------------------------
-    # def unzip_and_copy(self):
-    # #--------------------------------------------------------------------------------
-    #     self.log('Upgrade from python')
-    #     with TemporaryDirectory() as tmpdir:
-    #         with ZipFile(self.new_file, 'r') as zipfile:
-    #             zipfile.extractall(tmpdir)
-    #         #backup = self.make_backup_dir()
-    #         ### Loop over files in extracted dir
-    #         src = next(Path(tmpdir).iterdir())  # Extracted dir
-    #         # self.log(f'tmpdir, {tmpdir}')
-    #         # self.log(f'src, {src}')
-    #         # self.log(f'backup, {backup}')
-    #         #copy_recursive(self.target, backup, log=self.log)
-    #         copy_recursive(src, self.target, log=self.log)
-    #         # for item in extract.iterdir():
-    #         #     dest = self.target/item.name
-    #         #     self.copy(item, dest, backup=backup)
-
-
-    # #--------------------------------------------------------------------------------
-    # def copy_bundle(self, limit=100, pause=0.05):
-    # #--------------------------------------------------------------------------------
-    #     self.log('Upgrade from bundle')
-    #     #self.log('Make backup')
-    #     #copy_recursive(self.new_file, self.make_backup_dir(), log=self.log)
-    #     #dest = self.target/Path(self.cmd[0]).name
-    #     dest = self.cmd[0]
-    #     self.log(f'Copy {self.new_file} to {dest}')
-    #     #if dest.exists():
-    #     ### Keep trying to overwrite if PermissionError
-    #     try_except_loop(self.new_file, dest, log=self.log, func=copy_recursive,
-    #         limit=limit, pause=pause, error=PermissionError)
-    #     # try_except_loop(self.new_file, dest, backup=self.make_backup_dir(),
-    #     #     func=self.copy, limit=limit, pause=pause, error=PermissionError)
-    #     self.log('Copy complete!')
 
     #--------------------------------------------------------------------------------
     def log(self, text):
@@ -722,9 +682,6 @@ class download_worker(base_worker):
         #print('new_version:',new_version)
         folder = Path(folder)
         folder.mkdir(exist_ok=True)
-        # Remove old files
-        delete_all(folder, keep_folder=True, ignore_error=PermissionError)
-        #files = sorted(folder.iterdir(), key=os.path.getmtime)
         self.url = github_url(new_version)
         ext = Path(urlparse(self.url).path).suffix
         stem = THIS_FILE.stem.split('_v')[0]
@@ -732,18 +689,6 @@ class download_worker(base_worker):
         #self.log = folder/'download.log'
         self.log(f'Time: {datetime.now()}\nSavename: {self.savename}')
 
-    # #-----------------------------------------------------------------------
-    # def write_log(self, text, mode='a'):
-    # #-----------------------------------------------------------------------
-    #     with open(self.log, mode) as log:
-    #         log.write(text+'\n')
-
-    # #-----------------------------------------------------------------------
-    # def raise_error(self, error=None, msg=''):
-    # #-----------------------------------------------------------------------
-    #     msg = 'ERROR ' + msg 
-    #     self.write_log(msg)
-    #     raise SystemError(msg) from error
 
     #-----------------------------------------------------------------------
     def runnable(self):
@@ -752,26 +697,22 @@ class download_worker(base_worker):
             ### File already downloaded!
             self.log(f'{self.savename} already downloaded!')
             return
+        # Remove old files
         self.running = True
-        ### Remove old files
-        for f in self.savename.parent.iterdir():
-            f.unlink()
+        delete_all(self.savename.parent, keep_folder=True, ignore_error=PermissionError)
         try:
             response = requests_get(self.url, stream=True)
         except req_exceptions.SSLError as error:
             self.raise_error(error, 'SSL error during download of update')
-            #raise SystemError('ERROR SSL error during download of update')
         except req_exceptions.ConnectionError as error:
             self.raise_error(error, 'No internet connection, unable to download update!')
-            #raise SystemError('ERROR No internet connection, unable to download update!')
         if not response.status_code == 200:
             self.raise_error(msg=f'{self.url} not found!')            
-            #raise SystemError(f'{self.url} not found!')
         tot_size = int(response.headers.get('content-length', 0)) or len(response.content)
         self.update_progress((-tot_size, None, None))
         self.status_message(f'Downloading version {self.new_version}')
         size = 0
-        block_size = 1024*1024 ### 1 MB
+        block_size = 1024*1024 # 1 MB
         self.log(f'Size: {tot_size}\nBlocks: {tot_size/block_size}\nStart-time: {datetime.now()}')
         with open(self.savename, 'wb') as file:
             for data in response.iter_content(block_size):
@@ -785,14 +726,14 @@ class download_worker(base_worker):
         if tot_size != 0 and tot_size != size:
             msg = f'Size mismatch when downloading {self.savename}: got {size} bytes, expected {tot_size} bytes'
             self.raise_error(msg=msg)
-            #raise SystemError(msg)
+        # Unpack zip-file for non-bundle upgrades
         if is_zipfile(self.savename):
-            #with TemporaryDirectory() as tmpdir:
             savedir = self.savename.parent
             with ZipFile(self.savename, 'r') as zipfile:
-                #zipfile.extractall(tmpdir)
                 zipfile.extractall(savedir)
+            # Delete zip-file
             self.savename.unlink()
+            # Point to unpacked folder
             self.savename = next(savedir.iterdir(), None)
 
 
@@ -813,11 +754,8 @@ class check_version_worker(base_worker):
             response = requests_get(LATEST_RELEASE, timeout=self.timeout)
         except req_exceptions.SSLError as error:
             self.raise_error(error, 'SSL error during version check')
-            #DEBUG and print(f'SSLError in check_versions(): {e}')
-            #raise SystemError(f'ERROR SSL error during version check')
         except req_exceptions.ConnectionError as error:
             self.raise_error(error, 'No internet connection, unable to check for new versions!')
-            #raise SystemError(f'ERROR No internet connection, unable to check for new versions!')
         self.log(f'Response: {response.url}')
         version_str = response.url.split('/')[-1]
         return new_version(version_str)
@@ -2063,7 +2001,7 @@ class main_window(QMainWindow):                                    # main_window
         self.download_act.setEnabled(False)
         # print('enabled 1:',self.download_act.isEnabled())
         self.reset_progress_and_message()
-        self.download_worker = download_worker(self.new_version, SAVE_DIR)
+        self.download_worker = download_worker(self.new_version, DOWNLOAD_DIR)
         signals = self.download_worker.signals
         signals.finished.connect(self.download_finished)
         signals.result.connect(self.download_success)
