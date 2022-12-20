@@ -319,7 +319,7 @@ def get_tracers_iorsim(root, raise_error=True):
         tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
     #print(tracers)
     return tracers
-                
+
 #-----------------------------------------------------------------------
 def get_wells_iorsim(root):
 #-----------------------------------------------------------------------
@@ -341,7 +341,7 @@ def get_wells_iorsim(root):
             w = w[0]
             in_wells = w[1:1+int(w[0])]
     #print(out_wells, in_wells)
-    return out_wells, in_wells
+    return sorted(out_wells), sorted(in_wells)
 
 # #-----------------------------------------------------------------------
 # def get_eclipse_well_yaxis_fluid_old(root, include=False, raise_error=True):
@@ -1600,7 +1600,8 @@ class Settings(QDialog):
         if not self.save():
             self.parent.show_message_text(f"WARNING Unable to save settings-file {self.file}")
         else:
-            self.parent.update_message(f'Settings saved in {self.file}')
+            #self.parent.update_message(f'Settings saved in {self.file}')
+            self.parent.statusBar().showMessage(f'Settings saved in {self.file}')
 
     #-----------------------------------------------------------------------
     def done(self, value):                                # settings
@@ -1701,6 +1702,8 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_prop = {}
         self.checked_boxes = {}
         self.plotted_lines = {}
+        self.active_wells = ()
+        self.inactive_wells = ()
         self.view = False
         self.plot_ref = None
         self.progress = None
@@ -1970,23 +1973,11 @@ class main_window(QMainWindow):                                    # main_window
         def error(msg):
             self.download_act_check_version()
             self.show_message_text(msg)
-        # file = upgrade_file()
-        # # print('upgrade, file: ',file)
-        # if not file:
-        #     return error('WARNING Upgrade file is missing')
-        # version = file and file.stem.split('_')[-1] or None
-        # version = version and new_version(version) or None
-        # if not version:
-        #     return error(f'WARNING Error during upgrade!\n\nFile: {file}, downloaded version: {version}, current version {__version__}')
-        # ### Proceed with upgrade
         self.close()
-        #ext = '.exe' if BUNDLE_VERSION else '.py'
-        #upgrader = resource_path()/('upgrader'+ext)
         upgrader = self.download_dest
         if not Path(upgrader).exists():
             return error('WARNING Upgrade script not found!')
         pid = str(os.getpid())
-        #cmd = [str(upgrader), pid, self.download_dest]
         cmd = [str(upgrader), '-upgrade', pid, self.download_dest]
         if not BUNDLE_VERSION:
             cmd[0] = str(Path(cmd[0])/'IORSim_GUI.py')
@@ -2838,15 +2829,15 @@ class main_window(QMainWindow):                                    # main_window
         self.set_plot_properties()
         self.data = {}
         self.unsmry = None  # Signals to re-read Eclipse data
-        # IORSim data and menu
-        self.read_ior_data()
-        # Add iorsim menu boxes
-        self.update_ior_menu(checked = not self.is_eclipse_mode())
         # Eclipse data and menu
         self.read_ecl_data()
         # Add eclipse menu boxes
         # Check boxes only if this an eclipse-only run
         self.update_ecl_menu(checked=self.is_eclipse_mode())
+        # IORSim data and menu
+        self.read_ior_data()
+        # Add iorsim menu boxes
+        self.update_ior_menu(checked = not self.is_eclipse_mode())
         self.create_plot()
         self.update_include_menus()
         self.update_schedule_act()
@@ -2991,17 +2982,16 @@ class main_window(QMainWindow):                                    # main_window
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
         menu.column(0).addWidget(lbl)
         self.ior_boxes['well'] = {}
-        for i,well in enumerate(self.out_wells or []):
+        if self.active_wells:
+            self.out_wells = [well for well in self.out_wells if well in self.active_wells]
+        for i,well in enumerate(self.out_wells or ()):
             box = self.new_checkbox(text=well, name='well '+well+' ior', func=self.on_ior_menu_click)
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['well'][well] = box
         # Add specie boxes
-        #box = QCheckBox('Variables', parent=self)
         box = self.new_checkbox(text='Variables', font=font, pad_left=15)
-        #box.setFont(LARGE_FONT)
         box.setChecked(True)
         box.stateChanged.connect(self.set_ior_variable_boxes)
-        #box.setStyleSheet('padding-left: 15px')
         menu.column(1).addWidget(box)
         self.ior_var_box = box
         self.ior_boxes['var'] = {}
@@ -3255,16 +3245,11 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         menu = self.ecl_menu
         case = case or self.input['root']
-        #if case:
-        #    root = case
-        # Delete checkboxes before creating new
         delete_all_widgets_in_layout(menu.layout())
         if not case: 
             return False
         try:
             wells, yaxis, fluids = self.get_eclipse_well_yaxis_fluid(case)
-            # if any([l == [] for l in (wells, yaxis, fluids)]):
-            #     wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root, include=True, raise_error=True)
         except SystemError as e:
             lbl = QLabel(parent=self)
             lbl.setText(str(e))
@@ -3295,8 +3280,9 @@ class main_window(QMainWindow):                                    # main_window
         if 'FIELD' in active_wells:
             active_wells.pop(active_wells.index('FIELD'))
             active_wells = ['Field'] + active_wells
-        inactive_wells = set(wells) - set(active_wells)
-        all_wells = [(a, True) for a in active_wells] + [(i, False) for i in sorted(inactive_wells)]
+        self.active_wells = active_wells
+        self.inactive_wells = set(wells) - set(active_wells)
+        all_wells = [(a, True) for a in active_wells] + [(i, False) for i in sorted(self.inactive_wells)]
         #for i,well in enumerate(wells):
         for well, enable in all_wells:
             box = self.new_checkbox(text=well, name='well '+well+' ecl', func=self.on_ecl_plot_click)
@@ -3492,7 +3478,7 @@ class main_window(QMainWindow):                                    # main_window
             if len(max_3)>3:
                 box = max_3.pop(0)
                 set_checkbox(box, False)
-            names = [b.objectName().split()[0] for b in max_3]    
+            names = [b.objectName().split()[0] for b in max_3]
             for key in ('yaxis','well'):
                 if names.count(key)>2:
                     box = max_3.pop(names.index(key))

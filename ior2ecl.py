@@ -1,28 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '2.31.7.8'
-__author__ = 'Jan Ludvig Vinningland'
-
-DEBUG = False
-
-# Options
-COPY_CHEMFILE = True
-SCHEDULE_SKIP_EMPTY = False
-
-# Constants
-CHECK_PAUSE       = 0.01  # Default sleep-time during file-flush checks. Too low value might lead to errors on some systems.
-IOR_SATNUM_FILE   = 'satnum.dat'       # Interface-file from IORSim with statements for next Eclipse run
-IOR_SATNUM_ENDTAG = '-- IORSimX done.' # Signature from IORSim at end of interface-file
-ECL_ALIVE_LIMIT   = 90   # Seconds to wait before Eclipse is suspended (if option is on)
-IOR_ALIVE_LIMIT   = -1   # Negative value = never suspended
-LOG_LEVEL_MAX     = 4
-LOG_LEVEL_MIN     = 1
-DEFAULT_LOG_LEVEL = 3      
-RFT_CHECK_ITER    = 100   # Number of iterations before reducing number of expected RFT blocks
-MERGE_OK_FILE     = '.merge_OK' # To avoid re-merging merged UNRST-files
-
-
 from collections import Counter, namedtuple
 from itertools import accumulate, chain, dropwhile, takewhile
 from locale import getpreferredencoding
@@ -32,15 +10,48 @@ from sys import platform
 from argparse import ArgumentParser
 from datetime import datetime, timedelta
 from time import sleep
-from psutil import NoSuchProcess, __version__ as psutil_version
 from shutil import copy as shutil_copy 
 from traceback import print_exc as trace_print_exc, format_exc as trace_format_exc
 from re import compile as re_compile, MULTILINE
 from os.path import relpath
 
-from IORlib.utils import flatten, get_keyword, get_python_version, list2text, pairwise, print_dict, print_error, remove_comments, safeopen, Progress, silentdelete, delete_files_matching, tail_file
+from psutil import NoSuchProcess, __version__ as psutil_version
+
+from IORlib.utils import (flatten, get_keyword, get_python_version, list2text, pairwise,
+    print_dict, print_error, remove_comments, safeopen, Progress, silentdelete,
+    delete_files_matching, tail_file)
 from IORlib.runner import Runner
-from IORlib.ECL import FUNRST_file, DATA_file, File, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
+from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, UNRST_file, 
+    UNSMRY_file, MSG_file, PRT_file)
+
+__version__ = '2.32'
+__author__ = 'Jan Ludvig Vinningland'
+
+DEBUG = False
+
+# Options
+COPY_CHEMFILE = True
+SCHEDULE_SKIP_EMPTY = False
+
+# Constants
+# Default sleep-time during file-flush checks. Too low value might lead to errors on some systems.
+CHECK_PAUSE = 0.01
+# Interface-file from IORSim with statements for next Eclipse run
+IOR_SATNUM_FILE = 'satnum.dat'
+# Signature from IORSim to mark flushed interface-file
+IOR_SATNUM_ENDTAG = '-- IORSimX done.'
+# Seconds to wait before Eclipse/IORSim is suspended (if option is on). Neg. value = never suspended
+ECL_ALIVE_LIMIT = 90
+IOR_ALIVE_LIMIT = -1
+# Log-level of the ior2ecl.log
+LOG_LEVEL_MAX = 4
+LOG_LEVEL_MIN = 1
+DEFAULT_LOG_LEVEL = 3
+# Number of iterations before reducing number of expected RFT blocks
+RFT_CHECK_ITER = 100
+# To avoid re-merging merged UNRST-files, this file is created in the case-folder 
+MERGE_OK_FILE = '.merge_OK'
+
 
 
 #====================================================================================
@@ -389,7 +400,7 @@ class IORSim_input:                                                    # iorsim_
         parent = self.file.parent
         files = flatten(get_keyword(self.file, '\*CHEMFILE', end='\*', comment='#'))
         # Use negative lookahead (?!) to ignore commented lines
-        regex = compile(rb'^(?!#)\s*add_species[\s"\']*(.*?)[\s"\']*$', flags=MULTILINE)
+        regex = re_compile(rb'^(?!#)\s*add_species[\s"\']*(.*?)[\s"\']*$', flags=MULTILINE)
         for file in set(files):
             yield parent/file
             for match in regex.finditer(File(parent/file,'').binarydata()):
