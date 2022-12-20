@@ -6,24 +6,27 @@ DEBUG = False
 # Options
 CHECK_VERSION_AT_START = True
 
+from datetime import datetime
 from itertools import chain
 import sys
 import os
+#from tempfile import TemporaryDirectory
+from zipfile import ZipFile, is_zipfile
 
 from psutil import Popen
 
 ### Check if this is a bundle version (pyinstaller)
-bundle_version = getattr(sys, 'frozen', False)
+BUNDLE_VERSION = getattr(sys, 'frozen', False)
 
 ### Fix SSL certificates for bundle version
-if bundle_version and sys.platform == 'win32':
-    import certifi
-    import certifi_win32.wincerts
-    certifi_win32.wincerts.CERTIFI_PEM = certifi.where()
-    certifi.where =  certifi_win32.wincerts.where
-    from certifi_win32.wincerts import generate_pem, verify_combined_pem
-    if not verify_combined_pem():
-        generate_pem()
+# if bundle_version and sys.platform == 'win32':
+#     import certifi
+#     import certifi_win32.wincerts
+#     certifi_win32.wincerts.CERTIFI_PEM = certifi.where()
+#     certifi.where =  certifi_win32.wincerts.where
+#     from certifi_win32.wincerts import generate_pem, verify_combined_pem
+#     if not verify_combined_pem():
+#         generate_pem()
 
 from pathlib import Path
 from urllib.parse import urlparse
@@ -31,7 +34,7 @@ from urllib.parse import urlparse
 #-----------------------------------------------------------------------
 def resource_path():
 #-----------------------------------------------------------------------
-    if bundle_version: 
+    if BUNDLE_VERSION:
         ### Running in a bundle
         path = Path(sys._MEIPASS)
     else:
@@ -40,27 +43,32 @@ def resource_path():
     return path
 
 # Default settings
-default_casedir = Path.cwd()/'cases'
-default_savedir = Path.cwd()/'download'
-default_settings_file = Path.home()/'.iorsim_settings.dat'
+#CASEDIR = Path.cwd()/'cases'
+MAX_CASES = 10
+IORSIM_DIR = Path.home()/'.iorsim'
+#SAVEDIR = Path.cwd()/'download'
+DOWNLOAD_DIR = IORSIM_DIR/'download'
+SETTINGS_FILE = IORSIM_DIR/'settings.dat'
+SESSION_FILE = IORSIM_DIR/'session.txt'
 
 # Update files
-this_file = Path(sys.argv[0])
+THIS_FILE = Path(sys.argv[0])
 
 # Guide files
-iorsim_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_2021_User_Guide.pdf"
-script_guide = "file:///" + str(resource_path()).replace('\\','/') + "/guides/IORSim_GUI_guide.pdf"
+GUIDE_PATH = "file:///" + str(resource_path()).replace('\\','/')
+IORSIM_GUIDE = GUIDE_PATH + "/guides/IORSim_2021_User_Guide.pdf"
+SCRIPT_GUIDE = GUIDE_PATH + "/guides/IORSim_GUI_guide.pdf"
 
 # GitHub
-github_repo = "https://github.com/janlv/IORSim_GUI/"
-latest_release = github_repo +"releases/latest"
+GITHUB_REPO = "https://github.com/janlv/IORSim_GUI/"
+LATEST_RELEASE = GITHUB_REPO +"releases/latest"
+
 #-----------------------------------------------------------------------
 def github_url(version):
 #-----------------------------------------------------------------------
-    if 'py' in this_file.suffix:
-        return github_repo + f'archive/refs/tags/{version}.zip'
-    else:
-        return github_repo + f'releases/download/{version}/{this_file.name}'
+    if 'py' in THIS_FILE.suffix:
+        return GITHUB_REPO + f'archive/refs/tags/{version}.zip'
+    return GITHUB_REPO + f'releases/download/{version}/{THIS_FILE.name}'
 
 
 
@@ -83,30 +91,34 @@ from traceback import format_exc, print_exc, format_exc
 from time import sleep
 from collections import namedtuple
 from shutil import copy as shutil_copy
-import warnings
+#import warnings
 from copy import deepcopy 
 from functools import partial
+if BUNDLE_VERSION:
+    import pip_system_certs.wrapt_requests
 from requests import get as requests_get, exceptions as req_exceptions
 # Suppress warnings about using verify=False in requests_get
-from urllib3 import disable_warnings
-disable_warnings()
+#from urllib3 import disable_warnings
+#disable_warnings()
 
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, flatten, get_keyword, get_substrings, is_file_ignore_suffix_case, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, file_contains, strip_zero, write_file
+from IORlib.utils import Progress, convert_float_or_str, copy_recursive, flatten, get_keyword, get_substrings, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, strip_zero, try_except_loop, unique_names, write_file
 from IORlib.ECL import DATA_file, SMSPEC_file, UNSMRY_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
 
-# class WebEngineView(QWebEngineView):
-#     def javaScriptConsoleMessage(self, level, msg, line, sourceID):
-#         pass
+# Font settings
+FONT = 'Segoe UI'
+LARGE_FONT = QFont(FONT, 9)
+SMALL_FONT = QFont(FONT, 8)
 
-#-----------------------------------------------------------------------
-def upgrade_file():
-#-----------------------------------------------------------------------
-    ### Get first (and only) file from savedir
-    return default_savedir.is_dir() and next(default_savedir.iterdir(), None) or None
+
+# #-----------------------------------------------------------------------
+# def upgrade_file():
+# #-----------------------------------------------------------------------
+#     ### Get first (and only) file from savedir
+#     return DOWNLOAD_DIR.is_dir() and next(DOWNLOAD_DIR.iterdir(), None) or None
 
 #-----------------------------------------------------------------------
 def new_version(version_str):
@@ -121,6 +133,62 @@ def new_version(version_str):
     if next((d>0 for d in diff if d!=0), False):
         return version_str
     return False
+
+
+
+#====================================================================================
+class Upgrader:
+#====================================================================================
+
+    LOG_FILE = IORSIM_DIR/'upgrader.log'
+
+    #--------------------------------------------------------------------------------
+    def __init__(self, argv):
+    #--------------------------------------------------------------------------------
+        self.pid = int(argv[0])
+        self.new_file = Path(argv[1])
+        self.cmd = argv[2:]
+        self.target = Path.cwd()
+        self._clear_log = True
+
+    #--------------------------------------------------------------------------------
+    def __str__(self) -> str:
+    #--------------------------------------------------------------------------------
+        return '\n'.join(f'{k}: {v}' for k,v in self.__dict__.items() if k[0] != '_')
+
+    #--------------------------------------------------------------------------------
+    def upgrade(self, limit=100, pause=0.05):
+    #--------------------------------------------------------------------------------
+        self.log(f'Time: {datetime.now()}\n{self}')
+        # Stop app
+        procs = kill_process(self.pid)
+        self.log(f'Killed {self.pid}: {procs}')
+        if self.new_file.is_dir():
+            # Upgrader called from python script
+            dest = self.target
+        else:
+            # Upgrader called from bundeled version (suffix is '.exe' or '' )
+            dest = self.cmd[0]
+        self.log(f'Copy {self.new_file} to {dest}')
+        # Move new files over old ones
+        # Keep trying to overwrite if PermissionError
+        try_except_loop(self.new_file, dest, log=self.log, func=copy_recursive,
+            limit=limit, pause=pause, error=PermissionError)
+        # Start new version 
+        with Popen(self.cmd) as proc:
+            self.log(f'Started {self.cmd} as {proc}')
+        self.log('Upgrade complete!')
+
+
+    #--------------------------------------------------------------------------------
+    def log(self, text):
+    #--------------------------------------------------------------------------------
+        mode = 'a'
+        if self._clear_log:
+            self._clear_log = False
+            mode = 'w'
+        with open(self.LOG_FILE, mode) as file:
+            file.write(f'{text}\n')
 
 
 #===========================================================================
@@ -149,6 +217,28 @@ class color:
     as_tuple = (blue, orange, green, red, violet, brown, pink, gray, yellow, turq)
 
 
+#===========================================================================
+class FloatEdit(QLineEdit):
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, *args, **kwargs):
+    #-----------------------------------------------------------------------
+        super().__init__(*args, **kwargs)
+        #self._value = 0
+
+    #-----------------------------------------------------------------------
+    def setText(self, value, *args, precision=2, **kwargs):
+    #-----------------------------------------------------------------------
+        #self._value = value
+        # Convert to string with given precision and remove trailing .0
+        super().setText(f'{value:.{precision}f}'.rstrip('0').rstrip('.'), *args, **kwargs)
+
+    # #-----------------------------------------------------------------------
+    # def value(self):
+    # #-----------------------------------------------------------------------
+    #     return self._value
+
+
 #--------------------------------------------------------------------------------
 def show_error(func):
 #--------------------------------------------------------------------------------
@@ -164,8 +254,8 @@ def show_error(func):
 def open_file_dialog(win, text, filetype):
 #-----------------------------------------------------------------------
     options = QFileDialog.Options() | QFileDialog.DontUseNativeDialog
-    fileName, _ = QFileDialog.getOpenFileName(win, text, "", filetype, options=options)
-    return fileName
+    file_name, _ = QFileDialog.getOpenFileName(win, text, "", filetype, options=options)
+    return file_name
 
 
 #-----------------------------------------------------------------------
@@ -346,6 +436,7 @@ def show_message(window, kind, text='', extra='', ok_text=None, wait=False, deta
         raise SystemError(f'Unrecognized kind-option in show_message(): {kind}')
     msg = QMessageBox(window)
     msg.setWindowTitle(title)
+    msg.setFont(LARGE_FONT)
     #if width:
     #msg.setBaseSize(QSize(width, height))
     #msg.setStyleSheet('QLabel{min-width: '+ str(width) +'px;}')
@@ -468,6 +559,25 @@ class base_worker(QRunnable):
         self.print_exception = self.kwargs.get('print_exception')
         if self.print_exception is None:
             self.print_exception = True
+        self._logfile = IORSIM_DIR/(self.kwargs.get('log') or 'base_worker.log')
+        self._clear_log = True
+
+    #-----------------------------------------------------------------------
+    def log(self, text):
+    #-----------------------------------------------------------------------
+        mode = 'a'
+        if self._clear_log:
+            self._clear_log = False
+            mode = 'w'
+        with open(self._logfile, mode) as file:
+            file.write(text+'\n')
+
+    #-----------------------------------------------------------------------
+    def raise_error(self, error=None, msg=''):
+    #-----------------------------------------------------------------------
+        msg = 'ERROR ' + msg 
+        self.log(msg)
+        raise SystemError(msg) from error
 
     @Slot()
     #-----------------------------------------------------------------------
@@ -551,7 +661,8 @@ class sim_worker(base_worker):
         self.sim = Simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
         self.sim.prepare()
         if self.sim.ready():
-            self.days_box.setText(str(self.sim.get_time()).rstrip('0').rstrip('.'))
+            #self.days_box.setText(str(self.sim.get_time()).rstrip('0').rstrip('.'))
+            self.days_box.setText(self.sim.get_time())
             result, msg = self.sim.run()
         else:
             DEBUG and print('Simulation not ready in sim_worker!')
@@ -568,16 +679,18 @@ class download_worker(base_worker):
     #-----------------------------------------------------------------------
     def __init__(self, new_version, folder):
     #-----------------------------------------------------------------------
-        super().__init__(print_exception=False)
-        self.running = False         
+        super().__init__(print_exception=False, log='download.log')
+        self.running = False
         self.new_version = new_version
         #print('new_version:',new_version)
         folder = Path(folder)
         folder.mkdir(exist_ok=True)
-        #files = sorted(folder.iterdir(), key=os.path.getmtime)
         self.url = github_url(new_version)
         ext = Path(urlparse(self.url).path).suffix
-        self.savename = folder/f'{this_file.stem}_{new_version}{ext}'
+        stem = THIS_FILE.stem.split('_v')[0]
+        self.savename = folder/f'{stem}_{new_version}{ext}'
+        #self.log = folder/'download.log'
+        self.log(f'Time: {datetime.now()}\nSavename: {self.savename}')
 
 
     #-----------------------------------------------------------------------
@@ -585,23 +698,25 @@ class download_worker(base_worker):
     #-----------------------------------------------------------------------
         if self.savename.is_file():
             ### File already downloaded!
+            self.log(f'{self.savename} already downloaded!')
             return
+        # Remove old files
         self.running = True
-        ### Remove old files
-        [f.unlink() for f in self.savename.parent.iterdir()]
+        delete_all(self.savename.parent, keep_folder=True, ignore_error=PermissionError)
         try:
             response = requests_get(self.url, stream=True)
-        except req_exceptions.SSLError:
-            raise SystemError('ERROR SSL error during download of update')
-        except req_exceptions.ConnectionError:
-            raise SystemError('ERROR No internet connection, unable to download update!')
+        except req_exceptions.SSLError as error:
+            self.raise_error(error, 'SSL error during download of update')
+        except req_exceptions.ConnectionError as error:
+            self.raise_error(error, 'No internet connection, unable to download update!')
         if not response.status_code == 200:
-            raise SystemError(f'{self.url} not found!')
+            self.raise_error(msg=f'{self.url} not found!')            
         tot_size = int(response.headers.get('content-length', 0)) or len(response.content)
         self.update_progress((-tot_size, None, None))
         self.status_message(f'Downloading version {self.new_version}')
         size = 0
-        block_size = 1024*1024 ### 1 MB
+        block_size = 1024*1024 # 1 MB
+        self.log(f'Size: {tot_size}\nBlocks: {tot_size/block_size}\nStart-time: {datetime.now()}')
         with open(self.savename, 'wb') as file:
             for data in response.iter_content(block_size):
                 if not self.running:
@@ -610,9 +725,19 @@ class download_worker(base_worker):
                 #print(f'{size/tot_size:.2f}%')
                 self.update_progress((size, None, None))
                 file.write(data)
+        self.log(f'End-time: {datetime.now()}')
         if tot_size != 0 and tot_size != size:
-            msg = f'Size mismatch when downloading {self.filename}: got {size} bytes, expected {tot_size} bytes'
-            raise SystemError(msg)
+            msg = f'Size mismatch when downloading {self.savename}: got {size} bytes, expected {tot_size} bytes'
+            self.raise_error(msg=msg)
+        # Unpack zip-file for non-bundle upgrades
+        if is_zipfile(self.savename):
+            savedir = self.savename.parent
+            with ZipFile(self.savename, 'r') as zipfile:
+                zipfile.extractall(savedir)
+            # Delete zip-file
+            self.savename.unlink()
+            # Point to unpacked folder
+            self.savename = next(savedir.iterdir(), None)
 
 
 #===========================================================================
@@ -621,19 +746,20 @@ class check_version_worker(base_worker):
     #-----------------------------------------------------------------------
     def __init__(self, timeout=20):
     #-----------------------------------------------------------------------
-        super().__init__(print_exception=False)
+        super().__init__(print_exception=False, log='check_version.log')
         self.timeout = timeout
+        self.log(f'Time: {datetime.now()}')
 
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
         try:
-            response = requests_get(latest_release, timeout=self.timeout)
-        except req_exceptions.SSLError as e:
-            DEBUG and print(f'SSLError in check_versions(): {e}')
-            raise SystemError(f'ERROR SSL error during version check')
-        except req_exceptions.ConnectionError:
-            raise SystemError(f'ERROR No internet connection, unable to check for new versions!')
+            response = requests_get(LATEST_RELEASE, timeout=self.timeout)
+        except req_exceptions.SSLError as error:
+            self.raise_error(error, 'SSL error during version check')
+        except req_exceptions.ConnectionError as error:
+            self.raise_error(error, 'No internet connection, unable to check for new versions!')
+        self.log(f'Response: {response.url}')
         version_str = response.url.split('/')[-1]
         return new_version(version_str)
 
@@ -653,7 +779,7 @@ class Mpl_canvas(FigureCanvasQTAgg):
 class User_input(QDialog):                                              
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, parent=None, title=None, head=None, label=None, text=None, delete_src=False, size=(400, 150)):
+    def __init__(self, parent=None, title=None, head=None, label=None, text=None, size=(400, 150)):
     #-----------------------------------------------------------------------
         #super(User_input, self).__init__(*args, **kwargs)
         super(User_input, self).__init__(parent)
@@ -731,6 +857,7 @@ class Menu(QGroupBox):
         super(Menu, self).__init__(parent)
         self.setStyleSheet('QGroupBox {border: none; margin-top:5px; padding: 15px 0px 0px 0px;}')
         self.setTitle(title)
+        self.setFont(LARGE_FONT)
         self.setLayout(QHBoxLayout())
         for i in range(ncol):
             self.layout().addLayout(QVBoxLayout())
@@ -802,7 +929,7 @@ class Editor(QGroupBox):
         self.search_width = search_width
         self.space = space
         self.match_case = match_case
-        self.editor_ = QPlainTextEdit()
+        self.editor_ = QPlainTextEdit(self)
         self.editor_.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.set_text = self.editor_.setPlainText
         self.init_UI()
@@ -906,9 +1033,9 @@ class Editor(QGroupBox):
         btn = None
         if icon:
             #btn = QPushButton(icon=QIcon(':'+icon))
-            btn = QPushButton(icon=QIcon(f'icons:{icon}'))
+            btn = QPushButton(icon=QIcon(f'icons:{icon}'), parent=self)
         else:
-            btn = QPushButton(text=text)
+            btn = QPushButton(text=text, parent=self)
         if not width:
             width = self.btn_width
         btn.setFixedWidth(width)
@@ -1142,30 +1269,87 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         super(Settings, self).__init__(parent)
         self.parent = parent
-        self.file = Path(file) 
-        self.setWindowTitle('Settings')        
+        self.file = Path(file)
+        self.setWindowTitle('Settings')
         self.setWindowFlag(Qt.WindowTitleHint)
+        self.setFont(LARGE_FONT)
         #self.setMinimumSize(400,400)
         self.setObjectName('settings_window')
         self.line = -1
         self._get = {}
         self._set = {}
-        variable = namedtuple('variable',        'text              default tip                            required ')
-        self.vars = {'iorsim'         : variable('IORSim program' , None, 'Path to the IORSim executable', True),
-                     'eclrun'         : variable('Eclipse program', 'eclrun', "Eclipse command, default is 'eclrun'", True), 
-                     'workdir'        : variable('Case directory', str(default_casedir),'Path to case-directory', True),
-                     'check_input_kw' : variable('Check IORSim input file', False, 'Check IORSim input file keywords', False),
-                     'convert'        : variable('Convert to unformatted output', True, 'Convert IORSim formatted output to unformatted format (readable by ResInsight)', False),
-                     'del_convert'    : variable('Delete original after convert', True, 'Delete the FUNRST-file if it is successfully converted to an UNRST-file', False),
-                     'merge'          : variable('Merge Eclipse and IORSim output', True, 'Merge the unformatted output from Eclipse and IORSim into one file', False),
-                     'del_merge'      : variable('Delete originals after merge', True, 'Delete the original UNRST-files from Elipse and IORSim if successfully merged', False),
-                     'unrst'          : variable('Confirm flushed UNRST-file during Eclipse step', True, 'Check that the UNRST-file is properly flushed before suspending Eclipse', False), 
-                     'rft'            : variable('Confirm flushed RFT-file during Eclipse step', True, 'Check that the RFT-file is properly flushed before suspending Eclipse', False),
-                     'ecl_keep_alive' : variable(f'Eclipse process not paused if idle for less than', False, "Eclipse process is running also when idle ('e' to edit)", False),
-                     'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT), "If on, set this limit lower than 100 seconds to avoid unexpected Eclipse termination ('e' to edit)", False),
-                     'ior_keep_alive' : variable(f'IORSim process not paused when idle', False, "IORSim process is running when idle. WARNING! Consumes more CPU ('e' to edit)", False),
-                     'log_level'      : variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL), 'A higher value gives a more detailed application log', False),
-                     'skip_empty'     : variable('Skip empty DATES/TSTEP entries in the schedule-file', SCHEDULE_SKIP_EMPTY, 'Skip DATES/TSTEP entries in the schedule-file with missing statements', False)}
+        variable = namedtuple('variable', 'text default tip required ')
+        self.vars = {
+            'iorsim': variable(
+                'IORSim program',
+                None,
+                'Path to the IORSim executable',
+                True),
+            'eclrun': variable(
+                'Eclipse program',
+                'eclrun',
+                "Eclipse command, default is 'eclrun'",
+                True),
+            'check_input_kw': variable(
+                'Check IORSim input file',
+                False,
+                'Check IORSim input file keywords',
+                False),
+            'convert': variable(
+                'Convert to unformatted output',
+                True,
+                'Make IORSim output readable by ResInsight',
+                False),
+            'del_convert': variable(
+                'Delete original after convert',
+                True,
+                'Delete file if successfully converted',
+                False),
+            'merge': variable(
+                'Merge Eclipse and IORSim output',
+                True,
+                'Merge the unformatted output from Eclipse and IORSim into one file',
+                False),
+            'del_merge': variable(
+                'Delete originals after merge',
+                True,
+                'Delete the original UNRST-files from Elipse and IORSim if successfully merged',
+                False),
+            'unrst': variable(
+                'Confirm flushed UNRST-file during Eclipse step',
+                True,
+                'Check that the UNRST-file is properly flushed before suspending Eclipse',
+                False),
+            'rft': variable(
+                'Confirm flushed RFT-file during Eclipse step',
+                True,
+                'Check that the RFT-file is properly flushed before suspending Eclipse',
+                False),
+            'ecl_keep_alive': variable(
+                f'Eclipse process not paused if idle for less than',
+                False,
+                "Eclipse process is running also when idle ('e' to edit)",
+                False),
+            'ecl_alive_limit': variable(
+                f'seconds',
+                str(ECL_ALIVE_LIMIT),
+                "If on, set this limit lower than 100 seconds to avoid unexpected Eclipse termination ('e' to edit)",
+                False),
+            'ior_keep_alive': variable(
+                f'IORSim process not paused when idle',
+                False,
+                "IORSim process is running when idle. WARNING! Consumes more CPU ('e' to edit)",
+                False),
+            'log_level': variable(
+                'Detail level of the application log',
+                str(DEFAULT_LOG_LEVEL),
+                'A higher value gives a more detailed application log',
+                False),
+            'skip_empty': variable(
+                'Skip empty DATES/TSTEP entries in the schedule-file',
+                SCHEDULE_SKIP_EMPTY,
+                'Skip DATES/TSTEP entries in the schedule-file with missing statements',
+                False)}
         #'savedir'        : variable('Download directory', None, 'Download location for updates', False),
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
@@ -1179,7 +1363,8 @@ class Settings(QDialog):
     def set_expert_mode(self, enabled):
     #-----------------------------------------------------------------------
         self.expert_mode = enabled
-        [var.setEnabled(self.expert_mode) for var in self.expert]
+        for var in self.expert:
+            var.setEnabled(self.expert_mode)
 
 
     #-----------------------------------------------------------------------
@@ -1208,16 +1393,16 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         self.grid = QGridLayout()
         self.setLayout(self.grid)
-        self.grid.setColumnStretch(0,15) 
-        self.grid.setColumnStretch(1,70) 
-        self.grid.setColumnStretch(2,15) 
+        self.grid.setColumnStretch(0,15)
+        self.grid.setColumnStretch(1,70)
+        self.grid.setColumnStretch(2,15)
 
         ### IORSim executable
         self.add_line_with_button(var='iorsim', open_func=self.open_ior_prog)
         ### Eclipse executable
         self.add_line_with_button(var='eclrun', open_func=self.open_ecl_prog)
         ### Workdir        
-        self.add_line_with_button(var='workdir', open_func=self.change_workdir)
+        # self.add_line_with_button(var='workdir', open_func=self.change_workdir)
         ### Savedir        
         #self.add_line_with_button(var='savedir', open_func=self.change_savedir)
 
@@ -1298,11 +1483,11 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         v = self.vars[var]
         layout = QHBoxLayout()
-        box = QComboBox()
+        box = QComboBox(self)
         box.setToolTip(v.tip)
         width and box.setFixedWidth(width)
         layout.addWidget(box)
-        label = QLabel(v.text)
+        label = QLabel(v.text, self)
         label.setToolTip(v.tip)
         layout.addWidget(label)
         box.addItems(values)
@@ -1311,10 +1496,12 @@ class Settings(QDialog):
         return layout
 
     #-----------------------------------------------------------------------
-    def new_checkbox(self, var=None):             # settings
+    def new_checkbox(self, var=None, size=15):             # settings
     #-----------------------------------------------------------------------
         v = self.vars[var]
-        box = QCheckBox(v.text)
+        box = QCheckBox(v.text, parent=self)
+        box.setStyleSheet('QCheckBox::indicator { width: '+str(size)+'px; height: '+str(size)+'px;};')
+        #box.setMinimumSize(50, 50)
         box.setToolTip(v.tip)
         self._get[var] = box.isChecked
         self._set[var] = box.setChecked
@@ -1325,7 +1512,7 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         v = self.vars[var]
         layout = QHBoxLayout()
-        line = QLineEdit()
+        line = QLineEdit(parent=self)
         width and line.setFixedWidth(width)
         line.setToolTip(v.tip)
         layout.addWidget(line)
@@ -1339,17 +1526,17 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         self.line += 1
         v = self.vars[var]
-        label = QLabel(v.text)
+        label = QLabel(v.text, parent=self)
         self.grid.addWidget(label, self.line, 0)
         label.setToolTip(v.tip)
-        line = QLineEdit()
+        line = QLineEdit(self)
         self.grid.addWidget(line, self.line, 1)
         line.setToolTip(v.tip)
         line.setReadOnly(read_only)
         self._get[var] = line.text 
         self._set[var] = line.setText
         if open_func:
-            button = QPushButton(button_text)
+            button = QPushButton(button_text, parent=self)
             self.grid.addWidget(button, self.line, 2)
             button.clicked.connect(open_func)
         return line
@@ -1361,14 +1548,14 @@ class Settings(QDialog):
         for k,v in self.vars.items():
             self._set[k](v.default)
         
-    #-----------------------------------------------------------------------
-    def change_workdir(self):                                  # settings
-    #-----------------------------------------------------------------------
-        dirname = QFileDialog.getExistingDirectory(self, 'Locate or create a directory for the case-files', 
-                                                        str(Path.cwd()), QFileDialog.ShowDirsOnly)
-        if dirname:
-            self._set['workdir'](dirname)
-            self.parent.update_casedir()
+    # #-----------------------------------------------------------------------
+    # def change_workdir(self):                                  # settings
+    # #-----------------------------------------------------------------------
+    #     dirname = QFileDialog.getExistingDirectory(self, 'Locate or create a directory for the case-files', 
+    #                                                     str(Path.cwd()), QFileDialog.ShowDirsOnly)
+    #     if dirname:
+    #         self._set['workdir'](dirname)
+    #         self.parent.update_casedir()
 
     # #-----------------------------------------------------------------------
     # def change_savedir(self):                             # settings
@@ -1446,15 +1633,18 @@ class Settings(QDialog):
                     if line.lstrip().startswith('#'):
                         continue
                     try:
-                        (var, val) = line.split()
+                        var, val = line.split()
                     except ValueError:
                         var = line.rstrip()
                         val = ''
                     else:
-                        try:
-                            self._set[var.strip()]( str_to_bool(val.strip()) )
-                        except KeyError:
-                            pass
+                        var = var.strip()
+                        if var in self._set.keys():
+                            self._set[var]( str_to_bool(val.strip()) )
+                        # try:
+                        #     self._set[var.strip()]( str_to_bool(val.strip()) )
+                        # except KeyError:
+                        #     pass
 
                         
         
@@ -1488,9 +1678,10 @@ class main_window(QMainWindow):                                    # main_window
         self.setObjectName('main_window')
         #self.setContentsMargins(2,2,2,2)
         self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
-        self.font = QFont().defaultFamily()
+        # Fonts
+        #self.large_font = QFont(FONT, 10)
+        #self.small_font = QFont(FONT, 7)
         self.silent_upgrade = False
-        self.menu_fontsize = 7
         self.plot_lines = None
         self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl'}
         self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'irate', 'IT':'iprod'}
@@ -1513,18 +1704,21 @@ class main_window(QMainWindow):                                    # main_window
         self.view = False
         self.plot_ref = None
         self.progress = None
-        self.casedir = None
-        self.input_file = None
+        #self.casedir = None
+        #self.input_file = None
         # User guide window
         self.pdf_view = None #PDF_viewer()
         self.user_guide = None #Window(widget=self.pdf_view, title='IORSim User Guide', size=(1000, 800))
         self.case = None
         self.schedule = None
-        self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 'species':[], 'mode':None}
-        self.input_to_save = ['root','days','mode']
+        self.cases = ()
+        self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 'species':[], 'mode':None, 'cases':[]}
+        self.input_to_save = ('root', 'days', 'mode', 'cases')
         self.settings = Settings(self, file=str(settings_file))
         self.initUI()
-        self.update_casedir()
+        self.load_session()
+        self.set_input_field()
+        #self.update_casedir()
         self.threadpool = QThreadPool()
         self.show()
         # Move window if upper left corner is outside limits
@@ -1537,14 +1731,14 @@ class main_window(QMainWindow):                                    # main_window
         CHECK_VERSION_AT_START and self.check_version(silent=True)
                 
 
-    #-----------------------------------------------------------------------
-    def update_casedir(self):
-    #-----------------------------------------------------------------------
-        self.casedir = Path(self.settings.get('workdir'))
-        self.casedir.mkdir(exist_ok=True)
-        self.input_file = self.casedir/'.cache.txt' #input_file #gui_dir/'input.txt'
-        self.load_input()
-        self.set_input_field()
+    # #-----------------------------------------------------------------------
+    # def update_casedir(self):
+    # #-----------------------------------------------------------------------
+    #     #self.casedir = Path(self.settings.get('workdir'))
+    #     #self.casedir.mkdir(exist_ok=True)
+    #     #self.input_file = self.casedir/'.cache.txt' #input_file #gui_dir/'input.txt'
+    #     self.load_input()
+    #     self.set_input_field()
 
     #-----------------------------------------------------------------------
     def initUI(self):                                          # main_window
@@ -1581,14 +1775,20 @@ class main_window(QMainWindow):                                    # main_window
         self.exit_act = create_action(self, text='&Exit', icon='control-power.png', shortcut='Ctrl+Q',
                                       tip='Exit application', func=self.quit)
         ### Add case
-        self.add_case_act = create_action(self, text='Import case...', icon='document--plus.png',
-                                          func=self.add_case_from_file)
-        self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy.png',
-                                           func=self.duplicate_current_case)
-        self.rename_case_act = create_action(self, text='Rename current case...', icon='document-rename.png',
-                                             func=self.rename_current_case)
+        self.open_case_act = create_action(self, text='Open case...', icon='blue-folder-open-document.png',
+                                          func=self.open_case)
+        self.copy_case_act = create_action(self, text='Copy current case...', icon='document-copy.png',
+                                          func=self.copy_current_case)
+        # self.import_case_act = create_action(self, text='Import case...', icon='document--plus.png',
+        #                                   func=self.import_case_from_file)
+        # self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy.png',
+        #                                    func=self.duplicate_current_case)
+        # self.rename_case_act = create_action(self, text='Rename current case...', icon='document-rename.png',
+        #                                      func=self.rename_current_case)
         self.clear_case_act = create_action(self, text='Clear current case', icon='document.png',
                                             func=self.clear_current_case)
+        self.remove_case_act = create_action(self, text='Remove current case', icon='document--minus.png',
+                                             func=self.remove_current_case)
         self.delete_case_act = create_action(self, text='Delete current case', icon='document--minus.png',
                                              func=self.delete_current_case)
         self.plot_act = create_action(self, text='Plot', icon='guide.png', func=self.view_plot, checkable=True)
@@ -1608,20 +1808,25 @@ class main_window(QMainWindow):                                    # main_window
                 
         
     #-----------------------------------------------------------------------
-    def create_menus(self):                                          # main_window
+    def create_menus(self):                                    # main_window
     #-----------------------------------------------------------------------
         ### Menu
         menu = self.menuBar()
         self.view_group = QActionGroup(self)
         ### File
         file_menu = menu.addMenu('&File')
-        file_menu.addAction(self.add_case_act)
-        file_menu.addAction(self.dupl_case_act) 
-        file_menu.addAction(self.rename_case_act)
+        #file_menu.addAction(self.import_case_act)
+        #file_menu.addAction(self.dupl_case_act) 
+        #file_menu.addAction(self.rename_case_act)
+        file_menu.addAction(self.open_case_act)
+        file_menu.addAction(self.copy_case_act)
         file_menu.addAction(self.clear_case_act)
-        file_menu.addAction(self.delete_case_act)
+        file_menu.addAction(self.remove_case_act)
+        #file_menu.addAction(self.delete_case_act)
         file_menu.addSeparator()
         file_menu.addAction(self.set_act)
+        file_menu.addSeparator()
+        file_menu.addAction(self.download_act)
         file_menu.addSeparator()
         file_menu.addAction(self.exit_act)
         ### Eclipse
@@ -1652,10 +1857,9 @@ class main_window(QMainWindow):                                    # main_window
         help_menu.addAction(self.iorsim_guide_act)
         help_menu.addAction(self.script_guide_act)
         help_menu.addSeparator()
-        help_menu.addAction(self.download_act)
-        help_menu.addSeparator()
         help_menu.addAction(self.about_act)
-
+        for m in (menu, file_menu, ecl_menu, ior_menu, view_menu, help_menu):
+            m.setFont(LARGE_FONT)
 
     #-----------------------------------------------------------------------
     def about_app(self):
@@ -1700,7 +1904,7 @@ class main_window(QMainWindow):                                    # main_window
         self.download_act.setEnabled(True)
         self.new_version = result[0]
         if self.new_version:
-            if this_file.with_name('.git').is_dir():
+            if THIS_FILE.with_name('.git').is_dir():
                 not self.silent_upgrade and self.show_message_text(f"INFO Version {self.new_version} is available, but this script is running in a folder under Git version control.\n\nExecute 'git pull' from the command line to upgrade.")
                 return
             if self.silent_upgrade:
@@ -1766,25 +1970,29 @@ class main_window(QMainWindow):                                    # main_window
         def error(msg):
             self.download_act_check_version()
             self.show_message_text(msg)
-        file = upgrade_file()
-        # print('upgrade, file: ',file)
-        if not file:
-            return error('WARNING Upgrade file is missing')
-        version = file and file.stem.split('_')[-1] or None
-        version = version and new_version(version) or None
-        if not version:
-            return error(f'WARNING Error during upgrade!\n\nFile: {file}, downloaded version: {version}, current version {__version__}')
-        ### Proceed with upgrade
+        # file = upgrade_file()
+        # # print('upgrade, file: ',file)
+        # if not file:
+        #     return error('WARNING Upgrade file is missing')
+        # version = file and file.stem.split('_')[-1] or None
+        # version = version and new_version(version) or None
+        # if not version:
+        #     return error(f'WARNING Error during upgrade!\n\nFile: {file}, downloaded version: {version}, current version {__version__}')
+        # ### Proceed with upgrade
         self.close()
-        ext = bundle_version and '.exe' or '.py'
-        upgrader = resource_path()/('upgrader'+ext)
+        #ext = '.exe' if BUNDLE_VERSION else '.py'
+        #upgrader = resource_path()/('upgrader'+ext)
+        upgrader = self.download_dest
         if not Path(upgrader).exists():
             return error('WARNING Upgrade script not found!')
         pid = str(os.getpid())
-        cmd = [str(upgrader), pid, self.download_dest]
-        if not bundle_version:
+        #cmd = [str(upgrader), pid, self.download_dest]
+        cmd = [str(upgrader), '-upgrade', pid, self.download_dest]
+        if not BUNDLE_VERSION:
+            cmd[0] = str(Path(cmd[0])/'IORSim_GUI.py')
             exec = [sys.executable]
             cmd = exec + cmd + exec
+        # Appent arguments given to this script must be re-applied for the restart
         cmd.extend(sys.argv)
         #print(f'Calling: {cmd}')
         Popen(cmd)
@@ -1799,15 +2007,15 @@ class main_window(QMainWindow):                                    # main_window
         self.download_act.setEnabled(False)
         # print('enabled 1:',self.download_act.isEnabled())
         self.reset_progress_and_message()
-        self.download_worker = download_worker(self.new_version, default_savedir)
+        self.download_worker = download_worker(self.new_version, DOWNLOAD_DIR)
         signals = self.download_worker.signals
-        signals.finished.connect(self.download_finished) 
-        signals.result.connect(self.download_success) 
+        signals.finished.connect(self.download_finished)
+        signals.result.connect(self.download_success)
         if not self.silent_upgrade:
             signals.status_message.connect(self.update_message)
             signals.show_message.connect(self.show_message_text)
             signals.progress.connect(self.update_progress)
-            signals.error.connect(self.download_error) 
+            signals.error.connect(self.download_error)
         self.threadpool.start(self.download_worker)
 
 
@@ -1827,12 +2035,12 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def show_iorsim_guide(self):
     #-----------------------------------------------------------------------
-        self.show_guide(iorsim_guide, title='IORSim User Guide')
+        self.show_guide(IORSIM_GUIDE, title='IORSim User Guide')
 
     #-----------------------------------------------------------------------
     def show_script_guide(self):
     #-----------------------------------------------------------------------
-        self.show_guide(script_guide, title='GUI User Guide')
+        self.show_guide(SCRIPT_GUIDE, title='GUI User Guide')
 
     #-----------------------------------------------------------------------
     def create_toolbar(self):                                  # main_window
@@ -1852,12 +2060,12 @@ class main_window(QMainWindow):                                    # main_window
         ### simulation controls
         widgets = {'run'    : QComboBox(),
                    'case'    : QComboBox(),
-                   'days'    : QLineEdit(),
-                   'compare' : QComboBox()} 
+                   'days'    : FloatEdit(),
+                   'compare' : QComboBox()}
         tips = ('Set running mode',
                 'Choose a case, or add a new from the Case-menu',
                 'Set total time interval',
-                'Compare current case to a previous case')
+                'Compare current case against a previous case')
         for i,(text,wid) in enumerate(list(widgets.items())[:3]):
             ql = QLabel()
             ql.setText(text.capitalize())
@@ -1888,15 +2096,21 @@ class main_window(QMainWindow):                                    # main_window
         self.mode_cb.currentIndexChanged[int].connect(self.on_mode_select)
         # case
         self.case_cb = widgets['case']
+        self.case_cb.setMinimumWidth(120)
+        #self.case_cb.setMaximumWidth(360)
+        self.case_cb.setMinimumWidth(120)
+        #self.case_cb.setMaximumWidth(200)
         self.case_cb.setStyleSheet('QComboBox {min-width: 100px;}')
         self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
-        # steps
+        # days
         self.days_box = widgets['days']
-        self.days_box.setFixedWidth(60)
+        self.days_box.setMinimumWidth(60)
+        self.days_box.setMaximumWidth(120)
         self.days_box.setObjectName('days')
         self.days_box.textChanged[str].connect(self.on_input_change)
         # reference
         self.ref_case = widgets['compare']
+        self.ref_case.setMinimumWidth(120)
         self.ref_case.setObjectName('compare')
         self.ref_case.setStyleSheet('QComboBox {min-width: 100px;}')
         self.ref_case.currentIndexChanged[int].connect(self.on_compare_select)
@@ -1915,6 +2129,7 @@ class main_window(QMainWindow):                                    # main_window
         self.progressbar.setFormat('')
         self.reset_progressbar()
         statusbar = QStatusBar()
+        statusbar.setFont(LARGE_FONT)
         statusbar.setStyleSheet("QStatusBar { border-top: 1px solid lightgrey; }\nQStatusBar::item { border:None; };"); 
         self.messages = QLabel()
         statusbar.addPermanentWidget(self.messages)
@@ -1943,13 +2158,13 @@ class main_window(QMainWindow):                                    # main_window
         widget.setLayout(self.layout)
         self.setCentralWidget(widget)
         ### Create IORSim plot menu
-        self.ior_menu = Menu(title='IORSim plot options')
+        self.ior_menu = Menu(parent=self, title='IORSim plot options')
         self.layout.addWidget(make_scrollable(self.ior_menu), *self.position['ior_menu']) # 
         ### Create ECLIPSE plot menu
-        self.ecl_menu = Menu(title='ECLIPSE plot options')
+        self.ecl_menu = Menu(parent=self, title='ECLIPSE plot options')
         self.layout.addWidget(make_scrollable(self.ecl_menu), *self.position['ecl_menu']) # 
         ### Create plot- and file-view area
-        self.plot = Plot() 
+        self.plot = Plot(self) 
         self.editor = Editor(name='editor', save_func=self.prepare_case)
         ### Eclipse editor
         rules = namedtuple('rules',('color weight option front back words'))
@@ -1977,51 +2192,71 @@ class main_window(QMainWindow):                                    # main_window
         ### set values from input-file or default
         days = 100
         ### case
-        self.cases = self.read_case_dir()
+        #self.cases = self.read_case_dir()
+        self.cases = self.input.get('cases')
+        if not isinstance(self.cases, list):
+            self.cases = [self.cases]
+        #for case in self.cases:
+        #    if not Path(case).parent.is_file()
         self.case = self.input.get('root')
         self.create_caselist(choose=self.case)
         ### number of days
-        self.days_box.setText(f"{(self.input.get('days') or days):.2f}".rstrip('0').rstrip('.')) # Remove trailing .0
+        #self.days_box.float = self.input.get('days') or days
+        #self.days_box.setText(f"{self.days_box.float:.2f}".rstrip('0').rstrip('.')) # Remove trailing .0
+        self.days_box.setText(self.input.get('days') or days)
         #self.days_box.setText(str(self.input.get('days') or days).rstrip('0').rstrip('.')) # Remove trailing .0
         
         
     #-----------------------------------------------------------------------
-    def save_input_values(self):                                   # main_window
+    def save_session(self, sep=','):                                   # main_window
     #-----------------------------------------------------------------------
         """ Save the current input values in a cache-file """
-        self.input_file.touch(exist_ok=True)
+        #self.input_file.touch(exist_ok=True)
         #print(self.input_file)
-        with open(self.input_file, 'w') as f:
-            f.write('# This is an input-file for ior2ecl_GUI.py, do not edit.\n')
-            for var in self.input_to_save:
-                line = f'{var} {self.input.get(var) or ""}'
-                f.write(line+'\n')
-                #print('saved input: '+line)
-        return True
-    
-    #-----------------------------------------------------------------------
-    def load_input(self):                                   # main_window
-    #-----------------------------------------------------------------------
-        if self.input_file.is_file():
-            with open(self.input_file) as f:
-                for line in f:
-                    if line.lstrip().startswith('#'):
-                        continue
-                    try:
-                        (var, val) = line.split()
-                    except ValueError:
-                        var = line.rstrip()
-                        val = None
-                    finally:
-                        try:
-                            # v = int(val) 
-                            v = float(val) 
-                        except (TypeError,ValueError):
-                            v = val
-                        finally:
-                            self.input[var] = v
+        self.input['cases'] = sep.join(self.cases)
+        #print(self.input['cases'])
+        lines = [f'{var}{sep}{val}\n' for var in self.input_to_save if (val:=self.input.get(var))]
+        #print(lines)
+        with open(SESSION_FILE, 'w') as f:
+            f.write(''.join(lines))
+            #f.write('# This is an input-file for ior2ecl_GUI.py, do not edit.\n')
+            # for var in self.input_to_save:
+            #     line = f'{var} {self.input.get(var) or ""}'
+            #     f.write(line+'\n')
+            #     #print('saved input: '+line)
+        #return True
 
-                            
+    #-----------------------------------------------------------------------
+    def load_session(self, sep=','):                                   # main_window
+    #-----------------------------------------------------------------------
+        if SESSION_FILE.is_file():
+            with open(SESSION_FILE) as file:
+                lines = file.readlines()
+                for var, *val in (l.split(sep) for l in lines if not l.startswith('#')):
+                    #valgen = convert_float_or_str(val)
+                    #val1 = next(valgen)
+                    #vals = [val1, *rest] if (rest:=list(valgen)) else [val1]
+                    vals = list(convert_float_or_str(val))
+                    self.input[var] = vals[0] if len(vals) == 1 else vals
+                    #print(var, self.input[var])
+                # for line in f:
+                #     if line.lstrip().startswith('#'):
+                #         continue
+                #     try:
+                #         (var, val) = line.split()
+                #     except ValueError:
+                #         var = line.rstrip()
+                #         val = None
+                #     finally:
+                #         try:
+                #             # v = int(val) 
+                #             v = float(val) 
+                #         except (TypeError,ValueError):
+                #             v = val
+                #         finally:
+                #             self.input[var] = v
+
+
     #-----------------------------------------------------------------------
     def set_variables_from_casefiles(self):                # main_window
     #-----------------------------------------------------------------------
@@ -2051,39 +2286,81 @@ class main_window(QMainWindow):                                    # main_window
             prop['alpha'] = {specie:1.0 for i,specie in enumerate(species)}
         for var in ('Temp','Temp_ecl'):
             prop['color'][var] = color.black.as_hex() #'#000000' 
-            prop['line'][var] = '--' 
+            prop['line'][var] = '--'
             prop['alpha'][var] = 0.5
         var = 'Oil'
         prop['color'][var] = color.red.as_hex() #'#d62728' # red
-        prop['line'][var] = '-' 
+        prop['line'][var] = '-'
         prop['alpha'][var] = 1.0
         var = 'Water'
         prop['color'][var] = color.blue.as_hex() #'#1f77b4' # blue
-        prop['line'][var] = '-' 
+        prop['line'][var] = '-'
         prop['alpha'][var] = 1.0
         var = 'Gas'
         prop['color'][var] = color.green.as_hex() #'#2ca02c' # green
-        prop['line'][var] = '-' 
+        prop['line'][var] = '-'
         prop['alpha'][var] = 1.0
         self.plot_prop = prop
 
-            
+    # #-----------------------------------------------------------------------
+    # def update_cases(self, remove=None, insert=None, sort=False, limit=10):
+    # #-----------------------------------------------------------------------
+    #     if remove:
+    #         self.cases.pop(self.case_nr(remove))
+    #     if insert:
+    #         self.cases.insert(0, str(insert))
+    #         if len(self.cases) > limit:
+    #             self.cases.pop()
+    #         if sort:
+    #             self.cases = sorted(self.cases)
+    #     self.input['cases'] = ' '.join(self.cases)
+
     #-----------------------------------------------------------------------
-    def create_caselist(self, remove=None, insert=None, choose=None):
+    def missing_case_numbers(self, message=True):
     #-----------------------------------------------------------------------
-        if remove:
-            self.cases.pop(self.case_nr(remove))
+        # Check for missing case-folders
+        exists = [c for c in self.cases if Path(c).with_suffix('.DATA').is_file()]
+        missing = tuple(set(self.cases) - set(exists))
+        if missing and message:
+            self.show_message_text(f'WARNING The following cases no longer exist and have been removed: {missing}')
+        return (self.case_nr(m) for m in missing)
+
+    #-----------------------------------------------------------------------
+    def create_caselist(self, remove=(), insert=(), choose=None, sort=False):
+    #-----------------------------------------------------------------------
+        for rem in get_tuple(remove):
+            self.cases.pop(self.case_nr(rem))
+        for ins in get_tuple(insert):
+            if str(ins) in self.cases:
+                self.show_message_text(f'INFO Case {ins} is already in the case list')
+                return
+            self.cases.insert(0, str(ins))
+            if len(self.cases) > MAX_CASES:
+                self.cases.pop()
+        if sort:
+            self.cases = sorted(self.cases)
+        # Remove missing cases
+        for nr in self.missing_case_numbers():
+            self.cases.pop(nr)
+        items = [Path(f).stem for f in self.cases]
+        # Make unique item names
+        # Reverse list because newest case is first
+        unique = unique_names(items[::-1])[::-1]
+        #print('unique', unique)
+        #print('items', items)
         if insert:
-            self.cases.insert(0, insert)
-            self.cases = sorted([str(case) for case in self.cases])
-        # case combobox
+            ind = (i for i,(a,b) in enumerate(zip(unique, items)) if a != b)
+            changed = [f'{self.cases[i]} listed as {unique[i]}' for i in ind]
+            if changed:
+                self.show_message_text(f"INFO Duplicate case-name: Case {', '.join(changed)} in the case-list")
+        items = unique
+        # Create case combobox
         self.case_cb.blockSignals(True)
         self.case_cb.clear()
-        items = [Path(f).stem for f in self.cases]
         self.case_cb.addItems(items)
         self.case_cb.setCurrentIndex(-1)
         self.case_cb.blockSignals(False)
-        # ref case combobox
+        # Create compare case combobox
         self.ref_case.blockSignals(True)
         self.ref_case.clear()
         self.ref_case.addItems(['None']+items)
@@ -2107,45 +2384,40 @@ class main_window(QMainWindow):                                    # main_window
         show_message(self, 'warning', text=f'The file {Path(tag).name} is missing for the {Path(self.case).name} case')
 
         
-    #-----------------------------------------------------------------------
-    def add_case(self, case, rename=False, choose_new=True):   # main_window
-    #-----------------------------------------------------------------------
-        self.case = self.copy_case(case, rename=rename)
-        if not self.case:
-            return None
+    # #-----------------------------------------------------------------------
+    # def add_case(self, case, rename=False, choose_new=True):   # main_window
+    # #-----------------------------------------------------------------------
+    #     self.case = self.copy_case(case, rename=rename)
+    #     if not self.case:
+    #         return None
 
     #-----------------------------------------------------------------------
-    def copy_case(self, case, rename=False, choose_new=True): 
+    def copy_current_case(self, dest=None, choose_new=True):
     #-----------------------------------------------------------------------
-        case = Path(case)
-        from_root = case.parent/case.stem
-        to_root = self.casedir/case.stem.upper()/case.stem.upper()
-        if rename:
-            name = Path(rename).stem
-            to_root = self.casedir/name/name
-        if to_root.parent.is_dir():
-            head = f'A case named {to_root.stem} already exists, please choose another name'
-            rename = User_input(self, title='Choose new case name', head=head, label='New case name', text=str(to_root.stem))
+        dest = dest or QFileDialog.getExistingDirectory(self,
+                'Choose destination folder',
+                str(Path.cwd()), QFileDialog.ShowDirsOnly)
+        if not dest:
+            return
+        dest_root = Path(dest)/Path(self.case).stem
+        to_data_file = dest_root.with_suffix('.DATA')
+        if to_data_file.is_file():
+            head = (f'A file named {to_data_file.name} already exists'
+                'in the given folder, please choose another folder')
+            rename = User_input(self, title='Choose destination folder',
+                head=head, label='Destination folder', text=str(dest_root.parent))
             def func():
-                newname = Path(rename.var.text().upper()).stem
-                self.copy_case(case, rename=newname)
+                newname = rename.var.text()
+                self.copy_current_case(dest=newname)
             rename.set_func(func)
             rename.open()
-            return None
-        try:
-            to_root.parent.mkdir(parents=True, exist_ok=False)
-        except FileExistsError:
-            show_message(self, 'warning', text=f'A case named {to_root.name} already exists, case not added.')
-            return None
-        self.copy_case_files(from_root, to_root) 
-        self.case = str(to_root)
-        choose = None
-        if choose_new:
-            choose = self.case
-        self.create_caselist(insert=self.case, choose=choose)
+            return
+        self.copy_case_files(self.case, dest_root)
+        self.case = str(dest_root)
+        self.create_caselist(insert=self.case, choose=choose_new and self.case or None)
         return self.case
 
-    
+
     @show_error
     #-----------------------------------------------------------------------
     def copy_case_files(self, from_root, to_root):             # main_window
@@ -2156,13 +2428,15 @@ class main_window(QMainWindow):                                    # main_window
         '''
         src = Path(from_root)
         dst = Path(to_root)
-        ### Input files, change name
-        mandatory = ('.DATA', '.trcinp') 
-        optional = ('.SCH',)             
+        # Create missing destination folders
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        # Input files, change name
+        mandatory = ('.DATA', '.trcinp')
+        optional = ('.SCH',)
         inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in mandatory + optional]
-        ### Included files, same name but different folders
-        #inc_files = [(path, dst.parent/path.name) for path in list(DATA_file(src).include_files()) + IORSim_input(src).include_files()]
-        inc_files = [(path, dst.parent/path.name) for path in chain(DATA_file(src).include_files(), IORSim_input(src).include_files())]
+        # Included files, same name but different folders
+        include_files = chain(DATA_file(src).include_files(), IORSim_input(src).include_files())
+        inc_files = [(path, dst.parent/path.name) for path in include_files]
         missing_files = []
         for src_fil, dst_fil in inp_files + inc_files:
             if src_fil.is_file():
@@ -2179,22 +2453,22 @@ class main_window(QMainWindow):                                    # main_window
 
         
 
-    #-----------------------------------------------------------------------
-    def read_case_dir(self):                                   # main_window
-    #-----------------------------------------------------------------------
-        cases = []
-        if self.casedir.is_dir():
-            for d in Path(self.casedir).glob('*'):
-                if d.is_dir():
-                    cases.append(str(d/d.name))
-        else:
-            create = User_input(self, title='Missing case directory', head=f'The case directory {self.casedir} does not exist. Create now?')
-            def func():
-                Path(self.casedir).mkdir()
-            create.set_func(func)
-            create.open()
-            #show_message(self, 'error', text=f'The directory')
-        return cases
+    # #-----------------------------------------------------------------------
+    # def read_case_dir(self):                                   # main_window
+    # #-----------------------------------------------------------------------
+    #     cases = []
+    #     if self.casedir.is_dir():
+    #         for d in Path(self.casedir).glob('*'):
+    #             if d.is_dir():
+    #                 cases.append(str(d/d.name))
+    #     else:
+    #         create = User_input(self, title='Missing case directory', head=f'The case directory {self.casedir} does not exist. Create now?')
+    #         def func():
+    #             Path(self.casedir).mkdir()
+    #         create.set_func(func)
+    #         create.open()
+    #         #show_message(self, 'error', text=f'The directory')
+    #     return cases
 
     #-----------------------------------------------------------------------
     def case_nr(self, case):
@@ -2203,7 +2477,7 @@ class main_window(QMainWindow):                                    # main_window
             return -1
         nr = -1
         try:
-            cases = [Path(case) for case in self.cases]
+            cases = [Path(c) for c in self.cases]
             nr = cases.index(Path(case))
             return nr
         except ValueError:
@@ -2244,8 +2518,14 @@ class main_window(QMainWindow):                                    # main_window
             self.missing_case_error(tag='set_mode: ')
             return False
         self.mode = self.input['mode'] = mode
+        mode_tip = {'forward' : 'Eclipse completes before IORSim starts',
+                    'backward': 'Eclipse and IORSim run one step in alternation',
+                    'eclipse' : 'Only run Eclipse',
+                    'iorsim'  : 'Only run IORSim'}
+        self.mode_cb.setStatusTip(mode_tip.get(mode))
         if days:
-            self.days_box.setText(str(days).rstrip('0').rstrip('.'))
+            #self.days_box.setText(str(days).rstrip('0').rstrip('.'))
+            self.days_box.setText(days)
         if tip:
             self.days_box.setStatusTip(tip)
         self.days_box.setEnabled(box)
@@ -2311,31 +2591,37 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
         if self.cases:
-            #self.sender().blockSignals(True)
-            #self.sender().setCurrentIndex(nr)
-            #self.sender().blockSignals(False)
-            self.input['root'] = self.case = str(self.cases[nr])
+            case = str(self.cases[nr])
+            if missing := self.missing_case_numbers():
+                for miss_nr in missing:
+                    self.cases.pop(miss_nr)
+                    self.case_cb.removeItem(miss_nr)
+            nr = self.case_nr(case)
+            # if nr < 0:
+            #     self.show_message_text('ERROR The case is removed due to missing files')
+            case = str(self.cases[nr])
+            # Show full case-path in statusbar
+            self.case_cb.setStatusTip(case)
+            self.input['root'] = self.case = case
             # set simulation mode based on READDATA keyword in .DATA-file
             mode = 'forward'
-            #print(self.case, self.input['root'])
             try:
                 #if file_contains(self.case+'.DATA', text='READDATA', comment='--', end='END'):
                 if 'READDATA' in DATA_file(self.case): #.data():
                     mode = 'backward'
                     self.days_box.setEnabled(False)
-            except (FileNotFoundError, SystemError) as e:
+            except (FileNotFoundError, SystemError):
                 show_message(self, 'error', text='The Eclipse DATA-file is missing for this case')
             # set mode from file
-            mode_file = Path(self.case).parent/'mode.gui'
-            if mode_file.is_file():
-                with open(mode_file) as f:
-                    mode = f.readline().strip()
+            #mode_file = Path(self.case).parent/'mode.gui'
+            #if mode_file.is_file():
+            #    with open(mode_file) as f:
+            #        mode = f.readline().strip()
             # on_mode_select() is called in prepare_case() and 
             # dont need to be triggered here    
             self.mode_cb.blockSignals(True)
             self.mode_cb.setCurrentIndex(self.modes.index(mode))
             self.mode_cb.blockSignals(False)
-            #self.prepare_case(self.input['root'])
             self.prepare_case()
 
 
@@ -2381,16 +2667,27 @@ class main_window(QMainWindow):                                    # main_window
         self.ref_case.setProperty('lastitem',nr)    
         self.create_plot()
         #self.plot_ref = None
-        
-        
+                
     #-----------------------------------------------------------------------
-    def add_case_from_file(self):                   # main_window
+    def open_case(self):                                       # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
-        case = open_file_dialog(self, 'Locate Eclipse DATA-file', 'DATA files (*.DATA)')
+        case, _ = QFileDialog.getOpenFileName(self,
+            'Locate Eclipse DATA-file', str(Path.cwd()), 'DATA files (*.DATA)')
+        # case = open_file_dialog(self, 'Locate Eclipse DATA-file', 'DATA files (*.DATA)')
         if case:
-            root = Path(case.split('.DATA')[0])
-            self.add_case(root)
+            case = Path(case).resolve().with_suffix('')
+            self.create_caselist(insert=case, choose=case)
+
+
+    # #-----------------------------------------------------------------------
+    # def import_case_from_file(self):                   # main_window
+    # #-----------------------------------------------------------------------
+    #     self.reset_progress_and_message()
+    #     case = open_file_dialog(self, 'Locate Eclipse DATA-file', 'DATA files (*.DATA)')
+    #     if case:
+    #         root = Path(case.split('.DATA')[0])
+    #         self.add_case(root)
 
             
     #-----------------------------------------------------------------------
@@ -2434,68 +2731,76 @@ class main_window(QMainWindow):                                    # main_window
         return None
 
     #-----------------------------------------------------------------------
+    def remove_case(self, case):                              # main_window
+    #-----------------------------------------------------------------------
+        self.reset_progress_and_message()
+        self.max_3_checked = []
+        self.cases.pop()
+        self.create_caselist(remove=case)
+
+    #-----------------------------------------------------------------------
+    def remove_current_case(self):
+    #-----------------------------------------------------------------------
+        case = str(self.case)
+        self.input['root'] = self.case = None
+        nr = self.case_nr(case)
+        #self.remove_case(nr)
+        #self.case_cb.removeItem(nr)
+        self.create_caselist(remove=case)
+        return case
+
+    #-----------------------------------------------------------------------
     def delete_current_case(self):                              # main_window
     #-----------------------------------------------------------------------
-        self.reset_progress_and_message()
-        #print(self.case)
-        if not self.case:
-            self.missing_case_error(tag='delete: ')
-            return False
-        case = self.case
-        self.input['root'] = self.case = None
-        self.max_3_checked = []
-        #if self.current_viewer() in self.editors:
-        #    self.view_file(None)
-        # Delete case folder
-        delete_all(Path(case).parent)
-        # Remove case from caselist
-        self.create_caselist(remove=str(case))
-
-
+        case = self.remove_current_case()
+        folder = Path(case).parent
+        delete = User_input(self, title='Delete case-folder?', text=f'Folder {folder} will be deleted, continue?')
+        delete.set_func(lambda: delete_all(folder))
+        delete.exec()
         
-    #-----------------------------------------------------------------------
-    def duplicate_current_case(self):                              # main_window
-    #-----------------------------------------------------------------------
-        self.reset_progress_and_message()
-        if not self.case:
-            self.missing_case_error(tag='duplicate: ')
-            return False
-        new_name = User_input(self, title='Duplicate current case', label='Name of duplicate case', text=Path(self.case).name)
-        def func():
-            from_case = self.case
-            name = Path(new_name.var.text().upper()).stem
-            to_case = self.casedir/name/name
-            self.add_case(from_case, rename=to_case)
-        new_name.set_func(func)
-        new_name.open()
+    # #-----------------------------------------------------------------------
+    # def duplicate_current_case(self):                              # main_window
+    # #-----------------------------------------------------------------------
+    #     self.reset_progress_and_message()
+    #     if not self.case:
+    #         self.missing_case_error(tag='duplicate: ')
+    #         return False
+    #     new_name = User_input(self, title='Duplicate current case', label='Name of duplicate case', text=Path(self.case).name)
+    #     def func():
+    #         from_case = self.case
+    #         name = Path(new_name.var.text().upper()).stem
+    #         to_case = self.casedir/name/name
+    #         self.add_case(from_case, rename=to_case)
+    #     new_name.set_func(func)
+    #     new_name.open()
 
-    #-----------------------------------------------------------------------
-    def rename_current_case(self):                              # main_window
-    #-----------------------------------------------------------------------
-        self.reset_progress_and_message()
-        if not self.case:
-            self.missing_case_error(tag='rename: ')
-            return False
-        rename = User_input(self, title='Rename current case', label='New case name', text=Path(self.case).name)
-        def func():
-            oldname = Path(self.case).stem
-            newname = rename.var.text().upper()
-            casedir = Path(self.casedir)
-            newdir = casedir/newname
-            if newdir.is_dir():
-                self.show_message_text(f'ERROR A case named {newdir.name} already exists, choose another name')
-                return
-            newdir = (casedir/oldname).rename(newdir)
-            #print(str(casedir/oldname)+' => '+str(newdir))
-            for x in newdir.iterdir():
-                if x.is_file() and oldname in str(x):
-                    new = str(x.name).replace(oldname,newname)
-                    #print(str(x)+' -> '+str(newdir/new))
-                    x.rename(newdir/new)
-            newroot = casedir/newname/newname
-            self.create_caselist(remove=self.case, insert=newroot, choose=newroot)
-        rename.set_func(func)
-        rename.open()
+    # #-----------------------------------------------------------------------
+    # def rename_current_case(self):                              # main_window
+    # #-----------------------------------------------------------------------
+    #     self.reset_progress_and_message()
+    #     if not self.case:
+    #         self.missing_case_error(tag='rename: ')
+    #         return False
+    #     rename = User_input(self, title='Rename current case', label='New case name', text=Path(self.case).name)
+    #     def func():
+    #         oldname = Path(self.case).stem
+    #         newname = rename.var.text().upper()
+    #         casedir = Path(self.casedir)
+    #         newdir = casedir/newname
+    #         if newdir.is_dir():
+    #             self.show_message_text(f'ERROR A case named {newdir.name} already exists, choose another name')
+    #             return
+    #         newdir = (casedir/oldname).rename(newdir)
+    #         #print(str(casedir/oldname)+' => '+str(newdir))
+    #         for x in newdir.iterdir():
+    #             if x.is_file() and oldname in str(x):
+    #                 new = str(x.name).replace(oldname,newname)
+    #                 #print(str(x)+' -> '+str(newdir/new))
+    #                 x.rename(newdir/new)
+    #         newroot = casedir/newname/newname
+    #         self.create_caselist(remove=self.case, insert=newroot, choose=newroot)
+    #     rename.set_func(func)
+    #     rename.open()
         
     #-----------------------------------------------------------------------
     def get_current_mode(self):
@@ -2570,7 +2875,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_file_menu(self, files, menu, viewer=None, editor=None, title=''):
     #-----------------------------------------------------------------------
-
         ### Clear menu
         menu.clear()
         ### Disable if empty 
@@ -2579,6 +2883,7 @@ class main_window(QMainWindow):                                    # main_window
             enable = True
             act = create_action(self, text=file.name, checkable=True, func=partial(viewer, file, title=f'{title} {Path(file).name}', editor=editor), icon='document-c')
             act.setIconText('include')
+            act.setFont(SMALL_FONT)
             self.view_group.addAction(act)
             ### Disable for non-existing file
             act.setEnabled(file.is_file())
@@ -2603,12 +2908,8 @@ class main_window(QMainWindow):                                    # main_window
         ### Remove old include-files from the view-group
         [self.view_group.removeAction(act) for act in include_act]
         ### Add case-specific include files
-        #self.update_file_menu(ior_include_files(root), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry files', editor=self.chem_editor)
-        #try:
         self.update_file_menu(IORSim_input(root).include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry file', editor=self.chem_editor)
         self.update_file_menu(DATA_file(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include file', editor=self.editor)
-        #except SystemError as e:
-        #    self.show_message_text(e)
 
         
     #-----------------------------------------------------------------------
@@ -2639,7 +2940,8 @@ class main_window(QMainWindow):                                    # main_window
             line.setStyleSheet('border: 3px '+linestyle+' '+color)
         label = QLabel(name)
         #font = QFont()
-        label.setFont(QFont(self.font, self.menu_fontsize))
+        #label.setFont(QFont(self.font, self.menu_fontsize))
+        label.setFont(SMALL_FONT)
         layout = QHBoxLayout()
         layout.addWidget(box,1)
         layout.addWidget(line,1)
@@ -2647,11 +2949,12 @@ class main_window(QMainWindow):                                    # main_window
         return layout, box
 
     #-----------------------------------------------------------------------
-    def new_checkbox(self, text='', name='', func=None, toggle=False, pad_left=10, size=15):
+    def new_checkbox(self, text='', name='', func=None, toggle=False, pad_left=10, size=15, font=SMALL_FONT):
     #-----------------------------------------------------------------------
-        box = QCheckBox(text)
+        box = QCheckBox(text, parent=self)
         box.setObjectName(name)
-        box.setFont(QFont(self.font, self.menu_fontsize))
+        #box.setFont(QFont(self.font, self.menu_fontsize))
+        box.setFont(font)
         #box.setStyleSheet('padding-left: 10px;')
         box.setStyleSheet('QCheckBox { padding-left: '+str(pad_left)+'px; }\nQCheckBox::indicator { width: '+str(size)+'px; height: '+str(size)+'px;};')
         if toggle:
@@ -2662,7 +2965,7 @@ class main_window(QMainWindow):                                    # main_window
         return box
         
     #-----------------------------------------------------------------------
-    def update_ior_menu(self, checked=True):                   # main_window
+    def update_ior_menu(self, checked=True, font=LARGE_FONT):                   # main_window
     #-----------------------------------------------------------------------
         #print('update_ior_menu')
         menu = self.ior_menu
@@ -2671,18 +2974,20 @@ class main_window(QMainWindow):                                    # main_window
             return False
         self.ior_boxes = {}
         # Add conc / prod boxes
-        lbl = QLabel()
+        lbl = QLabel(parent=self)
         lbl.setText('Y-axis')
+        lbl.setFont(font)
         lbl.setStyleSheet('padding-left: 10px')
-        menu.column(0).addWidget(lbl)
         self.ior_boxes['yaxis'] = {}
+        menu.column(0).addWidget(lbl)
         for text in ('Prod', 'Conc'):
             box = self.new_checkbox(text=text+'.', name='yaxis '+text.lower()+' ior', func=self.on_ior_menu_click)
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['yaxis'][text.lower()] = box
         # Add well boxes
-        lbl = QLabel()
+        lbl = QLabel(parent=self)
         lbl.setText('Wells')
+        lbl.setFont(font)
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
         menu.column(0).addWidget(lbl)
         self.ior_boxes['well'] = {}
@@ -2691,10 +2996,12 @@ class main_window(QMainWindow):                                    # main_window
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['well'][well] = box
         # Add specie boxes
-        box = QCheckBox('Variables')
+        #box = QCheckBox('Variables', parent=self)
+        box = self.new_checkbox(text='Variables', font=font, pad_left=15)
+        #box.setFont(LARGE_FONT)
         box.setChecked(True)
         box.stateChanged.connect(self.set_ior_variable_boxes)
-        box.setStyleSheet('padding-left: 15px')
+        #box.setStyleSheet('padding-left: 15px')
         menu.column(1).addWidget(box)
         self.ior_var_box = box
         self.ior_boxes['var'] = {}
@@ -2944,7 +3251,7 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
-    def update_ecl_menu(self, case=None, checked=False):         # main_window
+    def update_ecl_menu(self, case=None, checked=False, font=LARGE_FONT):         # main_window
     #-----------------------------------------------------------------------
         menu = self.ecl_menu
         case = case or self.input['root']
@@ -2959,15 +3266,16 @@ class main_window(QMainWindow):                                    # main_window
             # if any([l == [] for l in (wells, yaxis, fluids)]):
             #     wells, yaxis, fluids = get_eclipse_well_yaxis_fluid(root, include=True, raise_error=True)
         except SystemError as e:
-            lbl = QLabel()
+            lbl = QLabel(parent=self)
             lbl.setText(str(e))
             menu.layout().addWidget(lbl)
             return
         #print(wells, yaxis, fluids)
         self.ecl_boxes = {}
         # prod/rate
-        lbl = QLabel()
+        lbl = QLabel(parent=self)
         lbl.setText('Y-axis')
+        lbl.setFont(font)
         lbl.setStyleSheet('padding-left: 10px')
         menu.column(0).addWidget(lbl)
         self.ecl_boxes['yaxis'] = {}
@@ -2977,8 +3285,9 @@ class main_window(QMainWindow):                                    # main_window
             self.ecl_boxes['yaxis'][name] = box
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
         # wells
-        lbl = QLabel()
+        lbl = QLabel(parent=self)
         lbl.setText('Wells')
+        lbl.setFont(font)
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
         menu.column(0).addWidget(lbl)
         self.ecl_boxes['well'] = {}
@@ -3001,10 +3310,9 @@ class main_window(QMainWindow):                                    # main_window
         #     if box := self.ecl_boxes['well'].get(well):
         #         box.setEnabled(True)
         # variables
-        box = QCheckBox('Variables')
+        box = self.new_checkbox(text='Variables', font=font, pad_left=15)
         box.setChecked(True)
         box.stateChanged.connect(self.set_ecl_variable_boxes)
-        box.setStyleSheet('padding-left: 15px')
         menu.column(1).addWidget(box)
         self.ecl_var_box = box
         self.ecl_boxes['var'] = {}
@@ -3700,7 +4008,7 @@ class main_window(QMainWindow):                                    # main_window
     
         
     #-----------------------------------------------------------------------
-    def set_toolbar_enabled(self, value):                                  # main_window
+    def set_toolbar_enabled(self, value):                      # main_window
     #-----------------------------------------------------------------------
         self.start_act.setEnabled(value)
         self.case_cb.setEnabled(value)
@@ -3710,7 +4018,7 @@ class main_window(QMainWindow):                                    # main_window
         #self.sim_cb.setEnabled(value)
 
     #-----------------------------------------------------------------------
-    def run_sim(self):                                    # main_window
+    def run_sim(self):                                         # main_window
     #-----------------------------------------------------------------------
         #print('run_mode:',self.mode, self.run)
         if not self.input_OK():
@@ -3761,10 +4069,10 @@ class main_window(QMainWindow):                                    # main_window
         msg = show_message(self, kind, text=text, **kwargs)
         return msg
         
-    #-----------------------------------------------------------------------
-    def show_message(self, par):
-    #-----------------------------------------------------------------------
-        show_message(self, par[0], text=par[1])
+    # #-----------------------------------------------------------------------
+    # def show_message(self, par):
+    # #-----------------------------------------------------------------------
+    #     show_message(self, par[0], text=par[1])
         
     #-----------------------------------------------------------------------
     def run_finished(self):
@@ -3804,7 +4112,7 @@ class main_window(QMainWindow):                                    # main_window
         if self.download_worker:
             self.download_worker.running = False
             sleep(0.1)
-        self.save_input_values()
+        self.save_session()
         # Save window geometry in settings
         geo = f'geometry {" ".join( (str(i) for i in self.geometry().getRect()) )}\n'
         replace_line(self.settings.file, find='geometry', replace=geo)
@@ -3868,26 +4176,24 @@ if __name__ == '__main__':
     #os.putenv('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-logging')
     args = []
 
+    #print(sys.argv)
     if len(sys.argv) > 1:
-        case_dir = str(default_casedir)
-        workdir = get_keyword(default_settings_file, 'workdir', comment='#')
-        if any(workdir):
-            case_dir = workdir[0][0]
-        print()
-        print('   This is the terminal-version of IORSim_GUI')
-        print('   Start IORSim_GUI without arguments to open the GUI')
-        print()
-        ior2ecl_main(case_dir=case_dir, settings_file=default_settings_file)
+        if sys.argv[1] == '-upgrade':
+            #print(sys.argv[2:])
+            Upgrader(sys.argv[2:]).upgrade()
+        else:
+            print()
+            print('   This is the terminal-version of IORSim_GUI')
+            print('   Start IORSim_GUI without arguments to open the GUI')
+            print()
+            ior2ecl_main(settings_file=SETTINGS_FILE)
     else:
+        IORSIM_DIR.mkdir(exist_ok=True)
         exit_code = main_window.EXIT_CODE_REBOOT
         while exit_code == main_window.EXIT_CODE_REBOOT:
-            app = QApplication(sys.argv + args) 
-            window = main_window(settings_file=default_settings_file)
+            app = QApplication(sys.argv + args)
+            window = main_window(settings_file=SETTINGS_FILE)
             window.show()
             exit_code = app.exec()
             window.close()
             app = None
-    
-
-        
-    

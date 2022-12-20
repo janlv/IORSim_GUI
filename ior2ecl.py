@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-__version__ = '2.31'
+__version__ = '2.31.7.8'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -35,12 +35,12 @@ from time import sleep
 from psutil import NoSuchProcess, __version__ as psutil_version
 from shutil import copy as shutil_copy 
 from traceback import print_exc as trace_print_exc, format_exc as trace_format_exc
-from re import compile as re_compile
+from re import compile as re_compile, MULTILINE
 from os.path import relpath
 
 from IORlib.utils import flatten, get_keyword, get_python_version, list2text, pairwise, print_dict, print_error, remove_comments, safeopen, Progress, silentdelete, delete_files_matching, tail_file
 from IORlib.runner import Runner
-from IORlib.ECL import FUNRST_file, DATA_file, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
+from IORlib.ECL import FUNRST_file, DATA_file, File, RFT_file, UNRST_file, UNSMRY_file, MSG_file, PRT_file
 
 
 #====================================================================================
@@ -367,8 +367,7 @@ class IORSim_input:                                                    # iorsim_
 
         ### Check if included files exists
         if (missing := [f for f in self.include_files() if not f.is_file()]):
-        #if not all((file:=f).is_file() for f in self.include_files()):
-            raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.file.name} is missing in folder {missing[0].parent}")
+            raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.file.name} is missing in folder {missing[0].parent.resolve()}")
 
         ### Check if tstart == 0
         inte = get_keyword(self.file, '\*INTEGRATION', end='\*')
@@ -387,8 +386,16 @@ class IORSim_input:                                                    # iorsim_
         '''
         Return full path to files included in the IORSim .trcinp-file
         '''
+        parent = self.file.parent
         files = flatten(get_keyword(self.file, '\*CHEMFILE', end='\*', comment='#'))
-        return (self.file.parent/Path(f) for f in files) 
+        # Use negative lookahead (?!) to ignore commented lines
+        regex = compile(rb'^(?!#)\s*add_species[\s"\']*(.*?)[\s"\']*$', flags=MULTILINE)
+        for file in set(files):
+            yield parent/file
+            for match in regex.finditer(File(parent/file,'').binarydata()):
+                yield parent/match.group(1).decode()
+
+        #return set(self.file.parent/Path(f) for f in files)
 
 
 #====================================================================================
@@ -430,7 +437,7 @@ class Iorsim(Runner):                                                        # i
         if line := next(tail_file(file, n=1), None):
             line = line.strip()   # Remove leading and trailing space
             time = line and line.split()[0] 
-            time = time and not time.startswith('#') and float(time)
+            time = time and not time.startswith('#') and float(time)       
         return time or super().time()
 
 
@@ -920,8 +927,9 @@ class Simulation:                                                        # Simul
             run.init_control_func(update=self.update, count=15) 
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             run.t = run.time()
-            # print(run.name, run.t, run.T)
-            if run.t < run.T:
+            dec = min(len(str(t).split('.')[-1]) for t in (run.t, run.T))
+            #print(run.name, dec, run.t, run.T)
+            if round(run.t, dec) < round(run.T, dec):
                 run.unexpected_stop_error()
             run_time += run.run_time()
             ret = run.complete_msg(run_time=run_time)
@@ -1238,26 +1246,27 @@ class Simulation:                                                        # Simul
 #############################################################################
 
 
-#--------------------------------------------------------------------------------
-def case_from_casedir(case_dir, root):
-#--------------------------------------------------------------------------------
-    # Find case in casedir if given DATA-file is missing
-    case_dir = Path(case_dir)
-    if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
-        return case_dir/root/root
-    ### Return path to case not in the case-folder (if it exists)
-    if (path := Path.cwd()/(root+'.DATA')).is_file():
-        return path.with_suffix('').resolve()
-    raise SystemError('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
+# #--------------------------------------------------------------------------------
+# def case_from_casedir(case_dir, root):
+# #--------------------------------------------------------------------------------
+#     # Find case in casedir if given DATA-file is missing
+#     case_dir = Path(case_dir)
+#     if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
+#         return case_dir/root/root
+#     ### Return path to case not in the case-folder (if it exists)
+#     if (path := Path.cwd()/(root+'.DATA')).is_file():
+#         return path.with_suffix('').resolve()
+#     raise SystemError('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
 
 
 #--------------------------------------------------------------------------------
-def parse_input(case_dir=None, settings_file=None):
+#def parse_input(case_dir=None, settings_file=None):
+def parse_input(settings_file=None):
 #--------------------------------------------------------------------------------
     description = 'Script for running IORSim and Eclipse in backward and forward mode'
     parser = ArgumentParser(description=description)
     parser.add_argument('root',            help='Eclipse case folder or full path of the DATA-file')
-    parser.add_argument('days',            help='Simulation time interval', type=int)
+    parser.add_argument('days',            help='Simulation time interval', type=float)
     parser.add_argument('-eclexe',         default='eclrun', help="Name of excecutable, default is 'eclrun'")
     parser.add_argument('-iorexe',         help="Name of IORSim executable, default is 'IORSimX'"                  )
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
@@ -1282,10 +1291,11 @@ def parse_input(case_dir=None, settings_file=None):
     if SCHEDULE_SKIP_EMPTY: 
         args['skip_empty'] = not args['not_skip_empty']
     # Look for case in case_dir if root is not a file
-    if case_dir and not Path(args['root']).is_file():
-        args['root'] = case_from_casedir(case_dir, args['root'])
+    # if case_dir and not Path(args['root']).is_file():
+    #     args['root'] = case_from_casedir(case_dir, args['root'])
     # Remove suffix from root
-    args['root'] = Path(args['root']).parent/Path(args['root']).stem
+    #args['root'] = Path(args['root']).parent/Path(args['root']).stem
+    args['root'] = Path(args['root']).with_suffix('')
     #print(args['root'])
     # Read iorexe from settings if argument is missing
     if settings_file and not args['iorexe']:
@@ -1338,7 +1348,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
     #----------------------------------------
     def message(text=None, **x):
     #----------------------------------------
-        text and print('\n\n     ' + text + '\n')
+        text and print(f'\n\n     {text}\n')
 
     # Check if we only run eclipse or iorsim
     mode, runs = None, []
@@ -1369,10 +1379,11 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
 
 @print_error
 #--------------------------------------------------------------------------------
-def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
+#def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
+def main(settings_file=None):
 #--------------------------------------------------------------------------------
     from os import _exit as os_exit
-    args = parse_input(case_dir=case_dir, settings_file=settings_file)
+    args = parse_input(settings_file=settings_file)
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']),  
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
