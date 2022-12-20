@@ -2982,8 +2982,8 @@ class main_window(QMainWindow):                                    # main_window
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
         menu.column(0).addWidget(lbl)
         self.ior_boxes['well'] = {}
-        if self.active_wells:
-            self.out_wells = [well for well in self.out_wells if well in self.active_wells]
+        #if self.active_wells:
+        #    self.out_wells = [well for well in self.out_wells if well in self.active_wells]
         for i,well in enumerate(self.out_wells or ()):
             box = self.new_checkbox(text=well, name='well '+well+' ior', func=self.on_ior_menu_click)
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
@@ -3189,24 +3189,31 @@ class main_window(QMainWindow):                                    # main_window
 
         # NB! Could also read wellnames and summary keys from DATA_file(case).wellnames and .section('SUMMARY')
         #
-
-        keys = ('WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT', 'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWIT','FWIR')
-        #fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl'}
-        #yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'irate', 'IT':'iprod'}
-        smry = UNSMRY_file(case or self.input['root'])
-        if not smry.init_welldata(keys=keys):
-            self.unsmry = None
-            return False
+        #print('init_ecl_data_v2')
+        #keys = ('WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT', 'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWIT','FWIR')
+        # smry = UNSMRY_file(case or self.input['root'])
+        case = case or self.input['root']
+        self.unsmry = UNSMRY_file(case)
+        # if not smry.init_welldata(keys=keys):
+        #     self.unsmry = None
+        #     return False
         ### Create dict of format [well][yaxis][fluid] = []
-        ecl = {w:{'days':[]} for w in smry.well_names}
-        [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in smry.well_names]
+        data_file = DATA_file(case)
+        well_names = ('FIELD',) + data_file.wellnames()
+        #print(data_file, well_names)
+        #keys = data_file.summary_keys()
+        #ecl = {w:{'days':[]} for w in smry.well_names}
+        ecl = {w:{'days':[]} for w in well_names}
+        #[ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in smry.well_names]
+        [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in well_names]
         ecl['days'] = []
-        ### Index to map read data to ecl[well][yaxis][fluid]
-        self.ecl_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(smry.wells, smry.keys)]
-        ### Index into temp-data (for adding temp to 'prod', not only 'rate')
-        self.temp_index = [(n,ind[0]) for n,ind in enumerate(self.ecl_index) if ind[1]=='Temp_ecl']
+        # ### Index to map read data to ecl[well][yaxis][fluid]
+        # self.ecl_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(smry.wells, smry.keys)]
+        # ### Index into temp-data (for adding temp to 'prod', not only 'rate')
+        # self.temp_index = [(n,ind[0]) for n,ind in enumerate(self.ecl_index) if ind[1]=='Temp_ecl']
         self.data['ecl'] = ecl
-        self.unsmry = smry
+        #self.unsmry = smry
+        #print(smry.wells, smry.keys)
         return True
 
     #-----------------------------------------------------------------------
@@ -3220,22 +3227,30 @@ class main_window(QMainWindow):                                    # main_window
         if reinit or not self.unsmry:
             if not self.init_ecl_data_v2(case=case):
                 return False
-        data = self.unsmry.get('days', 'welldata', only_new=True, raise_error=False)
-        if data:
-            days, welldata = data
+        keys = ('WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT', 'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWIT','FWIR')
+        data = self.unsmry.data(keys=keys)
+        ### Index to map read data to ecl[well][yaxis][fluid]
+        index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(data.wells, data.keys)]
+        ### Index into temp-data (for adding temp to 'prod', not only 'rate')
+        temp_index = [(n,ind[0]) for n,ind in enumerate(index) if ind[1]=='Temp_ecl']
+        #data = self.unsmry.get('days', 'welldata', only_new=True, raise_error=False)
+        if data.days:
+            #    days, welldata = data
             ### Skip zero-time data
-            if skip_zero and days[0] < 1e-8:
-               days.pop(0)
-               welldata.pop(0)
+            if skip_zero and data.days[0] < 1e-8:
+                data.days.pop(0)
+                data.welldata.pop(0)
             ecl = self.data['ecl']
-            ecl['days'].extend(days)
-            for w in self.unsmry.well_names:
-                ecl[w]['days'].extend(days)
-            for (w,y,f),*d in zip(self.ecl_index, *welldata):
+            ecl['days'].extend(data.days)
+            #for w in self.unsmry.well_names:
+            for w in set(data.wells):
+                ecl[w]['days'].extend(data.days)
+            #for (w,y,f),*d in zip(self.index, *welldata):
+            for (w,y,f),*d in zip(index, *data.welldata):
                 ecl[w][y][f].extend(d)
             # Add temp-data to 'prod'
             for d in data:
-                for i,w in self.temp_index:
+                for i,w in temp_index:
                     ecl[w]['prod']['Temp_ecl'].append(d[i])
             #[ecl[w]['prod']['Temp_ecl'].append(d[i]) for i,w in self.temp_index for d in data]
 
@@ -3246,7 +3261,7 @@ class main_window(QMainWindow):                                    # main_window
         menu = self.ecl_menu
         case = case or self.input['root']
         delete_all_widgets_in_layout(menu.layout())
-        if not case: 
+        if not case:
             return False
         try:
             wells, yaxis, fluids = self.get_eclipse_well_yaxis_fluid(case)
@@ -3276,13 +3291,20 @@ class main_window(QMainWindow):                                    # main_window
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
         menu.column(0).addWidget(lbl)
         self.ecl_boxes['well'] = {}
-        active_wells = sorted(self.unsmry.well_names) if self.unsmry else []
-        if 'FIELD' in active_wells:
-            active_wells.pop(active_wells.index('FIELD'))
-            active_wells = ['Field'] + active_wells
-        self.active_wells = active_wells
-        self.inactive_wells = set(wells) - set(active_wells)
-        all_wells = [(a, True) for a in active_wells] + [(i, False) for i in sorted(self.inactive_wells)]
+        wells = ['FIELD'] + sorted(wells)
+        all_wells = [(a, True) for a in wells]
+        self.active_wells = wells
+        # welldata = self.unsmry.data() if self.unsmry else None
+        # if welldata:
+        #     #active_wells = sorted(self.unsmry.well_names) if self.unsmry else []
+        #     active_wells = sorted(set(welldata.wells)) or ()
+        #     if 'FIELD' in active_wells:
+        #         active_wells.pop(active_wells.index('FIELD'))
+        #         active_wells = ['Field'] + active_wells
+        #     self.active_wells = active_wells
+        #     self.inactive_wells = set(wells) - set(active_wells)
+        #     all_wells = [(a, True) for a in active_wells] + [(i, False) for i in sorted(self.inactive_wells)]
+        #print(self.active_wells)
         #for i,well in enumerate(wells):
         for well, enable in all_wells:
             box = self.new_checkbox(text=well, name='well '+well+' ecl', func=self.on_ecl_plot_click)
@@ -3825,6 +3847,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         #print('update_remaining_time: ', text)
         #self.remaining_time.setText('Remaining time:  ' + text)
+        #print('remaining time:',text)
         self.remaining_time.setText(text)
         self.remaining_time.repaint()
 
@@ -3930,7 +3953,8 @@ class main_window(QMainWindow):                                    # main_window
                 N = abs(int(t)) 
                 self.reset_progressbar(N=N)
                 self.progress = Progress(N=N)
-                return  
+                return
+            #print('t',t)
             self.update_progressbar(t)
             self.update_remaining_time(text=self.progress.remaining_time(t))
         #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
@@ -3957,7 +3981,7 @@ class main_window(QMainWindow):                                    # main_window
         if view == self.plot: #'plot':
             self.statusBar().clearMessage()
             if not all(list(ok.values())):
-                self.statusBar().showMessage('No wells are currently producing')
+                self.statusBar().showMessage('No wells are currently producing')            
             #print('call from update_view_area')
             self.update_all_plot_lines()
         #elif view in (self.log_viewer, self.app_log_viewer) : #'log_viewer':
