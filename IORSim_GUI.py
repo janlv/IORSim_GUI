@@ -497,6 +497,8 @@ def to_rgb(color):
 #-----------------------------------------------------------------------
 def set_checkbox(box, value, block_signal=True):
 #-----------------------------------------------------------------------
+    if not box.isEnabled():
+        return
     box.blockSignals(block_signal)
     box.setChecked(value)
     #box.setEnabled(value)
@@ -1702,8 +1704,6 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_prop = {}
         self.checked_boxes = {}
         self.plotted_lines = {}
-        self.active_wells = ()
-        self.inactive_wells = ()
         self.view = False
         self.plot_ref = None
         self.progress = None
@@ -2498,7 +2498,8 @@ class main_window(QMainWindow):                                    # main_window
         for box in ([val for val in boxlist['yaxis'].values()] + [boxlist['well'][well],]):
             #print('Add: '+box.objectName())
             set_checkbox(box, True, block_signal=block_signal)
-            self.max_3_checked.append(box)
+            if box.isEnabled():
+                self.max_3_checked.append(box)
 
         
     #-----------------------------------------------------------------------
@@ -2829,15 +2830,20 @@ class main_window(QMainWindow):                                    # main_window
         self.set_plot_properties()
         self.data = {}
         self.unsmry = None  # Signals to re-read Eclipse data
-        # Eclipse data and menu
-        self.read_ecl_data()
         # Add eclipse menu boxes
+        self.update_ecl_menu()
+        # Eclipse data
+        self.read_ecl_data()
         # Check boxes only if this an eclipse-only run
-        self.update_ecl_menu(checked=self.is_eclipse_mode())
-        # IORSim data and menu
-        self.read_ior_data()
+        if self.is_eclipse_mode():
+            self.update_menu_boxes('ecl')
         # Add iorsim menu boxes
-        self.update_ior_menu(checked = not self.is_eclipse_mode())
+        self.update_ior_menu()
+        # IORSim data
+        self.read_ior_data()
+        # Check default menu boxes
+        if not self.is_eclipse_mode():
+            self.update_menu_boxes('ior')
         self.create_plot()
         self.update_include_menus()
         self.update_schedule_act()
@@ -2956,7 +2962,7 @@ class main_window(QMainWindow):                                    # main_window
         return box
         
     #-----------------------------------------------------------------------
-    def update_ior_menu(self, checked=True, font=LARGE_FONT):                   # main_window
+    def update_ior_menu(self, font=LARGE_FONT):                   # main_window
     #-----------------------------------------------------------------------
         #print('update_ior_menu')
         menu = self.ior_menu
@@ -2984,8 +2990,9 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_boxes['well'] = {}
         #if self.active_wells:
         #    self.out_wells = [well for well in self.out_wells if well in self.active_wells]
-        for i,well in enumerate(self.out_wells or ()):
+        for well in self.out_wells or ():
             box = self.new_checkbox(text=well, name='well '+well+' ior', func=self.on_ior_menu_click)
+            box.setEnabled(False)
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['well'][well] = box
         # Add specie boxes
@@ -3004,8 +3011,8 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_boxes['var']['Temp'] = box
         menu.column(1).addLayout(layout)
         # Set default checked boxes and add them to the checked list
-        if checked:
-            self.update_menu_boxes('ior')
+        # if checked:
+        #     self.update_menu_boxes('ior')
         # Disable prod box for tracer cases 
         if self.input['tracers']:
             box = self.ior_boxes['yaxis']['prod']
@@ -3020,157 +3027,21 @@ class main_window(QMainWindow):                                    # main_window
             box.setChecked(checked)
 
 
-    # #-----------------------------------------------------------------------
-    # def init_ecl_data(self, case=None):
-    # #-----------------------------------------------------------------------
-    #     #  WOPR    - well oil rate,
-    #     #  WWPR    - well water rate
-    #     #  WTPCHEA - well temp (Temp_ecl)
-    #     #  WOPT    - well oil prod
-    #     #  WWCT    - well water cut (prod)
-    #     #  WWIR    - well water injection rate
-    #     #  WWIT    - well water injection prod
-    #     #  FOPT    - field oil prod total
-    #     #  FWIT    - field water injection total
-    #     #  FWCT    - field water cut total (prod)
-    #     #  ROIP    - Reservoir oil in place
-
-    #     varlist = ['WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT',
-    #                'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT'] #,'FWIT','FWIR'] 
-    #     datafile = self.input['root']
-    #     if case:
-    #         datafile = case
-    #     smspec = SMSPEC_file(datafile)
-    #     self.unsmry = UNSMRY_file(datafile)
-    #     if not smspec.is_file() or not self.unsmry.is_file():
-    #         self.unsmry = None
-    #         return False
-
-    #     ### read variable specifications
-    #     ecl_data = namedtuple('ecl_data','time fluid wells yaxis units indx', defaults=(None,))
-    #     varnames = measure = None
-    #     for block in smspec.blocks():
-    #         if block.key() == 'KEYWORDS':
-    #             #varnames = get_substrings(block.data()[0], 8)
-    #             varnames = block.data(strip=True)
-    #             #print(varnames)
-    #         elif block.key() == 'WGNAMES':
-    #             # ecl_data.wells = [s for s in get_substrings(block.data()[0], 8)]
-    #             ecl_data.wells = block.data(strip=True)
-    #         elif block.key() == 'MEASRMNT':
-    #             #print(block.data((0,10),nchar=5, raise_error=True))
-    #             width = block.length()//max(len(varnames), 1)
-    #             measure = block.data(strip=True, nchar=width)
-    #             #data = block.data()[0].lower()
-    #             #measure = get_substrings(data, width or 1)
-    #         elif block.key() == 'UNITS':
-    #             #ecl_data.units = get_substrings(block.data()[0], 8)                
-    #             ecl_data.units = block.data(strip=True)                
-    #     if any(not v for v in (varnames, ecl_data.wells, measure, ecl_data.units)):
-    #         self.unsmry = None # so that we call this function again
-    #         #print('return in ecl_init_data()')
-    #         return
-    #     ecl_data.time = varnames.index('TIME')
-    #     fluid_type = {'O':'Oil', 'W':'Water', 'G':'Gas'}
-    #     #ecl_data.fluid = {var:('Temp_ecl' if ecl_data.units[i]=='DEG C' else fluid_type.get(var[1])) for i,var in enumerate(varnames)}
-    #     ecl_data.fluid = {var: 'Temp_ecl' if unit=='DEG C' else fluid_type.get(var[1]) for var,unit in zip(varnames, ecl_data.units)}
-    #     yaxis_type = ['prod','rate']
-    #     #ecl_data.yaxis = {var:return_matching_string(yaxis_type, measure[i].lower()) for i,var in enumerate(varnames)}
-    #     ecl_data.yaxis = {var:y for var,mes in zip(varnames, measure) if any((y:=s) in mes.lower() for s in ('prod','rate'))}
-    #     ecl_data.yaxis['WTPCHEA'] = 'rate' # Production temperature
-    #     ecl_data.indx = {var:[] for var in varlist}
-    #     #print(list(zip(varnames, measure)))
-    #     #print('time',ecl_data.time)
-    #     #print('fluid',ecl_data.fluid)
-    #     #print('wells', ecl_data.wells)
-    #     #print('yaxis', ecl_data.yaxis)
-    #     #print('units', ecl_data.units)
-    #     #print('indx', ecl_data.indx)
-    #     ### prepare data dict 
-    #     ecl = {}
-    #     ecl['days'] = []
-    #     for w in [wn for wn in  set(ecl_data.wells) if not ':+:' in wn]:
-    #         ecl[w] = {}
-    #         ecl[w]['days'] = []
-    #         for y in set(yaxis_type):
-    #             ecl[w][y] = {}
-    #             for f in list(fluid_type.values())+['Temp_ecl']:
-    #                 #print(w,y,f)
-    #                 ecl[w][y][f] = []
-                    
-    #     for var in varlist:
-    #         match = False
-    #         for i,name in enumerate(varnames):
-    #             well = ecl_data.wells[i]
-    #             if var==name and not ':+:' in well:
-    #                 match = True
-    #                 ecl_data.indx[var].append(i)
-    #                 y = ecl_data.yaxis[var]
-    #                 f = ecl_data.fluid[var]
-    #                 #print(well, y, f, var)
-    #                 ecl[well][y][f+' var'] = [var]
-    #                 if 'Temp' in f:
-    #                     ecl[well]['prod'][f] = ecl[well]['rate'][f] 
-    #         if not match:
-    #             del ecl_data.indx[var]
-    #             #print('WARNING! Variable {} not found in {}'.format(var, self.unsmry.name()))
-    #     #time fluid wells yaxis units indx
-    #     self.ecl_data = ecl_data
-    #     self.data['ecl'] = ecl
-    #     return True
-
-        
-    # #-----------------------------------------------------------------------
-    # #def read_ecl_data(self, case=None, reinit=False):
-    # def read_ecl_data_old(self, case=None, reinit=False):
-    # #-----------------------------------------------------------------------
-    #     # print('read_ecl_data', case, reinit, self.unsmry)
-    #     datafile = self.input['root']
-    #     if case:
-    #         datafile = case
-    #     if not datafile:
-    #         self.data['ecl'] = {}
-    #         # print('return False')
-    #         return False
-    #     ### read data
-    #     if reinit or not self.unsmry:
-    #         if not self.init_ecl_data(case=case):
-    #             # print('return False')
-    #             return False
-    #     for block in self.unsmry.blocks(only_new=True):
-    #         if block.key()=='PARAMS':
-    #             data = block.data()
-    #             time = data[self.ecl_data.time]
-    #             if time==0.0:
-    #                 continue
-    #             self.data['ecl']['days'].append( time )
-    #             for var,index in self.ecl_data.indx.items():
-    #                 yaxis = self.ecl_data.yaxis[var]
-    #                 fluid = self.ecl_data.fluid[var]
-    #                 wells = self.ecl_data.wells
-    #                 for i in index:
-    #                     self.data['ecl'][wells[i]][yaxis][fluid].append(data[i])
-    #     wells = (w for w in self.ecl_data.wells if not ':+:' in w)
-    #     for well in wells:
-    #         self.data['ecl'][well]['days'] = self.data['ecl']['days']
-    #     # print('return True')
-    #     return True
-
     #-----------------------------------------------------------------------
     def get_eclipse_well_yaxis_fluid(self, case=None, raise_error=True):    # main_window
     #-----------------------------------------------------------------------
         ecl = DATA_file(case or self.input['root'])
         ecl.check(include=False)
-        vars = [line for line in ecl.section('SUMMARY').lines() if line[0] in ('W','F','R')]
+        #vars = [line for line in ecl.section('SUMMARY').lines() if line[0] in ('W','F','R')]
+        vars = ecl.summary_keys(startswith=('W','F','R'))
         if not vars and raise_error:
             raise SystemError('SUMMARY keywords missing,\n\nEclipse plotting disabled.')
         fy = ((f,y) for v in set(vars) if (f:=self.ecl_fluids.get(v[1])) and (y:=self.ecl_yaxes.get(v[2:4])))
         fluids, yaxis = zip(*fy)
-        schedule = DATA_file(self.schedule, sections=False) if self.schedule else ecl
-        wells = sorted(schedule.wellnames())
+        wells = sorted(ecl.wellnames())
         if any(v[0]=='F' and v[2:4] in ('PR','PT') for v in vars):
-            wells.insert(0, 'Field')
-        return wells, ('prod','rate'), list(set(fluids))        
+            wells.insert(0, 'FIELD')
+        return wells, ('prod','rate'), list(set(fluids))
 
     #-----------------------------------------------------------------------
     def init_ecl_data_v2(self, case=None):            # main_window
@@ -3187,34 +3058,25 @@ class main_window(QMainWindow):                                    # main_window
         #  FWCT    - field water cut total (prod)
         #  ROIP    - Reservoir oil in place
 
-        # NB! Could also read wellnames and summary keys from DATA_file(case).wellnames and .section('SUMMARY')
-        #
-        #print('init_ecl_data_v2')
-        #keys = ('WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT', 'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWIT','FWIR')
-        # smry = UNSMRY_file(case or self.input['root'])
         case = case or self.input['root']
         self.unsmry = UNSMRY_file(case)
-        # if not smry.init_welldata(keys=keys):
-        #     self.unsmry = None
-        #     return False
         ### Create dict of format [well][yaxis][fluid] = []
         data_file = DATA_file(case)
-        well_names = ('FIELD',) + data_file.wellnames()
-        #print(data_file, well_names)
-        #keys = data_file.summary_keys()
-        #ecl = {w:{'days':[]} for w in smry.well_names}
-        ecl = {w:{'days':[]} for w in well_names}
-        #[ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in smry.well_names]
-        [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in well_names]
+        self.wellnames = ('FIELD',) + data_file.wellnames()
+        ecl = {w:{'days':[]} for w in self.wellnames}
+        [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in self.wellnames]
         ecl['days'] = []
-        # ### Index to map read data to ecl[well][yaxis][fluid]
-        # self.ecl_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(smry.wells, smry.keys)]
-        # ### Index into temp-data (for adding temp to 'prod', not only 'rate')
-        # self.temp_index = [(n,ind[0]) for n,ind in enumerate(self.ecl_index) if ind[1]=='Temp_ecl']
         self.data['ecl'] = ecl
-        #self.unsmry = smry
-        #print(smry.wells, smry.keys)
         return True
+
+    #-----------------------------------------------------------------------
+    def uncheck_box(self, box):
+    #-----------------------------------------------------------------------
+        if box.isChecked():
+            box.setChecked(False)
+            self.update_checked_list(box)
+            self.update_plot_line(box.objectName(), False)
+
 
     #-----------------------------------------------------------------------
     def read_ecl_data(self, case=None, reinit=False, skip_zero=True):   # main_window
@@ -3229,34 +3091,32 @@ class main_window(QMainWindow):                                    # main_window
                 return False
         keys = ('WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT', 'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWIT','FWIR')
         data = self.unsmry.data(keys=keys)
+        # Enable menu-well-boxes for active wells
+        for well in set(data.wells):
+            self.ecl_boxes['well'][well].setEnabled(True)
         ### Index to map read data to ecl[well][yaxis][fluid]
         index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(data.wells, data.keys)]
         ### Index into temp-data (for adding temp to 'prod', not only 'rate')
         temp_index = [(n,ind[0]) for n,ind in enumerate(index) if ind[1]=='Temp_ecl']
-        #data = self.unsmry.get('days', 'welldata', only_new=True, raise_error=False)
         if data.days:
-            #    days, welldata = data
             ### Skip zero-time data
             if skip_zero and data.days[0] < 1e-8:
                 data.days.pop(0)
                 data.welldata.pop(0)
             ecl = self.data['ecl']
             ecl['days'].extend(data.days)
-            #for w in self.unsmry.well_names:
             for w in set(data.wells):
                 ecl[w]['days'].extend(data.days)
-            #for (w,y,f),*d in zip(self.index, *welldata):
             for (w,y,f),*d in zip(index, *data.welldata):
                 ecl[w][y][f].extend(d)
             # Add temp-data to 'prod'
             for d in data:
                 for i,w in temp_index:
                     ecl[w]['prod']['Temp_ecl'].append(d[i])
-            #[ecl[w]['prod']['Temp_ecl'].append(d[i]) for i,w in self.temp_index for d in data]
 
 
     #-----------------------------------------------------------------------
-    def update_ecl_menu(self, case=None, checked=False, font=LARGE_FONT):         # main_window
+    def update_ecl_menu(self, case=None, font=LARGE_FONT):         # main_window
     #-----------------------------------------------------------------------
         menu = self.ecl_menu
         case = case or self.input['root']
@@ -3291,32 +3151,11 @@ class main_window(QMainWindow):                                    # main_window
         lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
         menu.column(0).addWidget(lbl)
         self.ecl_boxes['well'] = {}
-        wells = ['FIELD'] + sorted(wells)
-        all_wells = [(a, True) for a in wells]
-        self.active_wells = wells
-        # welldata = self.unsmry.data() if self.unsmry else None
-        # if welldata:
-        #     #active_wells = sorted(self.unsmry.well_names) if self.unsmry else []
-        #     active_wells = sorted(set(welldata.wells)) or ()
-        #     if 'FIELD' in active_wells:
-        #         active_wells.pop(active_wells.index('FIELD'))
-        #         active_wells = ['Field'] + active_wells
-        #     self.active_wells = active_wells
-        #     self.inactive_wells = set(wells) - set(active_wells)
-        #     all_wells = [(a, True) for a in active_wells] + [(i, False) for i in sorted(self.inactive_wells)]
-        #print(self.active_wells)
-        #for i,well in enumerate(wells):
-        for well, enable in all_wells:
+        for well in wells:
             box = self.new_checkbox(text=well, name='well '+well+' ecl', func=self.on_ecl_plot_click)
-            box.setEnabled(enable)
-            if well=='Field':
-                box.setObjectName('well FIELD ecl')
+            box.setEnabled(False)
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ecl_boxes['well'][well] = box
-        # # Enable wells that are active during this case
-        # for well in self.unsmry.well_names:
-        #     if box := self.ecl_boxes['well'].get(well):
-        #         box.setEnabled(True)
         # variables
         box = self.new_checkbox(text='Variables', font=font, pad_left=15)
         box.setChecked(True)
@@ -3332,8 +3171,8 @@ class main_window(QMainWindow):                                    # main_window
                                                     color='#707070', func=self.on_ecl_var_click)
         self.ecl_boxes['var']['Temp_ecl'] = box
         menu.column(1).addLayout(layout)
-        if checked:
-            self.update_menu_boxes('ecl')
+        # if checked:
+        #     self.update_menu_boxes('ecl')
 
     #-----------------------------------------------------------------------
     def set_ecl_variable_boxes(self):
@@ -3482,7 +3321,7 @@ class main_window(QMainWindow):                                    # main_window
         if box.isChecked():
             max_3.append(box)
         else:
-            max_3.remove(box)
+            box in max_3 and max_3.remove(box)
         names = [b.objectName().split() for b in max_3]
         data = [n[2] for n in names]
         if len(set(data)) > 1:
@@ -3614,6 +3453,8 @@ class main_window(QMainWindow):                                    # main_window
         if len(files)<1 or not files[0].is_file():# or files[0].stat().st_size<210:
             # last check is to avoid UserWarning from genfromtxt about: Empty input file
             return False
+        # active_wells = [f.stem.split('W_')[-1] for f in files]
+        # print(active_wells)
         inp = self.input
         ior = {}
         for w in self.out_wells:
@@ -3642,6 +3483,7 @@ class main_window(QMainWindow):                                    # main_window
             try:
                 #data = genfromtxt(str(file))
                 if data.ndim > 1:
+                    self.ior_boxes['well'][well].setEnabled(True)
                     ior[well]['days'] = data[1:,0]
                     #print(ior['days'])
                     for i,name in enumerate(inp['species']):
@@ -3654,11 +3496,16 @@ class main_window(QMainWindow):                                    # main_window
             except (KeyError, IndexError, TypeError) as e:
                 DEBUG and print('ERROR in read_ior_data:', e)
                 pass
-        if all([ior[w]['conc']=={} for w in self.out_wells]):
+        # if self.ior_boxes:
+        #     for well in self.wellnames:
+        #         if box := self.ior_boxes['well'].get(well):
+        #             days = ior.get(well) and ior[well].get('days')
+        #             box.setEnabled(days is not None)
+        if all(ior[w]['conc']=={} for w in self.out_wells):
             return False
         self.data['ior'] = ior
         return True
-
+        
     
     #-----------------------------------------------------------------------
     def update_axes_names(self):                   # main_window
@@ -3979,9 +3826,9 @@ class main_window(QMainWindow):                                    # main_window
             #     self.days = (self.data[run]).get('days')
         view = self.current_viewer() #.name
         if view == self.plot: #'plot':
-            self.statusBar().clearMessage()
-            if not all(list(ok.values())):
-                self.statusBar().showMessage('No wells are currently producing')            
+            #self.statusBar().clearMessage()
+            #if not all(list(ok.values())):
+            #    self.statusBar().showMessage('No wells are currently producing')            
             #print('call from update_view_area')
             self.update_all_plot_lines()
         #elif view in (self.log_viewer, self.app_log_viewer) : #'log_viewer':
@@ -4038,6 +3885,10 @@ class main_window(QMainWindow):                                    # main_window
         self.unsmry = None
         # Clear messages and progress
         self.reset_progress_and_message()
+        # # Uncheck well-boxes
+        # for box in list(self.ecl_boxes['well'].values())+list(self.ior_boxes['well'].values()):
+        #     self.uncheck_box(box)
+        #     box.setEnabled(False)
         # Disable toolbar
         self.set_toolbar_enabled(False)
         i = self.input
