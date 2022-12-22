@@ -2062,7 +2062,7 @@ class main_window(QMainWindow):                                    # main_window
                    'days'    : FloatEdit(),
                    'compare' : QComboBox()}
         tips = ('Set running mode',
-                'Choose a case, or add a new from the Case-menu',
+                'Select recently opened case',
                 'Set total time interval',
                 'Compare current case against a previous case')
         for i,(text,wid) in enumerate(list(widgets.items())[:3]):
