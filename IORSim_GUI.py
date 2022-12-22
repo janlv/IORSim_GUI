@@ -18,16 +18,6 @@ from psutil import Popen
 ### Check if this is a bundle version (pyinstaller)
 BUNDLE_VERSION = getattr(sys, 'frozen', False)
 
-### Fix SSL certificates for bundle version
-# if bundle_version and sys.platform == 'win32':
-#     import certifi
-#     import certifi_win32.wincerts
-#     certifi_win32.wincerts.CERTIFI_PEM = certifi.where()
-#     certifi.where =  certifi_win32.wincerts.where
-#     from certifi_win32.wincerts import generate_pem, verify_combined_pem
-#     if not verify_combined_pem():
-#         generate_pem()
-
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -43,10 +33,8 @@ def resource_path():
     return path
 
 # Default settings
-#CASEDIR = Path.cwd()/'cases'
 MAX_CASES = 10
 IORSIM_DIR = Path.home()/'.iorsim'
-#SAVEDIR = Path.cwd()/'download'
 DOWNLOAD_DIR = IORSIM_DIR/'download'
 SETTINGS_FILE = IORSIM_DIR/'settings.dat'
 SESSION_FILE = IORSIM_DIR/'session.txt'
@@ -56,6 +44,7 @@ THIS_FILE = Path(sys.argv[0])
 
 # Guide files
 GUIDE_PATH = "file:///" + str(resource_path()).replace('\\','/')
+#GUIDE_PATH = str(resource_path()) # Use this for PDF_viewer_v2
 IORSIM_GUIDE = GUIDE_PATH + "/guides/IORSim_2021_User_Guide.pdf"
 SCRIPT_GUIDE = GUIDE_PATH + "/guides/IORSim_GUI_guide.pdf"
 
@@ -71,11 +60,12 @@ def github_url(version):
     return GITHUB_REPO + f'releases/download/{version}/{THIS_FILE.name}'
 
 
-
 # External libraries
 from PySide6.QtWidgets import QScrollArea, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
 from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression, QRect, QPoint
+#from PySide6.QtPdfWidgets import QPdfView
+#from PySide6.QtPdf import QPdfDocument
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
@@ -1198,11 +1188,30 @@ class Highlight_editor(Editor):
 
 
 
+# #===========================================================================
+# class PDF_viewer_v2(QPdfView):
+# #===========================================================================
+#     #-----------------------------------------------------------------------
+#     def __init__(self, *args, **kwargs):                        # PDF_viewer
+#     #-----------------------------------------------------------------------
+#         super().__init__(*args, **kwargs)
+#         self.setPageMode(QPdfView.PageMode.MultiPage)
+#         self._document = QPdfDocument()
+#         self.setDocument(self._document)
+
+#     #-----------------------------------------------------------------------
+#     def view_file(self, file, title=''):                        # PDF_viewer
+#     #-----------------------------------------------------------------------
+#         self._document.load(str(file))
+#         #print(err, file)
+#         self.setWindowTitle(title)
+#         self.show()
+
 #===========================================================================
-class PDF_viewer(Editor):                                              
+class PDF_viewer(Editor):
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs):                        # PDF_viewer
     #-----------------------------------------------------------------------
         super().__init__(*args, search=True, save=False, refresh=False, top=False, end=False, **kwargs)
         viewer = QWebEngineView(self)
@@ -1212,9 +1221,8 @@ class PDF_viewer(Editor):
         self.layout().addWidget(viewer)
         self.editor_ = viewer
 
-
     #-----------------------------------------------------------------------
-    def view_file(self, file, title=''):                    # PDF_viewer
+    def view_file(self, file, title=''):                        # PDF_viewer
     #-----------------------------------------------------------------------
         self.clear_search()
         self.file = str(file)
@@ -1249,10 +1257,10 @@ class PDF_viewer(Editor):
         pass
 
 #===========================================================================
-class Window(QMainWindow):                                              
+class Window(QMainWindow):                                          # Window
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, parent=None, widget=None, title='', geo=None):
+    def __init__(self, parent=None, widget=None, title='', geo=None): # Window
     #-----------------------------------------------------------------------
         super(Window, self).__init__(parent)
         self.setWindowTitle(title)

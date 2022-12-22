@@ -49,7 +49,7 @@ LOG_LEVEL_MIN = 1
 DEFAULT_LOG_LEVEL = 3
 # Number of iterations before reducing number of expected RFT blocks
 RFT_CHECK_ITER = 100
-# To avoid re-merging merged UNRST-files, this file is created in the case-folder 
+# To avoid re-merging merged UNRST-files, this file is created in the case-folder
 MERGE_OK_FILE = '.merge_OK'
 
 
@@ -65,8 +65,8 @@ class Eclipse(Runner):                                                      # ec
         #print('eclipse.__init__: ',root, exe, kwargs)
         root = str(root)        
         exe = str(exe)
-        super().__init__(name='Eclipse', case=root, exe=exe, cmd=[exe, 'eclipse', root], 
-                         time_regex=r'TIME=?\s+([0-9.]+)\s+DAYS', **kwargs)                        
+        super().__init__(name='Eclipse', case=root, exe=exe, cmd=[exe, 'eclipse', root],
+                         time_regex=r'TIME=?\s+([0-9.]+)\s+DAYS', **kwargs)
         self.update = kwargs.get('update') or None
         self.unrst = UNRST_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
         self.rft = RFT_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
