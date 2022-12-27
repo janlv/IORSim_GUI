@@ -859,7 +859,7 @@ class Simulation:                                                        # Simul
             ### Get time and step from the restart-file
             self.restart_file = UNRST_file(file)
             if not self.restart_file.is_file():
-                raise SystemError(f'ERROR Restart file {self.restart_file.file.relative_to(Path.cwd())} is missing')
+                raise SystemError(f'ERROR Restart file {self.restart_file.file} is missing')
             self.restart_step = step
             time, n = self.restart_file.get('time', 'step', stop=('step', step))
             if step > n[-1] or not step in n: 

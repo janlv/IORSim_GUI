@@ -73,7 +73,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolb
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
 
-from numpy import genfromtxt, asarray
+from numpy import genfromtxt, asarray, zeros, concatenate, sort, unique, pad
 from re import compile
 
 # Python libraries
@@ -331,6 +331,7 @@ def get_wells_iorsim(root):
             w = w[0]
             in_wells = w[1:1+int(w[0])]
     #print(out_wells, in_wells)
+    #return ['FIELD']+sorted(out_wells), sorted(in_wells)
     return sorted(out_wells), sorted(in_wells)
 
 # #-----------------------------------------------------------------------
@@ -3003,6 +3004,7 @@ class main_window(QMainWindow):                                    # main_window
             box.setEnabled(False)
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['well'][well] = box
+        #self.ior_boxes['well']['FIELD'].setEnabled(True)        
         # Add specie boxes
         box = self.new_checkbox(text='Variables', font=font, pad_left=15)
         box.setChecked(True)
@@ -3481,9 +3483,6 @@ class main_window(QMainWindow):                                    # main_window
             well, yaxis = file.name.split('_W_')[-1].split('.trc')
             if yaxis=='prd':
                 yaxis = 'prod'
-            #try:
-            #with warnings.catch_warnings():
-            #if file.stat().st_size > 100:
             try:
                 data = genfromtxt(str(file))
             except (PermissionError, FileNotFoundError):
@@ -3493,10 +3492,12 @@ class main_window(QMainWindow):                                    # main_window
                 if data.ndim > 1:
                     self.ior_boxes['well'][well].setEnabled(True)
                     ior[well]['days'] = data[1:,0]
+                    #ior['FIELD']['days'] = data[1:,0]
                     #print(ior['days'])
                     for i,name in enumerate(inp['species']):
                         #print(well, yaxis, name)
                         ior[well][yaxis][name] = data[1:,i+1]
+                        #ior['FIELD'][yaxis][name] = data[1:,i+1]
                     if 'conc' in yaxis:
                         ior[well]['conc']['Temp'] = data[1:,-1]
                         ior[well]['prod']['Temp'] = data[1:,-1]
@@ -3504,13 +3505,13 @@ class main_window(QMainWindow):                                    # main_window
             except (KeyError, IndexError, TypeError) as e:
                 DEBUG and print('ERROR in read_ior_data:', e)
                 pass
-        # if self.ior_boxes:
-        #     for well in self.wellnames:
-        #         if box := self.ior_boxes['well'].get(well):
-        #             days = ior.get(well) and ior[well].get('days')
-        #             box.setEnabled(days is not None)
         if all(ior[w]['conc']=={} for w in self.out_wells):
             return False
+        # Sum well data into FIELD data
+        # days = (ior[w]['days'] for w in self.out_wells)
+        # days = sort(unique(concatenate(list(days))))
+        # for i,name in enumerate(inp['species']):
+        #     ior['FIELD'][yaxis][name] = data[1:,i+1]
         self.data['ior'] = ior
         return True
         
@@ -3849,7 +3850,9 @@ class main_window(QMainWindow):                                    # main_window
         i = self.input
         #if i['nsteps']==0:
         if self.case_cb.currentIndex() < 0:
-            show_message(self, 'warning', text='You need to choose a case from the case drop-down list, or add a new case from File -> Add case.')
+            show_message(self, 'warning', 
+                text=('You need to choose a case from the case drop-down list, '
+                'or add a new case from File -> Add case.'))
             return False
         if i['days']==0:
             show_message(self, 'warning', text='Total time interval is missing.')
@@ -3906,14 +3909,14 @@ class main_window(QMainWindow):                                    # main_window
             kwargs = {'mode':'backward', 'check_unrst':s.get('unrst'), 'check_rft':s.get('rft')}
         # forward mode
         elif self.mode in ('forward','eclipse','iorsim'):
-            kwargs = {'mode':'forward', 'runs':self.run}
+            kwargs = {'mode':'forward', 'run_names':self.run}
         # start simulation
         for opt in ('convert','del_convert','merge','del_merge','check_input_kw'):
             #kwargs[opt] = s.get[opt]()
             kwargs[opt] = s.get(opt)
-        self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get('iorsim'), eclexe=s.get('eclrun'), 
-                                 ecl_keep_alive=s.get('ecl_keep_alive') and float(s.get('ecl_alive_limit')), 
-                                 ior_keep_alive=s.get('ior_keep_alive') and IOR_ALIVE_LIMIT, 
+        self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get('iorsim'), eclexe=s.get('eclrun'),
+                                 ecl_keep_alive=s.get('ecl_keep_alive') and float(s.get('ecl_alive_limit')),
+                                 ior_keep_alive=s.get('ior_keep_alive') and IOR_ALIVE_LIMIT,
                                  days_box=self.days_box, verbose=int(s.get('log_level')), skip_empty=s.get('skip_empty'),
                                  **kwargs)
         self.worker.signals.status_message.connect(self.update_message)
