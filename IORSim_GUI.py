@@ -7,7 +7,7 @@ DEBUG = False
 CHECK_VERSION_AT_START = True
 
 from datetime import datetime
-from itertools import chain
+from itertools import chain, product
 import sys
 import os
 #from tempfile import TemporaryDirectory
@@ -94,7 +94,7 @@ from requests import get as requests_get, exceptions as req_exceptions
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import Progress, convert_float_or_str, copy_recursive, flatten, get_keyword, get_substrings, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, strip_zero, try_except_loop, unique_names, write_file
-from IORlib.ECL import DATA_file, SMSPEC_file, UNSMRY_file
+from IORlib.ECL import DATA_file, UNSMRY_file, UNRST_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
 
@@ -1695,8 +1695,10 @@ class main_window(QMainWindow):                                    # main_window
         #self.small_font = QFont(FONT, 7)
         self.silent_upgrade = False
         self.plot_lines = None
-        self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl'}
-        self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'irate', 'IT':'iprod'}
+        self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
+        self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'conc', 'IR':'irate', 'IT':'iprod'}
+        self.ecl_keys = ['WTPCHEA'] + list(''.join(p) for p in product(
+            ('W','F'), ('O','W','G','C'), self.ecl_yaxes.keys()))
         self.data = {}
         self.plot_ref_data = {}
         self.ecl_boxes = {}
@@ -2300,6 +2302,10 @@ class main_window(QMainWindow):                                    # main_window
         prop['color'][var] = color.green.as_hex() #'#2ca02c' # green
         prop['line'][var] = '-'
         prop['alpha'][var] = 1.0
+        var = 'Polymer'
+        prop['color'][var] = color.orange.as_hex()
+        prop['line'][var] = '-'
+        prop['alpha'][var] = 1.0
         self.plot_prop = prop
 
     # #-----------------------------------------------------------------------
@@ -2496,14 +2502,14 @@ class main_window(QMainWindow):                                    # main_window
             if not self.ior_boxes:
                 return
             #yaxis = ('prod','conc')
-            boxlist = self.ior_boxes 
+            boxlist = self.ior_boxes
         if not boxlist['yaxis'] or not boxlist['well']:
             return
         for box in self.max_3_checked:
             #print('Remove:' + box.objectName())
             set_checkbox(box, False, block_signal=block_signal)
         self.max_3_checked = []
-        well = list(boxlist['well'].keys())[0] 
+        well = list(boxlist['well'].keys())[0]
         for box in ([val for val in boxlist['yaxis'].values()] + [boxlist['well'][well],]):
             #print('Add: '+box.objectName())
             set_checkbox(box, True, block_signal=block_signal)
@@ -2546,6 +2552,7 @@ class main_window(QMainWindow):                                    # main_window
             return
         self.max_days = None
         mode = self.modes[nr]
+        #print('on_mode_select', mode)
         fwd_tip = 'Edit TSTEP in Eclipse input to change the total time interval'
         back_tip = 'Set total time interval'
         if mode=='forward':
@@ -2558,11 +2565,9 @@ class main_window(QMainWindow):                                    # main_window
             self.update_menu_boxes('ecl')
             self.create_plot()
         elif mode=='iorsim':
-            days = [1,]
-            if self.read_ecl_data():
-                days = self.data['ecl'].get('days') or [1,]
-            # self.max_days = int(days[-1])
-            self.max_days = days[-1]
+            #days = [1,]
+            self.max_days = UNRST_file(self.input['root']).last_day() or 1
+            #print(self.max_days)
             self.set_mode(mode, days=self.max_days, box=True, tip='Set total time interval, maximun is '+str(self.max_days), run=mode)
             self.update_menu_boxes('ior')
             self.create_plot()
@@ -2574,15 +2579,14 @@ class main_window(QMainWindow):                                    # main_window
     def on_input_change(self, text):                           # main_window
     #-----------------------------------------------------------------------
         name = self.sender().objectName()
+        #print('on_input_change', name)
         var = {'days':'Number of days'}
         if not text:
             self.input[name] = 0
             return
         try:
-            #val = int(text)
             val = float(text)
         except:
-            #show_message(self, 'error', text=var[name]+' must be an integer!')
             show_message(self, 'error', text=var[name]+' must be an number!')
         else:
             self.input[name] = val
@@ -2999,12 +3003,13 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_boxes['well'] = {}
         #if self.active_wells:
         #    self.out_wells = [well for well in self.out_wells if well in self.active_wells]
-        for well in self.out_wells or ():
+        #for well in ['FIELD'] + self.out_wells:
+        for well in self.out_wells:
             box = self.new_checkbox(text=well, name='well '+well+' ior', func=self.on_ior_menu_click)
             box.setEnabled(False)
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['well'][well] = box
-        #self.ior_boxes['well']['FIELD'].setEnabled(True)        
+        #self.ior_boxes['well']['FIELD'].setEnabled(True)
         # Add specie boxes
         box = self.new_checkbox(text='Variables', font=font, pad_left=15)
         box.setChecked(True)
@@ -3043,7 +3048,8 @@ class main_window(QMainWindow):                                    # main_window
         ecl = DATA_file(case or self.input['root'])
         ecl.check(include=False)
         #vars = [line for line in ecl.section('SUMMARY').lines() if line[0] in ('W','F','R')]
-        vars = ecl.summary_keys(startswith=('W','F','R'))
+        vars = ecl.summary_keys(matching=self.ecl_keys)
+        #print('vars', set(vars))
         if not vars and raise_error:
             raise SystemError('SUMMARY keywords missing,\n\nEclipse plotting disabled.')
         fy = ((f,y) for v in set(vars) if (f:=self.ecl_fluids.get(v[1])) and (y:=self.ecl_yaxes.get(v[2:4])))
@@ -3051,15 +3057,17 @@ class main_window(QMainWindow):                                    # main_window
         wells = sorted(ecl.wellnames())
         if any(v[0]=='F' and v[2:4] in ('PR','PT') for v in vars):
             wells.insert(0, 'FIELD')
+        #print(fluids)
         return wells, ('prod','rate'), list(set(fluids))
 
     #-----------------------------------------------------------------------
     def init_ecl_data_v2(self, case=None):            # main_window
     #-----------------------------------------------------------------------
-        #  WOPR    - well oil rate,
-        #  WWPR    - well water rate
+        #  WOPR    - well oil prod rate
+        #  WCPR    - well polymer prod rate
+        #  WWPR    - well water prod rate
         #  WTPCHEA - well temp (Temp_ecl)
-        #  WOPT    - well oil prod
+        #  WOPT    - well oil prod tot
         #  WWCT    - well water cut (prod)
         #  WWIR    - well water injection rate
         #  WWIT    - well water injection prod
@@ -3099,8 +3107,9 @@ class main_window(QMainWindow):                                    # main_window
         if reinit or not self.unsmry:
             if not self.init_ecl_data_v2(case=case):
                 return False
-        keys = ('WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT', 'FOPR','FOPT','FGPR','FGPT','FWPR','FWPT','FWIT','FWIR')
-        data = self.unsmry.data(keys=keys)
+        # keys = ('WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT', 'FOPR','FOPT',
+        #     'FGPR','FGPT','FWPR','FWPT','FWIT','FWIR','WCPR','WCIR','WCPT')
+        data = self.unsmry.data(keys=self.ecl_keys)
         # Enable menu-well-boxes for active wells
         for well in set(data.wells):
             self.ecl_boxes['well'][well].setEnabled(True)
@@ -3149,7 +3158,7 @@ class main_window(QMainWindow):                                    # main_window
         lbl.setStyleSheet('padding-left: 10px')
         menu.column(0).addWidget(lbl)
         self.ecl_boxes['yaxis'] = {}
-        for i,name in enumerate(yaxis): 
+        for i,name in enumerate(yaxis):
             box = self.new_checkbox(text=name.capitalize(), name='yaxis '+name+' ecl',
                                     func=self.on_ecl_plot_click)
             self.ecl_boxes['yaxis'][name] = box
@@ -3166,6 +3175,9 @@ class main_window(QMainWindow):                                    # main_window
             box.setEnabled(False)
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ecl_boxes['well'][well] = box
+        field_box = self.ecl_boxes['well'].get('FIELD')
+        if field_box:
+            field_box.setEnabled(True)
         # variables
         box = self.new_checkbox(text='Variables', font=font, pad_left=15)
         box.setChecked(True)
@@ -3173,7 +3185,7 @@ class main_window(QMainWindow):                                    # main_window
         menu.column(1).addWidget(box)
         self.ecl_var_box = box
         self.ecl_boxes['var'] = {}
-        for var in fluids: 
+        for var in fluids:
             layout, box = self.new_box_with_line_layout(var, func=self.on_ecl_var_click)
             self.ecl_boxes['var'][var] = box
             menu.column(1).addLayout(layout)
@@ -3479,9 +3491,9 @@ class main_window(QMainWindow):                                    # main_window
             except PermissionError:
                 continue
             # read data
-            #print('Reading',file.name)
+            #print('Reading', file.name)
             well, yaxis = file.name.split('_W_')[-1].split('.trc')
-            if yaxis=='prd':
+            if yaxis == 'prd':
                 yaxis = 'prod'
             try:
                 data = genfromtxt(str(file))
@@ -3507,15 +3519,31 @@ class main_window(QMainWindow):                                    # main_window
                 pass
         if all(ior[w]['conc']=={} for w in self.out_wells):
             return False
-        # Sum well data into FIELD data
-        # days = (ior[w]['days'] for w in self.out_wells)
-        # days = sort(unique(concatenate(list(days))))
-        # for i,name in enumerate(inp['species']):
-        #     ior['FIELD'][yaxis][name] = data[1:,i+1]
         self.data['ior'] = ior
+        #self.add_ior_field_data()
+        #print(self.data['ior']['FIELD'])
         return True
         
     
+    #-----------------------------------------------------------------------
+    def add_ior_field_data(self):
+    #-----------------------------------------------------------------------
+        # Sum well data as FIELD data
+        ior = self.data['ior']
+        days = (ior[w]['days'] for w in self.out_wells)
+        days = sort(unique(concatenate(list(days))))
+        #print(days)
+        ior['FIELD'] = {'days':days, 'conc':{}, 'prod':{}}
+        for var in self.input['species']:
+            #ior['FIELD']['conc'][var] = zeros(days.shape)
+            ior['FIELD']['prod'][var] = zeros(days.shape)
+        for w in self.out_wells:
+            size = ior[w]['days'].size
+            for var in self.input['species']:
+                #ior['FIELD']['conc'][var][-size:] += ior[w]['conc'][var]
+                ior['FIELD']['prod'][var][-size:] += ior[w]['prod'][var]
+
+
     #-----------------------------------------------------------------------
     def update_axes_names(self):                   # main_window
     #-----------------------------------------------------------------------                
@@ -3568,7 +3596,7 @@ class main_window(QMainWindow):                                    # main_window
             self.plot_axes.append(ax)
             ax.set_label(ax_name)
             ax.set_xlabel('days')
-            ax.title.set_text(src[data]+', well '+well)
+            ax.title.set_text(src[data] + ', ' + ('well ' if well != 'FIELD' else '') + well)
             if yaxis=='conc':
                 ax.set_ylabel('concentration [mol/L]')
             elif yaxis=='prod':
@@ -3579,11 +3607,11 @@ class main_window(QMainWindow):                                    # main_window
                     ylabel += '[SM3]'
                 ax.set_ylabel(ylabel)
             elif yaxis=='rate':
-                ax.set_ylabel('rate [SM3/day]')                
+                ax.set_ylabel('rate [SM3/day]')
             ax.autoscale_view()
             # add temperature axis
             axx = ax.twinx()
-            self.plot_axes.append(axx)            
+            self.plot_axes.append(axx)
             #self.plot_axes[ax_name+' temp'] = axx
             if data=='ior':
                 axx.set_visible(self.ior_boxes['var']['Temp'].isChecked())
@@ -3815,9 +3843,11 @@ class main_window(QMainWindow):                                    # main_window
             self.update_remaining_time(text=self.progress.remaining_time(t))
         #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
         
+
     #-----------------------------------------------------------------------
     def update_view_area(self):
     #-----------------------------------------------------------------------
+        #print('update_view_area')
         ok = {'ecl':True, 'ior':True}
         if self.mode == 'backward':
             ok['ior'] = self.read_ior_data()
@@ -3825,11 +3855,13 @@ class main_window(QMainWindow):                                    # main_window
         # self.days = None
         if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current_run():
             run = self.worker.current_run()
+            #print('run', run)
             if run in ('ecl','eclipse','eclrun'):
                 run = 'ecl'
                 ok[run] = self.read_ecl_data()
             if run in ('ior','iorsim'):
                 run = 'ior'
+                #print('read')
                 ok[run] = self.read_ior_data()
             # if self.data.get(run):
             #     self.days = (self.data[run]).get('days')
@@ -3850,17 +3882,19 @@ class main_window(QMainWindow):                                    # main_window
         i = self.input
         #if i['nsteps']==0:
         if self.case_cb.currentIndex() < 0:
-            show_message(self, 'warning', 
+            show_message(self, 'warning',
                 text=('You need to choose a case from the case drop-down list, '
                 'or add a new case from File -> Add case.'))
             return False
         if i['days']==0:
             show_message(self, 'warning', text='Total time interval is missing.')
             return False
-        if self.max_days and i['days']>self.max_days:
-            show_message(self, 'warning', text=f'The Eclipse output read by IORSim currently sets a limit of {self.max_days:.2f}' + 
-                                               ' days on the time interval. Rerun Eclipse with a higher TSTEP to increase the maximun time interval.')
-            return False
+        if self.max_days and i['days'] > self.max_days:
+            show_message(self, 'info',
+                text=f'The IORSim-run is limited to {self.max_days:.2f} days.')
+            self.days_box.setText(self.max_days)
+            #self.on_input_change
+            #return False
         if not i['root']:
             show_message(self, 'warning', text='No input-case selected')
             return False
