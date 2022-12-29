@@ -1696,7 +1696,9 @@ class main_window(QMainWindow):                                    # main_window
         self.silent_upgrade = False
         self.plot_lines = None
         self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
-        self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'conc', 'IR':'irate', 'IT':'iprod'}
+        #self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'conc', 'IR':'irate', 'IT':'iprod'}
+        # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
+        self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'rate', 'IT':'prod'}
         self.ecl_keys = ['WTPCHEA'] + list(''.join(p) for p in product(
             ('W','F'), ('O','W','G','C'), self.ecl_yaxes.keys()))
         self.data = {}
@@ -3057,8 +3059,9 @@ class main_window(QMainWindow):                                    # main_window
         wells = sorted(ecl.wellnames())
         if any(v[0]=='F' and v[2:4] in ('PR','PT') for v in vars):
             wells.insert(0, 'FIELD')
+        fluids = list(set(fluids)-set(['Temp_ecl']))
         #print(fluids)
-        return wells, ('prod','rate'), list(set(fluids))
+        return wells, ('prod','rate'), fluids
 
     #-----------------------------------------------------------------------
     def init_ecl_data_v2(self, case=None):            # main_window
@@ -3116,7 +3119,7 @@ class main_window(QMainWindow):                                    # main_window
         ### Index to map read data to ecl[well][yaxis][fluid]
         index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(data.wells, data.keys)]
         ### Index into temp-data (for adding temp to 'prod', not only 'rate')
-        temp_index = [(n,ind[0]) for n,ind in enumerate(index) if ind[1]=='Temp_ecl']
+        temp_index = [(n,ind[0]) for n,ind in enumerate(index) if ind[2]=='Temp_ecl']
         if data.days:
             ### Skip zero-time data
             if skip_zero and data.days[0] < 1e-8:
@@ -3129,10 +3132,9 @@ class main_window(QMainWindow):                                    # main_window
             for (w,y,f),*d in zip(index, *data.welldata):
                 ecl[w][y][f].extend(d)
             # Add temp-data to 'prod'
-            for d in data:
+            for d in data.welldata:
                 for i,w in temp_index:
                     ecl[w]['prod']['Temp_ecl'].append(d[i])
-
 
     #-----------------------------------------------------------------------
     def update_ecl_menu(self, case=None, font=LARGE_FONT):         # main_window
