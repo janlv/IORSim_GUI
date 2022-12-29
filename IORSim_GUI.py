@@ -2831,7 +2831,9 @@ class main_window(QMainWindow):                                    # main_window
     def prepare_case(self):
     #-----------------------------------------------------------------------
         root = self.case or self.input['root']
-        self.schedule = next(Path(root).parent.glob('*.[Ss][Cc][Hh]'), None)
+        #self.schedule = next(Path(root).parent.glob('*.[Ss][Cc][Hh]'), None)
+        sch = Path(root).parent.glob('*.[Ss][Cc][Hh]')
+        self.schedule = next((f for f in sch if f.stem == Path(root).stem), None)
         #print('prepare_case: ',root)
         self.reset_progress_and_message()
         self.plot_lines = {}

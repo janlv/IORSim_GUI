@@ -629,12 +629,14 @@ class Schedule:
         self.end = 0
         ### Ignore case in file extension
         #self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
-        self.file = DATA_file(self.case.with_suffix(ext), sections=False, ignore_case=True)
-        if self.file.exists():
+        sch = self.case.parent.glob('*.[Ss][Cc][Hh]')
+        self.file = next((f for f in sch if f.stem == self.case.stem), None)
+        if self.file and self.file.exists():
+            self.file = DATA_file(self.case.with_suffix(ext), sections=False, ignore_case=True)
             self._schedule = self.get_schedule()
             self.end = (len(self._schedule) > 0) and self._schedule[-1][0] or 0
-        else:
-            self.file = None
+        #else:
+        #    self.file = None
         ### Add simulation end time 
         self.insert(days=T, remove=True)
         DEBUG and print(f'Creating {self}')
