@@ -8,9 +8,9 @@ CHECK_VERSION_AT_START = True
 
 from datetime import datetime
 from itertools import chain, product
+from operator import itemgetter
 import sys
 import os
-#from tempfile import TemporaryDirectory
 from zipfile import ZipFile, is_zipfile
 
 from psutil import Popen
@@ -72,6 +72,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
+from matplotlib import rcParams
 
 from numpy import genfromtxt, asarray, zeros, concatenate, sort, unique, pad
 from re import compile
@@ -87,13 +88,10 @@ from functools import partial
 if BUNDLE_VERSION:
     import pip_system_certs.wrapt_requests
 from requests import get as requests_get, exceptions as req_exceptions
-# Suppress warnings about using verify=False in requests_get
-#from urllib3 import disable_warnings
-#disable_warnings()
 
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, convert_float_or_str, copy_recursive, flatten, get_keyword, get_substrings, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, return_matching_string, delete_all, strip_zero, try_except_loop, unique_names, write_file
+from IORlib.utils import Progress, convert_float_or_str, copy_recursive, flatten, get_keyword, get_tuple, groupby_sorted, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, delete_all, strip_zero, try_except_loop, unique_names, write_file
 from IORlib.ECL import DATA_file, UNSMRY_file, UNRST_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -265,12 +263,12 @@ def create_action(win, text=None, shortcut=None, tip=None, func=None, icon=None,
 
 
 #-----------------------------------------------------------------------
-def make_scrollable(widget):
+def make_scrollable(widget, resizable=True):
 #-----------------------------------------------------------------------
     scroll = QScrollArea()
     scroll.setStyleSheet('QScrollArea {border: 1px solid lightgray}')
     scroll.setWidget(widget)
-    scroll.setWidgetResizable(True)
+    scroll.setWidgetResizable(resizable)
     return scroll
 
 
@@ -511,15 +509,15 @@ def str_to_bool(s):
 class VLine(QFrame):
 #===========================================================================
     def __init__(self):
-        super(VLine, self).__init__()
-        self.setFrameShape(self.VLine|self.Sunken)
+        super().__init__()
+        self.setFrameStyle(self.Shape.VLine|self.Shadow.Sunken)
 
 #===========================================================================
 class HLine(QFrame):
 #===========================================================================
     def __init__(self):
-        super(HLine, self).__init__()
-        self.setFrameShape(self.HLine|self.Sunken)
+        super().__init__()
+        self.setFrameStyle(self.Shape.HLine|self.Shadow.Sunken)
 
 
 #===========================================================================
@@ -757,25 +755,14 @@ class check_version_worker(base_worker):
         return new_version(version_str)
 
 
-#===========================================================================
-class Mpl_canvas(FigureCanvasQTAgg):                                              
-#===========================================================================
-    #-----------------------------------------------------------------------
-    def __init__(self, parent=None, width=5, height=4, dpi=80):
-    #-----------------------------------------------------------------------
-        self.fig = Figure(figsize=(width, height), dpi=dpi)
-        #self.axes = fig.add_subplot(subplot)
-        super(Mpl_canvas, self).__init__(self.fig)
-
                 
 #===========================================================================
-class User_input(QDialog):                                              
+class User_input(QDialog):
 #===========================================================================
     #-----------------------------------------------------------------------
     def __init__(self, parent=None, title=None, head=None, label=None, text=None, size=(400, 150)):
     #-----------------------------------------------------------------------
-        #super(User_input, self).__init__(*args, **kwargs)
-        super(User_input, self).__init__(parent)
+        super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumSize(*size)
         self.layout = QVBoxLayout()
@@ -817,37 +804,173 @@ class User_input(QDialog):
         if self.func:
             self.func()
 
+#===========================================================================
+class Canvas(FigureCanvasQTAgg):                                              
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, width=5, height=5, dpi=100):
+    #-----------------------------------------------------------------------
+        self.fig = Figure(figsize=(width, height), dpi=dpi)
+        super().__init__(self.fig)
 
 
 #===========================================================================
-class Plot(QGroupBox):                                              
+class Plot(QGroupBox):
 #===========================================================================
     #-----------------------------------------------------------------------
     def __init__(self, parent=None):
     #-----------------------------------------------------------------------
-        super(Plot, self).__init__(parent)
+        super().__init__(parent)
         self.setTitle('Plot')
+        self.ylabel = {
+            'concior' : 'concentration [mol/L]',
+            'prodior' : 'production [mass/day]',
+            'prodecl' : 'production [SM3]',
+            'rateecl' : 'rate [SM3/day]'}
+        self.checkboxes = None
         self.name = 'plot'
         self.setObjectName('plot')
         layout = QVBoxLayout()
         self.setLayout(layout)
-        self.canvas = Mpl_canvas(self)
-        toolbar = NavigationToolbar(self.canvas, self)
-        layout.addWidget(toolbar)
-        layout.addWidget(self.canvas)
+        self.canvas = Canvas(width=5, height=5, dpi=100)
+        rcParams['font.size'] = 7
+        self.dpi = self.canvas.fig.dpi
+        # Make canvas scrollable
+        self.scroll_area = make_scrollable(self.canvas, resizable=False)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.horizontalScrollBar().setEnabled(False)
+        layout.addWidget(self.scroll_area)
+        layout.addWidget(NavigationToolbar(self.canvas, self), alignment=Qt.AlignmentFlag.AlignRight)
+        self.clear()
+        self.min_height = self.height()
 
     #-----------------------------------------------------------------------
-    def file_is_open(self, filename):
+    def adjust(self):
+    #-----------------------------------------------------------------------
+        top = 1 - 30/self.height()
+        bottom = 50/self.height()
+        self.canvas.fig.subplots_adjust(top=top, bottom=bottom, hspace=0.4)
+        
+    #-----------------------------------------------------------------------
+    def draw(self):                                                   # Plot
+    #-----------------------------------------------------------------------
+        self.canvas.draw()
+
+    #-----------------------------------------------------------------------
+    def clear(self):                                                  # Plot
+    #-----------------------------------------------------------------------
+        self.num_plots = 0
+        self.axes_names = ()
+        self.axes = []
+        self.canvas.fig.clf()
+
+    #-----------------------------------------------------------------------
+    def create_axes(self, checked_boxes=(), ior={}, ecl={}):                                 # Plot
+    #-----------------------------------------------------------------------
+        self.clear()
+        self.checkboxes = namedtuple('checkboxes', 'ior ecl')(ior, ecl)
+        self.checked_boxes = checked_boxes
+        self.axes_names = self.get_axes_names()
+        sum_plots = len(self.axes_names)
+        self.set_height(sum_plots*3)
+        #self.canvas.resize(self.scroll_area.width(), self.height())
+        for tag in self.axes_names:
+            self.num_plots += 1
+            ax = self.canvas.fig.add_subplot(sum_plots, 1, self.num_plots)
+            self.axes.append(ax)
+            self.set_title(ax, tag)
+            self.set_labels(ax, tag)
+            # add temperature axis
+            axx = ax.twinx()
+            self.axes.append(axx)
+            self.set_temp_labels(axx, tag)
+
+    #-----------------------------------------------------------------------
+    def set_title(self, ax, tag):                                 # Plot
+    #-----------------------------------------------------------------------
+        _, well, data = tag.split()
+        src = {'ecl':'Eclipse, ', 'ior':'IORSim, '}
+        ax.title.set_text(src[data] + ('well ' if well != 'FIELD' else '') + well)
+
+    #-----------------------------------------------------------------------
+    def set_labels(self, ax, tag):                                 # Plot
+    #-----------------------------------------------------------------------
+        yaxis, _, data = tag.split()
+        ax.set_label(tag)
+        ax.set_xlabel('days')
+        # src = {'ecl':'Eclipse, ', 'ior':'IORSim, '}
+        # ax.title.set_text(src[data] + ('well ' if well != 'FIELD' else '') + well)
+        ax.set_ylabel(self.ylabel[yaxis+data])
+        ax.autoscale_view()
+
+    #-----------------------------------------------------------------------
+    def set_temp_labels(self, axx, tag):                              # Plot
+    #-----------------------------------------------------------------------
+        _, _, data = tag.split()
+        tempbox = None
+        if data == 'ior':
+            tempbox = self.checkboxes.ior['var']['Temp']
+        elif data == 'ecl':
+            tempbox = self.checkboxes.ecl['var']['Temp_ecl']
+        axx.set_visible(tempbox.isChecked())
+        axx.ticklabel_format(axis='y', style='plain', useOffset=False) #scilimits=[-1,1])
+        axx.set_label('Temp ' + tag)
+        axx.set_ylabel('Temperature [C]')
+        axx.autoscale_view()
+
+    #-----------------------------------------------------------------------
+    def set_height(self, height):                                     # Plot
+    #-----------------------------------------------------------------------
+        height = max(height, self.scroll_area.height()/self.dpi)
+        self.canvas.fig.set_figheight(height)
+        self.min_height = self.height()
+        self.canvas.resize(self.scroll_area.width(), self.height())
+
+    #-----------------------------------------------------------------------
+    def height(self):                                                 # Plot
+    #-----------------------------------------------------------------------
+        return self.canvas.get_width_height()[1]
+
+    #-----------------------------------------------------------------------
+    def resizeEvent(self, event):                                     # Plot
+    #-----------------------------------------------------------------------
+        #print('resize', self.scroll_area.width(), self.canvas.height())
+        #if event.oldSize()[1] > event.size()[1]:
+        height = max(self.scroll_area.height(), self.min_height)
+        self.canvas.resize(self.scroll_area.width(), height)
+        return super().resizeEvent(event)
+
+    #-----------------------------------------------------------------------
+    def file_is_open(self, filename):                                 # Plot
     #-----------------------------------------------------------------------
         return False
 
+    #-----------------------------------------------------------------------
+    def get_axes_names(self):                           # Plot
+    #-----------------------------------------------------------------------
+        #  Checkboxes are named 'yaxis prod ior', 'yaxis conc ior', 'yaxis rate ecl'
+        #  'well P1 ior', 'well I1 ecl'
+        # Get tag names from checkbox objects
+        boxes = (b.objectName().split() for b in self.checked_boxes)
+        axes_names = []
+        # Loop over ior/ecl data
+        for data, box in groupby_sorted(boxes, itemgetter(2)):
+            # Group by yaxis and well
+            #print(data, box)
+            group = {k:flatten(g) for k,g in groupby_sorted(box, itemgetter(0))}
+            prod = product(group.get('yaxis') or (), group.get('well') or ())
+            names = list(' '.join(p)+' '+data for p in prod)
+            axes_names.extend(names)
+        return axes_names
+
+
 #===========================================================================
-class Menu(QGroupBox):                                              
+class Menu(QGroupBox):
 #===========================================================================
     #-----------------------------------------------------------------------
     def __init__(self, parent=None, title='', ncol=2):
     #-----------------------------------------------------------------------
-        super(Menu, self).__init__(parent)
+        super().__init__(parent)
         self.setStyleSheet('QGroupBox {border: none; margin-top:5px; padding: 15px 0px 0px 0px;}')
         self.setTitle(title)
         self.setFont(LARGE_FONT)
@@ -904,7 +1027,7 @@ class Editor(QGroupBox):
                  top=True, top_name='Top', end=True, search=True, search_width=None,
                  refresh=True, space=0, match_case=False):
     #-----------------------------------------------------------------------
-        super(Editor, self).__init__(parent)
+        super().__init__(parent)
         self.btn_width = 60
         self.btn_height = 25
         self.vscroll = {}
@@ -1001,12 +1124,6 @@ class Editor(QGroupBox):
             palette.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
             self.editor_.setPalette(palette)
 
-    #-----------------------------------------------------------------------
-    def update(self, file):
-    #-----------------------------------------------------------------------
-        #print(file)
-        self.set_text(read_file(file))
-        self.editor_.moveCursor(QTextCursor.End)
 
     #-----------------------------------------------------------------------
     def file_is_open(self, filename):
@@ -1146,9 +1263,18 @@ class Editor(QGroupBox):
             self.search_field.setText('')
             self.search_field.setPlaceholderText('Search text')
 
+
+    #-----------------------------------------------------------------------
+    def update(self, file):
+    #-----------------------------------------------------------------------
+        #print(file)
+        self.set_text(read_file(file))
+        self.editor_.moveCursor(QTextCursor.End)
+
     #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                            # Editor
     #-----------------------------------------------------------------------
+        #print('_view_file', file, title)
         self.setTitle(title)
         curr_file = self.file
         if curr_file:
@@ -1178,13 +1304,14 @@ class Editor(QGroupBox):
         self.editor_.verticalScrollBar().setValue(vscroll)
 
 
+
 #===========================================================================
 class Highlight_editor(Editor):                                              
 #===========================================================================
     #-----------------------------------------------------------------------
     def __init__(self, *args, comment=None, keywords=[], **kwargs):
     #-----------------------------------------------------------------------
-        super(Highlight_editor, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.highlighter = Highlighter(self.document(), comment=comment, keywords=keywords)
 
 
@@ -1263,7 +1390,7 @@ class Window(QMainWindow):                                          # Window
     #-----------------------------------------------------------------------
     def __init__(self, parent=None, widget=None, title='', geo=None): # Window
     #-----------------------------------------------------------------------
-        super(Window, self).__init__(parent)
+        super().__init__(parent)
         self.setWindowTitle(title)
         if geo:
             self.setGeometry(geo)
@@ -1273,39 +1400,33 @@ class Window(QMainWindow):                                          # Window
         self.setCentralWidget(widget)
 
 #===========================================================================
-class Settings(QDialog):                                              
+class Settings(QDialog):
 #===========================================================================
     #-----------------------------------------------------------------------
     def __init__(self, parent=None, file=None):                   # settings
     #-----------------------------------------------------------------------
-        super(Settings, self).__init__(parent)
+        super().__init__(parent)
         self.parent = parent
         self.file = Path(file)
         self.setWindowTitle('Settings')
         self.setWindowFlag(Qt.WindowTitleHint)
         self.setFont(LARGE_FONT)
-        #self.setMinimumSize(400,400)
+        self.col_stretch = (5, 10, 70, 15)
+        self.setMinimumWidth(550)
+        #self.setMinimumHeight(550)
+        #self.setMaximumSize(550, 850)
+        self.ncol = len(self.col_stretch)
         self.setObjectName('settings_window')
         self.line = -1
         self._get = {}
         self._set = {}
         variable = namedtuple('variable', 'text default tip required ')
         self.vars = {
-            'iorsim': variable(
-                'IORSim program',
-                None,
-                'Path to the IORSim executable',
-                True),
-            'eclrun': variable(
-                'Eclipse program',
-                'eclrun',
-                "Eclipse command, default is 'eclrun'",
-                True),
-            'check_input_kw': variable(
-                'Check IORSim input file',
-                False,
-                'Check IORSim input file keywords',
-                False),
+            'iorsim': variable('IORSim', None, 'Path to the IORSim executable', True),
+            'eclrun': 
+                variable('Eclipse', 'eclrun', "Eclipse command, default is 'eclrun'", True),
+            'check_input_kw': 
+                variable('Check IORSim input file', False, 'Check IORSim input file keywords', False),
             'convert': variable(
                 'Convert to unformatted output',
                 True,
@@ -1370,6 +1491,11 @@ class Settings(QDialog):
         self.set_default()
         self.load()
 
+    # def resizeEvent(self, event):
+    #     print(self.height(), self.scroll.height() )
+    #     return super().resizeEvent(event)
+
+
     #-----------------------------------------------------------------------
     def set_expert_mode(self, enabled):
     #-----------------------------------------------------------------------
@@ -1402,20 +1528,29 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
     def initUI(self):                                             # settings
     #-----------------------------------------------------------------------
-        self.grid = QGridLayout()
-        self.setLayout(self.grid)
-        self.grid.setColumnStretch(0,15)
-        self.grid.setColumnStretch(1,70)
-        self.grid.setColumnStretch(2,15)
+        # Scrollable settings
+        layout = QVBoxLayout(self)
+        self.setLayout(layout)
+        self.scroll = QScrollArea()
+        layout.addWidget(self.scroll)
+        self.scroll.setStyleSheet('QScrollArea {border: 1px solid lightgray}')
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll.horizontalScrollBar().setEnabled(False)
+        self.scroll.verticalScrollBar().setMinimumHeight(550)
+        content = QWidget(self.scroll)
+        self.grid = QGridLayout(content)
+        content.setLayout(self.grid)
+        self.scroll.setWidget(content)
+
+        for i, stretch in enumerate(self.col_stretch):
+            self.grid.setColumnStretch(i, stretch)
 
         ### IORSim executable
+        self.add_heading('IORSim and Eclipse program paths')
         self.add_line_with_button(var='iorsim', open_func=self.open_ior_prog)
         ### Eclipse executable
         self.add_line_with_button(var='eclrun', open_func=self.open_ecl_prog)
-        ### Workdir        
-        # self.add_line_with_button(var='workdir', open_func=self.change_workdir)
-        ### Savedir        
-        #self.add_line_with_button(var='savedir', open_func=self.change_savedir)
 
         ### Input options
         self.add_heading()
@@ -1453,15 +1588,15 @@ class Settings(QDialog):
         ### Log options
         self.add_heading()
         self.add_heading('Log options')
-        ### Log verbosity level 
-        self.add_items([self.new_combobox(var='log_level', width=50, values=[str(i) for i in range(LOG_LEVEL_MIN, LOG_LEVEL_MAX+1)])])
+        ### Log verbosity level
+        values = list(map(str, range(LOG_LEVEL_MIN, LOG_LEVEL_MAX+1)))
+        log = self.new_combobox(var='log_level', width=50, values=values)
+        self.add_items([log])
 
         ### OK / Cancel buttons
-        self.add_heading()
-        self.line += 1
         yes_no = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         self.yes_no_btns = QDialogButtonBox(yes_no)
-        self.grid.addWidget(self.yes_no_btns, self.line, 0, 1, 3)
+        layout.addWidget(self.yes_no_btns)
         self.yes_no_btns.accepted.connect(self.on_OK_click)
         self.yes_no_btns.rejected.connect(self.reject)
         self.yes_no_btns.setFocus()
@@ -1470,8 +1605,16 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
     def add_heading(self, text=''):
     #-----------------------------------------------------------------------
+        col = 0
         self.line += 1
-        self.grid.addWidget(QLabel(text), self.line, 0)
+        self.grid.addWidget(QLabel(text), self.line, col, 1, self.ncol)
+        if text:
+            self.line += 1
+            line = QFrame()
+            line.setStyleSheet('color: lightGray')
+            line.setFrameStyle(QFrame.Shape.HLine)
+            line.setLineWidth(0)
+            self.grid.addWidget(line, self.line, col, 1, self.ncol)
 
 
     #-----------------------------------------------------------------------
@@ -1479,7 +1622,7 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         self.line += 1
         layout = QGridLayout()
-        self.grid.addLayout(layout, self.line, 1)
+        self.grid.addLayout(layout, self.line, 1, 1, 2)
         ncol = int(len(items)/nrow)
         for i,item in enumerate(items):
             col, row = i%ncol, int(i/ncol)
@@ -1492,25 +1635,25 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
     def new_combobox(self, width=None, var=None, values=[]):             # settings
     #-----------------------------------------------------------------------
+        box = QComboBox()
         v = self.vars[var]
-        layout = QHBoxLayout()
-        box = QComboBox(self)
-        box.setToolTip(v.tip)
-        width and box.setFixedWidth(width)
-        layout.addWidget(box)
-        label = QLabel(v.text, self)
-        label.setToolTip(v.tip)
-        layout.addWidget(label)
-        box.addItems(values)
         self._get[var] = box.currentText
         self._set[var] = box.setCurrentText
+        box.setToolTip(v.tip)
+        width and box.setFixedWidth(width)
+        label = QLabel(v.text)
+        label.setToolTip(v.tip)
+        layout = QHBoxLayout()
+        layout.addWidget(box)
+        layout.addWidget(label)
+        box.addItems(values)
         return layout
 
     #-----------------------------------------------------------------------
     def new_checkbox(self, var=None, size=15):             # settings
     #-----------------------------------------------------------------------
         v = self.vars[var]
-        box = QCheckBox(v.text, parent=self)
+        box = QCheckBox(v.text)
         box.setStyleSheet('QCheckBox::indicator { width: '+str(size)+'px; height: '+str(size)+'px;};')
         #box.setMinimumSize(50, 50)
         box.setToolTip(v.tip)
@@ -1523,7 +1666,7 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         v = self.vars[var]
         layout = QHBoxLayout()
-        line = QLineEdit(parent=self)
+        line = QLineEdit()
         width and line.setFixedWidth(width)
         line.setToolTip(v.tip)
         layout.addWidget(line)
@@ -1537,18 +1680,18 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         self.line += 1
         v = self.vars[var]
-        label = QLabel(v.text, parent=self)
-        self.grid.addWidget(label, self.line, 0)
+        label = QLabel(v.text)
+        self.grid.addWidget(label, self.line, 1)
         label.setToolTip(v.tip)
-        line = QLineEdit(self)
-        self.grid.addWidget(line, self.line, 1)
+        line = QLineEdit()
+        self.grid.addWidget(line, self.line, 2)
         line.setToolTip(v.tip)
         line.setReadOnly(read_only)
-        self._get[var] = line.text 
+        self._get[var] = line.text
         self._set[var] = line.setText
         if open_func:
-            button = QPushButton(button_text, parent=self)
-            self.grid.addWidget(button, self.line, 2)
+            button = QPushButton(button_text)
+            self.grid.addWidget(button, self.line, 3)
             button.clicked.connect(open_func)
         return line
 
@@ -1560,30 +1703,12 @@ class Settings(QDialog):
             self._set[k](v.default)
         
     # #-----------------------------------------------------------------------
-    # def change_workdir(self):                                  # settings
+    # def restart_now(self):                                 # settings
     # #-----------------------------------------------------------------------
-    #     dirname = QFileDialog.getExistingDirectory(self, 'Locate or create a directory for the case-files', 
-    #                                                     str(Path.cwd()), QFileDialog.ShowDirsOnly)
-    #     if dirname:
-    #         self._set['workdir'](dirname)
-    #         self.parent.update_casedir()
-
-    # #-----------------------------------------------------------------------
-    # def change_savedir(self):                             # settings
-    # #-----------------------------------------------------------------------
-    #     title = 'Choose a download location for the new version'
-    #     default = self.get('savedir') or str(Path.cwd())
-    #     folder = QFileDialog.getExistingDirectory(self, title, default, QFileDialog.ShowDirsOnly)
-    #     if folder:
-    #         self._set['savedir'](folder)
-
-    #-----------------------------------------------------------------------
-    def restart_now(self):                                 # settings
-    #-----------------------------------------------------------------------
-        msg = 'The application must restart to apply the new case directory. Restart now?'
-        restart = User_input(self, title='Restart application?', head=msg)
-        restart.set_func(self.parent.reboot)
-        restart.open()
+    #     msg = 'The application must restart to apply the new case directory. Restart now?'
+    #     restart = User_input(self, title='Restart application?', head=msg)
+    #     restart.set_func(self.parent.reboot)
+    #     restart.open()
 
     #-----------------------------------------------------------------------
     def open_ior_prog(self):                                 # settings
@@ -1676,7 +1801,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def __init__(self, *args, settings_file=None, **kwargs):                       # main_window
     #-----------------------------------------------------------------------
-        super(main_window, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.setWindowTitle('IORSim') 
         screen = self.screen().geometry() #size()
         saved_geo = get_keyword(settings_file, 'geometry', comment='#')
@@ -1688,15 +1813,10 @@ class main_window(QMainWindow):                                    # main_window
             geo = QRect(position, size)
         self.setGeometry(geo)
         self.setObjectName('main_window')
-        #self.setContentsMargins(2,2,2,2)
         self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
-        # Fonts
-        #self.large_font = QFont(FONT, 10)
-        #self.small_font = QFont(FONT, 7)
         self.silent_upgrade = False
         self.plot_lines = None
         self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
-        #self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'conc', 'IR':'irate', 'IT':'iprod'}
         # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
         self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'rate', 'IT':'prod'}
         self.ecl_keys = ['WTPCHEA'] + list(''.join(p) for p in product(
@@ -1705,36 +1825,30 @@ class main_window(QMainWindow):                                    # main_window
         self.plot_ref_data = {}
         self.ecl_boxes = {}
         self.ior_boxes = {}
-        #self.current_view = None
-        #self.days = None
         self.log_file = None
         self.unsmry = None
         self.worker = None
         self.download_worker = None
         self.check_version_worker = None
         self.convert = None
-        self.max_3_checked = []
         self.plot_prop = {}
-        self.checked_boxes = {}
+        self.checked_boxes = []
         self.plotted_lines = {}
         self.view = False
         self.plot_ref = None
         self.progress = None
-        #self.casedir = None
-        #self.input_file = None
         # User guide window
-        self.pdf_view = None #PDF_viewer()
-        self.user_guide = None #Window(widget=self.pdf_view, title='IORSim User Guide', size=(1000, 800))
+        self.pdf_view = None
+        self.user_guide = None
         self.case = None
         self.schedule = None
         self.cases = ()
         self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 'species':[], 'mode':None, 'cases':[]}
         self.input_to_save = ('root', 'days', 'mode', 'cases')
-        self.settings = Settings(self, file=str(settings_file))
+        self.settings = Settings(parent=self, file=str(settings_file))
         self.initUI()
         self.load_session()
         self.set_input_field()
-        #self.update_casedir()
         self.threadpool = QThreadPool()
         self.show()
         # Move window if upper left corner is outside limits
@@ -1795,18 +1909,12 @@ class main_window(QMainWindow):                                    # main_window
                                           func=self.open_case)
         self.copy_case_act = create_action(self, text='Copy current case...', icon='document-copy.png',
                                           func=self.copy_current_case)
-        # self.import_case_act = create_action(self, text='Import case...', icon='document--plus.png',
-        #                                   func=self.import_case_from_file)
-        # self.dupl_case_act = create_action(self, text='Duplicate current case...', icon='document-copy.png',
-        #                                    func=self.duplicate_current_case)
-        # self.rename_case_act = create_action(self, text='Rename current case...', icon='document-rename.png',
-        #                                      func=self.rename_current_case)
         self.clear_case_act = create_action(self, text='Clear current case', icon='document.png',
                                             func=self.clear_current_case)
         self.remove_case_act = create_action(self, text='Remove current case', icon='document--minus.png',
                                              func=self.remove_current_case)
-        self.delete_case_act = create_action(self, text='Delete current case', icon='document--minus.png',
-                                             func=self.delete_current_case)
+        # self.delete_case_act = create_action(self, text='Delete current case', icon='document--minus.png',
+        #                                      func=self.delete_current_case)
         self.plot_act = create_action(self, text='Plot', icon='guide.png', func=self.view_plot, checkable=True)
         self.plot_act.setChecked(True)
         self.ecl_inp_act = create_action(self, text='Input file', icon='document-attribute-e.png',
@@ -1831,14 +1939,10 @@ class main_window(QMainWindow):                                    # main_window
         self.view_group = QActionGroup(self)
         ### File
         file_menu = menu.addMenu('&File')
-        #file_menu.addAction(self.import_case_act)
-        #file_menu.addAction(self.dupl_case_act) 
-        #file_menu.addAction(self.rename_case_act)
         file_menu.addAction(self.open_case_act)
         file_menu.addAction(self.copy_case_act)
         file_menu.addAction(self.clear_case_act)
         file_menu.addAction(self.remove_case_act)
-        #file_menu.addAction(self.delete_case_act)
         file_menu.addSeparator()
         file_menu.addAction(self.set_act)
         file_menu.addSeparator()
@@ -2168,7 +2272,7 @@ class main_window(QMainWindow):                                    # main_window
         self.ecl_menu = Menu(parent=self, title='ECLIPSE plot options')
         self.layout.addWidget(make_scrollable(self.ecl_menu), *self.position['ecl_menu']) # 
         ### Create plot- and file-view area
-        self.plot = Plot(self) 
+        self.plot = Plot(self)
         self.editor = Editor(name='editor', save_func=self.prepare_case)
         ### Eclipse editor
         rules = namedtuple('rules',('color weight option front back words'))
@@ -2507,16 +2611,19 @@ class main_window(QMainWindow):                                    # main_window
             boxlist = self.ior_boxes
         if not boxlist['yaxis'] or not boxlist['well']:
             return
-        for box in self.max_3_checked:
+        #for box in self.max_3_checked:
+        for box in self.checked_boxes:
             #print('Remove:' + box.objectName())
             set_checkbox(box, False, block_signal=block_signal)
-        self.max_3_checked = []
+        #self.max_3_checked = []
+        self.checked_boxes = []
         well = list(boxlist['well'].keys())[0]
         for box in ([val for val in boxlist['yaxis'].values()] + [boxlist['well'][well],]):
             #print('Add: '+box.objectName())
             set_checkbox(box, True, block_signal=block_signal)
             if box.isEnabled():
-                self.max_3_checked.append(box)
+                #self.max_3_checked.append(box)
+                self.checked_boxes.append(box)
 
         
     #-----------------------------------------------------------------------
@@ -2741,7 +2848,8 @@ class main_window(QMainWindow):                                    # main_window
     def remove_case(self, case):                              # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
-        self.max_3_checked = []
+        #self.max_3_checked = []
+        self.checked_boxes = []
         self.cases.pop()
         self.create_caselist(remove=case)
 
@@ -2756,14 +2864,14 @@ class main_window(QMainWindow):                                    # main_window
         self.create_caselist(remove=case)
         return case
 
-    #-----------------------------------------------------------------------
-    def delete_current_case(self):                              # main_window
-    #-----------------------------------------------------------------------
-        case = self.remove_current_case()
-        folder = Path(case).parent
-        delete = User_input(self, title='Delete case-folder?', text=f'Folder {folder} will be deleted, continue?')
-        delete.set_func(lambda: delete_all(folder))
-        delete.exec()
+    # #-----------------------------------------------------------------------
+    # def delete_current_case(self):                              # main_window
+    # #-----------------------------------------------------------------------
+    #     case = self.remove_current_case()
+    #     folder = Path(case).parent
+    #     delete = User_input(self, title='Delete case-folder?', text=f'Folder {folder} will be deleted, continue?')
+    #     delete.set_func(lambda: delete_all(folder))
+    #     delete.exec()
         
     # #-----------------------------------------------------------------------
     # def duplicate_current_case(self):                              # main_window
@@ -2838,7 +2946,8 @@ class main_window(QMainWindow):                                    # main_window
         self.reset_progress_and_message()
         self.plot_lines = {}
         self.ref_plot_lines = {}
-        self.max_3_checked = []
+        #self.max_3_checked = []
+        self.checked_boxes = []
         self.ref_case.setCurrentIndex(0)
         self.out_wells, self.in_wells = get_wells_iorsim(root)
         self.set_variables_from_casefiles()
@@ -2936,7 +3045,7 @@ class main_window(QMainWindow):                                    # main_window
         if self.plot_ref_data:
             #print('ref_data')
             self.update_plot_line(name, is_checked, lines=self.ref_plot_lines, set_data=False)
-        self.plot.canvas.draw()
+        self.plot.draw()
 
 
     #-----------------------------------------------------------------------
@@ -3092,13 +3201,13 @@ class main_window(QMainWindow):                                    # main_window
         self.data['ecl'] = ecl
         return True
 
-    #-----------------------------------------------------------------------
-    def uncheck_box(self, box):
-    #-----------------------------------------------------------------------
-        if box.isChecked():
-            box.setChecked(False)
-            self.update_checked_list(box)
-            self.update_plot_line(box.objectName(), False)
+    # #-----------------------------------------------------------------------
+    # def uncheck_box(self, box):
+    # #-----------------------------------------------------------------------
+    #     if box.isChecked():
+    #         box.setChecked(False)
+    #         self.update_checked_list(box)
+    #         self.update_plot_line(box.objectName(), False)
 
 
     #-----------------------------------------------------------------------
@@ -3214,7 +3323,6 @@ class main_window(QMainWindow):                                    # main_window
         self.update_checked_list(self.sender())
         self.create_plot()
 
-                    
     #-----------------------------------------------------------------------
     def view_file(self, file, viewer=None, title='', reset=True):           # main_window
     #-----------------------------------------------------------------------
@@ -3340,36 +3448,47 @@ class main_window(QMainWindow):                                    # main_window
 
             
     #-----------------------------------------------------------------------
-    def update_checked_list(self, box): 
+    def update_checked_list(self, box):
     #-----------------------------------------------------------------------
-        # print('update_checked_list: '+self.sender().objectName())
-        max_3 = self.max_3_checked
         if box.isChecked():
-            max_3.append(box)
+            self.checked_boxes.append(box)
         else:
-            box in max_3 and max_3.remove(box)
-        names = [b.objectName().split() for b in max_3]
-        data = [n[2] for n in names]
-        if len(set(data)) > 1:
-            # both ecl and ior are checked
-            for ie in ('ior','ecl'):
-                if data.count(ie)>2:
-                    # check if 2 yaxis or 2 wells are checked
-                    for yw in ('yaxis','well'):
-                        ind = [i for i,(a,b,c) in enumerate(names) if a==yw and c==ie]
-                        if len(ind)>1:
-                            box = max_3.pop(min(ind))
-                            set_checkbox(box, False)
-        else:
-            # only ecl or ior is checked
-            if len(max_3)>3:
-                box = max_3.pop(0)
-                set_checkbox(box, False)
-            names = [b.objectName().split()[0] for b in max_3]
-            for key in ('yaxis','well'):
-                if names.count(key)>2:
-                    box = max_3.pop(names.index(key))
-                    set_checkbox(box, False)
+            box in self.checked_boxes and self.checked_boxes.remove(box)
+        #print(self.checked_boxes)
+
+
+    # #-----------------------------------------------------------------------
+    # def update_checked_list(self, box): 
+    # #-----------------------------------------------------------------------
+    #     #return
+    #     # print('update_checked_list: '+self.sender().objectName())
+    #     max_3 = self.max_3_checked
+    #     if box.isChecked():
+    #         max_3.append(box)
+    #     else:
+    #         box in max_3 and max_3.remove(box)
+    #     names = [b.objectName().split() for b in max_3]
+    #     data = [n[2] for n in names]
+    #     if len(set(data)) > 1:
+    #         # both ecl and ior are checked
+    #         for ie in ('ior','ecl'):
+    #             if data.count(ie)>2:
+    #                 # check if 2 yaxis or 2 wells are checked
+    #                 for yw in ('yaxis','well'):
+    #                     ind = [i for i,(a,b,c) in enumerate(names) if a==yw and c==ie]
+    #                     if len(ind)>1:
+    #                         box = max_3.pop(min(ind))
+    #                         set_checkbox(box, False)
+    #     else:
+    #         # only ecl or ior is checked
+    #         if len(max_3)>3:
+    #             box = max_3.pop(0)
+    #             set_checkbox(box, False)
+    #         names = [b.objectName().split()[0] for b in max_3]
+    #         for key in ('yaxis','well'):
+    #             if names.count(key)>2:
+    #                 box = max_3.pop(names.index(key))
+    #                 set_checkbox(box, False)
                 
             
     #-----------------------------------------------------------------------
@@ -3381,7 +3500,7 @@ class main_window(QMainWindow):                                    # main_window
         self.update_plot_line(specie, is_checked)
         if self.plot_ref_data:
             self.update_plot_line(self.sender().objectName(), is_checked, lines=self.ref_plot_lines, set_data=False)
-        self.plot.canvas.draw()
+        self.plot.draw()
 
     #-----------------------------------------------------------------------
     def update_plot_line(self, name, is_checked, lines=None, set_data=True):
@@ -3446,7 +3565,8 @@ class main_window(QMainWindow):                                    # main_window
     def update_axes_limits(self):
     #-----------------------------------------------------------------------
         #try:
-        for ax in self.plot_axes:
+        #for ax in self.plot_axes:
+        for ax in self.plot.axes:
             ax.relim(visible_only=True)
             ax.autoscale_view()
         #except ValueError:
@@ -3548,91 +3668,41 @@ class main_window(QMainWindow):                                    # main_window
                 ior['FIELD']['prod'][var][-size:] += ior[w]['prod'][var]
 
 
-    #-----------------------------------------------------------------------
-    def update_axes_names(self):                   # main_window
-    #-----------------------------------------------------------------------                
-    #
-    #  Checkboxes are named 'yaxis prod ior', 'yaxis conc ior', 'yaxis rate ecl'
-    #  'well P1 ior', 'well I1 ecl'
-    #
-        #print('update_axes_names')
-        #print(self.max_3_checked)
-        name0 = [b.objectName().split()[0] for b in self.max_3_checked]    
-        y_idx = [i for i,x in enumerate(name0) if x=='yaxis']
-        w_idx = [i for i,x in enumerate(name0) if x=='well']
-        name1 = [b.objectName().split()[1] for b in self.max_3_checked]            
-        name2 = [b.objectName().split()[2] for b in self.max_3_checked]            
-        self.ioraxes_names = []
-        for y in y_idx:
-            for w in w_idx:
-                if name2[y] == name2[w]:
-                    self.ioraxes_names.append(name1[y]+' '+name1[w]+' '+name2[w])
+    # #-----------------------------------------------------------------------
+    # def update_axes_names(self):                   # main_window
+    # #-----------------------------------------------------------------------
+    # #
+    # #  Checkboxes are named 'yaxis prod ior', 'yaxis conc ior', 'yaxis rate ecl'
+    # #  'well P1 ior', 'well I1 ecl'
+    # #
+    #     #print('update_axes_names')
+    #     #print(self.max_3_checked)
+    #     name0 = [b.objectName().split()[0] for b in self.max_3_checked]    
+    #     y_idx = [i for i,x in enumerate(name0) if x=='yaxis']
+    #     w_idx = [i for i,x in enumerate(name0) if x=='well']
+    #     name1 = [b.objectName().split()[1] for b in self.max_3_checked]            
+    #     name2 = [b.objectName().split()[2] for b in self.max_3_checked]            
+    #     self.ioraxes_names = []
+    #     for y in y_idx:
+    #         for w in w_idx:
+    #             if name2[y] == name2[w]:
+    #                 self.ioraxes_names.append(name1[y]+' '+name1[w]+' '+name2[w])
     
-    
     #-----------------------------------------------------------------------
-    def create_plot(self):#, xlim=False):                         # main_window
+    def create_plot(self):                         # main_window
     #-----------------------------------------------------------------------                
         #print('create_plot')
-        self.plot_lines = {}
-        self.ref_plot_lines = {}
         if self.plot_ref_data:
             self.plot_ref = True
-        # clear figure 
-        self.plot.canvas.fig.clf()
+        self.plot.clear()
         if not self.input['root']:
-            self.plot.canvas.draw()
+            self.plot.draw()
             return False
-        self.update_axes_names()
-        #if len(self.canvas.fig.axes)>0:
-        #    print('AXES NOT DELETED')
-        # create new axes
-        self.temp_axis = []
-        self.plot_axes = []
-        #self.plot_axes = {}
-        nplot = len(self.ioraxes_names)
-        #print(nplot)
-        #print(self.ioraxes_names)
-        src = {'ecl':'Eclipse', 'ior':'IORSim'}
-        for i, ax_name in enumerate(self.ioraxes_names):
-            yaxis, well, data = ax_name.split()
-            ax = self.plot.canvas.fig.add_subplot(nplot, 1, i+1)
-            #self.plot_axes[ax_name] = ax
-            self.plot_axes.append(ax)
-            ax.set_label(ax_name)
-            ax.set_xlabel('days')
-            ax.title.set_text(src[data] + ', ' + ('well ' if well != 'FIELD' else '') + well)
-            if yaxis=='conc':
-                ax.set_ylabel('concentration [mol/L]')
-            elif yaxis=='prod':
-                ylabel = 'production '
-                if data=='ior':
-                    ylabel += '[mass/day]'
-                elif data=='ecl':
-                    ylabel += '[SM3]'
-                ax.set_ylabel(ylabel)
-            elif yaxis=='rate':
-                ax.set_ylabel('rate [SM3/day]')
-            ax.autoscale_view()
-            # add temperature axis
-            axx = ax.twinx()
-            self.plot_axes.append(axx)
-            #self.plot_axes[ax_name+' temp'] = axx
-            if data=='ior':
-                axx.set_visible(self.ior_boxes['var']['Temp'].isChecked())
-            elif data=='ecl':
-                axx.set_visible(self.ecl_boxes['var']['Temp_ecl'].isChecked())
-            #axx.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-            axx.ticklabel_format(axis='y', style='plain', useOffset=False) #scilimits=[-1,1])
-            axx.set_label('Temp '+ax_name)
-            axx.set_ylabel('Temperature [C]')
-            axx.autoscale_view()
-            #if self.worker:
-            #    ax.set_xlim(*self.xlim)
-            #    axx.set_xlim(*self.xlim)
-        #print('call from prepare_case')
+        #self.plot.create_axes(ior=self.ior_boxes, ecl=self.ecl_boxes)
+        self.plot.create_axes(checked_boxes=self.checked_boxes, ior=self.ior_boxes, ecl=self.ecl_boxes)
         self.create_plot_lines()
-        self.plot.canvas.fig.subplots_adjust(top=.93, hspace=0.4, right=.87)
-        self.plot.canvas.draw()
+        self.plot.adjust()
+        self.plot.draw()
         return True
 
     
@@ -3644,8 +3714,9 @@ class main_window(QMainWindow):                                    # main_window
         lines = {}
         self.ref_plot_lines = {}
         ref_lines = {}
-        ax = self.plot_axes   # or self.canvas.fig.axes
-        for i, ax_name in enumerate(self.ioraxes_names):
+        ax = self.plot.axes   # or self.canvas.fig.axes
+        #for i, ax_name in enumerate(self.ioraxes_names):
+        for i, ax_name in enumerate(self.plot.axes_names):
             yaxis, well, data = ax_name.split()
             if data=='ior':
                 var_box = self.ior_boxes['var']
@@ -3785,7 +3856,7 @@ class main_window(QMainWindow):                                    # main_window
                 #    #pass
         try:
             self.update_axes_limits()
-            self.plot.canvas.draw()
+            self.plot.draw()
         except ValueError as e:
             DEBUG and print(f'ValueError in update_all_plot_lines:: {e}')
             pass
@@ -4044,7 +4115,7 @@ class main_window(QMainWindow):                                    # main_window
 ###
 class Highlighter(QSyntaxHighlighter):
     def __init__(self, parent=None, comment='#', color=Qt.gray, keywords=()):
-        super(Highlighter, self).__init__(parent)
+        super().__init__(parent)
 
         self.highlightingRules = []
         #print(keywords)

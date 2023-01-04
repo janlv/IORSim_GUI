@@ -8,7 +8,7 @@ from pathlib import Path
 from locale import getpreferredencoding
 
 import psutil
-from .utils import loop_until, matches, safeopen, Timer, silentdelete, timer_thread
+from .utils import loop_until, matches, safeopen, Timer, silentdelete, TimerThread
 
 
 # Constants
@@ -485,7 +485,7 @@ class Runner:                                                               # Ru
             #self.popen = Popen(self.cmd, stdin=DEVNULL, stdout=self.log, stderr=DEVNULL)      
         self.set_processes(error_func=error_func)
         if self.keep_alive > 0:
-            self.suspend_timer = timer_thread(limit=self.keep_alive, prec=SUSPEND_TIMER_PRECICION, func=self.suspend_active)
+            self.suspend_timer = TimerThread(limit=self.keep_alive, prec=SUSPEND_TIMER_PRECICION, func=self.suspend_active)
 
 
     #--------------------------------------------------------------------------------
