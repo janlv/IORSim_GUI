@@ -74,7 +74,7 @@ from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
 from matplotlib import rcParams
 
-from numpy import genfromtxt, asarray, zeros, concatenate, sort, unique, pad
+from numpy import genfromtxt, asarray, zeros, concatenate, sort, unique
 from re import compile
 
 # Python libraries
@@ -97,16 +97,13 @@ from IORlib.ECL import DATA_file, UNSMRY_file, UNRST_file
 QDir.addSearchPath('icons', resource_path()/'icons/')
 
 # Font settings
-FONT = 'Segoe UI'
-LARGE_FONT = QFont(FONT, 9)
-SMALL_FONT = QFont(FONT, 8)
+#FONT = 'Segoe UI'
+#LARGE_FONT = QFont(FONT, 9)
+#SMALL_FONT = QFont(FONT, 8)
+FONT_LARGE = 'font: 9pt' # for stylesheet
+FONT_SMALL = 'font: 8pt'
+FONT_PLOT = 7
 
-
-# #-----------------------------------------------------------------------
-# def upgrade_file():
-# #-----------------------------------------------------------------------
-#     ### Get first (and only) file from savedir
-#     return DOWNLOAD_DIR.is_dir() and next(DOWNLOAD_DIR.iterdir(), None) or None
 
 #-----------------------------------------------------------------------
 def new_version(version_str):
@@ -255,10 +252,8 @@ def create_action(win, text=None, shortcut=None, tip=None, func=None, icon=None,
     if tip:
         act.setStatusTip(tip)
     if icon:
-        #act.setIcon(QIcon(':'+icon))
         act.setIcon(QIcon(f'icons:{icon}'))
     act.triggered.connect(func)
-    #act.changed.connect(func)
     return act
 
 
@@ -332,78 +327,6 @@ def get_wells_iorsim(root):
     #return ['FIELD']+sorted(out_wells), sorted(in_wells)
     return sorted(out_wells), sorted(in_wells)
 
-# #-----------------------------------------------------------------------
-# def get_eclipse_well_yaxis_fluid_old(root, include=False, raise_error=True):
-# #-----------------------------------------------------------------------
-#     fil = str(root)+'.DATA'
-#     if not Path(fil).is_file():
-#         raise SystemError(fil + ' is missing!')
-#     summary = well = False
-#     vars = []
-#     wells = []
-#     #print('TEST',DATA_file(root).with_includes(section='SUMMARY').get('SUMMARY'))
-#     # encoding = None
-#     # try:
-#     #     with open(fil) as f:
-#     #         for line in f:
-#     #             l = f.readline()
-#     # except UnicodeDecodeError:
-#     #     #encoding = 'ISO-8859-1'
-#     #     encoding = 'latin-1'
-#     # with open(fil, encoding=encoding) as f:
-#     #     for line in f:
-#     for line in DATA_file(root, include=include).lines():
-#         # if line.lstrip().startswith('--') or line.isspace():
-#         #     continue
-#         if line.lstrip().upper().startswith('SUMMARY'):
-#             summary = True
-#             continue
-#         if line.lstrip().upper().startswith('SCHEDULE'):
-#             break
-#         if summary:
-#             kw = line.strip()
-#             #print('kw:', kw)
-#             if kw[0] in ('F','R'):
-#                 vars.append(kw)
-#                 #print('add: '+kw)
-#             if kw[0] == 'W':
-#                 vars.append(kw)
-#                 well = True
-#                 continue
-#             if well:
-#                 if '/' in kw:
-#                     kw = kw[:-1].strip()
-#                     well = False
-#                 if ',' in kw:
-#                     kw = kw.split(',')
-#                 elif ' ' in kw:
-#                     kw = kw.split()
-#                 elif len(kw)>0:
-#                     kw = (kw,)
-#                 else:
-#                     kw = []
-#                 for k in kw:
-#                     wells.append(k.strip())                  
-#     vars = list(set(vars))
-#     #print('vars',vars)
-#     if len(vars)==0 and raise_error:
-#         raise SystemError('No variables in SUMMARY section.'+
-#                           '\n\nEclipse plotting disabled.')
-#     wells = list(set(wells))
-#     wells = [w.replace("'","") for w in wells]
-#     #print(wells)
-#     F = {'O':'Oil', 'W':'Water', 'G':'Gas'}
-#     P = {'P':'prod', 'R':'rate'}
-#     fluids = list(set([F[v[1]] for v in vars if v[1] in F.keys()]))
-#     yaxis = list(set([P[v[-1]] for v in vars if v[-1] in P.keys()]))
-#     if any([v[0]=='F' and v[-1] in ('P','R') for v in vars]):
-#         wells.insert(0, 'Field')
-#     #fluids.insert(-1, 'Temp')
-#     #print(wells)
-#     #print(yaxis)
-#     #print(fluids)
-#     return wells, yaxis, fluids 
-            
     
 #-----------------------------------------------------------------------
 def show_message(window, kind, text='', extra='', ok_text=None, wait=False, detail=None, button=None):
@@ -425,11 +348,6 @@ def show_message(window, kind, text='', extra='', ok_text=None, wait=False, deta
         raise SystemError(f'Unrecognized kind-option in show_message(): {kind}')
     msg = QMessageBox(window)
     msg.setWindowTitle(title)
-    msg.setFont(LARGE_FONT)
-    #if width:
-    #msg.setBaseSize(QSize(width, height))
-    #msg.setStyleSheet('QLabel{min-width: '+ str(width) +'px;}')
-    #msg.setMinimumWidth(width)
     msg.setIcon(icon)
     msg.setText(text)
     msg.setInformativeText(extra)
@@ -818,29 +736,34 @@ class Canvas(FigureCanvasQTAgg):
 class Plot(QGroupBox):
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, fontsize=FONT_PLOT, plot_height=250):
     #-----------------------------------------------------------------------
         super().__init__(parent)
         self.setTitle('Plot')
         self.ylabel = {
             'concior' : 'concentration [mol/L]',
             'prodior' : 'production [mass/day]',
-            'prodecl' : 'production [SM3]',
-            'rateecl' : 'rate [SM3/day]'}
+            'prodecl' : 'Cum. prod. [SM3]',
+            'iprodecl' : 'Inj. prod. [SM3]',
+            'rateecl' : 'Prod. rate [SM3/day]',
+            'irateecl' : 'Inj. rate [SM3/day]'}
         self.checkboxes = None
         self.name = 'plot'
         self.setObjectName('plot')
         layout = QVBoxLayout()
         self.setLayout(layout)
         self.canvas = Canvas(width=5, height=5, dpi=100)
-        rcParams['font.size'] = 7
+        self.fontsize = fontsize
+        self.plot_height = plot_height
+        rcParams['font.size'] = self.fontsize
         self.dpi = self.canvas.fig.dpi
         # Make canvas scrollable
         self.scroll_area = make_scrollable(self.canvas, resizable=False)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        #self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.scroll_area.horizontalScrollBar().setEnabled(False)
         layout.addWidget(self.scroll_area)
-        layout.addWidget(NavigationToolbar(self.canvas, self), alignment=Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(NavigationToolbar(self.canvas, self))
         self.clear()
         self.min_height = self.height()
 
@@ -865,15 +788,14 @@ class Plot(QGroupBox):
         self.canvas.fig.clf()
 
     #-----------------------------------------------------------------------
-    def create_axes(self, checked_boxes=(), ior={}, ecl={}):                                 # Plot
+    def create_axes(self, checked_boxes=(), ior={}, ecl={}):          # Plot
     #-----------------------------------------------------------------------
         self.clear()
         self.checkboxes = namedtuple('checkboxes', 'ior ecl')(ior, ecl)
         self.checked_boxes = checked_boxes
         self.axes_names = self.get_axes_names()
         sum_plots = len(self.axes_names)
-        self.set_height(sum_plots*3)
-        #self.canvas.resize(self.scroll_area.width(), self.height())
+        self.set_height(sum_plots*self.plot_height)
         for tag in self.axes_names:
             self.num_plots += 1
             ax = self.canvas.fig.add_subplot(sum_plots, 1, self.num_plots)
@@ -888,14 +810,14 @@ class Plot(QGroupBox):
     #-----------------------------------------------------------------------
     def set_title(self, ax, tag):                                 # Plot
     #-----------------------------------------------------------------------
-        _, well, data = tag.split()
+        _, well, data = tag.split('_')
         src = {'ecl':'Eclipse, ', 'ior':'IORSim, '}
         ax.title.set_text(src[data] + ('well ' if well != 'FIELD' else '') + well)
 
     #-----------------------------------------------------------------------
     def set_labels(self, ax, tag):                                 # Plot
     #-----------------------------------------------------------------------
-        yaxis, _, data = tag.split()
+        yaxis, _, data = tag.split('_')
         ax.set_label(tag)
         ax.set_xlabel('days')
         # src = {'ecl':'Eclipse, ', 'ior':'IORSim, '}
@@ -906,7 +828,7 @@ class Plot(QGroupBox):
     #-----------------------------------------------------------------------
     def set_temp_labels(self, axx, tag):                              # Plot
     #-----------------------------------------------------------------------
-        _, _, data = tag.split()
+        _, _, data = tag.split('_')
         tempbox = None
         if data == 'ior':
             tempbox = self.checkboxes.ior['var']['Temp']
@@ -921,7 +843,7 @@ class Plot(QGroupBox):
     #-----------------------------------------------------------------------
     def set_height(self, height):                                     # Plot
     #-----------------------------------------------------------------------
-        height = max(height, self.scroll_area.height()/self.dpi)
+        height = max(height, self.scroll_area.height())/self.dpi
         self.canvas.fig.set_figheight(height)
         self.min_height = self.height()
         self.canvas.resize(self.scroll_area.width(), self.height())
@@ -940,27 +862,33 @@ class Plot(QGroupBox):
         self.canvas.resize(self.scroll_area.width(), height)
         return super().resizeEvent(event)
 
+    # #-----------------------------------------------------------------------
+    # def event(self, event):                                     # Plot
+    # #-----------------------------------------------------------------------
+    #     print(event)
+    #     return super().event(event)
+
     #-----------------------------------------------------------------------
     def file_is_open(self, filename):                                 # Plot
     #-----------------------------------------------------------------------
         return False
 
     #-----------------------------------------------------------------------
-    def get_axes_names(self):                           # Plot
+    def get_axes_names(self):                                         # Plot
     #-----------------------------------------------------------------------
-        #  Checkboxes are named 'yaxis prod ior', 'yaxis conc ior', 'yaxis rate ecl'
-        #  'well P1 ior', 'well I1 ecl'
+        #  Checkboxes are named 'yaxis_prod_ior', 'yaxis_conc_ior', 'yaxis_rate_ecl'
+        #  'well_P1_ior', 'well_I1_ecl'
         # Get tag names from checkbox objects
-        boxes = (b.objectName().split() for b in self.checked_boxes)
+        boxes = (box.objectName().split('_') for box in self.checked_boxes)
         axes_names = []
         # Loop over ior/ecl data
-        for data, box in groupby_sorted(boxes, itemgetter(2)):
+        for data, box in groupby_sorted(boxes, key=itemgetter(2), reverse=True):
             # Group by yaxis and well
-            #print(data, box)
-            group = {k:flatten(g) for k,g in groupby_sorted(box, itemgetter(0))}
-            prod = product(group.get('yaxis') or (), group.get('well') or ())
-            names = list(' '.join(p)+' '+data for p in prod)
+            group = {k:flatten(g) for k,g in groupby_sorted(box, key=itemgetter(0))}
+            prod = product(group.get('yaxis') or (), sorted(group.get('well') or ()))
+            names = list('_'.join(p)+'_'+data for p in prod)
             axes_names.extend(names)
+        #print('axes_names', axes_names)
         return axes_names
 
 
@@ -973,12 +901,12 @@ class Menu(QGroupBox):
         super().__init__(parent)
         self.setStyleSheet('QGroupBox {border: none; margin-top:5px; padding: 15px 0px 0px 0px;}')
         self.setTitle(title)
-        self.setFont(LARGE_FONT)
-        self.setLayout(QHBoxLayout())
+        layout = QHBoxLayout()
+        #layout.setSizeConstraint()
+        self.setLayout(layout)
         for i in range(ncol):
             self.layout().addLayout(QVBoxLayout())
             self.layout().itemAt(i).setAlignment(Qt.AlignTop)
-
 
     #-----------------------------------------------------------------------
     def column(self, nr):
@@ -1020,12 +948,12 @@ class Menu(QGroupBox):
 #     #     win.open()
 
 #===========================================================================
-class Editor(QGroupBox):                                              
+class Editor(QGroupBox):
 #===========================================================================
     #-----------------------------------------------------------------------
     def __init__(self, parent=None, name='', read_only=False, save=True, save_func=None, browser=False,
                  top=True, top_name='Top', end=True, search=True, search_width=None,
-                 refresh=True, space=0, match_case=False):
+                 refresh=True, space=0, match_case=False, size_limit_mb=None):
     #-----------------------------------------------------------------------
         super().__init__(parent)
         self.btn_width = 60
@@ -1045,6 +973,7 @@ class Editor(QGroupBox):
         self.search_width = search_width
         self.space = space
         self.match_case = match_case
+        self.size_limit = size_limit_mb*1024**2 if size_limit_mb else None
         self.editor_ = QPlainTextEdit(self)
         self.editor_.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.set_text = self.editor_.setPlainText
@@ -1068,7 +997,7 @@ class Editor(QGroupBox):
             self.editor_.textChanged.connect(self.activate_save)
             ### Save button
             if self.save_func:
-                self.save_btn = self.new_button(text='Save', func=partial(self.save_text, save_func=self.save_func))            
+                self.save_btn = self.new_button(text='Save', func=partial(self.save_text, save_func=self.save_func))
             else:
                 self.save_btn = self.new_button(text='Save', func=self.save_text)
             buttons.addWidget(self.save_btn)
@@ -1143,9 +1072,11 @@ class Editor(QGroupBox):
         btn = None
         if icon:
             #btn = QPushButton(icon=QIcon(':'+icon))
-            btn = QPushButton(icon=QIcon(f'icons:{icon}'), parent=self)
+            #btn = QPushButton(icon=QIcon(f'icons:{icon}'), parent=self)
+            btn = QPushButton(icon=QIcon(f'icons:{icon}'))
         else:
-            btn = QPushButton(text=text, parent=self)
+            #btn = QPushButton(text=text, parent=self)
+            btn = QPushButton(text=text)
         if not width:
             width = self.btn_width
         btn.setFixedWidth(width)
@@ -1229,9 +1160,11 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def save_text(self, save_func=None):            # Editor
     #-----------------------------------------------------------------------
+        #print('save_text', self.file)
         write_file(self.file, self.editor_.toPlainText())
         self.save_btn.setEnabled(False)
         if save_func:
+            #print(save_func.__name__)
             save_func()
         #self.prepare_case(self.case)
 
@@ -1265,10 +1198,25 @@ class Editor(QGroupBox):
 
 
     #-----------------------------------------------------------------------
+    def read(self):
+    #-----------------------------------------------------------------------
+        if self.file and Path(self.file).is_file():
+            text = read_file(self.file)
+            if self.size_limit and (size := Path(self.file).stat().st_size) > self.size_limit:
+                text = (text[:self.size_limit]
+                        + f'\n --- SKIPPED {(size-self.size_limit-100)/1024**2:.0f} MB ---\n'
+                        + text[-100:])
+            return text
+        return ''
+
+    #-----------------------------------------------------------------------
+    #def update(self, file):
     def update(self, file):
     #-----------------------------------------------------------------------
         #print(file)
-        self.set_text(read_file(file))
+        #self.set_text(read_file(file))
+        self.file = file
+        self.set_text(self.read())
         self.editor_.moveCursor(QTextCursor.End)
 
     #-----------------------------------------------------------------------
@@ -1285,10 +1233,11 @@ class Editor(QGroupBox):
         if self.file_is_open(file):
             return
         self.file = str(file)
-        text = ''
-        if file and Path(file).is_file():
-            text = read_file(file)
-        self.set_text(text)
+        # text = ''
+        # if file and Path(file).is_file():
+        #     text = read_file(file)
+        # self.set_text(text)
+        self.set_text(self.read())
         vscroll = self.vscroll.get(str(file)) or 0
         self.editor_.verticalScrollBar().setValue(vscroll)
 
@@ -1297,16 +1246,16 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
         #file = self.objectName()
         self.vscroll[self.file] = self.editor_.verticalScrollBar().value()
-        if self.file and Path(self.file).is_file():
-            #self.setObjectName(str(file))
-            self.set_text(read_file(self.file))
+        self.set_text(self.read())
+        # if self.file and Path(self.file).is_file():
+        #     self.set_text(read_file(self.file))
         vscroll = self.vscroll.get(str(self.file)) or 0
         self.editor_.verticalScrollBar().setValue(vscroll)
 
 
 
 #===========================================================================
-class Highlight_editor(Editor):                                              
+class Highlight_editor(Editor):
 #===========================================================================
     #-----------------------------------------------------------------------
     def __init__(self, *args, comment=None, keywords=[], **kwargs):
@@ -1410,7 +1359,6 @@ class Settings(QDialog):
         self.file = Path(file)
         self.setWindowTitle('Settings')
         self.setWindowFlag(Qt.WindowTitleHint)
-        self.setFont(LARGE_FONT)
         self.col_stretch = (5, 10, 70, 15)
         self.setMinimumWidth(550)
         #self.setMinimumHeight(550)
@@ -1814,11 +1762,14 @@ class main_window(QMainWindow):                                    # main_window
         self.setGeometry(geo)
         self.setObjectName('main_window')
         self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
+        self.setStyleSheet(FONT_LARGE)
         self.silent_upgrade = False
         self.plot_lines = None
         self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
         # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
-        self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'rate', 'IT':'prod'}
+        self.ecl_yaxes =       {'PR':'rate',   'PT':'prod',    'PC':'rate',   'IR':'irate',        'IT':'iprod'}
+        self.ecl_yaxes_names = {'rate':'Rate', 'prod':'Prod.', 'rate':'Rate', 'irate':'Inj. rate', 'iprod':'Inj. prod.'}
+        #self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'rate', 'IT':'prod'}
         self.ecl_keys = ['WTPCHEA'] + list(''.join(p) for p in product(
             ('W','F'), ('O','W','G','C'), self.ecl_yaxes.keys()))
         self.data = {}
@@ -1954,6 +1905,7 @@ class main_window(QMainWindow):                                    # main_window
         ecl_menu.addAction(self.ecl_inp_act)
         self.view_group.addAction(self.ecl_inp_act)
         self.ecl_incl_menu = ecl_menu.addMenu(QIcon('icons:documents-stack.png'), 'Include files')
+        self.ecl_incl_menu.setStyleSheet(FONT_SMALL)
         ecl_menu.addAction(self.ecl_log_act)
         self.view_group.addAction(self.ecl_log_act)
         ### IORSim
@@ -1961,6 +1913,7 @@ class main_window(QMainWindow):                                    # main_window
         ior_menu.addAction(self.ior_inp_act)
         self.view_group.addAction(self.ior_inp_act)
         self.ior_incl_menu = ior_menu.addMenu(QIcon('icons:documents-stack.png'), 'Chemistry files')
+        self.ior_incl_menu.setStyleSheet(FONT_SMALL)
         ior_menu.addAction(self.schedule_file_act)
         self.view_group.addAction(self.schedule_file_act)
         ior_menu.addAction(self.ior_log_act)
@@ -1978,8 +1931,6 @@ class main_window(QMainWindow):                                    # main_window
         help_menu.addAction(self.script_guide_act)
         help_menu.addSeparator()
         help_menu.addAction(self.about_act)
-        for m in (menu, file_menu, ecl_menu, ior_menu, view_menu, help_menu):
-            m.setFont(LARGE_FONT)
 
     #-----------------------------------------------------------------------
     def about_app(self):
@@ -2237,7 +2188,6 @@ class main_window(QMainWindow):                                    # main_window
         self.progressbar.setFormat('')
         self.reset_progressbar()
         statusbar = QStatusBar()
-        statusbar.setFont(LARGE_FONT)
         statusbar.setStyleSheet("QStatusBar { border-top: 1px solid lightgrey; }\nQStatusBar::item { border:None; };"); 
         self.messages = QLabel()
         statusbar.addPermanentWidget(self.messages)
@@ -2257,8 +2207,8 @@ class main_window(QMainWindow):                                    # main_window
         self.layout = QGridLayout()
         self.layout.setContentsMargins(10,10,10,10)
         self.layout.setSpacing(10)
-        self.layout.setColumnStretch(0,25)
-        self.layout.setColumnStretch(1,75)
+        self.layout.setColumnStretch(0,20)
+        self.layout.setColumnStretch(1,80)
         self.layout.setRowStretch(0,50)
         self.layout.setRowStretch(1,50)
         widget = QWidget()
@@ -2273,7 +2223,10 @@ class main_window(QMainWindow):                                    # main_window
         self.layout.addWidget(make_scrollable(self.ecl_menu), *self.position['ecl_menu']) # 
         ### Create plot- and file-view area
         self.plot = Plot(self)
-        self.editor = Editor(name='editor', save_func=self.prepare_case)
+        # Plain editor with no syntax-highlight or save-function
+        self.editor = Editor(name='editor', save_func=None)
+        # Schedule-file editor
+        self.sch_editor = Editor(name='sch_editor', save_func=self.view_schedule_file)
         ### Eclipse editor
         rules = namedtuple('rules',('color weight option front back words'))
         sections = rules(color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b', DATA_file.section_names)
@@ -2286,12 +2239,10 @@ class main_window(QMainWindow):                                    # main_window
         self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=(mandatory, optional), save_func=self.prepare_case)
         ### Chemfile editor
         self.chem_editor = Highlight_editor(name='Chemistry editor', comment='#')
-        self.log_viewer = Editor(name='log_viewer', read_only=True)
+        self.log_viewer = Editor(name='log_viewer', read_only=True, size_limit_mb=5)
         self.editors = (self.eclipse_editor, self.iorsim_editor, self.editor, self.chem_editor, self.log_viewer)
         ### Plot is the default view at startup
-        #self.scrollplot = make_scrollable(self.plot)
         self.layout.addWidget(self.plot, *self.position['plot'])
-        #self.layout.addWidget(self.scrollplot, *self.position['plot'])
 
 
     #-----------------------------------------------------------------------
@@ -3006,7 +2957,6 @@ class main_window(QMainWindow):                                    # main_window
             enable = True
             act = create_action(self, text=file.name, checkable=True, func=partial(viewer, file, title=f'{title} {Path(file).name}', editor=editor), icon='document-c')
             act.setIconText('include')
-            act.setFont(SMALL_FONT)
             self.view_group.addAction(act)
             ### Disable for non-existing file
             act.setEnabled(file.is_file())
@@ -3023,7 +2973,6 @@ class main_window(QMainWindow):                                    # main_window
         if not root:
             return
         ### Check if any include-files are checked, i.e. displayed. If checked, show plot instead
-        # checked_act = next((act for act in self.view_group.actions() if act.isChecked()), None)
         checked_act = self.get_checked_act()
         include_act = [act for act in self.view_group.actions() if act.iconText()=='include']
         if checked_act and include_act and checked_act in include_act:
@@ -3049,11 +2998,13 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
-    def new_box_with_line_layout(self, name, boxname=None, func=None, linestyle='solid', color=None):
+    def plot_menu_box_variable(self, name, boxname=None, func=None, linestyle='solid', color=None):
     #-----------------------------------------------------------------------
         if not boxname:
             boxname=name
-        box = self.new_checkbox(name=boxname, toggle=True, func=func, pad_left=15) 
+        #box = self.plot_menu_checkbox(name=boxname, toggle=True, func=func, pad_left=15) 
+        box = self.plot_menu_checkbox(name=boxname, toggle=True, func=func)
+        box.setFixedSize(QSize(15,15))
         #box.setStyleSheet('padding-left: 15px ')
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
@@ -3061,34 +3012,41 @@ class main_window(QMainWindow):                                    # main_window
             color = to_rgb(self.plot_prop['color'][name])
         if color:
             line.setStyleSheet('border: 3px '+linestyle+' '+color)
+        line.setFixedWidth(25)
         label = QLabel(name)
-        #font = QFont()
-        #label.setFont(QFont(self.font, self.menu_fontsize))
-        label.setFont(SMALL_FONT)
+        label.setStyleSheet(FONT_SMALL)
         layout = QHBoxLayout()
-        layout.addWidget(box,1)
-        layout.addWidget(line,1)
-        layout.addWidget(label,3)
+        layout.addWidget(box)#, 1)
+        layout.addWidget(line)#, 1)
+        layout.addWidget(label)#, 1)
         return layout, box
 
     #-----------------------------------------------------------------------
-    def new_checkbox(self, text='', name='', func=None, toggle=False, pad_left=10, size=15, font=SMALL_FONT):
+    #def plot_menu_checkbox(self, text='', name='', func=None, toggle=False, pad_left=10, size=15):
+    def plot_menu_checkbox(self, text='', name='', func=None, toggle=False, pad_right=10): #, size=15):
     #-----------------------------------------------------------------------
-        box = QCheckBox(text, parent=self)
+        box = QCheckBox(text)#, parent=self)
         box.setObjectName(name)
-        #box.setFont(QFont(self.font, self.menu_fontsize))
-        box.setFont(font)
-        #box.setStyleSheet('padding-left: 10px;')
-        box.setStyleSheet('QCheckBox { padding-left: '+str(pad_left)+'px; }\nQCheckBox::indicator { width: '+str(size)+'px; height: '+str(size)+'px;};')
+        #ident = f'#{name}' if name else ''
+        #print(id)
+        #box.setStyleSheet('padding-right: '+str(pad_right)+'px; width: '+str(size)+'px; height: '+str(size)+'px;')
+        #box.setStyleSheet('QCheckBox'+id+' {padding-right: '+str(pad_right)+'px; padding-right: 0px; width: '+str(size)+'px; height: '+str(size)+'px;};')
+        #box.setStyleSheet('QCheckBox'+id+' {width: '+str(size)+'px; height: '+str(size)+'px;};')
+        #print('QCheckBox#'+name+' {padding-left: '+str(pad_left)+'px; width: '+str(size)+'px; height: '+str(size)+'px;};')
+        #box.setStyleSheet('QCheckBox { padding-left: '+str(pad_left)+'px; }\nQCheckBox::indicator { width: '+str(size)+'px; height: '+str(size)+'px;};')
+        #box.setStyleSheet('QCheckBox#'+name+' { padding-left: '+str(pad_left)+'px; width: '+str(size)+'px; height: '+str(size)+'px;};')
+        #box.setStyleSheet('QCheckBox { padding-right: '+str(pad_right)+'px; width: '+str(size)+'px; height: '+str(size)+'px;};')
+        #box.setStyleSheet('QCheckBox { padding-right: '+str(pad_right)+'px;};')
+        #box.setStyleSheet('QCheckBox'+ident+' { '+FONT_SMALL+'; padding-right: '+str(pad_right)+'px;};')
+        box.setStyleSheet(FONT_SMALL)
         if toggle:
             box.toggle()
-        if func: #is None:
-            #func = self.update_plot
+        if func:
             box.stateChanged.connect(func)
         return box
         
     #-----------------------------------------------------------------------
-    def update_ior_menu(self, font=LARGE_FONT):                   # main_window
+    def update_ior_menu(self):                   # main_window
     #-----------------------------------------------------------------------
         #print('update_ior_menu')
         menu = self.ior_menu
@@ -3097,45 +3055,40 @@ class main_window(QMainWindow):                                    # main_window
             return False
         self.ior_boxes = {}
         # Add conc / prod boxes
-        lbl = QLabel(parent=self)
-        lbl.setText('Y-axis')
-        lbl.setFont(font)
-        lbl.setStyleSheet('padding-left: 10px')
         self.ior_boxes['yaxis'] = {}
-        menu.column(0).addWidget(lbl)
+        menu.column(0).addWidget(QLabel('Y-axis'))
         for text in ('Prod', 'Conc'):
-            box = self.new_checkbox(text=text+'.', name='yaxis '+text.lower()+' ior', func=self.on_ior_menu_click)
-            menu.column(0).addWidget(box, alignment=Qt.AlignTop)
+            box = self.plot_menu_checkbox(text=text+'.', name='yaxis_'+text.lower()+'_ior', func=self.on_ior_menu_click)
+            box.setStyleSheet(FONT_SMALL)
+            menu.column(0).addWidget(box)#, alignment=Qt.AlignTop)
             self.ior_boxes['yaxis'][text.lower()] = box
         # Add well boxes
-        lbl = QLabel(parent=self)
-        lbl.setText('Wells')
-        lbl.setFont(font)
-        lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
-        menu.column(0).addWidget(lbl)
+        space = QLabel()
+        space.setStyleSheet('font: 1pt')
+        menu.column(0).addWidget(space)
+        menu.column(0).addWidget(QLabel('Wells'))
         self.ior_boxes['well'] = {}
-        #if self.active_wells:
-        #    self.out_wells = [well for well in self.out_wells if well in self.active_wells]
-        #for well in ['FIELD'] + self.out_wells:
         for well in self.out_wells:
-            box = self.new_checkbox(text=well, name='well '+well+' ior', func=self.on_ior_menu_click)
+            box = self.plot_menu_checkbox(text=well, name='well_'+well+'_ior', func=self.on_ior_menu_click)
+            box.setStyleSheet(FONT_SMALL)
             box.setEnabled(False)
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['well'][well] = box
         #self.ior_boxes['well']['FIELD'].setEnabled(True)
         # Add specie boxes
-        box = self.new_checkbox(text='Variables', font=font, pad_left=15)
+        box = self.plot_menu_checkbox(text='Variables', name='ior_var')#, pad_left=15)
+        box.setStyleSheet(FONT_LARGE)
         box.setChecked(True)
         box.stateChanged.connect(self.set_ior_variable_boxes)
         menu.column(1).addWidget(box)
         self.ior_var_box = box
         self.ior_boxes['var'] = {}
         for i,specie in enumerate(self.input['species'] or []):
-            layout, box = self.new_box_with_line_layout(specie, func=self.on_specie_click)
+            layout, box = self.plot_menu_box_variable(specie, func=self.on_specie_click)
             self.ior_boxes['var'][specie] = box
             menu.column(1).addLayout(layout)
         # Add temperature box
-        layout, box = self.new_box_with_line_layout('Temp', linestyle='dotted', color='#707070', func=self.on_specie_click)
+        layout, box = self.plot_menu_box_variable('Temp', linestyle='dotted', color='#707070', func=self.on_specie_click)
         self.ior_boxes['var']['Temp'] = box
         menu.column(1).addLayout(layout)
         # Set default checked boxes and add them to the checked list
@@ -3172,7 +3125,9 @@ class main_window(QMainWindow):                                    # main_window
             wells.insert(0, 'FIELD')
         fluids = list(set(fluids)-set(['Temp_ecl']))
         #print(fluids)
-        return wells, ('prod','rate'), fluids
+        #print(yaxis)
+        return wells, set(yaxis), fluids
+        #return wells, ('prod','rate'), fluids
 
     #-----------------------------------------------------------------------
     def init_ecl_data_v2(self, case=None):            # main_window
@@ -3194,25 +3149,24 @@ class main_window(QMainWindow):                                    # main_window
         self.unsmry = UNSMRY_file(case)
         ### Create dict of format [well][yaxis][fluid] = []
         data_file = DATA_file(case)
-        self.wellnames = ('FIELD',) + data_file.wellnames()
-        ecl = {w:{'days':[]} for w in self.wellnames}
-        [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in self.wellnames]
+
+        wellnames = data_file.wellnames()
+        field_wells = ('FIELD',) + wellnames
+        ecl = {w:{'days':[]} for w in field_wells}
+        [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in field_wells]
         ecl['days'] = []
+        # Prod temp refers to rate temp
+        for w in wellnames:
+            for yaxis in (set(self.ecl_yaxes.values()) - set('rate')):
+                ecl[w][yaxis]['Temp_ecl'] = ecl[w]['rate']['Temp_ecl']
         self.data['ecl'] = ecl
         return True
-
-    # #-----------------------------------------------------------------------
-    # def uncheck_box(self, box):
-    # #-----------------------------------------------------------------------
-    #     if box.isChecked():
-    #         box.setChecked(False)
-    #         self.update_checked_list(box)
-    #         self.update_plot_line(box.objectName(), False)
 
 
     #-----------------------------------------------------------------------
     def read_ecl_data(self, case=None, reinit=False, skip_zero=True):   # main_window
     #-----------------------------------------------------------------------
+        #print('read_ecl_data START')
         datafile = case or self.input['root']
         if not datafile:
             self.data['ecl'] = {}
@@ -3221,34 +3175,41 @@ class main_window(QMainWindow):                                    # main_window
         if reinit or not self.unsmry:
             if not self.init_ecl_data_v2(case=case):
                 return False
-        # keys = ('WOPR','WWPR','WTPCHEA','WOPT','WWIR','WWIT', 'FOPR','FOPT',
-        #     'FGPR','FGPT','FWPR','FWPT','FWIT','FWIR','WCPR','WCIR','WCPT')
         data = self.unsmry.data(keys=self.ecl_keys)
         # Enable menu-well-boxes for active wells
         for well in set(data.wells):
             self.ecl_boxes['well'][well].setEnabled(True)
-        ### Index to map read data to ecl[well][yaxis][fluid]
-        index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(data.wells, data.keys)]
+        #print(data.wells)
+        #print('index',len(index), index)
         ### Index into temp-data (for adding temp to 'prod', not only 'rate')
-        temp_index = [(n,ind[0]) for n,ind in enumerate(index) if ind[2]=='Temp_ecl']
+        #temp_index = [(n,ind[0]) for n,ind in enumerate(index) if ind[2]=='Temp_ecl']
+        #print('temp_index', len(temp_index), temp_index)
         if data.days:
             ### Skip zero-time data
             if skip_zero and data.days[0] < 1e-8:
                 data.days.pop(0)
                 data.welldata.pop(0)
+            #print(data.welldata)
             ecl = self.data['ecl']
             ecl['days'].extend(data.days)
             for w in set(data.wells):
                 ecl[w]['days'].extend(data.days)
-            for (w,y,f),*d in zip(index, *data.welldata):
+            ### Index to map read data to ecl[well][yaxis][fluid]
+            wyf_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(data.wells, data.keys)]
+            for (w,y,f),*d in zip(wyf_index, *data.welldata):
                 ecl[w][y][f].extend(d)
             # Add temp-data to 'prod'
-            for d in data.welldata:
-                for i,w in temp_index:
-                    ecl[w]['prod']['Temp_ecl'].append(d[i])
+            #for d in data.welldata:
+            #    for i,w in temp_index:
+            #        ecl[w]['prod']['Temp_ecl'].append(d[i])
+            # Copy temp-data from 'rate' to 'prod'
+            #for w in set(data.wells):
+            #    ecl[w]['prod']['Temp_ecl'] = ecl[w]['rate']['Temp_ecl']
+        #print(self.data['ecl'].get('P1'))
+
 
     #-----------------------------------------------------------------------
-    def update_ecl_menu(self, case=None, font=LARGE_FONT):         # main_window
+    def update_ecl_menu(self, case=None):         # main_window
     #-----------------------------------------------------------------------
         menu = self.ecl_menu
         case = case or self.input['root']
@@ -3265,44 +3226,44 @@ class main_window(QMainWindow):                                    # main_window
         #print(wells, yaxis, fluids)
         self.ecl_boxes = {}
         # prod/rate
-        lbl = QLabel(parent=self)
-        lbl.setText('Y-axis')
-        lbl.setFont(font)
-        lbl.setStyleSheet('padding-left: 10px')
-        menu.column(0).addWidget(lbl)
+        menu.column(0).addWidget(QLabel('Y-axis'))
         self.ecl_boxes['yaxis'] = {}
         for i,name in enumerate(yaxis):
-            box = self.new_checkbox(text=name.capitalize(), name='yaxis '+name+' ecl',
+            text = self.ecl_yaxes_names[name]
+            box = self.plot_menu_checkbox(text=text, name='yaxis_'+name+'_ecl',
                                     func=self.on_ecl_plot_click)
+            box.setStyleSheet(FONT_SMALL)
             self.ecl_boxes['yaxis'][name] = box
-            menu.column(0).addWidget(box, alignment=Qt.AlignTop)
+            menu.column(0).addWidget(box)
+        # space
+        space = QLabel()
+        space.setStyleSheet('font: 1pt')
+        menu.column(0).addWidget(space)
         # wells
-        lbl = QLabel(parent=self)
-        lbl.setText('Wells')
-        lbl.setFont(font)
-        lbl.setStyleSheet('padding-top: 10px; padding-left: 10px')
-        menu.column(0).addWidget(lbl)
+        menu.column(0).addWidget(QLabel('Wells'))
         self.ecl_boxes['well'] = {}
         for well in wells:
-            box = self.new_checkbox(text=well, name='well '+well+' ecl', func=self.on_ecl_plot_click)
+            box = self.plot_menu_checkbox(text=well, name='well_'+well+'_ecl', func=self.on_ecl_plot_click)
             box.setEnabled(False)
-            menu.column(0).addWidget(box, alignment=Qt.AlignTop)
+            box.setStyleSheet(FONT_SMALL)
+            menu.column(0).addWidget(box)
             self.ecl_boxes['well'][well] = box
         field_box = self.ecl_boxes['well'].get('FIELD')
         if field_box:
             field_box.setEnabled(True)
         # variables
-        box = self.new_checkbox(text='Variables', font=font, pad_left=15)
+        box = self.plot_menu_checkbox(text='Variables', name='ecl_var')
+        box.setStyleSheet(FONT_LARGE)
         box.setChecked(True)
         box.stateChanged.connect(self.set_ecl_variable_boxes)
         menu.column(1).addWidget(box)
         self.ecl_var_box = box
         self.ecl_boxes['var'] = {}
         for var in fluids:
-            layout, box = self.new_box_with_line_layout(var, func=self.on_ecl_var_click)
+            layout, box = self.plot_menu_box_variable(var, func=self.on_ecl_var_click)
             self.ecl_boxes['var'][var] = box
             menu.column(1).addLayout(layout)
-        layout, box = self.new_box_with_line_layout('Temp', boxname='Temp_ecl', linestyle='dotted',
+        layout, box = self.plot_menu_box_variable('Temp', boxname='Temp_ecl', linestyle='dotted',
                                                     color='#707070', func=self.on_ecl_var_click)
         self.ecl_boxes['var']['Temp_ecl'] = box
         menu.column(1).addLayout(layout)
@@ -3316,10 +3277,10 @@ class main_window(QMainWindow):                                    # main_window
         for box in self.ecl_boxes['var'].values():
             box.setChecked(checked)
 
-        
     #-----------------------------------------------------------------------
     def on_ecl_plot_click(self):
     #-----------------------------------------------------------------------
+        #print('on_ecl_plot_click', self.sender())
         self.update_checked_list(self.sender())
         self.create_plot()
 
@@ -3338,12 +3299,13 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_input_file(self, name, editor=None, title=None):       # main_window
     #-----------------------------------------------------------------------
-        # Avoid re-opening file after it is saved
         #print(self.sender())
         #print(self.view_group)
         self.log_file = None
         if self.input['root']:
             if self.current_viewer().file_is_open(name):
+                # Do not read a saved file, but update title
+                self.current_viewer().setTitle(title)
                 return
             if Path(name).is_file():
                 # print('view_file',title, name)
@@ -3393,9 +3355,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        #days = self.schedule and (DATA_file(self.input['root']) + DATA_file(self.schedule)).tsteps(missing_ok=True) or 0
-        days = self.schedule and (sum(DATA_file(name).tsteps(missing_ok=True)) for name in (self.input['root'], self.schedule)) or 0
-        self.view_input_file(self.schedule, title=f'Schedule file {self.schedule.name}, total days = {sum(days):.0f}', editor=self.editor)
+        #days = self.schedule and (sum(DATA_file(name).tsteps(missing_ok=True)) for name in (self.input['root'], self.schedule)) or 0
+        days = DATA_file(self.input['root']).including(self.schedule).tsteps(missing_ok=True)
+        self.view_input_file(self.schedule, title=f'Schedule file {self.schedule.name}, total days = {sum(days):.0f}', editor=self.sch_editor)
         
     #-----------------------------------------------------------------------
     def view_log(self, logfile, title=None, viewer=None):       # main_window
@@ -3451,10 +3413,11 @@ class main_window(QMainWindow):                                    # main_window
     def update_checked_list(self, box):
     #-----------------------------------------------------------------------
         if box.isChecked():
-            self.checked_boxes.append(box)
+            #self.checked_boxes.append(box)
+            self.checked_boxes.insert(0, box)
         else:
-            box in self.checked_boxes and self.checked_boxes.remove(box)
-        #print(self.checked_boxes)
+            if box in self.checked_boxes:
+                self.checked_boxes.remove(box)
 
 
     # #-----------------------------------------------------------------------
@@ -3710,6 +3673,7 @@ class main_window(QMainWindow):                                    # main_window
     def create_plot_lines(self):
     #-----------------------------------------------------------------------
         #print('create_plot_lines')
+        linewidth = 1.5
         self.plot_lines = {}
         lines = {}
         self.ref_plot_lines = {}
@@ -3717,7 +3681,7 @@ class main_window(QMainWindow):                                    # main_window
         ax = self.plot.axes   # or self.canvas.fig.axes
         #for i, ax_name in enumerate(self.ioraxes_names):
         for i, ax_name in enumerate(self.plot.axes_names):
-            yaxis, well, data = ax_name.split()
+            yaxis, well, data = ax_name.split('_')
             if data=='ior':
                 var_box = self.ior_boxes['var']
             elif data=='ecl':
@@ -3734,6 +3698,9 @@ class main_window(QMainWindow):                                    # main_window
                     try:
                         xdata = the_data[well]['days']
                         ydata = the_data[well][yaxis][var]
+                        #print(yaxis, well, data, var)
+                        #print(xdata)
+                        #print(ydata)
                         if len(xdata) != len(ydata):
                             DEBUG and print('Size mismatch:', len(xdata), len(ydata), well, yaxis, var)
                             continue
@@ -3742,7 +3709,7 @@ class main_window(QMainWindow):                                    # main_window
                     line, = ax[ind].plot(xdata, ydata, color=self.plot_prop['color'][var],
                                          linestyle=self.plot_prop['line'][var],
                                          alpha=self.plot_prop['alpha'][var],
-                                         lw=2, label=well+' '+yaxis+' '+var+' '+data)
+                                         lw=linewidth, label=well+' '+yaxis+' '+var+' '+data)
                 if line:
                     if var not in lines:
                         lines[var] = {}
@@ -3763,7 +3730,7 @@ class main_window(QMainWindow):                                    # main_window
                             continue                        
                         ref_line, = ax[ind].plot(xdata, ydata, color=self.plot_prop['color'][var],
                                                  linestyle=self.plot_prop['line'][var], alpha=0.4,
-                                                 lw=2, label=well+' '+yaxis+' '+var+' '+data)
+                                                 lw=linewidth, label=well+' '+yaxis+' '+var+' '+data)
                 if ref_line:
                     if var not in ref_lines:
                         ref_lines[var] = {}
@@ -4154,6 +4121,9 @@ if __name__ == '__main__':
 
     ### Need to set the locale under Linux to avoid datetime.strptime errors
     os.putenv('LC_ALL', 'C')
+    #os.environ['QT_ENABLE_HIGHDPI_SCALING'] = '0'
+    #os.environ['QT_FONT_DPI'] = '96'
+    #os.environ['QT_SCALE_FACTOR'] = '1'
     #os.putenv('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-logging')
     args = []
 
@@ -4173,6 +4143,7 @@ if __name__ == '__main__':
         exit_code = main_window.EXIT_CODE_REBOOT
         while exit_code == main_window.EXIT_CODE_REBOOT:
             app = QApplication(sys.argv + args)
+            #print(app.screens())
             window = main_window(settings_file=SETTINGS_FILE)
             window.show()
             exit_code = app.exec()
