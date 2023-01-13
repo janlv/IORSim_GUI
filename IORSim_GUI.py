@@ -886,8 +886,8 @@ class Plot(QGroupBox):
             # Group by yaxis and well
             group = {k:flatten(g) for k,g in groupby_sorted(box, key=itemgetter(0))}
             prod = product(group.get('yaxis') or (), sorted(group.get('well') or ()))
-            names = list('_'.join(p)+'_'+data for p in prod)
-            axes_names.extend(names)
+            #names = list('_'.join(p)+'_'+data for p in prod)
+            axes_names.extend('_'.join(p)+'_'+data for p in prod)
         #print('axes_names', axes_names)
         return axes_names
 
