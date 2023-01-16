@@ -229,7 +229,8 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
                 self.update_function(progress=not restart, plot=True)
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
         # Get number of wells from UNRST-file
-        self.nwell = self.unrst.get('nwell')[0][-1]
+        #self.nwell = self.unrst.get('nwell')[0][-1]
+        self.nwell = next(self.unrst.read('nwell', tail=True))[0]
         # Wait for flushed RFT-file
         msg = self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
         if msg:
@@ -265,7 +266,9 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
         if self.check_rft and self.rft.exists():
             nblocks = 1
             if nwell:
-                self.nwell = nblocks = self.unrst.get('nwell')[0][-1]
+                #self.nwell = nblocks = self.unrst.get('nwell')[0][-1]
+                self.nwell = nblocks = next(self.unrst.read('nwell', tail=True))[0]
+                #print(nwell)
             msg = self.rft.check.data_saved_maxmin(nblocks=nblocks, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
             if msg:
                 self._print(msg)
@@ -863,11 +866,15 @@ class Simulation:                                                        # Simul
             if not self.restart_file.is_file():
                 raise SystemError(f'ERROR Restart file {self.restart_file.file} is missing')
             self.restart_step = step
-            time, n = self.restart_file.get('time', 'step', stop=('step', step))
-            if step > n[-1] or not step in n: 
-                new_step = min(n, key=lambda x:abs(x-step))
-                raise SystemError(f'ERROR Error in the Eclipse input-file ({self.ECL_inp}): Unable to restart from step {step}, use {new_step} instead')
-            self.restart_days = time[n.index(step)]
+            time, n = next(self.restart_file.read('time', 'step', drop=lambda x:x[1]<step))
+            if n != step:
+                raise SystemError(f'ERROR Step {step} is missing in restart file {self.restart_file}')
+            #time, n = self.restart_file.get('time', 'step', stop=('step', step))
+            #if step > n[-1] or not step in n: 
+            #    new_step = min(n, key=lambda x:abs(x-step))
+            #    raise SystemError(f'ERROR Error in the Eclipse input-file ({self.ECL_inp}): Unable to restart from step {step}, use {new_step} instead')
+            #self.restart_days = time[n.index(step)]
+            self.restart_days = time
             self.restart = True
         ### Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
         self.start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
@@ -1086,7 +1093,8 @@ class Simulation:                                                        # Simul
                                     progress=lambda n: self.update.progress(value=n), 
                                     cancel=ior.stop_if_canceled)
             if check:
-                nblocks = ior.unrst.get('step', N=-1)[0][0]
+                #nblocks = ior.unrst.get('step', N=-1)[0][0]
+                nblocks = next(ior.unrst.read('step', tail=True))[0]
                 msg = ior.unrst.check.data_saved(nblocks=nblocks, limit=1, wait_func=ior.wait_for)
                 if msg:
                     raise SystemError(f'ERROR Converted file {ior.unrst.file.name} did not pass the check: {msg}')
@@ -1125,10 +1133,12 @@ class Simulation:                                                        # Simul
             ### The merged file ends with SATNUM (IORSim UNRST) instead of ENDSOL (Eclipse UNRST)
             merge_unrst = UNRST_file(f'{case}_MERGED.UNRST', end='SATNUM')
             ### Reset progress-bar
-            end = min(x.unrst.get('step', N=-1)[0][0] for x in (ecl, ior))
+            #end = min(x.unrst.get('step', N=-1)[0][0] for x in (ecl, ior))
+            end = min(next(x.unrst.read('step', tail=True))[0] for x in (ecl, ior))
             self.update.progress(value=-end)
             ### Use the same start index for both files/sections
-            start = max(x.unrst.get('step', N=1)[0][0] for x in (ecl, ior))
+            #start = max(x.unrst.get('step', N=1)[0][0] for x in (ecl, ior))
+            start = max(next(x.unrst.read('step'))[0] for x in (ecl, ior))
             ### Define the sections in the restart file where the stitching is done
             ecl_sec = ecl.unrst.sections(start_before='SEQNUM',  end_before='SEQNUM', begin=start)
             ior_sec = ior.unrst.sections(start_after='DOUBHEAD', end_before='SEQNUM', begin=start)
