@@ -3126,7 +3126,7 @@ class main_window(QMainWindow):                                    # main_window
         fluids = list(set(fluids)-set(['Temp_ecl']))
         #print(fluids)
         #print(yaxis)
-        return wells, set(yaxis), fluids
+        return wells, sorted(set(yaxis)), fluids
         #return wells, ('prod','rate'), fluids
 
     #-----------------------------------------------------------------------

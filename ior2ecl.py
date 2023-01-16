@@ -1125,17 +1125,18 @@ class Simulation:                                                        # Simul
             ### The merged file ends with SATNUM (IORSim UNRST) instead of ENDSOL (Eclipse UNRST)
             merge_unrst = UNRST_file(f'{case}_MERGED.UNRST', end='SATNUM')
             ### Reset progress-bar
-            end = min([x.unrst.get('step', N=-1)[0][0] for x in (ecl, ior)])
+            end = min(x.unrst.get('step', N=-1)[0][0] for x in (ecl, ior))
             self.update.progress(value=-end)
             ### Use the same start index for both files/sections
-            start = max([x.unrst.get('step', N=1)[0][0] for x in (ecl, ior)])
+            start = max(x.unrst.get('step', N=1)[0][0] for x in (ecl, ior))
             ### Define the sections in the restart file where the stitching is done
             ecl_sec = ecl.unrst.sections(start_before='SEQNUM',  end_before='SEQNUM', begin=start)
             ior_sec = ior.unrst.sections(start_after='DOUBHEAD', end_before='SEQNUM', begin=start)
             ### Create merged UNRST file
             merged_file = merge_unrst.create(sections=(ecl_sec, ior_sec), 
-                                             progress=lambda n: self.update.progress(value=n), 
+                                             progress=lambda n: self.update.progress(value=n),
                                              cancel=ior.stop_if_canceled)
+            merge_unrst.assert_no_duplicates()
             if check:
                 msg = merge_unrst.check.data_saved(nblocks=end, limit=1, wait_func=ior.wait_for)
                 if msg:
@@ -1152,7 +1153,8 @@ class Simulation:                                                        # Simul
             silentdelete(merge_unrst.file)
             if isinstance(error, KeyboardInterrupt):
                 return False, 'Merge cancelled'
-            DEBUG and trace_print_exc()
+            if DEBUG:
+                trace_print_exc()
             raise SystemError(f'{error_msg}: {error}') from error
             #raise SystemError(f'{error_msg}: {exc_info()[1]}')
         if self.output.del_merge:
