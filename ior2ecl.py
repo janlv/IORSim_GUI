@@ -283,7 +283,8 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
         if self.check_rft and self.rft.not_in_sync(self.t):
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
-            self._print(f' Date is {self.unrst.dates(N=-1).date()} ({self.t} days)')
+            #self._print(f' Date is {self.unrst.dates(N=-1).date()} ({self.t} days)')
+            self._print(f' Date is {next(self.unrst.dates(tail=True)).date()} ({self.t} days)')
         self._print(f'Days: {self.t}')
         #self._print(f'Days: log:{self.time()}, RFT:{(data:=self.rft.check.data()) and data[-1]}, UNRST:{self.unrst.get("time", N=-1)}')
 
@@ -435,7 +436,8 @@ class Iorsim(Runner):                                                        # i
         self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
         self.unrst = UNRST_file(self.funrst.file, end='SATNUM')
         self.inputfile = IORSim_input(root, check=True, check_format=kwargs.get('check_input_kw') or False)
-        (warn:=self.inputfile.warnings) and self.update and self.update.message(warn)
+        if self.update and (warn:=self.inputfile.warnings):
+            self.update.message(warn)
         self.is_iorsim = True
         self.is_eclipse = False
         self.copied_chemfiles = []
@@ -877,7 +879,8 @@ class Simulation:                                                        # Simul
             self.restart_days = time
             self.restart = True
         ### Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
-        self.start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
+        #self.start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
+        self.start = next(self.restart_file.dates()) if self.restart_file else self.ECL_inp.get('START')[0]
         self.mode = self.mode or (('READDATA' in self.ECL_inp) and 'backward' or 'forward')
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
@@ -921,8 +924,6 @@ class Simulation:                                                        # Simul
         # Init runs
         self.ecl = EclipseBackward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs)
         self.ior = Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)
-        # Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
-        #start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
         # Set up schedule of commands to pass to satnum-file
         self.schedule = Schedule(self.root, T=self.T, start=self.start, init_days=self.init_days, interface_file=self.ior.satnum, 
                                  skip_empty=self.kwargs.get('skip_empty', False))
@@ -1238,29 +1239,32 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def cancel(self):                                                    # Simulation
     #--------------------------------------------------------------------------------
-        [run.cancel() for run in self.runs if isinstance(run, Runner)]
+        for run in self.runs:
+            if isinstance(run, Runner):
+                run.cancel()
+        #[run.cancel() for run in self.runs if isinstance(run, Runner)]
 
 
-    #--------------------------------------------------------------------------------
-    def compare_restart(self, ecl_keys=[], ior_keys=[], limit=None):     # Simulation
-    #--------------------------------------------------------------------------------
-        ecl_unrst = UNRST_file(f'{self.root}_ECLIPSE.UNRST')
-        ior = self.ior or Iorsim(root=self.root)   
-        try:
-            if self.runlog:
-                self.runlog = open(self.runlog.name, 'a')
-            #with open(self.runlog.name, 'a') as self.runlog:   
-            self.print2log(f'\n Comparing {ecl_unrst.name()} and {ior.funrst.name()}:')
-            n = 0
-            for a,b in zip(ecl_unrst.data(*ecl_keys), ior.funrst.data(*ior_keys)):
-                self.print2log(f'  ECL: {print_dict(a)}')
-                self.print2log(f'  IOR: {print_dict(b)}')
-                self.print2log('')
-                n += 1
-                if limit and n > limit:
-                    break
-        finally:
-            self.runlog and self.runlog.close()
+    # #--------------------------------------------------------------------------------
+    # def compare_restart(self, ecl_keys=[], ior_keys=[], limit=None):     # Simulation
+    # #--------------------------------------------------------------------------------
+    #     ecl_unrst = UNRST_file(f'{self.root}_ECLIPSE.UNRST')
+    #     ior = self.ior or Iorsim(root=self.root)   
+    #     try:
+    #         if self.runlog:
+    #             self.runlog = open(self.runlog.name, 'a')
+    #         #with open(self.runlog.name, 'a') as self.runlog:   
+    #         self.print2log(f'\n Comparing {ecl_unrst.name()} and {ior.funrst.name()}:')
+    #         n = 0
+    #         for a,b in zip(ecl_unrst.data(*ecl_keys), ior.funrst.data(*ior_keys)):
+    #             self.print2log(f'  ECL: {print_dict(a)}')
+    #             self.print2log(f'  IOR: {print_dict(b)}')
+    #             self.print2log('')
+    #             n += 1
+    #             if limit and n > limit:
+    #                 break
+    #     finally:
+    #         self.runlog and self.runlog.close()
 
 
 

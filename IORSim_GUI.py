@@ -3186,26 +3186,19 @@ class main_window(QMainWindow):                                    # main_window
         #print('temp_index', len(temp_index), temp_index)
         if data.days:
             ### Skip zero-time data
+            start = 0
             if skip_zero and data.days[0] < 1e-8:
-                data.days.pop(0)
-                data.welldata.pop(0)
-            #print(data.welldata)
+                start = 1
+                #data.days.pop(0)
+                #data.welldata.pop(0)
             ecl = self.data['ecl']
-            ecl['days'].extend(data.days)
+            ecl['days'].extend(data.days[start:])
             for w in set(data.wells):
-                ecl[w]['days'].extend(data.days)
+                ecl[w]['days'].extend(data.days[start:])
             ### Index to map read data to ecl[well][yaxis][fluid]
             wyf_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(data.wells, data.keys)]
-            for (w,y,f),*d in zip(wyf_index, *data.welldata):
+            for (w,y,f),*d in zip(wyf_index, *data.welldata[start:]):
                 ecl[w][y][f].extend(d)
-            # Add temp-data to 'prod'
-            #for d in data.welldata:
-            #    for i,w in temp_index:
-            #        ecl[w]['prod']['Temp_ecl'].append(d[i])
-            # Copy temp-data from 'rate' to 'prod'
-            #for w in set(data.wells):
-            #    ecl[w]['prod']['Temp_ecl'] = ecl[w]['rate']['Temp_ecl']
-        #print(self.data['ecl'].get('P1'))
 
 
     #-----------------------------------------------------------------------
