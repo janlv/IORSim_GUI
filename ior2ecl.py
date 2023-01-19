@@ -80,7 +80,7 @@ class Eclipse(Runner):                                                      # ec
     #--------------------------------------------------------------------------------
     def time(self):                                                         # eclipse
     #--------------------------------------------------------------------------------
-        return self.rft.last_day() or self.unrst.last_day() or super().time()
+        return self.prt.last_day() or self.rft.last_day() or self.unrst.last_day() or super().time()
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                          # eclipse
@@ -445,16 +445,15 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
     def time(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
-        time = None
         ### Find most recently modified file
-        files = sorted(((f, f.stat().st_size) for f in self.case.parent.glob('*.trcconc')), key=itemgetter(1))
-        file = files and files[-1][0] or None
-        #file = next(self.case.parent.glob('*.trcconc'), None)
-        if line := next(tail_file(file, n=1), None):
-            line = line.strip()   # Remove leading and trailing space
-            time = line and line.split()[0] 
-            time = time and not time.startswith('#') and float(time)       
-        return time or super().time()
+        files = ((f, f.stat().st_size) for f in self.case.parent.glob('*.trcconc'))
+        files = sorted(files, key=itemgetter(1))
+        file = files[-1][0] if files else ''
+        try:
+            values = next(tail_file(file, size=1000),'').split('\n')[-2].strip().split()
+            return float(values[0])
+        except (ValueError, IndexError):
+            return super().time()
 
 
     #--------------------------------------------------------------------------------
