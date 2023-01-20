@@ -735,6 +735,20 @@ class Canvas(FigureCanvasQTAgg):
 #===========================================================================
 class Plot(QGroupBox):
 #===========================================================================
+    mark = '|'
+
+    @staticmethod
+    #-----------------------------------------------------------------------
+    def name_tag(*tags):
+    #-----------------------------------------------------------------------
+        return Plot.mark.join(tags)
+
+    @staticmethod
+    #-----------------------------------------------------------------------
+    def split_tag(*tags):
+    #-----------------------------------------------------------------------
+        return zip(*(tag.split(Plot.mark) for tag in tags))
+
     #-----------------------------------------------------------------------
     def __init__(self, parent=None, fontsize=FONT_PLOT, plot_height=250):
     #-----------------------------------------------------------------------
@@ -767,6 +781,7 @@ class Plot(QGroupBox):
         self.clear()
         self.min_height = self.height()
 
+
     #-----------------------------------------------------------------------
     def adjust(self):
     #-----------------------------------------------------------------------
@@ -796,49 +811,73 @@ class Plot(QGroupBox):
         self.axes_names = self.get_axes_names()
         sum_plots = len(self.axes_names)
         self.set_height(sum_plots*self.plot_height)
-        for tag in self.axes_names:
-            self.num_plots += 1
-            ax = self.canvas.fig.add_subplot(sum_plots, 1, self.num_plots)
-            self.axes.append(ax)
-            self.set_title(ax, tag)
-            self.set_labels(ax, tag)
-            # add temperature axis
-            axx = ax.twinx()
-            self.axes.append(axx)
-            self.set_temp_labels(axx, tag)
-
-    #-----------------------------------------------------------------------
-    def set_title(self, ax, tag):                                 # Plot
-    #-----------------------------------------------------------------------
-        _, well, data = tag.split('_')
+        fig = self.canvas.fig
+        axes = [fig.add_subplot(sum_plots, 1, i+1) for i in range(sum_plots)]
+        tempax = [ax.twinx() for ax in axes]
+        self.axes = flatten(zip(axes, tempax))
+        self.num_plots = sum_plots
+        # Fix axes
         src = {'ecl':'Eclipse, ', 'ior':'IORSim, '}
-        ax.title.set_text(src[data] + ('well ' if well != 'FIELD' else '') + well)
+        tags = self.axes_names
+        yaxiss, wells, datas = self.split_tag(*tags)
+        for ax, tag, yaxis, well, data in zip(axes, tags, yaxiss, wells, datas):
+            # Set title
+            ax.title.set_text(src[data] + ('well ' if well != 'FIELD' else '') + well)
+            # Set labels
+            ax.set_label(tag)
+            ax.set_xlabel('days')
+            ax.set_ylabel(self.ylabel[yaxis+data])
+            ax.autoscale_view()
+        tempbox = {'ecl':self.checkboxes.ecl['var']['Temp_ecl'], 'ior': self.checkboxes.ior['var']['Temp']}
+        # Fix right temperature axis
+        for ax, tag, data in zip(tempax, tags, datas):
+            ax.set_visible(tempbox[data].isChecked())
+            ax.ticklabel_format(axis='y', style='plain', useOffset=False) #scilimits=[-1,1])
+            ax.set_label('Temp ' + tag)
+            ax.set_ylabel('Temperature [C]')
+            ax.autoscale_view()
+        # for tag in self.axes_names:
+        #     print(tag)
+        #     self.num_plots += 1
+        #     ax = self.canvas.fig.add_subplot(sum_plots, 1, self.num_plots)
+        #     self.axes.append(ax)
+        #     self.set_title(ax, tag)
+        #     self.set_labels(ax, tag)
+        #     # add temperature axis
+        #     axx = ax.twinx()
+        #     self.axes.append(axx)
+        #     self.set_temp_labels(axx, tag)
 
-    #-----------------------------------------------------------------------
-    def set_labels(self, ax, tag):                                 # Plot
-    #-----------------------------------------------------------------------
-        yaxis, _, data = tag.split('_')
-        ax.set_label(tag)
-        ax.set_xlabel('days')
-        # src = {'ecl':'Eclipse, ', 'ior':'IORSim, '}
-        # ax.title.set_text(src[data] + ('well ' if well != 'FIELD' else '') + well)
-        ax.set_ylabel(self.ylabel[yaxis+data])
-        ax.autoscale_view()
+    # #-----------------------------------------------------------------------
+    # def set_title(self, ax, tag):                                 # Plot
+    # #-----------------------------------------------------------------------
+    #     _, well, data = tag.split(self.mark)
+    #     src = {'ecl':'Eclipse, ', 'ior':'IORSim, '}
+    #     ax.title.set_text(src[data] + ('well ' if well != 'FIELD' else '') + well)
 
-    #-----------------------------------------------------------------------
-    def set_temp_labels(self, axx, tag):                              # Plot
-    #-----------------------------------------------------------------------
-        _, _, data = tag.split('_')
-        tempbox = None
-        if data == 'ior':
-            tempbox = self.checkboxes.ior['var']['Temp']
-        elif data == 'ecl':
-            tempbox = self.checkboxes.ecl['var']['Temp_ecl']
-        axx.set_visible(tempbox.isChecked())
-        axx.ticklabel_format(axis='y', style='plain', useOffset=False) #scilimits=[-1,1])
-        axx.set_label('Temp ' + tag)
-        axx.set_ylabel('Temperature [C]')
-        axx.autoscale_view()
+    # #-----------------------------------------------------------------------
+    # def set_labels(self, ax, tag):                                 # Plot
+    # #-----------------------------------------------------------------------
+    #     yaxis, _, data = tag.split(self.mark)
+    #     ax.set_label(tag)
+    #     ax.set_xlabel('days')
+    #     ax.set_ylabel(self.ylabel[yaxis+data])
+    #     ax.autoscale_view()
+
+    # #-----------------------------------------------------------------------
+    # def set_temp_labels(self, axx, tag):                              # Plot
+    # #-----------------------------------------------------------------------
+    #     _, _, data = tag.split(self.mark)
+    #     tempbox = None
+    #     if data == 'ior':
+    #         tempbox = self.checkboxes.ior['var']['Temp']
+    #     elif data == 'ecl':
+    #         tempbox = self.checkboxes.ecl['var']['Temp_ecl']
+    #     axx.set_visible(tempbox.isChecked())
+    #     axx.ticklabel_format(axis='y', style='plain', useOffset=False) #scilimits=[-1,1])
+    #     axx.set_label('Temp ' + tag)
+    #     axx.set_ylabel('Temperature [C]')
+    #     axx.autoscale_view()
 
     #-----------------------------------------------------------------------
     def set_height(self, height):                                     # Plot
@@ -879,15 +918,15 @@ class Plot(QGroupBox):
         #  Checkboxes are named 'yaxis_prod_ior', 'yaxis_conc_ior', 'yaxis_rate_ecl'
         #  'well_P1_ior', 'well_I1_ecl'
         # Get tag names from checkbox objects
-        boxes = (box.objectName().split('_') for box in self.checked_boxes)
+        boxes = (box.objectName().split(self.mark) for box in self.checked_boxes)
         axes_names = []
         # Loop over ior/ecl data
         for data, box in groupby_sorted(boxes, key=itemgetter(2), reverse=True):
             # Group by yaxis and well
             group = {k:flatten(g) for k,g in groupby_sorted(box, key=itemgetter(0))}
             prod = product(group.get('yaxis') or (), sorted(group.get('well') or ()))
-            #names = list('_'.join(p)+'_'+data for p in prod)
-            axes_names.extend('_'.join(p)+'_'+data for p in prod)
+            #names = list(self.mark.join(p)+'_'+data for p in prod)
+            axes_names.extend(self.mark.join(p)+self.mark+data for p in prod)
         #print('axes_names', axes_names)
         return axes_names
 
@@ -2987,7 +3026,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_ecl_var_click(self):
     #-----------------------------------------------------------------------
-        #print('on_ecl_var_click')
+        #print('on_ecl_var_click', self.sender())
         name = self.sender().objectName()
         is_checked = self.sender().isChecked()
         self.update_plot_line(name, is_checked)
@@ -3058,7 +3097,10 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_boxes['yaxis'] = {}
         menu.column(0).addWidget(QLabel('Y-axis'))
         for text in ('Prod', 'Conc'):
-            box = self.plot_menu_checkbox(text=text+'.', name='yaxis_'+text.lower()+'_ior', func=self.on_ior_menu_click)
+            #box = self.plot_menu_checkbox(text=text+'.', name='yaxis_'+text.lower()+'_ior', func=self.on_ior_menu_click)
+            #name = 'yaxis'+Plot.mark+text.lower()+Plot.mark+'ior'
+            name = Plot.name_tag('yaxis', text.lower(), 'ior')
+            box = self.plot_menu_checkbox(text=text+'.', name=name, func=self.on_ior_menu_click)
             box.setStyleSheet(FONT_SMALL)
             menu.column(0).addWidget(box)#, alignment=Qt.AlignTop)
             self.ior_boxes['yaxis'][text.lower()] = box
@@ -3069,14 +3111,16 @@ class main_window(QMainWindow):                                    # main_window
         menu.column(0).addWidget(QLabel('Wells'))
         self.ior_boxes['well'] = {}
         for well in self.out_wells:
-            box = self.plot_menu_checkbox(text=well, name='well_'+well+'_ior', func=self.on_ior_menu_click)
+            #box = self.plot_menu_checkbox(text=well, name='well_'+well+'_ior', func=self.on_ior_menu_click)
+            name = Plot.name_tag('well', well, 'ior')
+            box = self.plot_menu_checkbox(text=well, name=name, func=self.on_ior_menu_click)
             box.setStyleSheet(FONT_SMALL)
             box.setEnabled(False)
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['well'][well] = box
         #self.ior_boxes['well']['FIELD'].setEnabled(True)
         # Add specie boxes
-        box = self.plot_menu_checkbox(text='Variables', name='ior_var')#, pad_left=15)
+        box = self.plot_menu_checkbox(text='Variables', name='ior_var')
         box.setStyleSheet(FONT_LARGE)
         box.setChecked(True)
         box.stateChanged.connect(self.set_ior_variable_boxes)
@@ -3179,18 +3223,11 @@ class main_window(QMainWindow):                                    # main_window
         # Enable menu-well-boxes for active wells
         for well in set(data.wells):
             self.ecl_boxes['well'][well].setEnabled(True)
-        #print(data.wells)
-        #print('index',len(index), index)
-        ### Index into temp-data (for adding temp to 'prod', not only 'rate')
-        #temp_index = [(n,ind[0]) for n,ind in enumerate(index) if ind[2]=='Temp_ecl']
-        #print('temp_index', len(temp_index), temp_index)
         if data.days:
             ### Skip zero-time data
             start = 0
             if skip_zero and data.days[0] < 1e-8:
                 start = 1
-                #data.days.pop(0)
-                #data.welldata.pop(0)
             ecl = self.data['ecl']
             ecl['days'].extend(data.days[start:])
             for w in set(data.wells):
@@ -3223,8 +3260,10 @@ class main_window(QMainWindow):                                    # main_window
         self.ecl_boxes['yaxis'] = {}
         for i,name in enumerate(yaxis):
             text = self.ecl_yaxes_names[name]
-            box = self.plot_menu_checkbox(text=text, name='yaxis_'+name+'_ecl',
-                                    func=self.on_ecl_plot_click)
+            # box = self.plot_menu_checkbox(text=text, name='yaxis_'+name+'_ecl',
+            #                         func=self.on_ecl_plot_click)
+            name = Plot.name_tag('yaxis', name, 'ecl')
+            box = self.plot_menu_checkbox(text, name, self.on_ecl_plot_click)
             box.setStyleSheet(FONT_SMALL)
             self.ecl_boxes['yaxis'][name] = box
             menu.column(0).addWidget(box)
@@ -3234,9 +3273,21 @@ class main_window(QMainWindow):                                    # main_window
         menu.column(0).addWidget(space)
         # wells
         menu.column(0).addWidget(QLabel('Wells'))
+        # box = self.plot_menu_checkbox(text='All wells', name='ecl_well')
+        # box.setStyleSheet(FONT_SMALL)
+        # box.setChecked(False)
+        # box.stateChanged.connect(self.set_ecl_well_boxes)
+        # menu.column(0).addWidget(box)
+        # self.ecl_well_box = box
+        all_wells = 'Toggle wells'
+        pos = 1 if 'FIELD' in wells else 0
+        wells = wells[:pos] + [all_wells] + wells[pos:]
+        #print(wells)
         self.ecl_boxes['well'] = {}
         for well in wells:
-            box = self.plot_menu_checkbox(text=well, name='well_'+well+'_ecl', func=self.on_ecl_plot_click)
+            #box = self.plot_menu_checkbox(text=well, name='well_'+well+'_ecl', func=self.on_ecl_plot_click)
+            name = Plot.name_tag('well', well, 'ecl')
+            box = self.plot_menu_checkbox(well, name, self.on_ecl_plot_click)
             box.setEnabled(False)
             box.setStyleSheet(FONT_SMALL)
             menu.column(0).addWidget(box)
@@ -3244,6 +3295,13 @@ class main_window(QMainWindow):                                    # main_window
         field_box = self.ecl_boxes['well'].get('FIELD')
         if field_box:
             field_box.setEnabled(True)
+        all_wells = self.ecl_boxes['well'].get(all_wells)
+        if all_wells:
+            all_wells.setEnabled(True)
+            all_wells.setChecked(False)
+            all_wells.stateChanged.disconnect()
+            all_wells.stateChanged.connect(self.set_ecl_well_boxes)
+            self.ecl_well_box = all_wells
         # variables
         box = self.plot_menu_checkbox(text='Variables', name='ecl_var')
         box.setStyleSheet(FONT_LARGE)
@@ -3269,6 +3327,32 @@ class main_window(QMainWindow):                                    # main_window
         checked = self.ecl_var_box.isChecked()
         for box in self.ecl_boxes['var'].values():
             box.setChecked(checked)
+
+    #-----------------------------------------------------------------------
+    def set_ecl_well_boxes(self):
+    #-----------------------------------------------------------------------
+        checked = self.ecl_well_box.isChecked()
+        boxes = self.ecl_boxes['well'].values()
+        _, wells, datas = Plot.split_tag(*(box.objectName() for box in boxes))
+        checked_boxes = []
+        for well, data, box in zip(wells, datas, boxes):
+            #print(box.objectName())
+            if well in ('FIELD','Toggle wells'):# in box.objectName():
+                continue
+            #welldata = self.data[data][well]
+            #print(data, well, sum(var for yaxis in welldata.values() for var in yaxis.values()))
+            #values = (flatten(yaxis.values()) for yaxis in welldata.values() if isinstance(yaxis, dict))
+            #if well == 'W-3':
+            #    print(list(yaxis for yaxis in welldata.values() if isinstance(yaxis, dict)))
+            #print(data, well, sum(sum(val) for val in values))
+            #if any(sum(val)>0 for val in values):
+            #ydata = self.data[data][well][yaxis][var]
+            checked_boxes.append(box)
+            box.blockSignals(True)
+            box.setChecked(checked)
+            box.blockSignals(False)
+        self.update_checked_list(*checked_boxes)
+        self.create_plot()
 
     #-----------------------------------------------------------------------
     def on_ecl_plot_click(self):
@@ -3403,14 +3487,14 @@ class main_window(QMainWindow):                                    # main_window
 
             
     #-----------------------------------------------------------------------
-    def update_checked_list(self, box):
+    def update_checked_list(self, *boxes):
     #-----------------------------------------------------------------------
-        if box.isChecked():
-            #self.checked_boxes.append(box)
-            self.checked_boxes.insert(0, box)
-        else:
-            if box in self.checked_boxes:
-                self.checked_boxes.remove(box)
+        for box in boxes:
+            if box.isChecked():
+                self.checked_boxes.insert(0, box)
+            else:
+                if box in self.checked_boxes:
+                    self.checked_boxes.remove(box)
 
 
     # #-----------------------------------------------------------------------
@@ -3647,7 +3731,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_plot(self):                         # main_window
     #-----------------------------------------------------------------------                
-        #print('create_plot')
         if self.plot_ref_data:
             self.plot_ref = True
         self.plot.clear()
@@ -3665,7 +3748,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_plot_lines(self):
     #-----------------------------------------------------------------------
-        #print('create_plot_lines')
         linewidth = 1.5
         self.plot_lines = {}
         lines = {}
@@ -3673,13 +3755,15 @@ class main_window(QMainWindow):                                    # main_window
         ref_lines = {}
         ax = self.plot.axes   # or self.canvas.fig.axes
         #for i, ax_name in enumerate(self.ioraxes_names):
-        for i, ax_name in enumerate(self.plot.axes_names):
-            yaxis, well, data = ax_name.split('_')
+        #for i, ax_name in enumerate(self.plot.axes_names):
+        for i, (yaxis, well, data) in enumerate(zip(*Plot.split_tag(*self.plot.axes_names))):
+            #yaxis, well, data = ax_name.split(Plot.mark)
+            #yaxis, well, data = list(*zip(*Plot.split_tag(ax_name)))
             if data=='ior':
                 var_box = self.ior_boxes['var']
             elif data=='ecl':
                 var_box = self.ecl_boxes['var']
-            var_list = var_box.keys() 
+            var_list = var_box.keys()
             the_data = self.data.get(data)
             for var in var_list:
                 if 'temp' in var.lower():
@@ -3735,7 +3819,8 @@ class main_window(QMainWindow):                                    # main_window
             self.ref_plot_lines = ref_lines
         if self.plot_ref:
             self.plot_ref = None
-            
+
+
     # #-----------------------------------------------------------------------
     # def plot_line(self, axis, var, data, axisname, var_box, lines):           # main_window
     # #-----------------------------------------------------------------------
