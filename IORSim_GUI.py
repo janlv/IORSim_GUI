@@ -100,8 +100,8 @@ QDir.addSearchPath('icons', resource_path()/'icons/')
 #FONT = 'Segoe UI'
 #LARGE_FONT = QFont(FONT, 9)
 #SMALL_FONT = QFont(FONT, 8)
-FONT_LARGE = 'font: 9pt' # for stylesheet
-FONT_SMALL = 'font: 8pt'
+FONT_LARGE = 'font-size: 9pt' # for stylesheet
+FONT_SMALL = 'font-size: 8pt'
 FONT_PLOT = 7
 
 
@@ -745,9 +745,9 @@ class Plot(QGroupBox):
 
     @staticmethod
     #-----------------------------------------------------------------------
-    def split_tag(*tags):
+    def split_tag(tag):
     #-----------------------------------------------------------------------
-        return zip(*(tag.split(Plot.mark) for tag in tags))
+        return tag.split(Plot.mark)
 
     #-----------------------------------------------------------------------
     def __init__(self, parent=None, fontsize=FONT_PLOT, plot_height=250):
@@ -803,12 +803,37 @@ class Plot(QGroupBox):
         self.canvas.fig.clf()
 
     #-----------------------------------------------------------------------
-    def create_axes(self, checked_boxes=(), ior={}, ecl={}):          # Plot
+    def create_axes(self, checked_boxes=(), ior={}, ecl={}, parent=None):          # Plot
     #-----------------------------------------------------------------------
         self.clear()
         self.checkboxes = namedtuple('checkboxes', 'ior ecl')(ior, ecl)
         self.checked_boxes = checked_boxes
-        self.axes_names = self.get_axes_names()
+        #self.axes_names = self.get_axes_names()
+        parent and parent.enable_well_boxes(True)
+        self.axes_names = self.nonzero_plots(self.get_axes_names(), parent=parent)
+        # if parent:
+        #     for box in parent.ecl_boxes['well'].values():
+        #         box.setEnabled(True)
+        # if parent and not parent.worker:
+        #     # Only plot if non-zero values
+        #     nonzero_plots = []
+        #     well_data = set()
+        #     # Check if any data > 0
+        #     for name in self.axes_names:
+        #         yaxis, well, data = self.split_tag(name)
+        #         if any(sum(var)>0 for var in parent.data[data][well][yaxis].values()):
+        #             nonzero_plots.append(name)
+        #             well_data.add((well, data))
+        #     # Disable checkboxes with data == 0
+        #     boxes = {'ecl':parent.ecl_boxes, 'ior':parent.ior_boxes}
+        #     zero_plots = set(self.axes_names) - set(nonzero_plots)
+        #     for name in zero_plots:
+        #         yaxis, well, data = self.split_tag(name)
+        #         #well_data = self.name_tag(well, data)
+        #         #if well_data not in nonzero_plots:
+        #         if (well, data) not in well_data:
+        #             boxes[data]['well'][well].setEnabled(False)
+        #     self.axes_names = nonzero_plots
         sum_plots = len(self.axes_names)
         self.set_height(sum_plots*self.plot_height)
         fig = self.canvas.fig
@@ -818,9 +843,11 @@ class Plot(QGroupBox):
         self.num_plots = sum_plots
         # Fix axes
         src = {'ecl':'Eclipse, ', 'ior':'IORSim, '}
-        tags = self.axes_names
-        yaxiss, wells, datas = self.split_tag(*tags)
-        for ax, tag, yaxis, well, data in zip(axes, tags, yaxiss, wells, datas):
+        #tags = self.axes_names
+        #yaxiss, wells, datas = self.split_tag(*tags)
+        #for ax, tag, yaxis, well, data in zip(axes, tags, yaxiss, wells, datas):
+        for ax, tag in zip(axes, self.axes_names):
+            yaxis, well, data = self.split_tag(tag)
             # Set title
             ax.title.set_text(src[data] + ('well ' if well != 'FIELD' else '') + well)
             # Set labels
@@ -828,9 +855,10 @@ class Plot(QGroupBox):
             ax.set_xlabel('days')
             ax.set_ylabel(self.ylabel[yaxis+data])
             ax.autoscale_view()
+        # Fix right-hand temperature axis
         tempbox = {'ecl':self.checkboxes.ecl['var']['Temp_ecl'], 'ior': self.checkboxes.ior['var']['Temp']}
-        # Fix right temperature axis
-        for ax, tag, data in zip(tempax, tags, datas):
+        for ax, tag in zip(tempax, self.axes_names):
+            yaxis, well, data = self.split_tag(tag)
             ax.set_visible(tempbox[data].isChecked())
             ax.ticklabel_format(axis='y', style='plain', useOffset=False) #scilimits=[-1,1])
             ax.set_label('Temp ' + tag)
@@ -847,6 +875,34 @@ class Plot(QGroupBox):
         #     axx = ax.twinx()
         #     self.axes.append(axx)
         #     self.set_temp_labels(axx, tag)
+    
+    #-----------------------------------------------------------------------
+    def nonzero_plots(self, plot_names, parent=None):
+    #-----------------------------------------------------------------------
+        # if parent:
+        #     # Enable all boxes in case some previously were disabled
+        #     for box in parent.ecl_boxes['well'].values():
+        #         box.setEnabled(True)
+        # Only check for non-zero data if no simulation is running 
+        if parent and not parent.worker:
+            # Only plot if non-zero values
+            nonzero_plots = []
+            nonzero_well_data = set()
+            # Check if any data > 0
+            for name in plot_names:
+                yaxis, well, data = self.split_tag(name)
+                if any(sum(var)>0 for var in parent.data[data][well][yaxis].values()):
+                    nonzero_plots.append(name)
+                    nonzero_well_data.add((well, data))
+            # Disable checkboxes with data == 0
+            boxes = {'ecl':parent.ecl_boxes, 'ior':parent.ior_boxes}
+            zero_plots = set(plot_names) - set(nonzero_plots)
+            for name in zero_plots:
+                yaxis, well, data = self.split_tag(name)
+                if (well, data) not in nonzero_well_data:
+                    boxes[data]['well'][well].setEnabled(False)
+            return nonzero_plots
+
 
     # #-----------------------------------------------------------------------
     # def set_title(self, ax, tag):                                 # Plot
@@ -2587,6 +2643,13 @@ class main_window(QMainWindow):                                    # main_window
             return nr
             
     #-----------------------------------------------------------------------
+    def enable_well_boxes(self, enable): 
+    #-----------------------------------------------------------------------
+        boxes = flatten(box['well'].values() for box in (self.ecl_boxes, self.ior_boxes))
+        for box in boxes:
+            box.setEnabled(enable)
+
+    #-----------------------------------------------------------------------
     def update_menu_boxes(self, data, block_signal=True):       # main_window
     #-----------------------------------------------------------------------
         if data=='ecl':
@@ -3064,19 +3127,8 @@ class main_window(QMainWindow):                                    # main_window
     #def plot_menu_checkbox(self, text='', name='', func=None, toggle=False, pad_left=10, size=15):
     def plot_menu_checkbox(self, text='', name='', func=None, toggle=False, pad_right=10): #, size=15):
     #-----------------------------------------------------------------------
-        box = QCheckBox(text)#, parent=self)
+        box = QCheckBox(text)
         box.setObjectName(name)
-        #ident = f'#{name}' if name else ''
-        #print(id)
-        #box.setStyleSheet('padding-right: '+str(pad_right)+'px; width: '+str(size)+'px; height: '+str(size)+'px;')
-        #box.setStyleSheet('QCheckBox'+id+' {padding-right: '+str(pad_right)+'px; padding-right: 0px; width: '+str(size)+'px; height: '+str(size)+'px;};')
-        #box.setStyleSheet('QCheckBox'+id+' {width: '+str(size)+'px; height: '+str(size)+'px;};')
-        #print('QCheckBox#'+name+' {padding-left: '+str(pad_left)+'px; width: '+str(size)+'px; height: '+str(size)+'px;};')
-        #box.setStyleSheet('QCheckBox { padding-left: '+str(pad_left)+'px; }\nQCheckBox::indicator { width: '+str(size)+'px; height: '+str(size)+'px;};')
-        #box.setStyleSheet('QCheckBox#'+name+' { padding-left: '+str(pad_left)+'px; width: '+str(size)+'px; height: '+str(size)+'px;};')
-        #box.setStyleSheet('QCheckBox { padding-right: '+str(pad_right)+'px; width: '+str(size)+'px; height: '+str(size)+'px;};')
-        #box.setStyleSheet('QCheckBox { padding-right: '+str(pad_right)+'px;};')
-        #box.setStyleSheet('QCheckBox'+ident+' { '+FONT_SMALL+'; padding-right: '+str(pad_right)+'px;};')
         box.setStyleSheet(FONT_SMALL)
         if toggle:
             box.toggle()
@@ -3279,9 +3331,8 @@ class main_window(QMainWindow):                                    # main_window
         # box.stateChanged.connect(self.set_ecl_well_boxes)
         # menu.column(0).addWidget(box)
         # self.ecl_well_box = box
-        all_wells = 'Toggle wells'
         pos = 1 if 'FIELD' in wells else 0
-        wells = wells[:pos] + [all_wells] + wells[pos:]
+        wells = wells[:pos] + ['All wells'] + wells[pos:]
         #print(wells)
         self.ecl_boxes['well'] = {}
         for well in wells:
@@ -3295,7 +3346,7 @@ class main_window(QMainWindow):                                    # main_window
         field_box = self.ecl_boxes['well'].get('FIELD')
         if field_box:
             field_box.setEnabled(True)
-        all_wells = self.ecl_boxes['well'].get(all_wells)
+        all_wells = self.ecl_boxes['well'].get('All wells')
         if all_wells:
             all_wells.setEnabled(True)
             all_wells.setChecked(False)
@@ -3333,11 +3384,13 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         checked = self.ecl_well_box.isChecked()
         boxes = self.ecl_boxes['well'].values()
-        _, wells, datas = Plot.split_tag(*(box.objectName() for box in boxes))
+        #_, wells, datas = Plot.split_tag(*(box.objectName() for box in boxes))
         checked_boxes = []
-        for well, data, box in zip(wells, datas, boxes):
+        for box in boxes:
+        #for well, data, box in zip(wells, datas, boxes):
             #print(box.objectName())
-            if well in ('FIELD','Toggle wells'):# in box.objectName():
+            boxname = box.objectName()
+            if any(name in boxname for name in ('FIELD', 'All wells')):# in :
                 continue
             #welldata = self.data[data][well]
             #print(data, well, sum(var for yaxis in welldata.values() for var in yaxis.values()))
@@ -3737,8 +3790,8 @@ class main_window(QMainWindow):                                    # main_window
         if not self.input['root']:
             self.plot.draw()
             return False
-        #self.plot.create_axes(ior=self.ior_boxes, ecl=self.ecl_boxes)
-        self.plot.create_axes(checked_boxes=self.checked_boxes, ior=self.ior_boxes, ecl=self.ecl_boxes)
+        #self.plot.create_axes(checked_boxes=self.checked_boxes, ior=self.ior_boxes, ecl=self.ecl_boxes)
+        self.plot.create_axes(parent=self, checked_boxes=self.checked_boxes, ior=self.ior_boxes, ecl=self.ecl_boxes)
         self.create_plot_lines()
         self.plot.adjust()
         self.plot.draw()
@@ -3756,8 +3809,10 @@ class main_window(QMainWindow):                                    # main_window
         ax = self.plot.axes   # or self.canvas.fig.axes
         #for i, ax_name in enumerate(self.ioraxes_names):
         #for i, ax_name in enumerate(self.plot.axes_names):
-        for i, (yaxis, well, data) in enumerate(zip(*Plot.split_tag(*self.plot.axes_names))):
-            #yaxis, well, data = ax_name.split(Plot.mark)
+        #for i, (yaxis, well, data) in enumerate(zip(*Plot.split_tag(*self.plot.axes_names))):
+        for i, name in enumerate(self.plot.axes_names):
+            #print(i, yaxis, well, data)
+            yaxis, well, data = Plot.split_tag(name)
             #yaxis, well, data = list(*zip(*Plot.split_tag(ax_name)))
             if data=='ior':
                 var_box = self.ior_boxes['var']
@@ -4050,6 +4105,8 @@ class main_window(QMainWindow):                                    # main_window
         self.unsmry = None
         # Clear messages and progress
         self.reset_progress_and_message()
+        # Enable all well-boxes
+        self.enable_well_boxes(True)
         # # Uncheck well-boxes
         # for box in list(self.ecl_boxes['well'].values())+list(self.ior_boxes['well'].values()):
         #     self.uncheck_box(box)
