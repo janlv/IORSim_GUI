@@ -810,7 +810,10 @@ class Plot(QGroupBox):
         self.checked_boxes = checked_boxes
         #self.axes_names = self.get_axes_names()
         parent and parent.enable_well_boxes(True)
-        self.axes_names = self.nonzero_plots(self.get_axes_names(), parent=parent)
+        self.axes_names = self.get_axes_names()
+        # Only check for non-zero data if no simulation is running 
+        if parent and not parent.worker:
+            self.axes_names = self.nonzero_plots(self.axes_names, parent)
         # if parent:
         #     for box in parent.ecl_boxes['well'].values():
         #         box.setEnabled(True)
@@ -879,29 +882,23 @@ class Plot(QGroupBox):
     #-----------------------------------------------------------------------
     def nonzero_plots(self, plot_names, parent=None):
     #-----------------------------------------------------------------------
-        # if parent:
-        #     # Enable all boxes in case some previously were disabled
-        #     for box in parent.ecl_boxes['well'].values():
-        #         box.setEnabled(True)
-        # Only check for non-zero data if no simulation is running 
-        if parent and not parent.worker:
-            # Only plot if non-zero values
-            nonzero_plots = []
-            nonzero_well_data = set()
-            # Check if any data > 0
-            for name in plot_names:
-                yaxis, well, data = self.split_tag(name)
-                if any(sum(var)>0 for var in parent.data[data][well][yaxis].values()):
-                    nonzero_plots.append(name)
-                    nonzero_well_data.add((well, data))
-            # Disable checkboxes with data == 0
-            boxes = {'ecl':parent.ecl_boxes, 'ior':parent.ior_boxes}
-            zero_plots = set(plot_names) - set(nonzero_plots)
-            for name in zero_plots:
-                yaxis, well, data = self.split_tag(name)
-                if (well, data) not in nonzero_well_data:
-                    boxes[data]['well'][well].setEnabled(False)
-            return nonzero_plots
+        # Only plot if non-zero values
+        nonzero_plots = []
+        nonzero_well_data = set()
+        # Check if any data > 0
+        for name in plot_names:
+            yaxis, well, data = self.split_tag(name)
+            if any(sum(var)>0 for var in parent.data[data][well][yaxis].values()):
+                nonzero_plots.append(name)
+                nonzero_well_data.add((well, data))
+        # Disable checkboxes with data == 0
+        boxes = {'ecl':parent.ecl_boxes, 'ior':parent.ior_boxes}
+        zero_plots = set(plot_names) - set(nonzero_plots)
+        for name in zero_plots:
+            yaxis, well, data = self.split_tag(name)
+            if (well, data) not in nonzero_well_data:
+                boxes[data]['well'][well].setEnabled(False)
+        return nonzero_plots
 
 
     # #-----------------------------------------------------------------------
@@ -2647,6 +2644,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         boxes = flatten(box['well'].values() for box in (self.ecl_boxes, self.ior_boxes))
         for box in boxes:
+            if 'FIELD' in box.objectName():
+                continue
             box.setEnabled(enable)
 
     #-----------------------------------------------------------------------
@@ -3612,7 +3611,7 @@ class main_window(QMainWindow):                                    # main_window
             #print(line)
             line.set_visible(is_checked)
             if is_checked and set_data:
-                well, yaxis, var, data = line.get_label().split()
+                well, yaxis, var, data = Plot.split_tag(line.get_label())
                 if not self.data[data]:
                     #print('return')
                     return
@@ -3841,7 +3840,8 @@ class main_window(QMainWindow):                                    # main_window
                     line, = ax[ind].plot(xdata, ydata, color=self.plot_prop['color'][var],
                                          linestyle=self.plot_prop['line'][var],
                                          alpha=self.plot_prop['alpha'][var],
-                                         lw=linewidth, label=well+' '+yaxis+' '+var+' '+data)
+                                         lw=linewidth, label=Plot.name_tag(well, yaxis, var, data))
+                                        # lw=linewidth, label=well+' '+yaxis+' '+var+' '+data)
                 if line:
                     if var not in lines:
                         lines[var] = {}
@@ -3862,7 +3862,8 @@ class main_window(QMainWindow):                                    # main_window
                             continue                        
                         ref_line, = ax[ind].plot(xdata, ydata, color=self.plot_prop['color'][var],
                                                  linestyle=self.plot_prop['line'][var], alpha=0.4,
-                                                 lw=linewidth, label=well+' '+yaxis+' '+var+' '+data)
+                                                 lw=linewidth, label=Plot.name_tag(well, yaxis, var, data))
+                                                #  lw=linewidth, label=well+' '+yaxis+' '+var+' '+data)
                 if ref_line:
                     if var not in ref_lines:
                         ref_lines[var] = {}
@@ -3925,7 +3926,7 @@ class main_window(QMainWindow):                                    # main_window
             self.create_plot_lines()
         for name,ax_line in self.plot_lines.items():
             for ax,line in ax_line.items():
-                well, yaxis, var, data = line.get_label().split()
+                well, yaxis, var, data = Plot.split_tag(line.get_label())
                 # print(name, well, yaxis, var, data)
                 if not self.data.get(data):
                     return
