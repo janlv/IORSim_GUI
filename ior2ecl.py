@@ -109,6 +109,7 @@ class Eclipse(Runner):                                                      # ec
             self.update.status(value=f'Starting {self.name}...')
         error_func = error_func or self.unexpected_stop_error
         super().start(error_func)
+        # self.wait_for(self.unrst.is_file, loop_func=error_func)
         if self.update:
             self.update.status(value=f'{self.name} running...')
 
@@ -177,7 +178,7 @@ class BackwardMixin:
 #====================================================================================
 class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBackward
 #====================================================================================
-    ' Eclipse backward mode runner '
+    """ Eclipse backward mode runner """
 
     #--------------------------------------------------------------------------------
     def __init__(self, check_unrst=True, check_rft=True, keep_alive=False, schedule=None, **kwargs):
@@ -1021,18 +1022,13 @@ class Simulation:                                                        # Simul
             success = 'simulation complete' in msg.lower()
             if not isinstance(error, SystemError) and any(r.canceled for r in self.runs):
                 msg = 'INFO Run stopped'
-            #print(type(e).__name__, e, msg)
         except KeyboardInterrupt:
             self.cancel()
             msg = 'Simulation cancelled'
         except Exception as exception:  # Catch all other exceptions 
             self.print2log(f'\nAn exception occured:\n{trace_format_exc()}')
-            #self.print2log(f'\nAn exception occured:\n{exception}')
-            #error = exc_info()
             n = [run.n for run in self.runs if run] or [-1]
-            #msg += f'(step {max(n)}) {error[0].__name__}: {error[1]}'
             msg += f'(step {max(n)}) {type(exception).__name__}: {exception}'
-            #if r'\x00\x00\x00\x00' in fr'{error[1]}':
             if r'\x00\x00\x00\x00' in fr'{exception}':
                 msg += f', try increasing the CHECK_PAUSE value ({CHECK_PAUSE}).'
             else:
@@ -1043,10 +1039,8 @@ class Simulation:                                                        # Simul
             [run.kill() for run in self.runs]
             self.print2log(f'\n=====  {msg.replace("INFO","")}  =====')
             self.current_run = None
-            #self.update.progress(value=0)   # Reset progress time
             self.update.progress()   # Reset progress time
             self.update.plot()
-            #self.update.status(value=msg, newline=True)
             conv_msg = ''
             try:
                 if self.output.convert and success and any(run.is_iorsim for run in self.runs):
