@@ -91,7 +91,7 @@ from requests import get as requests_get, exceptions as req_exceptions
 
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, clear_dict, convert_float_or_str, copy_recursive, flatten, get_keyword, get_tuple, groupby_sorted, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, delete_all, strip_zero, try_except_loop, unique_names, write_file
+from IORlib.utils import Progress, clear_dict, convert_float_or_str, copy_recursive, same_length, flatten, get_keyword, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, delete_all, strip_zero, try_except_loop, unique_names, write_file
 from IORlib.ECL import DATA_file, UNSMRY_file, UNRST_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -3245,6 +3245,7 @@ class main_window(QMainWindow):                                    # main_window
         # Add iorsim menu boxes
         self.update_ior_menu()
         # IORSim data
+        self.init_ior_data()
         self.read_ior_data()
         # Check default menu boxes
         if not self.is_eclipse_mode():
@@ -3947,40 +3948,67 @@ class main_window(QMainWindow):                                    # main_window
         #combi = list(product(self.out_wells, out.keys()))
         #names = (Path(f'{case}_W_' + '.trc'.join(c)) for c in combi)
         #self.ior_files = [{'name':n, 'well':w, 'out':out[cp], 'skip':0} for n,(w,cp) in zip(names, combi)]
-        file = namedtuple('file', 'stem skip', defaults=(None, {'conc':0, 'prod':0}))
-        self.ior_files = [file(f'{case}_W_{well}') for well in self.out_wells]
+        file = namedtuple('file', 'stem well skip')
+        self.ior_files = [file(f'{case}_W_{well}', well, {'conc':0, 'prod':0}) for well in self.out_wells]
         # Initialize IOR data-dict
         ior = {w:{'days':[]} for w in self.out_wells}
-        [ior[w].update({o:{sp:[] for sp in self.input['species']} for o in out.values()}) for w in self.out_wells]
+        [ior[w].update({out:{sp:[] for sp in self.input['species']+['Temp']} for out in ('conc','prod')}) for w in self.out_wells]
         ior['days'] = []
         # Temperature only written to conc-file; prod temp refers to conc temp
         for w in self.out_wells:
             ior[w]['prod']['Temp'] = ior[w]['conc']['Temp']
         self.data['ior'] = ior
+        #print(self.data['ior'])
 
 
     #-----------------------------------------------------------------------
-    def read_ior_data_v2(self, case=None, skip_zero=True):
+    def read_ior_data(self, case=None, skip_zero=True):
     #-----------------------------------------------------------------------
         suffix = {'conc':'.trcconc', 'prod':'.trcprd'}
+        #ior = namedtuple('ior','days temp conc prod') 
+        total_days = ()
         for file in self.ior_files:
-            for out in ('prod','conc'):
-                data = read_file(file.stem+suffix[out], skip=file.skip[out])
-                size = len(data)-1
-                while data[size] != '\n':
-                    size -= 1
-                file.skip[out] = size
+            welldata = []
+            pos = []
+            for out in ('conc', 'prod'):
+                name = file.stem+suffix[out]
+                data = read_file(name, skip=file.skip[out], raise_error=False)
+                pos.append(len(data)-1)
                 lines = (l for line in data.split('\n') if (l:=line.strip()) and not l.startswith('#'))
-                ior = (map(float, line.split()) for line in lines)
-                days, *var = zip(*ior)
-            start = 0
-            if days[0] < 1e-8:
-                start = 1
-            self.data['ior'][file['well']]['days'].extend(days[start:])
-            self.data['ior'][file['well']]['days'].extend(days[start:])
+                data = (map(float, line.split()) for line in lines)
+                welldata.append(list(zip(*data)))
+            if len(welldata) == 2 and all(welldata):
+                cdata, pdata = welldata          
+                days, temp, conc, prod = cdata[0], cdata[-1], cdata[1:-1], pdata[1:]
+                # Check if data-set is complete
+                if not same_length(days, temp, *conc, *prod):
+                    continue
+                # Enable menu-box
+                self.ior_boxes['well'][file.well].setEnabled(True)
+                start = 0
+                if skip_zero and days[0] < 1e-8:
+                    start = 1
+                if len(days[start:]) > len(total_days):
+                    total_days = days[start:]
+                well = self.data['ior'][file.well]
+                well['days'].extend(days[start:])
+                well['conc']['Temp'].extend(temp[start:])
+                for var, cvals, pvals in zip(self.input['species'], conc, prod):
+                    well['conc'][var].extend(cvals[start:])
+                    well['prod'][var].extend(pvals[start:])
+                # Save position to avoid reading same data again 
+                file.skip['conc'], file.skip['prod'] = pos
+                #print(pos)
+                #print(self.data['ior'][file.well])
+        self.data['ior']['days'].extend(total_days)
+        if all(self.data['ior'][w]['conc']=={} for w in self.out_wells):
+            return False
+        #print(self.data['ior']['days'])
+        return True
+
 
     #-----------------------------------------------------------------------
-    def read_ior_data(self, case=None):
+    def read_ior_data_OLD(self, case=None):
     #-----------------------------------------------------------------------
         #  Format:
         #     data['days']
