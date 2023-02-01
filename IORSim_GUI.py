@@ -3943,10 +3943,12 @@ class main_window(QMainWindow):                                    # main_window
     def init_ior_data(self, case=None):
     #-----------------------------------------------------------------------
         case = Path(case or self.input['root']).with_suffix('')
-        out = {'conc':'conc', 'prd':'prod'}
-        combi = list(product(self.out_wells, out.keys()))
-        names = (Path(f'{case}_W_' + '.trc'.join(c)) for c in combi)
-        self.ior_files = [{'name':n, 'well':w, 'out':out[cp], 'skip':0} for n,(w,cp) in zip(names, combi)]
+        #out = {'.trcconc':'conc', '.trcprd':'prod'}
+        #combi = list(product(self.out_wells, out.keys()))
+        #names = (Path(f'{case}_W_' + '.trc'.join(c)) for c in combi)
+        #self.ior_files = [{'name':n, 'well':w, 'out':out[cp], 'skip':0} for n,(w,cp) in zip(names, combi)]
+        file = namedtuple('file', 'stem skip', defaults=(None, {'conc':0, 'prod':0}))
+        self.ior_files = [file(f'{case}_W_{well}') for well in self.out_wells]
         # Initialize IOR data-dict
         ior = {w:{'days':[]} for w in self.out_wells}
         [ior[w].update({o:{sp:[] for sp in self.input['species']} for o in out.values()}) for w in self.out_wells]
@@ -3960,15 +3962,17 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def read_ior_data_v2(self, case=None, skip_zero=True):
     #-----------------------------------------------------------------------
+        suffix = {'conc':'.trcconc', 'prod':'.trcprd'}
         for file in self.ior_files:
-            data = read_file(file['name'], skip=file['skip'])
-            size = len(data)-1
-            while data[size] != '\n':
-                size -= 1
-            file['skip'] = size
-            lines = (l for line in data.split('\n') if (l:=line.strip()) and not l.startswith('#'))
-            ior = (map(float, line.split()) for line in lines)
-            days, *var = zip(*ior)
+            for out in ('prod','conc'):
+                data = read_file(file.stem+suffix[out], skip=file.skip[out])
+                size = len(data)-1
+                while data[size] != '\n':
+                    size -= 1
+                file.skip[out] = size
+                lines = (l for line in data.split('\n') if (l:=line.strip()) and not l.startswith('#'))
+                ior = (map(float, line.split()) for line in lines)
+                days, *var = zip(*ior)
             start = 0
             if days[0] < 1e-8:
                 start = 1
