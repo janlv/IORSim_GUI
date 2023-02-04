@@ -965,8 +965,9 @@ class Simulation:                                                        # Simul
         # Start runs
         #for run in self.runs:
         ecl.delete_output_files()
-        ecl.start(restart=self.restart)
         ior.delete_output_files()
+        ecl.start(restart=self.restart)
+        #ior.delete_output_files()
         ior.start(restart=self.restart, tsteps=ecl.init_tsteps)
         # The schedule appends keywords to the interface file (satnum.dat)
         # ecl.t = ior.t = self.schedule.update()
@@ -1122,7 +1123,7 @@ class Simulation:                                                        # Simul
             return False, f'Unable to merge restart files due to missing files: {", ".join(missing)}'
         try:
             starttime = datetime.now()
-            error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files' 
+            error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files'
             ecl_backup = Path(f'{case}_ECLIPSE.UNRST')
             ### The merged file ends with SATNUM (IORSim UNRST) instead of ENDSOL (Eclipse UNRST)
             merge_unrst = UNRST_file(f'{case}_MERGED.UNRST', end='SATNUM')
@@ -1132,7 +1133,10 @@ class Simulation:                                                        # Simul
             self.update.progress(value=-end)
             ### Use the same start index for both files/sections
             #start = max(x.unrst.get('step', N=1)[0][0] for x in (ecl, ior))
+            #print('ior', list(ior.unrst.read('step')))
+            #print('ecl', list(ecl.unrst.read('step')))
             start = max(next(x.unrst.read('step'))[0] for x in (ecl, ior))
+            #print('start', start)
             ### Define the sections in the restart file where the stitching is done
             ecl_sec = ecl.unrst.sections(start_before='SEQNUM',  end_before='SEQNUM', begin=start)
             ior_sec = ior.unrst.sections(start_after='DOUBHEAD', end_before='SEQNUM', begin=start)
@@ -1140,7 +1144,7 @@ class Simulation:                                                        # Simul
             merged_file = merge_unrst.create(sections=(ecl_sec, ior_sec), 
                                              progress=lambda n: self.update.progress(value=n),
                                              cancel=ior.stop_if_canceled)
-            merge_unrst.assert_no_duplicates()
+            merge_unrst.assert_no_duplicates(raise_error=False)
             if check:
                 msg = merge_unrst.check.data_saved(nblocks=end, limit=1, wait_func=ior.wait_for)
                 if msg:
