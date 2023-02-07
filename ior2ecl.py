@@ -18,10 +18,10 @@ from os.path import relpath
 from psutil import NoSuchProcess, __version__ as psutil_version
 
 from IORlib.utils import (flatten, get_keyword, get_python_version, list2text, pairwise,
-    print_dict, print_error, remove_comments, safeopen, Progress, silentdelete,
+    print_error, remove_comments, safeopen, Progress, silentdelete,
     delete_files_matching, tail_file)
 from IORlib.runner import Runner
-from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, UNRST_file, 
+from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file)
 
 __version__ = '2.32.1'
@@ -301,7 +301,7 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
 
 
 #====================================================================================
-class IORSim_input:                                                    # iorsim_input
+class IORSim_input(File):                                              # iorsim_input
 #====================================================================================
     #================================================================================
     class keywords:
@@ -329,11 +329,12 @@ class IORSim_input:                                                    # iorsim_
         solution_key = '*SOLUTION'
 
     #--------------------------------------------------------------------------------
-    def __init__(self, root, check=False, check_format=False):                        # iorsim_input
+    def __init__(self, file, check=False, check_format=False):         # iorsim_input
     #--------------------------------------------------------------------------------
-        self.file = Path(root).with_suffix('.trcinp')
+        super().__init__(file, Path(file).suffix or '.trcinp', role='IORSim input-file', ignore_case=True)
+        #self.file = Path(root).with_suffix('.trcinp')
         self.check_format = check_format
-        self.warnings = check and self.check() or ''
+        self.warnings = self.check() if check else ''
 
 
     #--------------------------------------------------------------------------------
@@ -378,8 +379,9 @@ class IORSim_input:                                                    # iorsim_
 
         warn = ''
         ### Check if input-file exists
-        if not self.file.is_file():
-            raise SystemError(f'ERROR {msg}missing input file {self.file.name}')
+        self.exists(raise_error=True)
+        # if not self.file.is_file():
+        #     raise SystemError(f'ERROR {msg}missing input file {self.file.name}')
 
         ### Check if included files exists
         if (missing := [f for f in self.include_files() if not f.is_file()]):
@@ -390,8 +392,9 @@ class IORSim_input:                                                    # iorsim_
         if inte and (tstart := inte[0][0]) > 0:
             warn += f'WARNING The IORSim start-time should be 0 but is currently {tstart}. Update the *INTEGRATION keyword in {self.file.name} to avoid sync problems.'
 
-        ### Check if required keywords are used, and if the order is correct 
-        self.check_format and self.check_keywords()
+        ### Check if required keywords are used, and if the order is correct
+        if self.check_format:
+            self.check_keywords()
 
         return warn
 
@@ -411,7 +414,56 @@ class IORSim_input:                                                    # iorsim_
             for match in regex.finditer(File(parent/file,'').binarydata()):
                 yield parent/match.group(1).decode()
 
-        #return set(self.file.parent/Path(f) for f in files)
+    #-----------------------------------------------------------------------
+    def species(self, raise_error=False):
+    #-----------------------------------------------------------------------
+        if not self.exists(raise_error):
+            return []
+        species = get_keyword(self.file, '\*solution', end='\*')
+        #print(species)
+        if species:
+            species = species[0][1::2]
+        else:
+            # Read old input format
+            species = flatten(get_keyword(self.file, '\*SPECIES', end='\*'))
+            species = [s for s in species if isinstance(s, str)]
+        # Change pH to H 
+        species = [s if s.lower() != 'ph' else 'H' for s in species]
+        return species
+
+    #-----------------------------------------------------------------------
+    def tracers(self, raise_error=False):
+    #-----------------------------------------------------------------------
+        #trcinp = IORSim_input(root)
+        if not self.exists(raise_error):
+            return []
+        tracers = flatten(get_keyword(self.file, '\*NAME', end='\*'))
+        if tracers:
+            tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
+        #print(tracers)
+        return tracers
+
+    #-----------------------------------------------------------------------
+    def wells(self, raise_error=False):
+    #-----------------------------------------------------------------------
+        if not self.exists(raise_error):
+            return [],[]
+        in_wells, out_wells = [], []
+        out_wells = flatten(get_keyword(self.file, '\*PRODUCER', end='\*'))
+        in_wells = flatten(get_keyword(self.file, '\*INJECTOR', end='\*'))
+        if not out_wells or not in_wells:
+            # Read old input format
+            ow = get_keyword(self.file, '\*OUTPUT', end='\*')
+            if ow:
+                out_wells = ow[0][1:]
+            w = get_keyword(self.file, '\*WELLSPECIES', end='\*')
+            if w and w[0]:
+                #print(w)
+                w = w[0]
+                in_wells = w[1:1+int(w[0])]
+        #print(out_wells, in_wells)
+        return sorted(out_wells), sorted(in_wells)
+
 
 
 #====================================================================================
@@ -536,8 +588,8 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
         '''
         Return the distribution of SATNUM numbers as a dict
         '''
-        lines = remove_comments(self.satnum.file, comment='--') 
-        values = re_compile(r'SATNUM\s+([0-9\s]+)').findall(lines) 
+        lines = remove_comments(self.satnum.file, comment='--')
+        values = re_compile(r'SATNUM\s+([0-9\s]+)').findall(lines)
         if values:
             values = [int(v) for v in values[0].split('\n') if v.strip()]
             count = Counter(values)
@@ -1010,7 +1062,7 @@ class Simulation:                                                        # Simul
         silentdelete(self.merge_OK)
         self.print2log(self.versions())
         self.print2log(self.info_header())
-        msg = ''
+        msg = conv_msg = ''
         success = False
         try:
             if self.ready():
@@ -1037,12 +1089,12 @@ class Simulation:                                                        # Simul
         finally:
             # Kill possible remaining processes
             self.print2log('')
-            [run.kill() for run in self.runs]
+            for run in self.runs:
+                run.kill()
             self.print2log(f'\n=====  {msg.replace("INFO","")}  =====')
             self.current_run = None
             self.update.progress()   # Reset progress time
             self.update.plot()
-            conv_msg = ''
             try:
                 if self.output.convert and success and any(run.is_iorsim for run in self.runs):
                     sleep(0.05)  # Need a short break here to make the GUI progressbar responsive
@@ -1052,7 +1104,8 @@ class Simulation:                                                        # Simul
             finally:
                 self.close()
                 self.update.status(value=msg+conv_msg, newline=True)
-                return success, msg + ' ' + conv_msg
+                #return success, msg + ' ' + conv_msg
+        return success, msg + ' ' + conv_msg
 
 
     #--------------------------------------------------------------------------------
@@ -1093,13 +1146,13 @@ class Simulation:                                                        # Simul
                 msg = ior.unrst.check.data_saved(nblocks=nblocks, limit=1, wait_func=ior.wait_for)
                 if msg:
                     raise SystemError(f'ERROR Converted file {ior.unrst.file.name} did not pass the check: {msg}')
-        except (Exception, KeyboardInterrupt) as e:
+        except (Exception, KeyboardInterrupt) as error:
             silentdelete(ior.unrst.file)
-            msg = str(e)
-            if isinstance(e, KeyboardInterrupt) or 'run stopped' in msg.lower():
+            msg = str(error)
+            if isinstance(error, KeyboardInterrupt) or 'run stopped' in msg.lower():
                 return False, 'Convert cancelled'
             else:
-                raise SystemError(f'ERROR Unable to convert IORSim restart: {e}')
+                raise SystemError(f'ERROR Unable to convert IORSim restart: {error}') from error
         if self.output.del_convert:
             silentdelete(ior.funrst.file)
         return True, 'Convert complete, process-time was '+str(datetime.now()-start).split('.')[0]
@@ -1217,30 +1270,12 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
         return self.T
 
-
-    # #--------------------------------------------------------------------------------
-    # def mode_from_case(self):                                            # Simulation
-    # #--------------------------------------------------------------------------------
-    #     # data = str(self.root)+'.DATA'
-    #     # if Path(data).is_file():
-    #     #     if file_contains(data, text='READDATA', comment='--', end='END'):
-    #     return ('READDATA' in self.ECL_inp) and 'backward' or 'forward'
-    #     # if 'READDATA' in self.ECL_inp:
-    #     #     return 'backward'
-    #     # else:
-    #     #     return 'forward'
-    #     # else:
-    #     #     return None
-
-
     #--------------------------------------------------------------------------------
     def cancel(self):                                                    # Simulation
     #--------------------------------------------------------------------------------
         for run in self.runs:
             if isinstance(run, Runner):
                 run.cancel()
-        #[run.cancel() for run in self.runs if isinstance(run, Runner)]
-
 
     # #--------------------------------------------------------------------------------
     # def compare_restart(self, ecl_keys=[], ior_keys=[], limit=None):     # Simulation

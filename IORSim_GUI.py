@@ -91,7 +91,7 @@ from requests import get as requests_get, exceptions as req_exceptions
 
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import Progress, clear_dict, convert_float_or_str, copy_recursive, same_length, flatten, get_keyword, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, delete_all, strip_zero, try_except_loop, unique_names, write_file
+from IORlib.utils import removeprefix, Progress, clear_dict, convert_float_or_str, copy_recursive, same_length, flatten, get_keyword, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, delete_all, strip_zero, try_except_loop, unique_names, write_file
 from IORlib.ECL import DATA_file, UNSMRY_file, UNRST_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -291,66 +291,6 @@ def make_scrollable(widget, resizable=True):
     scroll.setWidgetResizable(resizable)
     return scroll
 
-
-#-----------------------------------------------------------------------
-def get_species_iorsim(root, raise_error=True):
-#-----------------------------------------------------------------------
-    file = f'{root}.trcinp'
-    if not Path(file).is_file():
-        if raise_error:
-            raise SystemError(f'ERROR {Path(file).name} is missing')
-        else:
-            return []
-    species = get_keyword(file, '\*solution', end='\*')
-    #print(species)
-    if species:
-        species = species[0][1::2]
-    else:
-        # Read old input format
-        species = flatten(get_keyword(file, '\*SPECIES', end='\*'))
-        species = [s for s in species if isinstance(s, str)]
-    # Change pH to H 
-    species = [s if s.lower() != 'ph' else 'H' for s in species]
-    return species
-
-#-----------------------------------------------------------------------
-def get_tracers_iorsim(root, raise_error=True):
-#-----------------------------------------------------------------------
-    file = f'{root}.trcinp'
-    if not Path(file).is_file():
-        if raise_error:
-            raise SystemError(f'ERROR {Path(file).name} is missing')
-        else:
-            return []
-    tracers = flatten(get_keyword(file, '\*NAME', end='\*'))
-    if tracers:
-        tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
-    #print(tracers)
-    return tracers
-
-#-----------------------------------------------------------------------
-def get_wells_iorsim(root):
-#-----------------------------------------------------------------------
-    file = f'{root}.trcinp'
-    #print(file)
-    if not Path(file).is_file():
-        return [],[]
-    in_wells, out_wells = [], []
-    out_wells = flatten(get_keyword(file, '\*PRODUCER', end='\*'))
-    in_wells = flatten(get_keyword(file, '\*INJECTOR', end='\*'))
-    if not out_wells or not in_wells:
-        # Read old input format
-        ow = get_keyword(file, '\*OUTPUT', end='\*')
-        if ow:
-            out_wells = ow[0][1:]
-        w = get_keyword(file, '\*WELLSPECIES', end='\*')
-        if w and w[0]:
-            #print(w)
-            w = w[0]
-            in_wells = w[1:1+int(w[0])]
-    #print(out_wells, in_wells)
-    #return ['FIELD']+sorted(out_wells), sorted(in_wells)
-    return sorted(out_wells), sorted(in_wells)
 
     
 #-----------------------------------------------------------------------
@@ -1083,39 +1023,70 @@ class Menu(QGroupBox):
     #-----------------------------------------------------------------------
         return self.layout().itemAt(nr)
 
+#===========================================================================
+class MyQPlainTextEdit(QPlainTextEdit):
+#===========================================================================
+    #-----------------------------------------------------------------------
+    def __init__(self, *args, comment='', **kwargs):    # MyQPlainTextEdit
+    #-----------------------------------------------------------------------
+        super().__init__(*args, **kwargs)
+        self.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.comment = comment
 
-# #===========================================================================
-# class Log_viewer_with_level(QPlainTextEdit):
-# #===========================================================================
-#     #-----------------------------------------------------------------------
-#     def contextMenuEvent(self, e: QContextMenuEvent) -> None:
-#     #-----------------------------------------------------------------------
-#         menu = self.createStandardContextMenu(e.globalPos())
-#         menu.addSeparator()
-#         level = menu.addMenu('Log level')
-#         actions = [QAction(str(l+1), self) for l in range(3)]
-#         group = QActionGroup(self)
-#         for act in actions:
-#             level.addAction(act)
-#             group.addAction(act)
-#         actions[0].triggered.connect(lambda: print(1))
-#         actions[1].triggered.connect(lambda: print(2))
-#         actions[2].triggered.connect(lambda: print(3))
-#         actions[2].setChecked(True)
-#         menu.popup(e.globalPos())
-#         # if group.checkedAction():
-#         #    group.checkedAction().trigger()
+    #-----------------------------------------------------------------------
+    def contextMenuEvent(self, event):                    # MyQPlainTextEdit
+    #-----------------------------------------------------------------------
+        menu = self.createStandardContextMenu()
+        menu.addSeparator()
+        comment_act = create_action(self, 'Comment region', func=self.comment_region)
+        uncomment_act = create_action(self, 'Uncomment region', func=self.uncomment_region)
+        menu.addAction(comment_act)
+        menu.addAction(uncomment_act)
+        menu.exec(event.globalPos())
 
-#     def set_log_value_getter(self, func):
-#         self.get_log_value = func
+    #-----------------------------------------------------------------------
+    def update_selected_text(self, func):                        # MyQPlainTextEdit
+    #-----------------------------------------------------------------------
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            text = self.toPlainText()[cursor.anchor():cursor.position()]
+            lines = (func(t) for t in text.split('\n'))
+            cursor.insertText('\n'.join(lines))
 
-#     # def change_log_level(self):
-#     #     win = QDialog()
-#     #     layout = QVBoxLayout()
-#     #     win.setLayout(layout)
-#     #     text = QLabel(f'Log level is {self.get_log_value()}')
-#     #     layout.addWidget(text)
-#     #     win.open()
+    #-----------------------------------------------------------------------
+    def comment_region(self):                             # MyQPlainTextEdit
+    #-----------------------------------------------------------------------
+        self.update_selected_text(lambda line:self.comment+line)
+
+    #-----------------------------------------------------------------------
+    def uncomment_region(self):                             # MyQPlainTextEdit
+    #-----------------------------------------------------------------------
+        self.update_selected_text(lambda line:removeprefix(self.comment, line.lstrip()))
+
+    #-----------------------------------------------------------------------
+    def set_cursor(self, start, length, center=False):     # MyQPlainTextEdit
+    #-----------------------------------------------------------------------
+        cursor = self.textCursor()
+        cursor.setPosition(start)
+        cursor.setPosition(start+length, QTextCursor.KeepAnchor)
+        #print(cursor.blockNumber(), cursor.columnNumber())
+        self.setTextCursor(cursor)
+        if center:
+            self.center_cursor_on_page()
+
+    #-----------------------------------------------------------------------
+    def center_cursor_on_page(self):                      # MyQPlainTextEdit
+    #-----------------------------------------------------------------------
+        cursor = self.cursorRect()
+        cursor_line = int( cursor.y() / cursor.height() )
+        page_height = self.geometry().height() - self.horizontalScrollBar().height()
+        mid_line = int(0.5*page_height/cursor.height())
+        shift = cursor_line-mid_line
+        vbar = self.verticalScrollBar()
+        newpos = shift + vbar.value()
+        if newpos > 0:
+            vbar.setValue(newpos)
+
 
 #===========================================================================
 class Editor(QGroupBox):
@@ -1123,7 +1094,8 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def __init__(self, parent=None, name='', read_only=False, save=True, save_func=None, browser=False,
                  top=True, top_name='Top', end=True, search=True, search_width=None,
-                 refresh=True, space=0, match_case=False, size_limit_mb=None):
+                 refresh=True, space=0, match_case=False, size_limit_mb=None,
+                 comment=None):
     #-----------------------------------------------------------------------
         super().__init__(parent)
         self.btn_width = 60
@@ -1144,9 +1116,9 @@ class Editor(QGroupBox):
         self.space = space
         self.match_case = match_case
         self.size_limit = size_limit_mb*1024**2 if size_limit_mb else None
-        self.editor_ = QPlainTextEdit(self)
-        self.editor_.setLineWrapMode(QPlainTextEdit.NoWrap)
-        self.set_text = self.editor_.setPlainText
+        self.editor_ = MyQPlainTextEdit(self, comment=comment)
+        #self.editor_.setLineWrapMode(QPlainTextEdit.NoWrap)
+        #self.set_text = self.editor_.setPlainText
         self.init_UI()
 
     #-----------------------------------------------------------------------
@@ -1163,8 +1135,9 @@ class Editor(QGroupBox):
             buttons.addWidget(self.refresh_btn)
         if self.read_only:
             self.editor_.setReadOnly(True)
+        self.save_btn = None
         if not self.read_only and self.save:
-            self.editor_.textChanged.connect(self.activate_save)
+            self.editor_.textChanged.connect(self.enable_save)
             ### Save button
             if self.save_func:
                 self.save_btn = self.new_button(text='Save', func=partial(self.save_text, save_func=self.save_func))
@@ -1172,10 +1145,15 @@ class Editor(QGroupBox):
                 self.save_btn = self.new_button(text='Save', func=self.save_text)
             buttons.addWidget(self.save_btn)
             ### Undo button
-            self.undo_btn = self.new_button(text='Undo', func=self.undo)
+            self.undo_btn = self.new_button(text='Undo', func=self.editor_.undo)
+            self.undo_btn.setEnabled(False)
+            #self.editor_.undoAvailable.connect(self.undo_btn.setEnabled)
+            self.editor_.undoAvailable.connect(self.enable_undo)
             buttons.addWidget(self.undo_btn)
             ### Redo button
-            self.redo_btn = self.new_button(text='Redo', func=self.redo)
+            self.redo_btn = self.new_button(text='Redo', func=self.editor_.redo)
+            self.redo_btn.setEnabled(False)
+            self.editor_.redoAvailable.connect(self.redo_btn.setEnabled)
             buttons.addWidget(self.redo_btn)
         if self.top:
             ### Top button
@@ -1275,7 +1253,7 @@ class Editor(QGroupBox):
         self.search_text(self.search_field.text(), start=start)
         
     #-----------------------------------------------------------------------
-    def search_prev(self):                                           # Editor
+    def search_prev(self):                                          # Editor
     #-----------------------------------------------------------------------
         #print(self.search_string+' '+str(self.search_pos))
         if self.search_pos:
@@ -1286,7 +1264,9 @@ class Editor(QGroupBox):
                 pos = self.search_pos.pop()
                 if self.editor_.textCursor().position() == pos:
                     pos = self.search_pos.pop()
-            self.set_cursor(pos-len(string), string)
+            #self.set_cursor(pos-len(string), string)
+            length = len(string)
+            self.editor_.set_cursor(pos-length, length, center=True)
         
     #-----------------------------------------------------------------------
     def search_text(self, string, start=0, ignore_case=True):   # Editor
@@ -1305,55 +1285,30 @@ class Editor(QGroupBox):
         #print(pos)
         self.search_pos.append(pos+len(string))
         #self.search_string = string
-        self.set_cursor(pos, string)
-        
-    #-----------------------------------------------------------------------
-    def set_cursor(self, start, string, center=True):           # Editor
-    #-----------------------------------------------------------------------
-        cursor = self.editor_.textCursor()
-        cursor.setPosition(start)
-        cursor.setPosition(start+len(string), QTextCursor.KeepAnchor)   
-        #print(cursor.blockNumber(), cursor.columnNumber())
-        self.editor_.setTextCursor(cursor)
-        if center:
-            cursor = self.editor_.cursorRect()
-            cursor_line = int(cursor.y()/cursor.height())
-            page_height = self.editor_.geometry().height()-self.editor_.horizontalScrollBar().height()
-            mid_line = int(0.5*page_height/cursor.height())
-            shift = cursor_line-mid_line
-            vbar = self.editor_.verticalScrollBar()
-            newpos = shift + vbar.value()
-            if newpos>0:
-                vbar.setValue(newpos)            
-                #print(newpos)
-        
+        #self.set_cursor(pos, string)
+        self.editor_.set_cursor(pos, len(string), center=True)
+                
     #-----------------------------------------------------------------------
     def save_text(self, save_func=None):            # Editor
     #-----------------------------------------------------------------------
-        #print('save_text', self.file)
         write_file(self.file, self.editor_.toPlainText())
-        self.save_btn.setEnabled(False)
+        #self.save_btn.setEnabled(False)
+        self.enable_save(False)
         if save_func:
-            #print(save_func.__name__)
             save_func()
-        #self.prepare_case(self.case)
 
     #-----------------------------------------------------------------------
-    def activate_save(self):                                           # Editor
+    def enable_save(self, enable=True):                                   # Editor
     #-----------------------------------------------------------------------
-        #print(self.sender())
-        self.save_btn.setEnabled(True)
-        
+        if self.save_btn:
+            self.save_btn.setEnabled(enable)
+
     #-----------------------------------------------------------------------
-    def undo(self):                                         # Editor
+    def enable_undo(self, enable):                                   # Editor
     #-----------------------------------------------------------------------
-        self.editor_.undo()
+        self.undo_btn.setEnabled(enable)
+        self.enable_save(enable)
             
-    #-----------------------------------------------------------------------
-    def redo(self):                                           # Editor
-    #-----------------------------------------------------------------------
-        self.editor_.redo()
-
     #-----------------------------------------------------------------------
     def clear(self):                                             # Editor
     #-----------------------------------------------------------------------
@@ -1366,9 +1321,8 @@ class Editor(QGroupBox):
             self.search_field.setText('')
             self.search_field.setPlaceholderText('Search text')
 
-
     #-----------------------------------------------------------------------
-    def read(self):
+    def set_text_from_file(self):
     #-----------------------------------------------------------------------
         if self.file and Path(self.file).is_file():
             text = read_file(self.file)
@@ -1376,17 +1330,16 @@ class Editor(QGroupBox):
                 text = (text[:self.size_limit]
                         + f'\n --- SKIPPED {(size-self.size_limit-100)/1024**2:.0f} MB ---\n'
                         + text[-100:])
-            return text
-        return ''
+            self.editor_.setPlainText(text)
+        self.enable_save(False)
+        #if self.save_btn:
+        #    self.save_btn.setEnabled(False)
 
     #-----------------------------------------------------------------------
-    #def update(self, file):
     def update(self, file):
     #-----------------------------------------------------------------------
-        #print(file)
-        #self.set_text(read_file(file))
         self.file = file
-        self.set_text(self.read())
+        self.set_text_from_file()
         self.editor_.moveCursor(QTextCursor.End)
 
     #-----------------------------------------------------------------------
@@ -1403,22 +1356,15 @@ class Editor(QGroupBox):
         if self.file_is_open(file):
             return
         self.file = str(file)
-        # text = ''
-        # if file and Path(file).is_file():
-        #     text = read_file(file)
-        # self.set_text(text)
-        self.set_text(self.read())
+        self.set_text_from_file()
         vscroll = self.vscroll.get(str(file)) or 0
         self.editor_.verticalScrollBar().setValue(vscroll)
 
     #-----------------------------------------------------------------------
     def refresh_func(self):                                           # Editor
     #-----------------------------------------------------------------------
-        #file = self.objectName()
         self.vscroll[self.file] = self.editor_.verticalScrollBar().value()
-        self.set_text(self.read())
-        # if self.file and Path(self.file).is_file():
-        #     self.set_text(read_file(self.file))
+        self.set_text_from_file()
         vscroll = self.vscroll.get(str(self.file)) or 0
         self.editor_.verticalScrollBar().setValue(vscroll)
 
@@ -1428,9 +1374,9 @@ class Editor(QGroupBox):
 class Highlight_editor(Editor):
 #===========================================================================
     #-----------------------------------------------------------------------
-    def __init__(self, *args, comment=None, keywords=[], **kwargs):
+    def __init__(self, *args, comment=None, keywords=(), **kwargs):
     #-----------------------------------------------------------------------
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, comment=comment, **kwargs)
         self.highlighter = Highlighter(self.document(), comment=comment, keywords=keywords)
 
 
@@ -2397,7 +2343,7 @@ class main_window(QMainWindow):                                    # main_window
         # Plain editor with no syntax-highlight or save-function
         self.editor = Editor(name='editor', save_func=None)
         # Schedule-file editor
-        self.sch_editor = Editor(name='sch_editor', save_func=self.view_schedule_file)
+        self.sch_editor = Editor(name='sch_editor', save_func=self.view_schedule_file, comment='--')
         ### Eclipse editor
         rules = namedtuple('rules',('color weight option front back words'))
         sections = rules(Color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b', DATA_file.section_names)
@@ -2495,8 +2441,10 @@ class main_window(QMainWindow):                                    # main_window
         if inp['root']:
             tsteps = DATA_file(inp['root']).tsteps(missing_ok=True, negative_ok=True)
             inp['ecl_days'] = sum(tsteps)
-            inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
-            inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
+            # inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
+            # inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
+            inp['species'] = self.trcinp.species()
+            inp['tracers'] = self.trcinp.tracers()
             inp['species'] += inp['tracers']
 
 
@@ -3072,7 +3020,8 @@ class main_window(QMainWindow):                                    # main_window
         #self.ref_plot_lines = {}
         #self.checked_boxes = []
         self.ref_case.setCurrentIndex(0)
-        self.out_wells, self.in_wells = get_wells_iorsim(root)
+        self.trcinp = IORSim_input(root)
+        self.out_wells, self.in_wells = self.trcinp.wells()
         self.set_variables_from_casefiles()
         if root:
             self.on_mode_select(self.mode_cb.currentIndex())
@@ -3221,9 +3170,9 @@ class main_window(QMainWindow):                                    # main_window
         #print('update_ior_menu')
         menu = self.ior_menu
         delete_all_widgets_in_layout(menu.layout())
+        self.ior_boxes = {}
         if not self.input['root'] or not self.input['species']:
             return False
-        self.ior_boxes = {}
         # Add conc / prod boxes
         self.ior_boxes['yaxis'] = {}
         menu.column(0).addWidget(QLabel('Y-axis'))
@@ -3387,6 +3336,7 @@ class main_window(QMainWindow):                                    # main_window
         menu = self.ecl_menu
         case = case or self.input['root']
         delete_all_widgets_in_layout(menu.layout())
+        self.ecl_boxes = {}
         if not case:
             return False
         try:
@@ -3397,7 +3347,6 @@ class main_window(QMainWindow):                                    # main_window
             menu.layout().addWidget(lbl)
             return
         #print(wells, yaxis, fluids)
-        self.ecl_boxes = {}
         # prod/rate
         menu.column(0).addWidget(QLabel('Y-axis'))
         self.ecl_boxes['yaxis'] = {}
@@ -3588,14 +3537,17 @@ class main_window(QMainWindow):                                    # main_window
     def view_iorsim_input(self):                                # main_window
     #-----------------------------------------------------------------------
         #print('view_iorsim_input:', self.input['root'])
-        if not self.input['root']:
+        #if not self.input['root']:
+        #    return
+        #ext='.trcinp'
+        #name = self.input['root']+ext
+        if not self.trcinp:
+            return 
+        #title = f'IORSim input file {Path(name).name}'
+        if self.current_viewer().file_is_open(self.trcinp.file):
             return
-        ext='.trcinp'
-        name = self.input['root']+ext
-        title = f'IORSim input file {Path(name).name}'
-        if self.current_viewer().file_is_open(name):
-            return
-        self.view_input_file(name, title=title, editor=self.iorsim_editor)
+        title = f'IORSim input file {self.trcinp}'
+        self.view_input_file(self.trcinp.file, title=title, editor=self.iorsim_editor)
   
         
     #-----------------------------------------------------------------------
@@ -4176,7 +4128,7 @@ if __name__ == '__main__':
     #os.environ['QT_FONT_DPI'] = '96'
     #os.environ['QT_SCALE_FACTOR'] = '1'
     #os.putenv('QTWEBENGINE_CHROMIUM_FLAGS', '--disable-logging')
-    args = []
+    #args = []
 
     #print(sys.argv)
     if len(sys.argv) > 1:
@@ -4193,7 +4145,7 @@ if __name__ == '__main__':
         IORSIM_DIR.mkdir(exist_ok=True)
         exit_code = main_window.EXIT_CODE_REBOOT
         while exit_code == main_window.EXIT_CODE_REBOOT:
-            app = QApplication(sys.argv + args)
+            app = QApplication(sys.argv) # + args)
             #print(app.screens())
             window = main_window(settings_file=SETTINGS_FILE)
             window.show()
