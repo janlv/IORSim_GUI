@@ -3031,7 +3031,7 @@ class main_window(QMainWindow):                                    # main_window
         self.update_ecl_menu()
         self.menu_boxes['ecl'] = self.ecl_boxes
         # Init and read Eclipse data
-        self.init_ecl_data()
+        self.data['ecl'] = self.init_ecl_data()
         self.read_ecl_data()
         # Check boxes only if this an eclipse-only run
         if self.is_eclipse_mode():
@@ -3040,7 +3040,7 @@ class main_window(QMainWindow):                                    # main_window
         self.update_ior_menu()
         self.menu_boxes['ior'] = self.ior_boxes
         # IORSim data
-        self.init_ior_data()
+        self.data['ior'] = self.init_ior_data()
         self.read_ior_data()
         # Check default menu boxes
         if not self.is_eclipse_mode():
@@ -3284,15 +3284,17 @@ class main_window(QMainWindow):                                    # main_window
         for w in wellnames:
             for yaxis in (set(self.ecl_yaxes.values()) - set('rate')):
                 ecl[w][yaxis]['Temp_ecl'] = ecl[w]['rate']['Temp_ecl']
-        self.data['ecl'] = ecl
+        return ecl
+        #self.data['ecl'] = ecl
         #return True
 
 
     #-----------------------------------------------------------------------
     #def read_ecl_data(self, case=None, reinit=False, skip_zero=True):   # main_window
-    def read_ecl_data(self, case=None, reinit=False, skip_zero=True):   # main_window
+    def read_ecl_data(self, data=None, case=None, skip_zero=True):   # main_window
     #-----------------------------------------------------------------------
         #print('read_ecl_data', id(self.data))
+        data = data or self.data.get('ecl')
         datafile = case or self.input['root']
         if not datafile:
             #self.data['ecl'] = {}
@@ -3301,34 +3303,34 @@ class main_window(QMainWindow):                                    # main_window
         # if reinit or not self.unsmry:
         #     if not self.init_ecl_data_v2(case=case):
         #         return False
-        data = self.unsmry.data(keys=self.ecl_keys)
+        new_data = self.unsmry.data(keys=self.ecl_keys)
         #print('data',data)
         #self.active_wells = set(data.wells)
         # Enable menu-well-boxes for active wells
-        for well in set(data.wells):
+        for well in set(new_data.wells):
             if box := self.ecl_boxes['well'].get(well):
                 box.setEnabled(True)
-        if data.days:
+        if new_data.days:
             ### Skip zero-time data
             start = 0
-            if skip_zero and data.days[0] < 1e-8:
+            if skip_zero and new_data.days[0] < 1e-8:
                 start = 1
-            ecl = self.data['ecl']
+            #ecl = self.data['ecl']
             #print('inside', id(ecl))
-            ecl['days'].extend(data.days[start:])
-            for w in set(data.wells):
-                ecl[w]['days'].extend(data.days[start:])
+            data['days'].extend(new_data.days[start:])
+            for w in set(new_data.wells):
+                data[w]['days'].extend(new_data.days[start:])
             ### Index to map read data to ecl[well][yaxis][fluid]
-            wyf_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(data.wells, data.keys)]
-            for (w,y,f),*d in zip(wyf_index, *data.welldata[start:]):
-                ecl[w][y][f].extend(d)
+            wyf_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(new_data.wells, new_data.keys)]
+            for (w,y,f),*d in zip(wyf_index, *new_data.welldata[start:]):
+                data[w][y][f].extend(d)
         return True
 
-    #-----------------------------------------------------------------------
-    def data_is_zero(self, well, yaxis, kind):
-    #-----------------------------------------------------------------------
-        return all(sum(var)<1e-8 for var in self.data[kind][well][yaxis].values())
-        #return any(sum(var)>0 for var in self.data[data][well][yaxis].values())
+    # #-----------------------------------------------------------------------
+    # def data_is_zero(self, well, yaxis, kind):
+    # #-----------------------------------------------------------------------
+    #     return all(sum(var)<1e-8 for var in self.data[kind][well][yaxis].values())
+    #     #return any(sum(var)>0 for var in self.data[data][well][yaxis].values())
 
     #-----------------------------------------------------------------------
     def update_ecl_menu(self, case=None):         # main_window
@@ -3664,7 +3666,8 @@ class main_window(QMainWindow):                                    # main_window
         # Temperature only written to conc-file; prod temp refers to conc temp
         for w in self.out_wells:
             ior[w]['prod']['Temp'] = ior[w]['conc']['Temp']
-        self.data['ior'] = ior
+        return ior
+        #self.data['ior'] = ior
 
     #-----------------------------------------------------------------------
     def clear_data(self):
@@ -3678,8 +3681,10 @@ class main_window(QMainWindow):                                    # main_window
         self.unsmry.endpos = 0
 
     #-----------------------------------------------------------------------
-    def read_ior_data(self, case=None, skip_zero=True):
+    #def read_ior_data(self, case=None, skip_zero=True):
+    def read_ior_data(self, data=None, skip_zero=True):
     #-----------------------------------------------------------------------
+        data = data or self.data.get('ior')
         suffix = {'conc':'.trcconc', 'prod':'.trcprd'}
         total_days = ()
         for file in self.ior_files:
@@ -3688,11 +3693,11 @@ class main_window(QMainWindow):                                    # main_window
             for out in ('conc', 'prod'):
                 name = file.stem+suffix[out]
                 skip = file.skip[out]
-                data = read_file(name, skip=skip, raise_error=False)
-                pos.append(skip + len(data) - 1)
-                lines = (l for line in data.split('\n') if (l:=line.strip()) and not l.startswith('#'))
-                data = (map(float, line.split()) for line in lines)
-                welldata.append(list(zip(*data)))
+                new_data = read_file(name, skip=skip, raise_error=False)
+                pos.append(skip + len(new_data) - 1)
+                lines = (l for line in new_data.split('\n') if (l:=line.strip()) and not l.startswith('#'))
+                new_data = (map(float, line.split()) for line in lines)
+                welldata.append(list(zip(*new_data)))
             if len(welldata) == 2 and all(welldata):
                 cdata, pdata = welldata
                 days, temp, conc, prod = cdata[0], cdata[-1], cdata[1:-1], pdata[1:]
@@ -3706,7 +3711,8 @@ class main_window(QMainWindow):                                    # main_window
                     start = 1
                 if len(days[start:]) > len(total_days):
                     total_days = days[start:]
-                well = self.data['ior'][file.well]
+                #well = self.data['ior'][file.well]
+                well = data[file.well]
                 well['days'].extend(days[start:])
                 well['conc']['Temp'].extend(temp[start:])
                 for var, cvals, pvals in zip(self.input['species'], conc, prod):
@@ -3714,8 +3720,10 @@ class main_window(QMainWindow):                                    # main_window
                     well['prod'][var].extend(pvals[start:])
                 # Save position to avoid reading same data again 
                 file.skip['conc'], file.skip['prod'] = pos
-        self.data['ior']['days'].extend(total_days)
-        if all(self.data['ior'][w]['conc']=={} for w in self.out_wells):
+        #self.data['ior']['days'].extend(total_days)
+        #if all(self.data['ior'][w]['conc']=={} for w in self.out_wells):
+        data['days'].extend(total_days)
+        if all(data[w]['conc']=={} for w in self.out_wells):
             return False
         return True
 
