@@ -713,6 +713,8 @@ class SubPlot():
     def __init__(self, fig=None, nrows=None, index=None, comb=None, data=None, varbox=None):
     #-----------------------------------------------------------------------
         self.data = data
+        self.ref_data = None
+        self.comb = comb    # namedtuple('comb','kind yaxis well')
         self.varbox = varbox
         # Add left and right axis
         lax = fig.add_subplot(nrows, 1, index)
@@ -723,6 +725,7 @@ class SubPlot():
         rax.autoscale_view()
         self.axes = (lax, rax)
         self.lines = {}
+        self.ref_lines = {}
         self.temp = None
 
     #-----------------------------------------------------------------------
@@ -752,25 +755,37 @@ class SubPlot():
             visible = self.varbox[self.temp].isChecked()
             self.axes[1].set_visible(visible)
 
-    #-----------------------------------------------------------------------
-    def update_line(self, var, set_data=True):                     # SubPlot
-    #-----------------------------------------------------------------------
-        self.update_lines({var:self.lines[var]}, set_data)
+    # #-----------------------------------------------------------------------
+    # def update_line(self, var, set_data=True):                     # SubPlot
+    # #-----------------------------------------------------------------------
+    #     #self.update_lines({var:self.lines[var]}, set_data)
+    #     self.update_lines(var, set_data)
 
     #-----------------------------------------------------------------------
-    def update_lines(self, lines=None, set_data=True):               # SubPlot
+    def update_ref_lines(self, var=None):               # SubPlot
     #-----------------------------------------------------------------------
-        lines = lines or self.lines
-        x, y = self.data
+        self.update_lines(var=var, set_data=False, lines=self.ref_lines)
+
+    #-----------------------------------------------------------------------
+    #def update_lines(self, lines=None, set_data=True):               # SubPlot
+    def update_lines(self, var=None, set_data=True, lines=None):               # SubPlot
+    #-----------------------------------------------------------------------
+        if lines is None:
+            lines = self.lines        
+        #x, y = self.data
         #print(x)
-        for var,line in self.lines.items():
-            checked = self.varbox[var].isChecked()
-            line.set_visible(checked)
+        #for var,line in lines.items():
+        for var_,line_ in lines.items():
+            if var and var != var_:
+                continue
+            checked = self.varbox[var_].isChecked()
+            line_.set_visible(checked)
             if checked and set_data:
-                if len(x) == len(y[var]):
-                    line.set_data(x, y[var])
+                x, y = self.data
+                if len(x) == len(y[var_]):
+                    line_.set_data(x, y[var_])
                 elif DEBUG:
-                    print(f'Size mismatch for {var}: {len(x)} != {len(y[var])}')
+                    print(f'Size mismatch for {var_}: {len(x)} != {len(y[var_])}')
         self.update_axes()
 
     #-----------------------------------------------------------------------
@@ -791,27 +806,36 @@ class SubPlot():
                 self.temp = var
             #print(prop[var]._asdict())
             self.lines[var], = ax.plot(x, y[var], **prop[var]._asdict())
+            #print(var, self.lines[var])
+
+    #-----------------------------------------------------------------------
+    def create_ref_lines(self, data):                              # SubPlot
+    #-----------------------------------------------------------------------
+        self.ref_lines = {}
+        self.ref_data = data
+        x, y = data
+        if not x:
+            return 
+        #print(x, y)
+        for var,line in self.lines.items():
+            ax = self.axes[0]
+            if 'temp' in var.lower():
+                ax = self.axes[1]
+            line_prop = {'color':line.get_color(), 'lw':line.get_lw(), 'ls':line.get_ls(), 'alpha':0.5}
+            self.ref_lines[var], = ax.plot(x, y[var], **line_prop)
+            # Set ref_line visible if line is visible
+            self.ref_lines[var].set_visible(self.lines[var].get_visible())
+            #print(var, self.ref_lines[var])
+        return self.ref_lines
+
 
 
 #===========================================================================
 class Plots:
 #===========================================================================
-    # mark = '|'
-
-    # @staticmethod
-    # #-----------------------------------------------------------------------
-    # def tag_string(var='', value='', kind=''):                       # Plots
-    # #-----------------------------------------------------------------------
-    #     return Plots.mark.join((var, value, kind))
-
-    # @staticmethod
-    # #-----------------------------------------------------------------------
-    # def tag_values(tag):                                             # Plots
-    # #-----------------------------------------------------------------------
-    #     return namedtuple('tag','var value kind')(*tag.split(Plots.mark))
 
     #-----------------------------------------------------------------------
-    def __init__(self, fig=None, yaxis=None, well=None):                                    # Plots
+    def __init__(self, fig=None, yaxis=None, well=None):             # Plots
     #-----------------------------------------------------------------------
         self.fig = fig
         self.yaxis = yaxis
@@ -819,11 +843,12 @@ class Plots:
         self.line_prop = {}
         self.lines = {}
         self.num = 0
-        self.plots = []
-        self._data = None
+        self.plot_list = []
+        #self._data = None
+        self.combs = []  # Plot combinations
 
     #-----------------------------------------------------------------------
-    def plot_combinations(self, boxes):
+    def plot_combinations(self, boxes):                              # Plots
     #-----------------------------------------------------------------------
         comb = namedtuple('comb','kind yaxis well')
         def values(var, kind):
@@ -835,76 +860,77 @@ class Plots:
             plot_comb.extend([comb(*c) for c in combinations])
         return plot_comb
 
-    # #-----------------------------------------------------------------------
-    # def group_tags(self, boxes):                                     # Plots
-    # #-----------------------------------------------------------------------
-    #     tags = [self.tag_values(box.objectName()) for box in boxes]
-    #     group = {kind:{var:[] for var in ('yaxis','well')} for kind in ('ecl','ior')}
-    #     for tag in tags:
-    #         group[tag.kind][tag.var].append(tag.value)
-    #     return group
-
     #-----------------------------------------------------------------------
-    def data(self, comb):
+    def get_data(self, comb, data):                                 # Plots
     #-----------------------------------------------------------------------
-        welldata = self._data and (k:=self._data.get(comb.kind)) and k.get(comb.well)
+        #data = data or self._data
+        welldata = data and (k:=data.get(comb.kind)) and k.get(comb.well)
         return (welldata.get('days'), welldata.get(comb.yaxis)) if welldata else ([],{})
 
     #-----------------------------------------------------------------------
-    def nonzero_data(self, comb):
+    def nonzero_data(self, comb, data):                                    # Plots
     #-----------------------------------------------------------------------
-        ydata = self.data(comb)[1]
+        ydata = self.get_data(comb, data)[1]
         return comb.well == 'FIELD' or any(sum(var) > 1e-8 for var in ydata.values())
 
     #-----------------------------------------------------------------------
-    #def create(self, data=None, checked=None, menuboxes=None, only_nonzero=False): # Plots
     def create(self, data=None, menuboxes=None, only_nonzero=False): # Plots
     #-----------------------------------------------------------------------
-        self._data = data
+        #self._data = data
         self.fig.clf()
-        self.plots = []
-        plot_comb = []
-        # checked = self.group_tags(checked)
-        # #print(checked)
-        # comb = namedtuple('comb','kind yaxis well')
-        # for kind in ('ecl','ior'):
-        #     boxes = checked.get(kind)
-        #     combinations = product((kind,), boxes.get('yaxis') or (), sorted(boxes.get('well') or ()))
-        #     plot_comb.extend([comb(*c) for c in combinations])
-        plot_comb = self.plot_combinations(menuboxes)
+        self.plot_list = []
+        #plot_comb = []
+        self.combs = self.plot_combinations(menuboxes)
         #print(plot_comb)
+        # Enable all wellboxes
+        for menu in menuboxes.values():
+            for wellbox in menu['well'].values():
+                wellbox.setEnabled(True)
         if only_nonzero:
-            nonzero = [comb for comb in plot_comb if self.nonzero_data(comb)]
-            for comb in set(plot_comb) - set(nonzero):
+            nonzero = [comb for comb in self.combs if self.nonzero_data(comb, data)]
+            nz_kind_well = [(c.kind, c.well) for c in nonzero]
+            # Disable wellboxes with no data
+            zero = (c for c in set(self.combs)-set(nonzero) if not (c.kind, c.well) in nz_kind_well)
+            for comb in zero:
                 menuboxes[comb.kind]['well'][comb.well].setEnabled(False)
-            plot_comb = nonzero
+            self.combs = nonzero
         #print('nonzero', plot_comb)
         ior_var = menuboxes['ior'].get('var') or ()
         species = (var for var in ior_var if not 'temp' in var.lower())
         self.line_prop = self.line_properties(species)
-        self.num = len(plot_comb)
+        self.num = len(self.combs)
         varboxes = flatten((box.get('var') or {}).keys() for box in menuboxes.values())
         self.lines = {var:[] for var in varboxes}
         i = 1
-        for comb in plot_comb:
-            plot = SubPlot(self.fig, self.num, i, comb, self.data(comb), menuboxes[comb.kind]['var'])
+        for comb in self.combs:
+            plot = SubPlot(self.fig, self.num, i, comb, self.get_data(comb, data), menuboxes[comb.kind]['var'])
             plot.create_lines(self.line_prop)
             for var in plot.lines:
                 self.lines[var].append(plot)
-            self.plots.append(plot)
+            self.plot_list.append(plot)
             i += 1
 
-    #-----------------------------------------------------------------------
-    def update_line(self, var, set_data=True):                       # Plots
-    #-----------------------------------------------------------------------
-        for plot in self.lines[var]:
-            plot.update_line(var, set_data)
+    # #-----------------------------------------------------------------------
+    # def update_line(self, var):                       # Plots
+    # #-----------------------------------------------------------------------
+    #     plot = self.lines[var]
+    #     plot.update_lines(var, set_data=True)
+    #     plot.update_lines(var, lines=self.ref_lines)
+    #     for plot in self.lines[var]:
+    #         plot.update_lines(var, set_data=True)
+    #         plot.update_lines(var, set_data=True)
 
-    #-----------------------------------------------------------------------
-    def update(self):                                                # Plots
-    #-----------------------------------------------------------------------
-        for plot in self.plots:
-            plot.update_lines()
+    # #-----------------------------------------------------------------------
+    # def update(self):                                                # Plots
+    # #-----------------------------------------------------------------------
+    #     for plot in self.plot_list:
+    #         plot.update_lines()
+
+    # #-----------------------------------------------------------------------
+    # def add_ref_plot(self, data):                                    # Plots
+    # #-----------------------------------------------------------------------
+    #     for comb, plot in zip(self.combs, self.plot_list):
+    #         plot.create_ref_lines(self.data(comb, data=data))
 
     #-----------------------------------------------------------------------
     def line_properties(self, species=()):                           # Plots
@@ -915,7 +941,6 @@ class Plots:
         ior_prop  = {specie:prop(str(next(color))) for specie in species} 
         temp_prop = {temp:prop(str(Color.black), '--', 0.5) for temp in ('Temp','Temp_ecl')}
         return {**ecl_prop, **ior_prop, **temp_prop}
-
 
 
 #===========================================================================
@@ -945,6 +970,7 @@ class PlotArea(QGroupBox):
         layout.addWidget(NavigationToolbar(self.canvas, self))
         self.min_height = self.height()
         self.plots = Plots(self.canvas.fig)
+        self.ref_data = None
 
     #-----------------------------------------------------------------------
     def adjust(self):                                             # PlotArea
@@ -988,19 +1014,36 @@ class PlotArea(QGroupBox):
         return False
 
     #-----------------------------------------------------------------------
-    #def create(self, data=None, checked=None, varbox=None, only_nonzero=False): # PlotArea
     def create(self, data=None, menuboxes=None, only_nonzero=False): # PlotArea
     #-----------------------------------------------------------------------
-        #self.plots.create(data, checked, varbox, only_nonzero)
         self.plots.create(data, menuboxes, only_nonzero)
+        if self.ref_data:
+            self.add_ref_data(self.ref_data, draw=False)
         self.draw()
 
     #-----------------------------------------------------------------------
-    def update(self, var=None):
+    def update_plots(self, var=None):                             # PlotArea
     #-----------------------------------------------------------------------
         #print('PlotArea.update()')
-        self.plots.update()
+        for plot in self.plots.plot_list:
+            plot.update_lines(var=var)
+            plot.update_ref_lines(var=var)
         self.draw()
+
+    #-----------------------------------------------------------------------
+    def add_ref_plot(self, data, draw=True):                                 # PlotArea
+    #-----------------------------------------------------------------------
+        self.ref_data = data
+        plots = self.plots
+        created = []
+        for comb, plot in zip(plots.combs, plots.plot_list):
+            lines = plot.create_ref_lines(plots.get_data(comb, data=data))
+            if lines:
+                created.append(comb)
+        if draw and created:
+            self.draw()
+        return created
+
 
 #===========================================================================
 class Menu(QGroupBox):
@@ -2810,49 +2853,70 @@ class main_window(QMainWindow):                                    # main_window
             self.mode_cb.blockSignals(False)
             self.prepare_case()
 
-
     #-----------------------------------------------------------------------
     def on_compare_select(self, nr):                              # main_window
     #-----------------------------------------------------------------------
-        #self.reset_progress_and_message()
         self.update_message()
-        if nr>0:
-            ior = ecl = False
+        if nr > 0:
             case = str(self.cases[nr-1])
-            data = deepcopy(self.data)
-            #print('BEFORE')
-            #print_dict(self.data)
-            # Eclipse
-            if self.read_ecl_data(case=case, reinit=True):
-                self.plot_ref_data['ecl'] = deepcopy(self.data['ecl'])
-                ecl = True
-            self.unsmry = None
             # IOR
-            if self.read_ior_data(case=case):
-                self.plot_ref_data['ior'] = deepcopy(self.data['ior'])
-                ior = True
-            # copy original data back
-            self.data = data
-            if (self.mode=='eclipse' and not ecl) or (self.mode=='iorsim' and not ior) or (not ecl or not ior):
+            ior = self.init_ior_data(case=case)
+            self.read_ior_data(data=ior)
+            #print('ior', ior['days'])
+            # ECL
+            ecl = self.init_ecl_data(case=case)
+            self.read_ecl_data(data=ecl)
+            #print('ecl', ecl['days'])
+            plots = self.plot_area.add_ref_plot({'ecl':ecl, 'ior':ior})
+            if not plots:
                 self.ref_case.setCurrentIndex(self.ref_case.property('lastitem'))
-                msg = f'Cannot compare {Path(case).name} against {Path(self.case).name}'
-                if not self.unsmry or not self.unsmry.is_file():
-                    msg += f': {Path(case).name+".UNSMRY"} is missing'
-                #self.ref_case.setCurrentIndex(0)
-                #self.update_message(msg)
-                self.show_message_text('WARNING '+msg)
-                return
-            self.plot_ref = case
-            #print('AFTER')
-            #print_dict(self.data)
-        else:
-            self.plot_ref = None
-            self.plot_ref_data = {}
-            #self.ref_plot_lines = {}
-            #print(self.plot_ref)
-        self.ref_case.setProperty('lastitem',nr)    
-        self.create_plot()
-        #self.plot_ref = None
+                self.show_message_text(f'WARNING Cannot compare {Path(case).name} against {Path(self.case).name}')
+            #print(plots)
+            self.ref_case.setProperty('lastitem',nr)    
+            #self.plot_area.draw()
+
+    # #-----------------------------------------------------------------------
+    # def on_compare_select_OLD(self, nr):                              # main_window
+    # #-----------------------------------------------------------------------
+    #     #self.reset_progress_and_message()
+    #     self.update_message()
+    #     if nr>0:
+    #         ior = ecl = False
+    #         case = str(self.cases[nr-1])
+    #         data = deepcopy(self.data)
+    #         #print('BEFORE')
+    #         #print_dict(self.data)
+    #         # Eclipse
+    #         if self.read_ecl_data(case=case, reinit=True):
+    #             self.plot_ref_data['ecl'] = deepcopy(self.data['ecl'])
+    #             ecl = True
+    #         self.unsmry = None
+    #         # IOR
+    #         if self.read_ior_data(case=case):
+    #             self.plot_ref_data['ior'] = deepcopy(self.data['ior'])
+    #             ior = True
+    #         # copy original data back
+    #         self.data = data
+    #         if (self.mode=='eclipse' and not ecl) or (self.mode=='iorsim' and not ior) or (not ecl or not ior):
+    #             self.ref_case.setCurrentIndex(self.ref_case.property('lastitem'))
+    #             msg = f'Cannot compare {Path(case).name} against {Path(self.case).name}'
+    #             if not self.unsmry or not self.unsmry.is_file():
+    #                 msg += f': {Path(case).name+".UNSMRY"} is missing'
+    #             #self.ref_case.setCurrentIndex(0)
+    #             #self.update_message(msg)
+    #             self.show_message_text('WARNING '+msg)
+    #             return
+    #         self.plot_ref = case
+    #         #print('AFTER')
+    #         #print_dict(self.data)
+    #     else:
+    #         self.plot_ref = None
+    #         self.plot_ref_data = {}
+    #         #self.ref_plot_lines = {}
+    #         #print(self.plot_ref)
+    #     self.ref_case.setProperty('lastitem',nr)    
+    #     self.create_plot()
+    #     #self.plot_ref = None
                 
     #-----------------------------------------------------------------------
     def open_case(self):                                       # main_window
@@ -3016,9 +3080,6 @@ class main_window(QMainWindow):                                    # main_window
         self.schedule = next((f for f in sch if f.stem == Path(root).stem), None)
         #print('prepare_case: ',root)
         self.reset_progress_and_message()
-        #self.plot_lines = {}
-        #self.ref_plot_lines = {}
-        #self.checked_boxes = []
         self.ref_case.setCurrentIndex(0)
         self.trcinp = IORSim_input(root)
         self.out_wells, self.in_wells = self.trcinp.wells()
@@ -3027,25 +3088,25 @@ class main_window(QMainWindow):                                    # main_window
             self.on_mode_select(self.mode_cb.currentIndex())
         self.data = {}
         self.menu_boxes = {}
-        # Add eclipse menu boxes
+        # Add menu boxes
         self.update_ecl_menu()
         self.menu_boxes['ecl'] = self.ecl_boxes
-        # Init and read Eclipse data
-        self.data['ecl'] = self.init_ecl_data()
-        self.read_ecl_data()
-        # Check boxes only if this an eclipse-only run
-        if self.is_eclipse_mode():
-            self.update_menu_boxes('ecl')
-        # Add iorsim menu boxes
         self.update_ior_menu()
         self.menu_boxes['ior'] = self.ior_boxes
-        # IORSim data
-        self.data['ior'] = self.init_ior_data()
-        self.read_ior_data()
-        # Check default menu boxes
+        #self.enable_well_boxes(True)
+        # Check default boxes depending on run
+        if self.is_eclipse_mode():
+            self.update_menu_boxes('ecl')
         if not self.is_eclipse_mode():
             self.update_menu_boxes('ior')
+        # Init and read data
+        self.data['ecl'] = self.init_ecl_data()
+        self.read_ecl_data()
+        self.data['ior'] = self.init_ior_data()
+        self.read_ior_data()
+        # Create plot
         self.create_plot()
+        # Update menus
         self.update_include_menus()
         self.update_schedule_act()
         if self.view_group.checkedAction():
@@ -3110,18 +3171,27 @@ class main_window(QMainWindow):                                    # main_window
 
         
     #-----------------------------------------------------------------------
-    def on_ecl_var_click(self):
+    def on_var_click(self):
     #-----------------------------------------------------------------------
-        #print('on_ecl_var_click', self.sender())
-        name = self.sender().objectName()
-        #is_checked = self.sender().isChecked()
-        #self.update_plot_line(name, is_checked)
-        self.update_plot_line(name)
-        if self.plot_ref_data:
-            #print('ref_data')
-            #self.update_plot_line(name, is_checked, lines=self.ref_plot_lines, set_data=False)
-            self.update_plot_line(name, set_data=False)
-        self.plot_area.draw()
+        #name = self.sender().objectName()
+        #self.plot_area.update_line(self.sender().objectName())
+        self.plot_area.update_plots(var=self.sender().objectName())
+        #self.plot_area.draw()
+
+    # #-----------------------------------------------------------------------
+    # def on_ecl_var_click(self):
+    # #-----------------------------------------------------------------------
+    #     #print('on_ecl_var_click', self.sender())
+    #     name = self.sender().objectName()
+    #     #is_checked = self.sender().isChecked()
+    #     #self.update_plot_line(name, is_checked)
+    #     #self.update_plot_line(name)
+    #     self.plot_area.plots.update_line(name)
+    #     # if self.plot_ref_data:
+    #     #     #print('ref_data')
+    #     #     #self.update_plot_line(name, is_checked, lines=self.ref_plot_lines, set_data=False)
+    #     #     self.update_plot_line(name, set_data=False)
+    #     self.plot_area.draw()
 
 
     #-----------------------------------------------------------------------
@@ -3152,7 +3222,6 @@ class main_window(QMainWindow):                                    # main_window
         return layout, box
 
     #-----------------------------------------------------------------------
-    #def plot_menu_checkbox(self, text='', name='', func=None, toggle=False, pad_left=10, size=15):
     def plot_menu_checkbox(self, text='', name='', func=None, toggle=False, pad_right=10): #, size=15):
     #-----------------------------------------------------------------------
         box = QCheckBox(text)
@@ -3177,8 +3246,6 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_boxes['yaxis'] = {}
         menu.column(0).addWidget(QLabel('Y-axis'))
         for text in ('Prod', 'Conc'):
-            #tag = Plots.tag_string(var='yaxis', value=text.lower(), kind='ior')
-            #box = self.plot_menu_checkbox(text=text+'.', name=text.lower(), func=self.on_ior_menu_click)
             box = self.plot_menu_checkbox(text=text+'.', name=text.lower(), func=self.create_plot)
             box.setStyleSheet(FONT_SMALL)
             menu.column(0).addWidget(box)#, alignment=Qt.AlignTop)
@@ -3190,14 +3257,11 @@ class main_window(QMainWindow):                                    # main_window
         menu.column(0).addWidget(QLabel('Wells'))
         self.ior_boxes['well'] = {}
         for well in self.out_wells:
-            #tag = Plots.tag_string(var='well', value=well, kind='ior')
-            #box = self.plot_menu_checkbox(text=well, name=well, func=self.on_ior_menu_click)
             box = self.plot_menu_checkbox(text=well, name=well, func=self.create_plot)
             box.setStyleSheet(FONT_SMALL)
-            box.setEnabled(False)
+            #box.setEnabled(False)
             menu.column(0).addWidget(box, alignment=Qt.AlignTop)
             self.ior_boxes['well'][well] = box
-        #self.ior_boxes['well']['FIELD'].setEnabled(True)
         # Add specie boxes
         box = self.plot_menu_checkbox(text='Variables', name='ior_var')
         box.setStyleSheet(FONT_LARGE)
@@ -3208,16 +3272,15 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_boxes['var'] = {}
         color = Color.cycle()
         for i,specie in enumerate(self.input['species'] or []):
-            layout, box = self.plot_menu_box_variable(specie, color=next(color), func=self.on_specie_click)
+            #layout, box = self.plot_menu_box_variable(specie, color=next(color), func=self.on_specie_click)
+            layout, box = self.plot_menu_box_variable(specie, color=next(color), func=self.on_var_click)
             self.ior_boxes['var'][specie] = box
             menu.column(1).addLayout(layout)
         # Add temperature box
-        layout, box = self.plot_menu_box_variable('Temp', linestyle='dotted', color=Color.gray, func=self.on_specie_click)
+        #layout, box = self.plot_menu_box_variable('Temp', linestyle='dotted', color=Color.gray, func=self.on_specie_click)
+        layout, box = self.plot_menu_box_variable('Temp', linestyle='dotted', color=Color.gray, func=self.on_var_click)
         self.ior_boxes['var']['Temp'] = box
         menu.column(1).addLayout(layout)
-        # Set default checked boxes and add them to the checked list
-        # if checked:
-        #     self.update_menu_boxes('ior')
         # Disable prod box for tracer cases 
         if self.input['tracers']:
             box = self.ior_boxes['yaxis']['prod']
@@ -3348,14 +3411,11 @@ class main_window(QMainWindow):                                    # main_window
             lbl.setText(str(e))
             menu.layout().addWidget(lbl)
             return
-        #print(wells, yaxis, fluids)
         # prod/rate
         menu.column(0).addWidget(QLabel('Y-axis'))
         self.ecl_boxes['yaxis'] = {}
         for i,name in enumerate(yaxis):
             text = self.ecl_yaxes_names[name]
-            #tag = Plots.tag_string(var='yaxis', value=name, kind='ecl')
-            #box = self.plot_menu_checkbox(text, name, self.on_ecl_yaxis_click)
             box = self.plot_menu_checkbox(text, name, self.create_plot)
             box.setStyleSheet(FONT_SMALL)
             self.ecl_boxes['yaxis'][name] = box
@@ -3369,16 +3429,11 @@ class main_window(QMainWindow):                                    # main_window
         pos = 1 if 'FIELD' in wells else 0
         self.wellnames = wells[pos:]
         wells = wells[:pos] + ['All wells'] + wells[pos:]
-        #print(wells)
         self.ecl_boxes['well'] = {}
         all_wells = None
         for well in wells:
-            #name = PlotArea.name_tag('well', well, 'ecl')
-            #tag = Plots.tag_string(var='well', value=well, kind='ecl')
-            #box = self.plot_menu_checkbox(well, well, self.on_ecl_well_click)
             box = self.plot_menu_checkbox(well, well, self.create_plot)
-            #box.setEnabled(False)
-            box.setEnabled(True)
+            #box.setEnabled(True)
             box.setStyleSheet(FONT_SMALL)
             menu.column(0).addWidget(box)
             if well == 'All wells':
@@ -3388,13 +3443,11 @@ class main_window(QMainWindow):                                    # main_window
         field_box = self.ecl_boxes['well'].get('FIELD')
         if field_box:
             field_box.setEnabled(True)
-        #all_wells = self.ecl_boxes['well'].get('All wells')
         if all_wells:
             all_wells.setEnabled(True)
             all_wells.setChecked(False)
             all_wells.stateChanged.disconnect()
             all_wells.stateChanged.connect(self.set_all_ecl_well_boxes)
-            #self.ecl_well_box = all_wells
             self.ecl_all_wells = all_wells
         # variables
         box = self.plot_menu_checkbox(text='Variables', name='ecl_var')
@@ -3406,12 +3459,13 @@ class main_window(QMainWindow):                                    # main_window
         self.ecl_boxes['var'] = {}
         for var in fluids:
             color = Color.fluid.get(var)
-            layout, box = self.plot_menu_box_variable(var, color=color, func=self.on_ecl_var_click)
+            #layout, box = self.plot_menu_box_variable(var, color=color, func=self.on_ecl_var_click)
+            layout, box = self.plot_menu_box_variable(var, color=color, func=self.on_var_click)
             self.ecl_boxes['var'][var] = box
             menu.column(1).addLayout(layout)
         layout, box = self.plot_menu_box_variable('Temp', boxname='Temp_ecl', linestyle='dotted',
-                                                    color=Color.gray, func=self.on_ecl_var_click)
-                                                    # color='#707070', func=self.on_ecl_var_click)
+                                                    color=Color.gray, func=self.on_var_click)
+                                                    #color=Color.gray, func=self.on_ecl_var_click)
         self.ecl_boxes['var']['Temp_ecl'] = box
         menu.column(1).addLayout(layout)
         # if checked:
@@ -3605,7 +3659,7 @@ class main_window(QMainWindow):                                    # main_window
         if not self.worker:# and self.case:
             self.read_ior_data()
             self.read_ecl_data()
-            self.plot_area.update() #self.update_all_plot_lines()
+            self.plot_area.update_plots() #self.update_all_plot_lines()
             
     # #-----------------------------------------------------------------------
     # def update_checked_list(self, *boxes):
@@ -3617,23 +3671,24 @@ class main_window(QMainWindow):                                    # main_window
     #             if box in self.checked_boxes:
     #                 self.checked_boxes.remove(box)
             
-    #-----------------------------------------------------------------------
-    def on_specie_click(self):
-    #-----------------------------------------------------------------------
-        #print('on_specie_click')
-        specie = self.sender().objectName()
-        #is_checked = self.sender().isChecked()
-        self.update_plot_line(specie) #, is_checked)
-        if self.plot_ref_data:
-            # self.update_plot_line(self.sender().objectName(), is_checked, lines=self.ref_plot_lines, set_data=False)
-            self.update_plot_line(self.sender().objectName(), set_data=False)
-        self.plot_area.draw()
+    # #-----------------------------------------------------------------------
+    # def on_specie_click(self):
+    # #-----------------------------------------------------------------------
+    #     #print('on_specie_click')
+    #     specie = self.sender().objectName()
+    #     #is_checked = self.sender().isChecked()
+    #     self.plot_area.plots.update_line(specie)
+    #     #self.update_plot_line(specie) #, is_checked)
+    #     # if self.plot_ref_data:
+    #     #     # self.update_plot_line(self.sender().objectName(), is_checked, lines=self.ref_plot_lines, set_data=False)
+    #     #     self.update_plot_line(self.sender().objectName(), set_data=False)
+    #     self.plot_area.draw()
 
-    #-----------------------------------------------------------------------
-    # def update_plot_line(self, var, is_checked, lines=None, set_data=True):
-    def update_plot_line(self, var, set_data=True):
-    #-----------------------------------------------------------------------
-        self.plot_area.plots.update_line(var, set_data)
+    # #-----------------------------------------------------------------------
+    # # def update_plot_line(self, var, is_checked, lines=None, set_data=True):
+    # def update_plot_line(self, var, set_data=True):
+    # #-----------------------------------------------------------------------
+    #     self.plot_area.plots.update_line(var, set_data)
 
     # #-----------------------------------------------------------------------
     # def update_axes_limits(self):
@@ -3815,11 +3870,12 @@ class main_window(QMainWindow):                                    # main_window
                 ior['FIELD']['prod'][var][-size:] += ior[w]['prod'][var]    
 
     #-----------------------------------------------------------------------
-    def create_plot(self):                         # main_window
+    def create_plot(self, keep_ref=True):                         # main_window
     #-----------------------------------------------------------------------                
         #varbox = {'ecl': self.ecl_boxes.get('var') or (), 'ior': self.ior_boxes.get('var') or ()}
         #self.plot_area.create(self.data, self.checked_boxes, self.menu_boxes, only_nonzero=not self.worker)
-        self.plot_area.create(self.data, self.menu_boxes, only_nonzero=not self.worker)
+        
+        self.plot_area.create(self.data, self.menu_boxes, only_nonzero=not self.worker, keep_ref=keep_ref)
             
     #-----------------------------------------------------------------------
     def update_remaining_time(self, text='0:00:00'):           # main_window
@@ -3921,7 +3977,7 @@ class main_window(QMainWindow):                                    # main_window
             #if not all(list(ok.values())):
             #    self.statusBar().showMessage('No wells are currently producing')            
             #print('call from update_view_area')
-            self.plot_area.update() #self.update_all_plot_lines()
+            self.plot_area.update_plots() #self.update_all_plot_lines()
         #elif view in (self.log_viewer, self.app_log_viewer) : #'log_viewer':
         elif view == self.log_viewer:
             self.update_log(view)
@@ -3983,6 +4039,7 @@ class main_window(QMainWindow):                                    # main_window
         self.reset_progress_and_message()
         # Enable all well-boxes
         self.enable_well_boxes(True)
+        #self.create_plot()
         # # Uncheck well-boxes
         # for box in list(self.ecl_boxes['well'].values())+list(self.ior_boxes['well'].values()):
         #     self.uncheck_box(box)
@@ -4012,7 +4069,8 @@ class main_window(QMainWindow):                                    # main_window
         self.worker.signals.plot.connect(self.update_view_area)
         self.worker.signals.finished.connect(self.run_finished)
         self.threadpool.start(self.worker)
-        
+        self.create_plot()
+
 
     #-----------------------------------------------------------------------
     def show_message_text(self, text, **kwargs):
