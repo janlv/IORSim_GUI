@@ -997,8 +997,10 @@ class Simulation:                                                        # Simul
             #self.update.progress(value=-run.T, min=run is self.ecl and self.restart_days or 0)
             ### Progress is updated after 25*0.2 = 5 sec
             ### Check for cancelled run every 0.2 sec
-            run.init_control_func(update=self.update, count=15) 
+            run.init_control_func(update=self.update, count=15)
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
+            self.update.progress(run)
+            self.update.plot()
             run.t = run.time()
             dec = min(len(str(t).split('.')[-1]) for t in (run.t, run.T))
             #print(run.name, dec, run.t, run.T)

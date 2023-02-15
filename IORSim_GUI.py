@@ -713,7 +713,6 @@ class SubPlot():
     def __init__(self, fig=None, nrows=None, index=None, comb=None, data=None, varbox=None):
     #-----------------------------------------------------------------------
         self.data = data
-        self.ref_data = None
         self.comb = comb    # namedtuple('comb','kind yaxis well')
         self.varbox = varbox
         # Add left and right axis
@@ -755,33 +754,25 @@ class SubPlot():
             visible = self.varbox[self.temp].isChecked()
             self.axes[1].set_visible(visible)
 
-    # #-----------------------------------------------------------------------
-    # def update_line(self, var, set_data=True):                     # SubPlot
-    # #-----------------------------------------------------------------------
-    #     #self.update_lines({var:self.lines[var]}, set_data)
-    #     self.update_lines(var, set_data)
-
     #-----------------------------------------------------------------------
     def update_ref_lines(self, var=None):               # SubPlot
     #-----------------------------------------------------------------------
         self.update_lines(var=var, set_data=False, lines=self.ref_lines)
 
     #-----------------------------------------------------------------------
-    #def update_lines(self, lines=None, set_data=True):               # SubPlot
     def update_lines(self, var=None, set_data=True, lines=None):               # SubPlot
     #-----------------------------------------------------------------------
         if lines is None:
-            lines = self.lines        
-        #x, y = self.data
-        #print(x)
-        #for var,line in lines.items():
+            lines = self.lines
+        x, y = 2*[None]
+        if set_data:
+            x, y = self.data
         for var_,line_ in lines.items():
             if var and var != var_:
                 continue
             checked = self.varbox[var_].isChecked()
             line_.set_visible(checked)
-            if checked and set_data:
-                x, y = self.data
+            if checked and x:
                 if len(x) == len(y[var_]):
                     line_.set_data(x, y[var_])
                 elif DEBUG:
@@ -791,6 +782,7 @@ class SubPlot():
     #-----------------------------------------------------------------------
     def create_lines(self, prop):                                  # SubPlot
     #-----------------------------------------------------------------------
+        self.lines = {}
         x, y = self.data
         if x is None or y is None:
             return
@@ -798,36 +790,37 @@ class SubPlot():
         ok_vars = [var for var in all_vars if len(x) == len(y[var])]
         if DEBUG and (not_ok := set(all_vars) - set(ok_vars)):
             print(f'Size mismatch for {not_ok}')
-        self.lines = {}
         for var in ok_vars:
             ax = self.axes[0]
             if 'temp' in var.lower():
                 ax = self.axes[1]
                 self.temp = var
-            #print(prop[var]._asdict())
             self.lines[var], = ax.plot(x, y[var], **prop[var]._asdict())
-            #print(var, self.lines[var])
 
     #-----------------------------------------------------------------------
-    def create_ref_lines(self, data):                              # SubPlot
+    def create_ref_lines(self, data, lw=1.5, alpha=0.3):                              # SubPlot
     #-----------------------------------------------------------------------
         self.ref_lines = {}
-        self.ref_data = data
         x, y = data
         if not x:
-            return 
-        #print(x, y)
-        for var,line in self.lines.items():
+            return
+        for var, line in self.lines.items():
+            if len(x) != len(y[var]):
+                continue
             ax = self.axes[0]
             if 'temp' in var.lower():
                 ax = self.axes[1]
-            line_prop = {'color':line.get_color(), 'lw':line.get_lw(), 'ls':line.get_ls(), 'alpha':0.5}
+            line_prop = {'color':line.get_color(), 'lw':lw*line.get_lw(), 'ls':line.get_ls(), 'alpha':alpha}
             self.ref_lines[var], = ax.plot(x, y[var], **line_prop)
             # Set ref_line visible if line is visible
             self.ref_lines[var].set_visible(self.lines[var].get_visible())
-            #print(var, self.ref_lines[var])
-        return self.ref_lines
 
+    #-----------------------------------------------------------------------
+    def clear_ref_lines(self):                              # SubPlot
+    #-----------------------------------------------------------------------
+        for line in self.ref_lines.values():
+            line.set_visible(False)
+        self.ref_lines = {}
 
 
 #===========================================================================
@@ -844,7 +837,6 @@ class Plots:
         self.lines = {}
         self.num = 0
         self.plot_list = []
-        #self._data = None
         self.combs = []  # Plot combinations
 
     #-----------------------------------------------------------------------
@@ -868,7 +860,7 @@ class Plots:
         return (welldata.get('days'), welldata.get(comb.yaxis)) if welldata else ([],{})
 
     #-----------------------------------------------------------------------
-    def nonzero_data(self, comb, data):                                    # Plots
+    def nonzero_data(self, comb, data):                              # Plots
     #-----------------------------------------------------------------------
         ydata = self.get_data(comb, data)[1]
         return comb.well == 'FIELD' or any(sum(var) > 1e-8 for var in ydata.values())
@@ -876,12 +868,9 @@ class Plots:
     #-----------------------------------------------------------------------
     def create(self, data=None, menuboxes=None, only_nonzero=False): # Plots
     #-----------------------------------------------------------------------
-        #self._data = data
         self.fig.clf()
         self.plot_list = []
-        #plot_comb = []
         self.combs = self.plot_combinations(menuboxes)
-        #print(plot_comb)
         # Enable all wellboxes
         for menu in menuboxes.values():
             for wellbox in menu['well'].values():
@@ -894,7 +883,6 @@ class Plots:
             for comb in zero:
                 menuboxes[comb.kind]['well'][comb.well].setEnabled(False)
             self.combs = nonzero
-        #print('nonzero', plot_comb)
         ior_var = menuboxes['ior'].get('var') or ()
         species = (var for var in ior_var if not 'temp' in var.lower())
         self.line_prop = self.line_properties(species)
@@ -910,35 +898,13 @@ class Plots:
             self.plot_list.append(plot)
             i += 1
 
-    # #-----------------------------------------------------------------------
-    # def update_line(self, var):                       # Plots
-    # #-----------------------------------------------------------------------
-    #     plot = self.lines[var]
-    #     plot.update_lines(var, set_data=True)
-    #     plot.update_lines(var, lines=self.ref_lines)
-    #     for plot in self.lines[var]:
-    #         plot.update_lines(var, set_data=True)
-    #         plot.update_lines(var, set_data=True)
-
-    # #-----------------------------------------------------------------------
-    # def update(self):                                                # Plots
-    # #-----------------------------------------------------------------------
-    #     for plot in self.plot_list:
-    #         plot.update_lines()
-
-    # #-----------------------------------------------------------------------
-    # def add_ref_plot(self, data):                                    # Plots
-    # #-----------------------------------------------------------------------
-    #     for comb, plot in zip(self.combs, self.plot_list):
-    #         plot.create_ref_lines(self.data(comb, data=data))
-
     #-----------------------------------------------------------------------
     def line_properties(self, species=()):                           # Plots
     #-----------------------------------------------------------------------
         prop = namedtuple('prop','color linestyle alpha linewidth', defaults=(None, '-', 1.0, 1.5))
         ecl_prop  = {fluid:prop(str(col)) for fluid,col in Color.fluid.items()}
         color = Color.cycle()
-        ior_prop  = {specie:prop(str(next(color))) for specie in species} 
+        ior_prop  = {specie:prop(str(next(color))) for specie in species}
         temp_prop = {temp:prop(str(Color.black), '--', 0.5) for temp in ('Temp','Temp_ecl')}
         return {**ecl_prop, **ior_prop, **temp_prop}
 
@@ -1002,8 +968,6 @@ class PlotArea(QGroupBox):
     #-----------------------------------------------------------------------
     def resizeEvent(self, event):                                     # PlotArea
     #-----------------------------------------------------------------------
-        #print('resize', self.scroll_area.width(), self.canvas.height())
-        #if event.oldSize()[1] > event.size()[1]:
         height = max(self.scroll_area.height(), self.min_height)
         self.canvas.resize(self.scroll_area.width(), height)
         return super().resizeEvent(event)
@@ -1018,13 +982,12 @@ class PlotArea(QGroupBox):
     #-----------------------------------------------------------------------
         self.plots.create(data, menuboxes, only_nonzero)
         if self.ref_data:
-            self.add_ref_data(self.ref_data, draw=False)
+            self.add_ref_plot(self.ref_data, draw=False)
         self.draw()
 
     #-----------------------------------------------------------------------
     def update_plots(self, var=None):                             # PlotArea
     #-----------------------------------------------------------------------
-        #print('PlotArea.update()')
         for plot in self.plots.plot_list:
             plot.update_lines(var=var)
             plot.update_ref_lines(var=var)
@@ -1035,15 +998,19 @@ class PlotArea(QGroupBox):
     #-----------------------------------------------------------------------
         self.ref_data = data
         plots = self.plots
-        created = []
         for comb, plot in zip(plots.combs, plots.plot_list):
-            lines = plot.create_ref_lines(plots.get_data(comb, data=data))
-            if lines:
-                created.append(comb)
-        if draw and created:
+            plot.create_ref_lines(plots.get_data(comb, data=data))
+        if draw:
             self.draw()
-        return created
 
+    #-----------------------------------------------------------------------
+    def clear_ref_plots(self):                                 # PlotArea
+    #-----------------------------------------------------------------------
+        self.ref_data = None
+        for plot in self.plots.plot_list:
+            plot.clear_ref_lines()
+        self.draw()
+            
 
 #===========================================================================
 class Menu(QGroupBox):
@@ -1937,7 +1904,8 @@ class main_window(QMainWindow):                                    # main_window
         self.ecl_boxes = {}
         self.ior_boxes = {}
         self.log_file = None
-        self.unsmry = None
+        self.unsmry = {}
+        self.ior_files = {}
         self.worker = None
         self.download_worker = None
         self.check_version_worker = None
@@ -2772,7 +2740,7 @@ class main_window(QMainWindow):                                    # main_window
     def on_mode_select(self, nr):                               # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
-        if nr<0 or not self.case:
+        if nr < 0 or not self.case:
             return
         self.max_days = None
         mode = self.modes[nr]
@@ -2857,22 +2825,32 @@ class main_window(QMainWindow):                                    # main_window
     def on_compare_select(self, nr):                              # main_window
     #-----------------------------------------------------------------------
         self.update_message()
+        #print('compare', nr)
+        if nr == 0:
+            self.plot_area.clear_ref_plots()
         if nr > 0:
             case = str(self.cases[nr-1])
+            root = self.case #self.input['root']
+            if IORSim_input(root).wells() != IORSim_input(case).wells():
+                self.ref_case.setCurrentIndex(0)
+                self.show_message_text(f'WARNING Cannot compare {Path(case).name} against {Path(root).name}')
+                return
+            # Read data
             # IOR
             ior = self.init_ior_data(case=case)
-            self.read_ior_data(data=ior)
+            self.read_ior_data(case=case, data=ior)
             #print('ior', ior['days'])
             # ECL
             ecl = self.init_ecl_data(case=case)
-            self.read_ecl_data(data=ecl)
+            self.read_ecl_data(case=case, data=ecl)
             #print('ecl', ecl['days'])
-            plots = self.plot_area.add_ref_plot({'ecl':ecl, 'ior':ior})
-            if not plots:
-                self.ref_case.setCurrentIndex(self.ref_case.property('lastitem'))
-                self.show_message_text(f'WARNING Cannot compare {Path(case).name} against {Path(self.case).name}')
+            self.plot_area.add_ref_plot({'ecl':ecl, 'ior':ior})
+            # if not plots:
+            #     #self.ref_case.setCurrentIndex(self.ref_case.property('lastitem'))
+            #     self.ref_case.setCurrentIndex(0)
+            #     self.show_message_text(f'WARNING Cannot compare {Path(case).name} against {Path(self.case).name}')
             #print(plots)
-            self.ref_case.setProperty('lastitem',nr)    
+            #self.ref_case.setProperty('lastitem',nr)    
             #self.plot_area.draw()
 
     # #-----------------------------------------------------------------------
@@ -3075,6 +3053,7 @@ class main_window(QMainWindow):                                    # main_window
     def prepare_case(self):
     #-----------------------------------------------------------------------
         root = self.case or self.input['root']
+        self.case = root
         #self.schedule = next(Path(root).parent.glob('*.[Ss][Cc][Hh]'), None)
         sch = Path(root).parent.glob('*.[Ss][Cc][Hh]')
         self.schedule = next((f for f in sch if f.stem == Path(root).stem), None)
@@ -3100,8 +3079,10 @@ class main_window(QMainWindow):                                    # main_window
         if not self.is_eclipse_mode():
             self.update_menu_boxes('ior')
         # Init and read data
+        self.unsmry = {}
         self.data['ecl'] = self.init_ecl_data()
         self.read_ecl_data()
+        self.ior_files = {}
         self.data['ior'] = self.init_ior_data()
         self.read_ior_data()
         # Create plot
@@ -3333,12 +3314,11 @@ class main_window(QMainWindow):                                    # main_window
         #  ROIP    - Reservoir oil in place
 
         #print('init_ecl_data')
-        case = case or self.input['root']
-        self.unsmry = UNSMRY_file(case)
+        case = case or self.case #input['root']
+        self.unsmry[str(case)] = UNSMRY_file(case)
         ### Create dict of format [well][yaxis][fluid] = []
-        data_file = DATA_file(case)
-
-        wellnames = data_file.wellnames()
+        #data_file = DATA_file(case)
+        wellnames = DATA_file(case).wellnames()
         field_wells = ('FIELD',) + wellnames
         ecl = {w:{'days':[]} for w in field_wells}
         [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in field_wells]
@@ -3356,17 +3336,19 @@ class main_window(QMainWindow):                                    # main_window
     #def read_ecl_data(self, case=None, reinit=False, skip_zero=True):   # main_window
     def read_ecl_data(self, data=None, case=None, skip_zero=True):   # main_window
     #-----------------------------------------------------------------------
-        #print('read_ecl_data', id(self.data))
-        data = data or self.data.get('ecl')
-        datafile = case or self.input['root']
-        if not datafile:
+        #print(f'read_ecl_data(self, data={data}, case={case}, skip_zero={skip_zero}')
+        if data is None:
+            data = self.data.get('ecl')
+        case = case or self.case
+        #datafile = case or self.input['root']
+        if not case:
             #self.data['ecl'] = {}
             return False
         ### read data
         # if reinit or not self.unsmry:
         #     if not self.init_ecl_data_v2(case=case):
         #         return False
-        new_data = self.unsmry.data(keys=self.ecl_keys)
+        new_data = self.unsmry[str(case)].data(keys=self.ecl_keys)
         #print('data',data)
         #self.active_wells = set(data.wells)
         # Enable menu-well-boxes for active wells
@@ -3387,6 +3369,7 @@ class main_window(QMainWindow):                                    # main_window
             wyf_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(new_data.wells, new_data.keys)]
             for (w,y,f),*d in zip(wyf_index, *new_data.welldata[start:]):
                 data[w][y][f].extend(d)
+        #print(len(data['days']))
         return True
 
     # #-----------------------------------------------------------------------
@@ -3713,7 +3696,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         case = Path(case or self.input['root']).with_suffix('')
         file = namedtuple('file', 'stem well skip')
-        self.ior_files = [file(f'{case}_W_{well}', well, {'conc':0, 'prod':0}) for well in self.out_wells]
+        #print(case)
+        self.ior_files[str(case)] = [file(f'{case}_W_{well}', well, {'conc':0, 'prod':0}) for well in self.out_wells]
         # Initialize IOR data-dict
         ior = {w:{'days':[]} for w in self.out_wells}
         [ior[w].update({out:{sp:[] for sp in self.input['species']+['Temp']} for out in ('conc','prod')}) for w in self.out_wells]
@@ -3728,21 +3712,25 @@ class main_window(QMainWindow):                                    # main_window
     def clear_data(self):
     #-----------------------------------------------------------------------
         clear_dict(self.data)
+        case = str(self.case)
         # Reset IOR-file posistions
-        for file in self.ior_files:
+        for file in self.ior_files[case]:
             file.skip['conc'] = 0
             file.skip['prod'] = 0
         # Reset ECL-file positions
-        self.unsmry.endpos = 0
+        self.unsmry[case].endpos = 0
 
     #-----------------------------------------------------------------------
     #def read_ior_data(self, case=None, skip_zero=True):
-    def read_ior_data(self, data=None, skip_zero=True):
+    def read_ior_data(self, case=None, data=None, skip_zero=True):
     #-----------------------------------------------------------------------
-        data = data or self.data.get('ior')
+        #print(self.ior_files.keys())
+        if data is None:
+            data = self.data.get('ior')
+        case = case or self.case
         suffix = {'conc':'.trcconc', 'prod':'.trcprd'}
         total_days = ()
-        for file in self.ior_files:
+        for file in self.ior_files[str(case)]:
             welldata = []
             pos = []
             for out in ('conc', 'prod'):
@@ -3874,8 +3862,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------                
         #varbox = {'ecl': self.ecl_boxes.get('var') or (), 'ior': self.ior_boxes.get('var') or ()}
         #self.plot_area.create(self.data, self.checked_boxes, self.menu_boxes, only_nonzero=not self.worker)
-        
-        self.plot_area.create(self.data, self.menu_boxes, only_nonzero=not self.worker, keep_ref=keep_ref)
+        self.plot_area.create(self.data, self.menu_boxes, only_nonzero=not self.worker)
             
     #-----------------------------------------------------------------------
     def update_remaining_time(self, text='0:00:00'):           # main_window
