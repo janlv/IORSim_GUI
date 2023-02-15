@@ -109,7 +109,6 @@ FONT_PLOT = 7
 def new_version(version_str):
 #-----------------------------------------------------------------------
     ### Check given version string against current version
-    # new_version = sub(r'^[a-zA-Z-+.]*', '', version_str)  # Remove leading letters
     version = remove_leading_nondigits(version_str)
     ver = (version, __version__)
     num = pad_zero([v.split('.') for v in ver])
@@ -207,25 +206,9 @@ class Color:
     as_tuple = (blue, orange, green, red, violet, brown, pink, gray, yellow, turq)
     fluid = {'Oil':red, 'Water':blue, 'Gas':green, 'Polymer':orange}
     
-    # @staticmethod
-    # def nr(i):
-    #     return Color.as_tuple[i%len(Color.as_tuple)].as_hex()
-
-    # @staticmethod
-    # def hex(col):
-    #     rgb = getattr(Color, col).rgb()
-    #     return '#'+hex(rgb).split('0xff')[-1]
-        
     @staticmethod
     def cycle():
         return cycle(Color.as_tuple)
-
-    # def __init__(self) -> None:
-    #     self.i = 0
-    
-    # def next(self):
-    #     self.i += 1
-    #     self.nr(self.i)
 
 #===========================================================================
 class FloatEdit(QLineEdit):
@@ -234,19 +217,12 @@ class FloatEdit(QLineEdit):
     def __init__(self, *args, **kwargs):
     #-----------------------------------------------------------------------
         super().__init__(*args, **kwargs)
-        #self._value = 0
 
     #-----------------------------------------------------------------------
     def setText(self, value, *args, precision=2, **kwargs):
     #-----------------------------------------------------------------------
-        #self._value = value
         # Convert to string with given precision and remove trailing .0
         super().setText(f'{value:.{precision}f}'.rstrip('0').rstrip('.'), *args, **kwargs)
-
-    # #-----------------------------------------------------------------------
-    # def value(self):
-    # #-----------------------------------------------------------------------
-    #     return self._value
 
 
 #--------------------------------------------------------------------------------
@@ -345,24 +321,20 @@ def delete_all_widgets_in_layout(layout, recursive=True):
 
     '''
     for i in reversed(range(layout.count())):
-        #print(i, type(layout))
         widget = layout.itemAt(i).widget()
         if widget:
-            #print(type(widget))
             layout.removeWidget(widget)
             widget.deleteLater()
         else:
             if recursive:
                 layout2 = layout.itemAt(i).layout()
                 if layout2:
-                    #print(type(layout2))
                     delete_all_widgets_in_layout(layout2)
 
                 
 #-----------------------------------------------------------------------
 def to_rgb(color):
 #-----------------------------------------------------------------------
-    # return 'rgb{}'.format( tuple(asarray(asarray(colors_to_rgb(color))*255, dtype='int')) )
     return f'rgb{tuple(asarray(asarray(colors_to_rgb(color))*255, dtype="int"))}'
     
 
@@ -1009,6 +981,7 @@ class PlotArea(QGroupBox):
         self.ref_data = None
         for plot in self.plots.plot_list:
             plot.clear_ref_lines()
+            plot.update_axes()
         self.draw()
             
 
@@ -1775,14 +1748,7 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         for k,v in self.vars.items():
             self._set[k](v.default)
-        
-    # #-----------------------------------------------------------------------
-    # def restart_now(self):                                 # settings
-    # #-----------------------------------------------------------------------
-    #     msg = 'The application must restart to apply the new case directory. Restart now?'
-    #     restart = User_input(self, title='Restart application?', head=msg)
-    #     restart.set_func(self.parent.reboot)
-    #     restart.open()
+
 
     #-----------------------------------------------------------------------
     def open_ior_prog(self):                                 # settings
@@ -1852,10 +1818,6 @@ class Settings(QDialog):
                         var = var.strip()
                         if var in self._set.keys():
                             self._set[var]( str_to_bool(val.strip()) )
-                        # try:
-                        #     self._set[var.strip()]( str_to_bool(val.strip()) )
-                        # except KeyError:
-                        #     pass
 
                         
         
@@ -1867,9 +1829,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def reboot(self):                                          # main_window
     #-----------------------------------------------------------------------
-        #for child in qApp.allWidgets():
-        #    if child.objectName()=='settings_window':
-        #        child.close()
         QCoreApplication.exit(main_window.EXIT_CODE_REBOOT)
 
     #-----------------------------------------------------------------------
@@ -1892,11 +1851,9 @@ class main_window(QMainWindow):                                    # main_window
         self.silent_upgrade = False
         #self.plot_lines = None
         self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
-        #self.ecl_colors = {'Oil':Color.red, 'Water':Color.blue, 'Gas':Color.green, 'Polymer':Color.orange}
         # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
         self.ecl_yaxes =       {'PR':'rate',   'PT':'prod',    'PC':'rate',   'IR':'irate',        'IT':'iprod'}
         self.ecl_yaxes_names = {'rate':'Rate', 'prod':'Prod.', 'rate':'Rate', 'irate':'Inj. rate', 'iprod':'Inj. prod.'}
-        #self.ecl_yaxes = {'PR':'rate', 'PT':'prod', 'PC':'rate', 'IR':'rate', 'IT':'prod'}
         self.ecl_keys = ['WTPCHEA'] + list(''.join(p) for p in product(
             ('W','F'), ('O','W','G','C'), self.ecl_yaxes.keys()))
         self.data = {}
@@ -1910,9 +1867,6 @@ class main_window(QMainWindow):                                    # main_window
         self.download_worker = None
         self.check_version_worker = None
         self.convert = None
-        #self.plot_prop = {}
-        #self.checked_boxes = []
-        #self.plotted_lines = {}
         self.view = False
         self.plot_ref = None
         self.progress = None
@@ -1939,15 +1893,6 @@ class main_window(QMainWindow):                                    # main_window
         #print(self.screen().geometry())
         CHECK_VERSION_AT_START and self.check_version(silent=True)
                 
-
-    # #-----------------------------------------------------------------------
-    # def update_casedir(self):
-    # #-----------------------------------------------------------------------
-    #     #self.casedir = Path(self.settings.get('workdir'))
-    #     #self.casedir.mkdir(exist_ok=True)
-    #     #self.input_file = self.casedir/'.cache.txt' #input_file #gui_dir/'input.txt'
-    #     self.load_input()
-    #     self.set_input_field()
 
     #-----------------------------------------------------------------------
     def initUI(self):                                          # main_window
@@ -2379,39 +2324,23 @@ class main_window(QMainWindow):                                    # main_window
         ### set values from input-file or default
         days = 100
         ### case
-        #self.cases = self.read_case_dir()
         self.cases = self.input.get('cases')
         if not isinstance(self.cases, list):
             self.cases = [self.cases]
-        #for case in self.cases:
-        #    if not Path(case).parent.is_file()
         self.case = self.input.get('root')
         self.create_caselist(choose=self.case)
         ### number of days
-        #self.days_box.float = self.input.get('days') or days
-        #self.days_box.setText(f"{self.days_box.float:.2f}".rstrip('0').rstrip('.')) # Remove trailing .0
         self.days_box.setText(self.input.get('days') or days)
-        #self.days_box.setText(str(self.input.get('days') or days).rstrip('0').rstrip('.')) # Remove trailing .0
         
         
     #-----------------------------------------------------------------------
     def save_session(self, sep=','):                                   # main_window
     #-----------------------------------------------------------------------
         """ Save the current input values in a cache-file """
-        #self.input_file.touch(exist_ok=True)
-        #print(self.input_file)
         self.input['cases'] = sep.join(self.cases)
-        #print(self.input['cases'])
         lines = [f'{var}{sep}{val}\n' for var in self.input_to_save if (val:=self.input.get(var))]
-        #print(lines)
         with open(SESSION_FILE, 'w') as f:
             f.write(''.join(lines))
-            #f.write('# This is an input-file for ior2ecl_GUI.py, do not edit.\n')
-            # for var in self.input_to_save:
-            #     line = f'{var} {self.input.get(var) or ""}'
-            #     f.write(line+'\n')
-            #     #print('saved input: '+line)
-        #return True
 
     #-----------------------------------------------------------------------
     def load_session(self, sep=','):                                   # main_window
@@ -2420,28 +2349,8 @@ class main_window(QMainWindow):                                    # main_window
             with open(SESSION_FILE) as file:
                 lines = file.readlines()
                 for var, *val in (l.split(sep) for l in lines if not l.startswith('#')):
-                    #valgen = convert_float_or_str(val)
-                    #val1 = next(valgen)
-                    #vals = [val1, *rest] if (rest:=list(valgen)) else [val1]
                     vals = list(convert_float_or_str(val))
                     self.input[var] = vals[0] if len(vals) == 1 else vals
-                    #print(var, self.input[var])
-                # for line in f:
-                #     if line.lstrip().startswith('#'):
-                #         continue
-                #     try:
-                #         (var, val) = line.split()
-                #     except ValueError:
-                #         var = line.rstrip()
-                #         val = None
-                #     finally:
-                #         try:
-                #             # v = int(val) 
-                #             v = float(val) 
-                #         except (TypeError,ValueError):
-                #             v = val
-                #         finally:
-                #             self.input[var] = v
 
 
     #-----------------------------------------------------------------------
@@ -2458,55 +2367,6 @@ class main_window(QMainWindow):                                    # main_window
             inp['tracers'] = self.trcinp.tracers()
             inp['species'] += inp['tracers']
 
-
-    # #-----------------------------------------------------------------------
-    # def set_plot_properties(self):                # main_window
-    # #-----------------------------------------------------------------------
-    #     colors = Color.as_tuple
-    #     species = enumerate(self.input['species'] or [])
-    #     prop = {}
-    #     prop['color'] = {} #None
-    #     prop['line'] = {} #None
-    #     prop['alpha'] = {} #None
-    #     species = self.input['species']
-    #     if species:
-    #         prop['color'] = {specie:colors[i%len(colors)].as_hex() for i,specie in enumerate(species)}
-    #         prop['line'] = {specie:'-' for i,specie in enumerate(species)}
-    #         prop['alpha'] = {specie:1.0 for i,specie in enumerate(species)}
-    #     for var in ('Temp','Temp_ecl'):
-    #         prop['color'][var] = Color.black.as_hex() #'#000000' 
-    #         prop['line'][var] = '--'
-    #         prop['alpha'][var] = 0.5
-    #     var = 'Oil'
-    #     prop['color'][var] = Color.red.as_hex() #'#d62728' # red
-    #     prop['line'][var] = '-'
-    #     prop['alpha'][var] = 1.0
-    #     var = 'Water'
-    #     prop['color'][var] = Color.blue.as_hex() #'#1f77b4' # blue
-    #     prop['line'][var] = '-'
-    #     prop['alpha'][var] = 1.0
-    #     var = 'Gas'
-    #     prop['color'][var] = Color.green.as_hex() #'#2ca02c' # green
-    #     prop['line'][var] = '-'
-    #     prop['alpha'][var] = 1.0
-    #     var = 'Polymer'
-    #     prop['color'][var] = Color.orange.as_hex()
-    #     prop['line'][var] = '-'
-    #     prop['alpha'][var] = 1.0
-    #     self.plot_prop = prop
-
-    # #-----------------------------------------------------------------------
-    # def update_cases(self, remove=None, insert=None, sort=False, limit=10):
-    # #-----------------------------------------------------------------------
-    #     if remove:
-    #         self.cases.pop(self.case_nr(remove))
-    #     if insert:
-    #         self.cases.insert(0, str(insert))
-    #         if len(self.cases) > limit:
-    #             self.cases.pop()
-    #         if sort:
-    #             self.cases = sorted(self.cases)
-    #     self.input['cases'] = ' '.join(self.cases)
 
     #-----------------------------------------------------------------------
     def missing_case_numbers(self, message=True):
@@ -2539,8 +2399,6 @@ class main_window(QMainWindow):                                    # main_window
         # Make unique item names
         # Reverse list because newest case is first
         unique = unique_names(items[::-1])[::-1]
-        #print('unique', unique)
-        #print('items', items)
         if insert:
             ind = (i for i,(a,b) in enumerate(zip(unique, items)) if a != b)
             changed = [f'{self.cases[i]} listed as {unique[i]}' for i in ind]
@@ -2576,13 +2434,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         show_message(self, 'warning', text=f'The file {Path(tag).name} is missing for the {Path(self.case).name} case')
 
-        
-    # #-----------------------------------------------------------------------
-    # def add_case(self, case, rename=False, choose_new=True):   # main_window
-    # #-----------------------------------------------------------------------
-    #     self.case = self.copy_case(case, rename=rename)
-    #     if not self.case:
-    #         return None
 
     #-----------------------------------------------------------------------
     def copy_current_case(self, dest=None, choose_new=True):
@@ -2645,24 +2496,6 @@ class main_window(QMainWindow):                                    # main_window
             self.show_message_text(f'WARNING The following case-files are missing: {missing_files}')
 
         
-
-    # #-----------------------------------------------------------------------
-    # def read_case_dir(self):                                   # main_window
-    # #-----------------------------------------------------------------------
-    #     cases = []
-    #     if self.casedir.is_dir():
-    #         for d in Path(self.casedir).glob('*'):
-    #             if d.is_dir():
-    #                 cases.append(str(d/d.name))
-    #     else:
-    #         create = User_input(self, title='Missing case directory', head=f'The case directory {self.casedir} does not exist. Create now?')
-    #         def func():
-    #             Path(self.casedir).mkdir()
-    #         create.set_func(func)
-    #         create.open()
-    #         #show_message(self, 'error', text=f'The directory')
-    #     return cases
-
     #-----------------------------------------------------------------------
     def case_nr(self, case):
     #-----------------------------------------------------------------------
@@ -2699,14 +2532,9 @@ class main_window(QMainWindow):                                    # main_window
             boxlist = self.ior_boxes
         if not boxlist['yaxis'] or not boxlist['well']:
             return
-        # for box in self.checked_boxes:
-        #     set_checkbox(box, False, block_signal=block_signal)
-        # self.checked_boxes = []
         well = list(boxlist['well'].keys())[0]
         for box in ([val for val in boxlist['yaxis'].values()] + [boxlist['well'][well],]):
             set_checkbox(box, True, block_signal=block_signal)
-            # if box.isEnabled():
-            #     self.checked_boxes.append(box)
 
         
     #-----------------------------------------------------------------------
@@ -2723,7 +2551,6 @@ class main_window(QMainWindow):                                    # main_window
                     'iorsim'  : 'Only run IORSim'}
         self.mode_cb.setStatusTip(mode_tip.get(mode))
         if days:
-            #self.days_box.setText(str(days).rstrip('0').rstrip('.'))
             self.days_box.setText(days)
         if tip:
             self.days_box.setStatusTip(tip)
@@ -2744,7 +2571,6 @@ class main_window(QMainWindow):                                    # main_window
             return
         self.max_days = None
         mode = self.modes[nr]
-        #print('on_mode_select', mode)
         fwd_tip = 'Edit TSTEP in Eclipse input to change the total time interval'
         back_tip = 'Set total time interval'
         if mode=='forward':
@@ -2757,9 +2583,7 @@ class main_window(QMainWindow):                                    # main_window
             self.update_menu_boxes('ecl')
             self.create_plot()
         elif mode=='iorsim':
-            #days = [1,]
             self.max_days = UNRST_file(self.input['root']).last_day() or 1
-            #print(self.max_days)
             self.set_mode(mode, days=self.max_days, box=True, tip='Set total time interval, maximun is '+str(self.max_days), run=mode)
             self.update_menu_boxes('ior')
             self.create_plot()
@@ -2809,11 +2633,6 @@ class main_window(QMainWindow):                                    # main_window
                     self.days_box.setEnabled(False)
             except (FileNotFoundError, SystemError):
                 show_message(self, 'error', text='The Eclipse DATA-file is missing for this case')
-            # set mode from file
-            #mode_file = Path(self.case).parent/'mode.gui'
-            #if mode_file.is_file():
-            #    with open(mode_file) as f:
-            #        mode = f.readline().strip()
             # on_mode_select() is called in prepare_case() and 
             # dont need to be triggered here    
             self.mode_cb.blockSignals(True)
@@ -2825,9 +2644,7 @@ class main_window(QMainWindow):                                    # main_window
     def on_compare_select(self, nr):                              # main_window
     #-----------------------------------------------------------------------
         self.update_message()
-        #print('compare', nr)
-        if nr == 0:
-            self.plot_area.clear_ref_plots()
+        self.plot_area.clear_ref_plots()
         if nr > 0:
             case = str(self.cases[nr-1])
             root = self.case #self.input['root']
@@ -2843,58 +2660,8 @@ class main_window(QMainWindow):                                    # main_window
             # ECL
             ecl = self.init_ecl_data(case=case)
             self.read_ecl_data(case=case, data=ecl)
-            #print('ecl', ecl['days'])
             self.plot_area.add_ref_plot({'ecl':ecl, 'ior':ior})
-            # if not plots:
-            #     #self.ref_case.setCurrentIndex(self.ref_case.property('lastitem'))
-            #     self.ref_case.setCurrentIndex(0)
-            #     self.show_message_text(f'WARNING Cannot compare {Path(case).name} against {Path(self.case).name}')
-            #print(plots)
-            #self.ref_case.setProperty('lastitem',nr)    
-            #self.plot_area.draw()
 
-    # #-----------------------------------------------------------------------
-    # def on_compare_select_OLD(self, nr):                              # main_window
-    # #-----------------------------------------------------------------------
-    #     #self.reset_progress_and_message()
-    #     self.update_message()
-    #     if nr>0:
-    #         ior = ecl = False
-    #         case = str(self.cases[nr-1])
-    #         data = deepcopy(self.data)
-    #         #print('BEFORE')
-    #         #print_dict(self.data)
-    #         # Eclipse
-    #         if self.read_ecl_data(case=case, reinit=True):
-    #             self.plot_ref_data['ecl'] = deepcopy(self.data['ecl'])
-    #             ecl = True
-    #         self.unsmry = None
-    #         # IOR
-    #         if self.read_ior_data(case=case):
-    #             self.plot_ref_data['ior'] = deepcopy(self.data['ior'])
-    #             ior = True
-    #         # copy original data back
-    #         self.data = data
-    #         if (self.mode=='eclipse' and not ecl) or (self.mode=='iorsim' and not ior) or (not ecl or not ior):
-    #             self.ref_case.setCurrentIndex(self.ref_case.property('lastitem'))
-    #             msg = f'Cannot compare {Path(case).name} against {Path(self.case).name}'
-    #             if not self.unsmry or not self.unsmry.is_file():
-    #                 msg += f': {Path(case).name+".UNSMRY"} is missing'
-    #             #self.ref_case.setCurrentIndex(0)
-    #             #self.update_message(msg)
-    #             self.show_message_text('WARNING '+msg)
-    #             return
-    #         self.plot_ref = case
-    #         #print('AFTER')
-    #         #print_dict(self.data)
-    #     else:
-    #         self.plot_ref = None
-    #         self.plot_ref_data = {}
-    #         #self.ref_plot_lines = {}
-    #         #print(self.plot_ref)
-    #     self.ref_case.setProperty('lastitem',nr)    
-    #     self.create_plot()
-    #     #self.plot_ref = None
                 
     #-----------------------------------------------------------------------
     def open_case(self):                                       # main_window
@@ -2906,16 +2673,6 @@ class main_window(QMainWindow):                                    # main_window
         if case:
             case = Path(case).resolve().with_suffix('')
             self.create_caselist(insert=case, choose=case)
-
-
-    # #-----------------------------------------------------------------------
-    # def import_case_from_file(self):                   # main_window
-    # #-----------------------------------------------------------------------
-    #     self.reset_progress_and_message()
-    #     case = open_file_dialog(self, 'Locate Eclipse DATA-file', 'DATA files (*.DATA)')
-    #     if case:
-    #         root = Path(case.split('.DATA')[0])
-    #         self.add_case(root)
 
             
     #-----------------------------------------------------------------------
@@ -2944,9 +2701,6 @@ class main_window(QMainWindow):                                    # main_window
             # Delete tmp-folder
             delete_all(clean_dir)
             self.prepare_case()
-            #self.data = {}
-            #self.unsmry = None # read again
-            #self.create_plot()
         except PermissionError as e:
             show_message(self, 'error', text='Unable to clear case, '+str(e))
             return False
@@ -2972,64 +2726,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         case = str(self.case)
         self.input['root'] = self.case = None
-        nr = self.case_nr(case)
-        #self.remove_case(nr)
-        #self.case_cb.removeItem(nr)
+        #nr = self.case_nr(case)
         self.create_caselist(remove=case)
         return case
 
-    # #-----------------------------------------------------------------------
-    # def delete_current_case(self):                              # main_window
-    # #-----------------------------------------------------------------------
-    #     case = self.remove_current_case()
-    #     folder = Path(case).parent
-    #     delete = User_input(self, title='Delete case-folder?', text=f'Folder {folder} will be deleted, continue?')
-    #     delete.set_func(lambda: delete_all(folder))
-    #     delete.exec()
-        
-    # #-----------------------------------------------------------------------
-    # def duplicate_current_case(self):                              # main_window
-    # #-----------------------------------------------------------------------
-    #     self.reset_progress_and_message()
-    #     if not self.case:
-    #         self.missing_case_error(tag='duplicate: ')
-    #         return False
-    #     new_name = User_input(self, title='Duplicate current case', label='Name of duplicate case', text=Path(self.case).name)
-    #     def func():
-    #         from_case = self.case
-    #         name = Path(new_name.var.text().upper()).stem
-    #         to_case = self.casedir/name/name
-    #         self.add_case(from_case, rename=to_case)
-    #     new_name.set_func(func)
-    #     new_name.open()
-
-    # #-----------------------------------------------------------------------
-    # def rename_current_case(self):                              # main_window
-    # #-----------------------------------------------------------------------
-    #     self.reset_progress_and_message()
-    #     if not self.case:
-    #         self.missing_case_error(tag='rename: ')
-    #         return False
-    #     rename = User_input(self, title='Rename current case', label='New case name', text=Path(self.case).name)
-    #     def func():
-    #         oldname = Path(self.case).stem
-    #         newname = rename.var.text().upper()
-    #         casedir = Path(self.casedir)
-    #         newdir = casedir/newname
-    #         if newdir.is_dir():
-    #             self.show_message_text(f'ERROR A case named {newdir.name} already exists, choose another name')
-    #             return
-    #         newdir = (casedir/oldname).rename(newdir)
-    #         #print(str(casedir/oldname)+' => '+str(newdir))
-    #         for x in newdir.iterdir():
-    #             if x.is_file() and oldname in str(x):
-    #                 new = str(x.name).replace(oldname,newname)
-    #                 #print(str(x)+' -> '+str(newdir/new))
-    #                 x.rename(newdir/new)
-    #         newroot = casedir/newname/newname
-    #         self.create_caselist(remove=self.case, insert=newroot, choose=newroot)
-    #     rename.set_func(func)
-    #     rename.open()
         
     #-----------------------------------------------------------------------
     def get_current_mode(self):
@@ -3102,15 +2802,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_schedule_act(self):
     #-----------------------------------------------------------------------
-        # self.schedule = None
-        # if self.input['root']:
-        #     data = Path(self.input['root']+'.DATA')
-        #     self.schedule = next(data.parent.glob('*.[Ss][Cc][Hh]'), None)
         self.schedule_file_act.setEnabled(bool(self.schedule))
         ### Uncheck schedule act if it was checked but is no longer available
         if not self.schedule and self.schedule_file_act is self.get_checked_act():
             self.plot_act.setChecked(True)
-
 
 
     #-----------------------------------------------------------------------
@@ -3154,25 +2849,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_var_click(self):
     #-----------------------------------------------------------------------
-        #name = self.sender().objectName()
-        #self.plot_area.update_line(self.sender().objectName())
         self.plot_area.update_plots(var=self.sender().objectName())
-        #self.plot_area.draw()
-
-    # #-----------------------------------------------------------------------
-    # def on_ecl_var_click(self):
-    # #-----------------------------------------------------------------------
-    #     #print('on_ecl_var_click', self.sender())
-    #     name = self.sender().objectName()
-    #     #is_checked = self.sender().isChecked()
-    #     #self.update_plot_line(name, is_checked)
-    #     #self.update_plot_line(name)
-    #     self.plot_area.plots.update_line(name)
-    #     # if self.plot_ref_data:
-    #     #     #print('ref_data')
-    #     #     #self.update_plot_line(name, is_checked, lines=self.ref_plot_lines, set_data=False)
-    #     #     self.update_plot_line(name, set_data=False)
-    #     self.plot_area.draw()
 
 
     #-----------------------------------------------------------------------
@@ -3180,26 +2857,19 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         if not boxname:
             boxname=name
-        #box = self.plot_menu_checkbox(name=boxname, toggle=True, func=func, pad_left=15) 
         box = self.plot_menu_checkbox(name=boxname, toggle=True, func=func)
         box.setFixedSize(QSize(15,15))
-        #box.setStyleSheet('padding-left: 15px ')
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        # if not color and self.plot_prop.get('color'):
-        #     color = to_rgb(self.plot_prop['color'][name])
-        # print(self.plot_area.plots.line_prop)
-        # if not color and (prop:=self.plot_area.plots.line_prop.get(name)):
-        #     color = to_rgb(prop['color'])
         if color:
             line.setStyleSheet(f'border: 3px {linestyle} {color}')
         line.setFixedWidth(25)
         label = QLabel(name)
         label.setStyleSheet(FONT_SMALL)
         layout = QHBoxLayout()
-        layout.addWidget(box)#, 1)
-        layout.addWidget(line)#, 1)
-        layout.addWidget(label)#, 1)
+        layout.addWidget(box)
+        layout.addWidget(line)
+        layout.addWidget(label)
         return layout, box
 
     #-----------------------------------------------------------------------
@@ -3313,11 +2983,9 @@ class main_window(QMainWindow):                                    # main_window
         #  FWCT    - field water cut total (prod)
         #  ROIP    - Reservoir oil in place
 
-        #print('init_ecl_data')
         case = case or self.case #input['root']
         self.unsmry[str(case)] = UNSMRY_file(case)
         ### Create dict of format [well][yaxis][fluid] = []
-        #data_file = DATA_file(case)
         wellnames = DATA_file(case).wellnames()
         field_wells = ('FIELD',) + wellnames
         ecl = {w:{'days':[]} for w in field_wells}
@@ -3328,29 +2996,18 @@ class main_window(QMainWindow):                                    # main_window
             for yaxis in (set(self.ecl_yaxes.values()) - set('rate')):
                 ecl[w][yaxis]['Temp_ecl'] = ecl[w]['rate']['Temp_ecl']
         return ecl
-        #self.data['ecl'] = ecl
-        #return True
 
 
     #-----------------------------------------------------------------------
-    #def read_ecl_data(self, case=None, reinit=False, skip_zero=True):   # main_window
     def read_ecl_data(self, data=None, case=None, skip_zero=True):   # main_window
     #-----------------------------------------------------------------------
         #print(f'read_ecl_data(self, data={data}, case={case}, skip_zero={skip_zero}')
         if data is None:
             data = self.data.get('ecl')
         case = case or self.case
-        #datafile = case or self.input['root']
         if not case:
-            #self.data['ecl'] = {}
             return False
-        ### read data
-        # if reinit or not self.unsmry:
-        #     if not self.init_ecl_data_v2(case=case):
-        #         return False
         new_data = self.unsmry[str(case)].data(keys=self.ecl_keys)
-        #print('data',data)
-        #self.active_wells = set(data.wells)
         # Enable menu-well-boxes for active wells
         for well in set(new_data.wells):
             if box := self.ecl_boxes['well'].get(well):
@@ -3360,8 +3017,6 @@ class main_window(QMainWindow):                                    # main_window
             start = 0
             if skip_zero and new_data.days[0] < 1e-8:
                 start = 1
-            #ecl = self.data['ecl']
-            #print('inside', id(ecl))
             data['days'].extend(new_data.days[start:])
             for w in set(new_data.wells):
                 data[w]['days'].extend(new_data.days[start:])
@@ -3369,14 +3024,8 @@ class main_window(QMainWindow):                                    # main_window
             wyf_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(new_data.wells, new_data.keys)]
             for (w,y,f),*d in zip(wyf_index, *new_data.welldata[start:]):
                 data[w][y][f].extend(d)
-        #print(len(data['days']))
         return True
 
-    # #-----------------------------------------------------------------------
-    # def data_is_zero(self, well, yaxis, kind):
-    # #-----------------------------------------------------------------------
-    #     return all(sum(var)<1e-8 for var in self.data[kind][well][yaxis].values())
-    #     #return any(sum(var)>0 for var in self.data[data][well][yaxis].values())
 
     #-----------------------------------------------------------------------
     def update_ecl_menu(self, case=None):         # main_window
@@ -3479,44 +3128,6 @@ class main_window(QMainWindow):                                    # main_window
         #self.update_checked_list(*checked_boxes)
         self.create_plot()
 
-    # #-----------------------------------------------------------------------
-    # def disable_empty_wellboxes(self, yboxes, kind):
-    # #-----------------------------------------------------------------------
-    #     return
-    #     nonzero = []
-    #     #yaxiss =  [Plots.tag_values(box.objectName()).value for box in yboxes]
-    #     #for yaxis in yaxiss:
-    #     for yaxis in (var for var, box in yboxes.items() if box.isChecked()):
-    #         #non = [any(sum(var)>0 for var in data[well][yaxis].values()) for well in self.wellnames]
-    #         non = [not self.data_is_zero(well, yaxis, kind) for well in self.wellnames]
-    #         nonzero.append(non)
-    #     plot_list = []
-    #     for well, *notzero in zip(self.wellnames, *nonzero):
-    #         self.ecl_boxes['well'][well].setEnabled(any(notzero))
-    #         #print(well, notzero, yaxiss, self.ecl_boxes['well'][well].isEnabled())
-    #         yax = [y for y,nz in zip(yaxiss, notzero) if nz]
-    #         if yax:
-    #             plot_list.append((well, yax))
-    #     #print(plot_list)
-
-    # #-----------------------------------------------------------------------
-    # def on_ecl_yaxis_click(self):
-    # #-----------------------------------------------------------------------
-    #     #print('on_ecl_yaxis_click', self.sender())
-    #     # box = self.sender()
-    #     # checked = [b for b in self.ecl_boxes['yaxis'].values() if b.isChecked()]
-    #     # if checked and not self.worker:
-    #     #     self.disable_empty_wellboxes(checked, 'ecl')
-    #     # if not checked:
-    #     #     self.enable_well_boxes(True)
-    #     self.create_plot()
-
-    # #-----------------------------------------------------------------------
-    # def on_ecl_well_click(self):
-    # #-----------------------------------------------------------------------
-    #     #print('on_ecl_well_click', self.sender())
-    #     #self.update_checked_list(self.sender())
-    #     self.create_plot()
 
     #-----------------------------------------------------------------------
     def view_file(self, file, viewer=None, title='', reset=True):           # main_window
@@ -3533,8 +3144,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_input_file(self, name, editor=None, title=None):       # main_window
     #-----------------------------------------------------------------------
-        #print(self.sender())
-        #print(self.view_group)
         self.log_file = None
         if self.input['root']:
             if self.current_viewer().file_is_open(name):
@@ -3542,14 +3151,11 @@ class main_window(QMainWindow):                                    # main_window
                 self.current_viewer().setTitle(title)
                 return
             if Path(name).is_file():
-                # print('view_file',title, name)
                 self.view_file(name, viewer=editor, title=title)
             else:
                 self.sender().setChecked(False)
                 self.sender().parent().missing_file_error(tag=name)
-                #self.editor.clear()
-                return False
-        
+                return False        
         else:
             self.sender().setChecked(False)
             self.sender().parent().missing_case_error(tag='input: ')
@@ -3575,14 +3181,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_iorsim_input(self):                                # main_window
     #-----------------------------------------------------------------------
-        #print('view_iorsim_input:', self.input['root'])
-        #if not self.input['root']:
-        #    return
-        #ext='.trcinp'
-        #name = self.input['root']+ext
         if not self.trcinp:
             return 
-        #title = f'IORSim input file {Path(name).name}'
         if self.current_viewer().file_is_open(self.trcinp.file):
             return
         title = f'IORSim input file {self.trcinp}'
@@ -3592,7 +3192,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        #days = self.schedule and (sum(DATA_file(name).tsteps(missing_ok=True)) for name in (self.input['root'], self.schedule)) or 0
         days = DATA_file(self.input['root']).including(self.schedule).tsteps(missing_ok=True)
         self.view_input_file(self.schedule, title=f'Schedule file {self.schedule.name}, total days = {sum(days):.0f}', editor=self.sch_editor)
         
@@ -3644,59 +3243,12 @@ class main_window(QMainWindow):                                    # main_window
             self.read_ecl_data()
             self.plot_area.update_plots() #self.update_all_plot_lines()
             
-    # #-----------------------------------------------------------------------
-    # def update_checked_list(self, *boxes):
-    # #-----------------------------------------------------------------------
-    #     for box in boxes:
-    #         if box.isChecked():
-    #             self.checked_boxes.insert(0, box)
-    #         else:
-    #             if box in self.checked_boxes:
-    #                 self.checked_boxes.remove(box)
-            
-    # #-----------------------------------------------------------------------
-    # def on_specie_click(self):
-    # #-----------------------------------------------------------------------
-    #     #print('on_specie_click')
-    #     specie = self.sender().objectName()
-    #     #is_checked = self.sender().isChecked()
-    #     self.plot_area.plots.update_line(specie)
-    #     #self.update_plot_line(specie) #, is_checked)
-    #     # if self.plot_ref_data:
-    #     #     # self.update_plot_line(self.sender().objectName(), is_checked, lines=self.ref_plot_lines, set_data=False)
-    #     #     self.update_plot_line(self.sender().objectName(), set_data=False)
-    #     self.plot_area.draw()
-
-    # #-----------------------------------------------------------------------
-    # # def update_plot_line(self, var, is_checked, lines=None, set_data=True):
-    # def update_plot_line(self, var, set_data=True):
-    # #-----------------------------------------------------------------------
-    #     self.plot_area.plots.update_line(var, set_data)
-
-    # #-----------------------------------------------------------------------
-    # def update_axes_limits(self):
-    # #-----------------------------------------------------------------------
-    #     #try:
-    #     #for ax in self.plot_axes:
-    #     for ax in self.plot_area.axes:
-    #         ax.relim(visible_only=True)
-    #         ax.autoscale_view()
-    #     #except ValueError:
-    #     #    print('ValueError in update_axes_limits()')
-            
-    # #-----------------------------------------------------------------------
-    # def on_ior_menu_click(self):
-    # #-----------------------------------------------------------------------
-    #     #print('ior_menu: '+self.sender().objectName())
-    #     #self.update_checked_list(self.sender())
-    #     self.create_plot()
 
     #-----------------------------------------------------------------------
     def init_ior_data(self, case=None):
     #-----------------------------------------------------------------------
         case = Path(case or self.input['root']).with_suffix('')
         file = namedtuple('file', 'stem well skip')
-        #print(case)
         self.ior_files[str(case)] = [file(f'{case}_W_{well}', well, {'conc':0, 'prod':0}) for well in self.out_wells]
         # Initialize IOR data-dict
         ior = {w:{'days':[]} for w in self.out_wells}
@@ -3706,7 +3258,7 @@ class main_window(QMainWindow):                                    # main_window
         for w in self.out_wells:
             ior[w]['prod']['Temp'] = ior[w]['conc']['Temp']
         return ior
-        #self.data['ior'] = ior
+
 
     #-----------------------------------------------------------------------
     def clear_data(self):
@@ -3721,7 +3273,6 @@ class main_window(QMainWindow):                                    # main_window
         self.unsmry[case].endpos = 0
 
     #-----------------------------------------------------------------------
-    #def read_ior_data(self, case=None, skip_zero=True):
     def read_ior_data(self, case=None, data=None, skip_zero=True):
     #-----------------------------------------------------------------------
         #print(self.ior_files.keys())
@@ -3754,7 +3305,6 @@ class main_window(QMainWindow):                                    # main_window
                     start = 1
                 if len(days[start:]) > len(total_days):
                     total_days = days[start:]
-                #well = self.data['ior'][file.well]
                 well = data[file.well]
                 well['days'].extend(days[start:])
                 well['conc']['Temp'].extend(temp[start:])
@@ -3763,81 +3313,12 @@ class main_window(QMainWindow):                                    # main_window
                     well['prod'][var].extend(pvals[start:])
                 # Save position to avoid reading same data again 
                 file.skip['conc'], file.skip['prod'] = pos
-        #self.data['ior']['days'].extend(total_days)
-        #if all(self.data['ior'][w]['conc']=={} for w in self.out_wells):
         data['days'].extend(total_days)
         if all(data[w]['conc']=={} for w in self.out_wells):
             return False
         return True
 
 
-    # #-----------------------------------------------------------------------
-    # def read_ior_data_OLD(self, case=None):
-    # #-----------------------------------------------------------------------
-    #     #  Format:
-    #     #     data['days']
-    #     #     data[well]['conc'|'prod'][var]
-    #     #
-    #     #print('read_ior_data')
-    #     self.data['ior'] = {}
-    #     datafile = self.input['root']
-    #     if case:
-    #         datafile = case
-    #     if not datafile:
-    #         return False
-    #     root = Path(datafile)
-    #     files = list(root.parent.glob(root.name+'_W_*.trc*'))
-    #     if len(files)<1 or not files[0].is_file():# or files[0].stat().st_size<210:
-    #         # last check is to avoid UserWarning from genfromtxt about: Empty input file
-    #         return False
-    #     # active_wells = [f.stem.split('W_')[-1] for f in files]
-    #     # print(active_wells)
-    #     inp = self.input
-    #     ior = {}
-    #     for w in self.out_wells:
-    #         ior[w] = {}
-    #         ior[w]['conc'] = {}
-    #         ior[w]['prod'] = {}
-    #     numbers = compile(r'[0-9]+')
-    #     for file in files:
-    #         try:
-    #             if not file.exists() or numbers.search(remove_comments(file, comment='#', raise_error=False) or '') is None:
-    #                 continue
-    #         except PermissionError:
-    #             continue
-    #         # read data
-    #         #print('Reading', file.name)
-    #         well, yaxis = file.name.split('_W_')[-1].split('.trc')
-    #         if yaxis == 'prd':
-    #             yaxis = 'prod'
-    #         try:
-    #             data = genfromtxt(str(file))
-    #         except (PermissionError, FileNotFoundError):
-    #             continue
-    #         try:
-    #             #data = genfromtxt(str(file))
-    #             if data.ndim > 1:
-    #                 self.ior_boxes['well'][well].setEnabled(True)
-    #                 ior[well]['days'] = data[1:,0]
-    #                 #ior['FIELD']['days'] = data[1:,0]
-    #                 #print(ior['days'])
-    #                 for i,name in enumerate(inp['species']):
-    #                     #print(well, yaxis, name)
-    #                     ior[well][yaxis][name] = data[1:,i+1]
-    #                     #ior['FIELD'][yaxis][name] = data[1:,i+1]
-    #                 if 'conc' in yaxis:
-    #                     ior[well]['conc']['Temp'] = data[1:,-1]
-    #                     ior[well]['prod']['Temp'] = data[1:,-1]
-    #                 #print(len(ior['days']), [len(ior[well][yaxis][s]) for s in inp['species']])
-    #         except (KeyError, IndexError, TypeError) as e:
-    #             DEBUG and print('ERROR in read_ior_data:', e)
-    #             pass
-    #     if all(ior[w]['conc']=={} for w in self.out_wells):
-    #         return False
-    #     self.data['ior'] = ior
-    #     #self.add_ior_field_data()
-    #     #print(self.data['ior']['FIELD'])
-    #     return True
     
     #-----------------------------------------------------------------------
     def add_ior_field_data(self):
@@ -3860,30 +3341,19 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_plot(self, keep_ref=True):                         # main_window
     #-----------------------------------------------------------------------                
-        #varbox = {'ecl': self.ecl_boxes.get('var') or (), 'ior': self.ior_boxes.get('var') or ()}
-        #self.plot_area.create(self.data, self.checked_boxes, self.menu_boxes, only_nonzero=not self.worker)
         self.plot_area.create(self.data, self.menu_boxes, only_nonzero=not self.worker)
             
     #-----------------------------------------------------------------------
     def update_remaining_time(self, text='0:00:00'):           # main_window
     #-----------------------------------------------------------------------
-        #print('update_remaining_time: ', text)
-        #self.remaining_time.setText('Remaining time:  ' + text)
-        #print('remaining time:',text)
         self.remaining_time.setText(text)
         self.remaining_time.repaint()
 
-
-    # #-----------------------------------------------------------------------
-    # def update_all_plot_lines(self): #, read_data=True):
-    # #-----------------------------------------------------------------------
-    #     self.plot_area.update()
 
     #-----------------------------------------------------------------------
     def update_progressbar(self, t):
     #-----------------------------------------------------------------------
         if t>=0:
-            #print(t, self.progressbar.value(), self.progressbar.maximum())
             self.progressbar.setValue(t)
 
     #-----------------------------------------------------------------------
@@ -3897,16 +3367,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def reset_progressbar(self, N=None):
     #-----------------------------------------------------------------------
-        #if N==0:
-        #    N=-1
         if N:
             self.progressbar.setMaximum(N)
-        #v = 0
-        #if N<0:
-        #    v = N
-        #self.progressbar.setValue(1)
         self.progressbar.reset()
-        #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
+
 
     #-----------------------------------------------------------------------
     def update_progress(self, t_min_n0_tuple):
@@ -3944,36 +3408,25 @@ class main_window(QMainWindow):                                    # main_window
         if self.mode == 'backward':
             ok['ior'] = self.read_ior_data()
             ok['ecl'] = self.read_ecl_data()
-        # self.days = None
         if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current_run():
             run = self.worker.current_run()
-            #print('run', run)
             if run in ('ecl','eclipse','eclrun'):
                 run = 'ecl'
                 ok[run] = self.read_ecl_data()
-                #print(run, ok[run], self.data['ecl']['days'])
             if run in ('ior','iorsim'):
                 run = 'ior'
-                #print('read')
                 ok[run] = self.read_ior_data()
-            # if self.data.get(run):
-            #     self.days = (self.data[run]).get('days')
-        view = self.current_viewer() #.name
-        if view == self.plot_area: #'plot':
-            #self.statusBar().clearMessage()
-            #if not all(list(ok.values())):
-            #    self.statusBar().showMessage('No wells are currently producing')            
-            #print('call from update_view_area')
-            self.plot_area.update_plots() #self.update_all_plot_lines()
-        #elif view in (self.log_viewer, self.app_log_viewer) : #'log_viewer':
+        view = self.current_viewer()
+        if view == self.plot_area: 
+            self.plot_area.update_plots()
         elif view == self.log_viewer:
             self.update_log(view)
+
 
     #-----------------------------------------------------------------------
     def input_OK(self):
     #-----------------------------------------------------------------------
         i = self.input
-        #if i['nsteps']==0:
         if self.case_cb.currentIndex() < 0:
             show_message(self, 'warning',
                 text=('You need to choose a case from the case drop-down list, '
@@ -3986,19 +3439,13 @@ class main_window(QMainWindow):                                    # main_window
             show_message(self, 'info',
                 text=f'The IORSim-run is limited to {self.max_days:.2f} days.')
             self.days_box.setText(self.max_days)
-            #self.on_input_change
-            #return False
         if not i['root']:
             show_message(self, 'warning', text='No input-case selected')
             return False
-        #if not self.settings.get['iorsim']():
         if not self.settings.get('iorsim'):
             show_message(self, 'warning', text='IORSim program missing in Settings', wait=True)
             self.settings.open()
             return False
-        # if self.mode != 'eclipse' and i['dtecl'] == 0:
-        #     show_message(self, 'warning', text='IORSim timestep is zero')
-        #     return False
         return True
     
         
@@ -4010,7 +3457,7 @@ class main_window(QMainWindow):                                    # main_window
         self.mode_cb.setEnabled(value)
         if self.mode=='backward':
             self.days_box.setEnabled(value)
-        #self.sim_cb.setEnabled(value)
+
 
     #-----------------------------------------------------------------------
     def run_sim(self):                                         # main_window
@@ -4020,17 +3467,10 @@ class main_window(QMainWindow):                                    # main_window
             return
         # Clear data
         self.clear_data()
-        #self.data = {}
-        #self.unsmry = None
         # Clear messages and progress
         self.reset_progress_and_message()
         # Enable all well-boxes
         self.enable_well_boxes(True)
-        #self.create_plot()
-        # # Uncheck well-boxes
-        # for box in list(self.ecl_boxes['well'].values())+list(self.ior_boxes['well'].values()):
-        #     self.uncheck_box(box)
-        #     box.setEnabled(False)
         # Disable toolbar
         self.set_toolbar_enabled(False)
         i = self.input
@@ -4043,7 +3483,6 @@ class main_window(QMainWindow):                                    # main_window
             kwargs = {'mode':'forward', 'run_names':self.run}
         # start simulation
         for opt in ('convert','del_convert','merge','del_merge','check_input_kw'):
-            #kwargs[opt] = s.get[opt]()
             kwargs[opt] = s.get(opt)
         self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get('iorsim'), eclexe=s.get('eclrun'),
                                  ecl_keep_alive=s.get('ecl_keep_alive') and float(s.get('ecl_alive_limit')),
@@ -4073,18 +3512,11 @@ class main_window(QMainWindow):                                    # main_window
         msg = show_message(self, kind, text=text, **kwargs)
         return msg
         
-    # #-----------------------------------------------------------------------
-    # def show_message(self, par):
-    # #-----------------------------------------------------------------------
-    #     show_message(self, par[0], text=par[1])
-        
+
     #-----------------------------------------------------------------------
     def run_finished(self):
     #-----------------------------------------------------------------------
-        #print(datetime.now()-self.starttime)
         self.set_toolbar_enabled(True)
-        #if self.worker.success:
-        #    self.convert_FUNRST()   
         self.worker = None
 
 
@@ -4098,7 +3530,6 @@ class main_window(QMainWindow):                                    # main_window
             n = 0
             while self.worker.sim and self.worker.sim.runs and n<500:
                 n += 1
-                #print(n)
                 sleep(0.01)
             
         
