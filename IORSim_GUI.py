@@ -1857,7 +1857,7 @@ class main_window(QMainWindow):                                    # main_window
         self.ecl_keys = ['WTPCHEA'] + list(''.join(p) for p in product(
             ('W','F'), ('O','W','G','C'), self.ecl_yaxes.keys()))
         self.data = {}
-        self.plot_ref_data = {}
+        #self.plot_ref_data = {}
         self.ecl_boxes = {}
         self.ior_boxes = {}
         self.log_file = None
@@ -1868,7 +1868,7 @@ class main_window(QMainWindow):                                    # main_window
         self.check_version_worker = None
         self.convert = None
         self.view = False
-        self.plot_ref = None
+        #self.plot_ref = None
         self.progress = None
         # User guide window
         self.pdf_view = None
@@ -2728,6 +2728,8 @@ class main_window(QMainWindow):                                    # main_window
         self.input['root'] = self.case = None
         #nr = self.case_nr(case)
         self.create_caselist(remove=case)
+        if self.case_cb.currentIndex() < 0:
+            self.clear()
         return case
 
         
@@ -2747,6 +2749,16 @@ class main_window(QMainWindow):                                    # main_window
     def is_iorsim_mode(self):
     #-----------------------------------------------------------------------
         return self.get_current_mode() == 'iorsim'
+
+    #-----------------------------------------------------------------------
+    def clear(self):
+    #-----------------------------------------------------------------------
+        self.unsmry = {}
+        self.ior_files = {}
+        self.data = {}
+        self.menu_boxes = {}
+        self.update_ecl_menu()
+        self.update_ior_menu()
 
     @show_error
     #-----------------------------------------------------------------------
