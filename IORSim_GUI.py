@@ -1307,13 +1307,17 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def set_text_from_file(self):
     #-----------------------------------------------------------------------
-        if self.file and Path(self.file).is_file():
-            text = read_file(self.file)
-            if self.size_limit and (size := Path(self.file).stat().st_size) > self.size_limit:
-                text = (text[:self.size_limit]
-                        + f'\n --- SKIPPED {(size-self.size_limit-100)/1024**2:.0f} MB ---\n'
-                        + text[-100:])
-            self.editor_.setPlainText(text)
+        text = ''
+        if self.file:
+            if Path(self.file).is_file():
+                text = read_file(self.file)
+                if self.size_limit and (size := Path(self.file).stat().st_size) > self.size_limit:
+                    text = (text[:self.size_limit]
+                            + f'\n --- SKIPPED {(size-self.size_limit-100)/1024**2:.0f} MB ---\n'
+                            + text[-100:])
+            else:
+                text = f'{self.file} is missing'
+        self.editor_.setPlainText(text)
         self.enable_save(False)
         #if self.save_btn:
         #    self.save_btn.setEnabled(False)
@@ -2759,6 +2763,10 @@ class main_window(QMainWindow):                                    # main_window
         self.menu_boxes = {}
         self.update_ecl_menu()
         self.update_ior_menu()
+        view = self.current_viewer()
+        if isinstance(view, Editor):
+            view.clear()
+
 
     @show_error
     #-----------------------------------------------------------------------
