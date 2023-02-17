@@ -85,7 +85,9 @@ class Eclipse(Runner):                                                      # ec
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                          # eclipse
     #--------------------------------------------------------------------------------
-        ' Delete these output-files before starting Eclipse '
+        ''' 
+        Delete output-files
+        '''
         file_ext = ('*UNRST','RFT','SMSPEC','UNSMRY','RTELOG','RTEMSG','MSG','session*','dbprtx.lock*')
         delete_files_matching( [f'{self.case}*.{ext}' for ext in file_ext] )
         delete_files_matching(self.case.parent/'fort??????')

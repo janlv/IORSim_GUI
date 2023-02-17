@@ -412,6 +412,7 @@ class Runner:                                                               # Ru
         self.exe = exe
         self.cmd = cmd
         self.logname = self.case.parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log'
+        self.logname.write_text('') # Clear old logs
         self.log = None
         self.runlog = runlog
         log4 = lambda x: self._print(x, v=4)
@@ -462,7 +463,6 @@ class Runner:                                                               # Ru
         self.children = []
         self.active = []
 
-
     #--------------------------------------------------------------------------------
     def check_input(self):                                                   # Runner
     #--------------------------------------------------------------------------------
@@ -470,7 +470,6 @@ class Runner:                                                               # Ru
         if which(self.exe) is None:
             raise SystemError('WARNING Executable not found: ' + self.exe)
         return True
-
 
     #--------------------------------------------------------------------------------
     def unexpected_stop_error(self, **kwargs):                               # Runner
