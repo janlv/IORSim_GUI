@@ -70,15 +70,23 @@ class Control_file:
     def __init__(self, *args, path=None, log=False) -> None:
     #--------------------------------------------------------------------------------
         args = [str(a) for a in args]  # Ensure Path is cast to str
-        self._base = len(args)>=2 and ''.join(args[:2]) or '' 
-        self._nr = len(args)>2 and (lambda x : f'{x:{args[2]}}') or (lambda x : '')
-        self._path = path and Path(path) or self.__call__(0)._path
+        self._base = ''.join(args[:2]) if len(args)>=2 else ''
+        self._nr = (lambda x : f'{x:{args[2]}}') if len(args)>2 else (lambda x : '')
+        self._path = Path(path) if path else self.__call__(0)._path
         self._log = log
+        #self._base = len(args)>=2 and ''.join(args[:2]) or '' 
+        #self._nr = len(args)>2 and (lambda x : f'{x:{args[2]}}') or (lambda x : '')
+        #self._path = path and Path(path) or self.__call__(0)._path
 
     #--------------------------------------------------------------------------------
     def __repr__(self) -> str:
     #--------------------------------------------------------------------------------
         return f'<Control_file {self._path.name}>'
+
+    #--------------------------------------------------------------------------------
+    def __str__(self) -> str:
+    #--------------------------------------------------------------------------------
+        return f'{self._path.name}'
 
     #--------------------------------------------------------------------------------
     def __call__(self, n):

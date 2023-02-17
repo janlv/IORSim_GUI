@@ -199,15 +199,15 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
     def check_input(self):                                             # EclipseBackward
     #--------------------------------------------------------------------------------
         def raise_error(msg):
-            raise SystemError(f'ERROR To run the current case in backward-mode you need to {msg}')
+            raise SystemError(f'ERROR To run the current case in backward-mode you need to insert {msg}')
         ### Check that root.DATA exists 
         super().check_input()
         if 'READDATA' not in self.data_file: #.data():
-            raise_error(f"insert 'READDATA /' between 'TSTEP' and 'END' in {self.data_file}.")
+            raise_error(f"'READDATA /' between 'TSTEP' and 'END' in {self.data_file}.")
         ### Check presence of RPTSOL RESTART>1
         regex = r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"
         if not self.data_file.section('SOLUTION').search('RPTSOL', regex):
-            raise_error(f"'RPTSOL \\n RESTART=2 /' is missing in the SOLUTION section of {self.data_file}.")
+            raise_error(f"'RPTSOL \\n RESTART=2 /' in the SOLUTION section of {self.data_file}.")
         return True
 
 
@@ -575,9 +575,11 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
     #--------------------------------------------------------------------------------
     def satnum_flushed(self):                                          # ior_backward
     #--------------------------------------------------------------------------------
-        if not self.satnum.is_file() or self.satnum.size() < len(self.endtag)+3:
+        tag_length = len(self.endtag) + 3
+        if not self.satnum.is_file() or self.satnum.size() < tag_length:
             return False
-        if self.endtag.encode() in self.satnum.binarydata():
+        #print(self.satnum.binarydata()[-(tag_length+3):])
+        if self.endtag.encode() in self.satnum.binarydata()[-tag_length:]:
             return True
         return False
 

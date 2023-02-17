@@ -486,28 +486,34 @@ class sim_worker(base_worker):
     #-----------------------------------------------------------------------
     def runnable(self):
     #-----------------------------------------------------------------------
-        self.progress_min = None
+        #self.progress_min = None
+        self.fraction = ['']
         #------------------------------------
         def progress(run=None, value=None, min=None, n0=None):
         #------------------------------------
-            if min is not None:
-                self.progress_min = min
-            #if value == 0:
-            if value is None:
-                self.progress_min = None
-            #if run and value is None:
-            if run:# and value is None:
+            if run:
                 value = run.t
-            self.update_progress((value and int(value), min, n0))
+            # if min is not None:
+            #     self.progress_min = min
+            # if run:
+            #     value = run.t
+            # if value is None:
+            #     self.progress_min = None
+            #if run and value is None:
+            # if run:# and value is None:
+            #     value = run.t
+            #self.update_progress((value and int(value), min, n0))
+            self.update_progress((value, min, n0, self.fraction))
         #------------------------------------
         def status(run=None, value=None, mode=None, **x):
         #------------------------------------
             if not value and run:
-                t, T = strip_zero((run.t, run.T))
-                if self.progress_min:
-                    a, b = strip_zero((self.progress_min, run.t-self.progress_min))
-                    t = f'{a} + {b}'    
-                value = f'{run.name}   {t} / {T} days'
+                # t, T = strip_zero((run.t, run.T))
+                # if self.progress_min:
+                #     a, b = strip_zero((self.progress_min, run.t-self.progress_min))
+                #     t = f'{a} + {b}'    
+                # value = f'{run.name}   {t} / {T} days'
+                value = f'{run.name}   {self.fraction[0]} days'
                 if mode == 'forward':
                     value = run.name + ' ' + value
             self.status_message(value)
@@ -3391,7 +3397,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_progressbar(self, t):
     #-----------------------------------------------------------------------
-        if t>=0:
+        if t >= 0:
             self.progressbar.setValue(t)
 
     #-----------------------------------------------------------------------
@@ -3413,30 +3419,38 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_progress(self, t_min_n0_tuple):
     #-----------------------------------------------------------------------
-        t, min, n0 = t_min_n0_tuple
-        #print('update_progress, ',t, min, n0)
+        t, min_, n0, fraction = t_min_n0_tuple
+        #print('update_progress, ',t, min_, n0)
+        if not self.progress:
+            self.progress = Progress()
         if n0 is not None:
-            self.progress and self.progress.reset_time(n=n0)
-        if min is not None:
-            self.progressbar.setMinimum(int(min))
-            self.progress and self.progress.set_min(int(min))
-        if t is not None:
-            if t==0: 
-                self.update_remaining_time()
-                self.progressbar.setMinimum(0)
-                if self.progress:
-                    self.progress.set_min(0)
-                return
-            elif t<0:
+            self.progress.reset_time(n=n0)
+        if min_ is not None:
+            self.progress.set_min(int(min_))
+            self.progressbar.setMinimum(int(min_))
+        if t is None:
+            self.progress.reset_time(min=self.progress.min)
+            self.update_remaining_time()
+            self.progressbar.setMinimum(0)
+        else:
+            # if t==0: 
+            #     self.update_remaining_time()
+            #     self.progressbar.setMinimum(0)
+            #     if self.progress:
+            #         self.progress.set_min(0)
+            #     return
+            if t < 0:
                 N = abs(int(t)) 
+                self.progress.reset(N=N, min=min_)
                 self.reset_progressbar(N=N)
-                self.progress = Progress(N=N)
-                return
-            #print('t',t)
-            self.update_progressbar(t)
-            self.update_remaining_time(text=self.progress.remaining_time(t))
+                t = 0
+            else:
+                self.update_progressbar(t)
+                self.update_remaining_time(text=self.progress.remaining_time(t))
+        fraction[0] = self.progress.fraction(t)
         #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
-        
+
+
 
     #-----------------------------------------------------------------------
     def update_view_area(self):
