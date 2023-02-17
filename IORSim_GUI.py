@@ -463,6 +463,24 @@ class sim_worker(base_worker):
         if self.sim:
             self.sim.cancel()
 
+    # #----------------------------------------
+    # def progress(run=None, value=None, min=None, n0=None):
+    # #----------------------------------------
+    #     #print('progress in:', value, min, n0)
+    #     if n0 is not None:
+    #         prog.reset_time(n=n0)
+    #     if min is not None:
+    #         prog.set_min(min)
+    #     if run:
+    #         value = run.t
+    #     if value is None:
+    #         prog.reset_time(min=prog.min)
+    #     else:
+    #         if value<0:
+    #             prog.reset(N=abs(value), min=min)
+    #             return
+    #         prog.print(value, text=run and f'({run.name})' or '')
+            
 
     @Slot()
     #-----------------------------------------------------------------------
