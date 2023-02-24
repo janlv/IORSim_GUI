@@ -935,6 +935,13 @@ class PlotArea(QGroupBox):
         self.ref_data = None
 
     #-----------------------------------------------------------------------
+    def clear(self):                                             # PlotArea
+    #-----------------------------------------------------------------------
+        self.plots = Plots(self.canvas.fig)
+        self.canvas.fig.clear()
+        self.canvas.draw()
+
+    #-----------------------------------------------------------------------
     def adjust(self):                                             # PlotArea
     #-----------------------------------------------------------------------
         top = 1 - 30/self.height()
@@ -1212,7 +1219,7 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def file_is_open(self, filename):
     #-----------------------------------------------------------------------
-        if str(filename).lower() == str(self.file).lower():
+        if filename and str(filename).lower() == str(self.file).lower():
             return True
         return False
 
@@ -1340,7 +1347,7 @@ class Editor(QGroupBox):
                             + f'\n --- SKIPPED {(size-self.size_limit-100)/1024**2:.0f} MB ---\n'
                             + text[-100:])
             else:
-                text = f'{self.file} is missing'
+                text = f'{self.file} is missing' if self.file else ''
         self.editor_.setPlainText(text)
         self.enable_save(False)
         #if self.save_btn:
@@ -1356,7 +1363,7 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                            # Editor
     #-----------------------------------------------------------------------
-        #print('_view_file', file, title)
+        #print('Editor.view_file', file, title)
         self.setTitle(title)
         curr_file = self.file
         if curr_file:
@@ -1366,7 +1373,7 @@ class Editor(QGroupBox):
         ### Avoid re-opening file after it is saved
         if self.file_is_open(file):
             return
-        self.file = str(file)
+        self.file = str(file) if file else None
         self.set_text_from_file()
         vscroll = self.vscroll.get(str(file)) or 0
         self.editor_.verticalScrollBar().setValue(vscroll)
@@ -1903,6 +1910,7 @@ class main_window(QMainWindow):                                    # main_window
         self.user_guide = None
         self.case = None
         self.schedule = None
+        self.trcinp = None
         self.cases = ()
         self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 'species':[], 'mode':None, 'cases':[]}
         self.input_to_save = ('root', 'days', 'mode', 'cases')
@@ -2327,7 +2335,8 @@ class main_window(QMainWindow):                                    # main_window
         # Plain editor with no syntax-highlight or save-function
         self.editor = Editor(name='editor', save_func=None)
         # Schedule-file editor
-        self.sch_editor = Editor(name='sch_editor', save_func=self.view_schedule_file, comment='--')
+        #self.sch_editor = Editor(name='sch_editor', save_func=self.view_schedule_file, comment='--')
+        self.sch_editor = Highlight_editor(name='sch_editor', save_func=self.view_schedule_file, comment='--')
         ### Eclipse editor
         rules = namedtuple('rules',('color weight option front back words'))
         sections = rules(Color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b', DATA_file.section_names)
@@ -2785,22 +2794,34 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_files = {}
         self.data = {}
         self.menu_boxes = {}
-        self.update_ecl_menu()
-        self.update_ior_menu()
-        view = self.current_viewer()
-        if isinstance(view, Editor):
-            view.clear()
+        for menu in (self.ior_incl_menu, self.ecl_incl_menu):
+            menu.clear()
+            menu.setEnabled(False)
+        for menu in (self.ior_menu, self.ecl_menu):
+            delete_all_widgets_in_layout(menu.layout())
+        self.ior_boxes = {}
+        self.ecl_boxes = {}
+        self.schedule = None
+        self.trcinp = None
+        for editor in self.editors:
+            editor.clear()
+        self.plot_area.clear()
 
 
     @show_error
     #-----------------------------------------------------------------------
     def prepare_case(self):
     #-----------------------------------------------------------------------
+        self.clear()
         root = self.case or self.input['root']
         self.case = root
         #self.schedule = next(Path(root).parent.glob('*.[Ss][Cc][Hh]'), None)
         sch = Path(root).parent.glob('*.[Ss][Cc][Hh]')
+        #print(list(sch))
+        #print(Path(root).stem)
         self.schedule = next((f for f in sch if f.stem == Path(root).stem), None)
+        self.update_schedule_act()
+        #print(self.schedule)
         #print('prepare_case: ',root)
         self.reset_progress_and_message()
         self.ref_case.setCurrentIndex(0)
@@ -2809,8 +2830,6 @@ class main_window(QMainWindow):                                    # main_window
         self.set_variables_from_casefiles()
         if root:
             self.on_mode_select(self.mode_cb.currentIndex())
-        self.data = {}
-        self.menu_boxes = {}
         # Add menu boxes
         self.update_ecl_menu()
         self.menu_boxes['ecl'] = self.ecl_boxes
@@ -2823,17 +2842,15 @@ class main_window(QMainWindow):                                    # main_window
         if not self.is_eclipse_mode():
             self.update_menu_boxes('ior')
         # Init and read data
-        self.unsmry = {}
         self.data['ecl'] = self.init_ecl_data()
         self.read_ecl_data()
-        self.ior_files = {}
         self.data['ior'] = self.init_ior_data()
         self.read_ior_data()
         # Create plot
         self.create_plot()
         # Update menus
         self.update_include_menus()
-        self.update_schedule_act()
+        #self.update_schedule_act()
         if self.view_group.checkedAction():
            self.view_group.checkedAction().trigger()
 
@@ -2846,6 +2863,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_schedule_act(self):
     #-----------------------------------------------------------------------
+        #print(self.schedule_file_act)
         self.schedule_file_act.setEnabled(bool(self.schedule))
         ### Uncheck schedule act if it was checked but is no longer available
         if not self.schedule and self.schedule_file_act is self.get_checked_act():
@@ -2860,6 +2878,7 @@ class main_window(QMainWindow):                                    # main_window
         ### Disable if empty 
         enable = False
         for file in files:
+            #print(file)
             enable = True
             act = create_action(self, text=file.name, checkable=True, func=partial(viewer, file, title=f'{title} {Path(file).name}', editor=editor), icon='document-c')
             act.setIconText('include')
@@ -2933,7 +2952,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         #print('update_ior_menu')
         menu = self.ior_menu
-        delete_all_widgets_in_layout(menu.layout())
+        #delete_all_widgets_in_layout(menu.layout())
         self.ior_boxes = {}
         if not self.input['root'] or not self.input['species']:
             return False
@@ -3046,12 +3065,13 @@ class main_window(QMainWindow):                                    # main_window
     def read_ecl_data(self, data=None, case=None, skip_zero=True):   # main_window
     #-----------------------------------------------------------------------
         #print(f'read_ecl_data(self, data={data}, case={case}, skip_zero={skip_zero}')
+        case = case or self.case
+        unsmry = self.unsmry.get(str(case))
+        if not case or not unsmry:
+            return False
         if data is None:
             data = self.data.get('ecl')
-        case = case or self.case
-        if not case:
-            return False
-        new_data = self.unsmry[str(case)].data(keys=self.ecl_keys)
+        new_data = unsmry.data(keys=self.ecl_keys)
         # Enable menu-well-boxes for active wells
         for well in set(new_data.wells):
             if box := self.ecl_boxes['well'].get(well):
@@ -3076,7 +3096,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         menu = self.ecl_menu
         case = case or self.input['root']
-        delete_all_widgets_in_layout(menu.layout())
+        #delete_all_widgets_in_layout(menu.layout())
         self.ecl_boxes = {}
         if not case:
             return False
@@ -3320,12 +3340,15 @@ class main_window(QMainWindow):                                    # main_window
     def read_ior_data(self, case=None, data=None, skip_zero=True):
     #-----------------------------------------------------------------------
         #print(self.ior_files.keys())
+        case = case or self.case
+        ior_files = self.ior_files.get(str(case))
+        if not case or not ior_files:
+            return False
         if data is None:
             data = self.data.get('ior')
-        case = case or self.case
         suffix = {'conc':'.trcconc', 'prod':'.trcprd'}
         total_days = ()
-        for file in self.ior_files[str(case)]:
+        for file in ior_files:
             welldata = []
             pos = []
             for out in ('conc', 'prod'):
