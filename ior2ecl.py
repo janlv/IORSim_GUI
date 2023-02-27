@@ -701,6 +701,7 @@ class Schedule:
         ### Add simulation end time 
         self.insert(days=T, remove=True)
         DEBUG and print(f'Creating {self}')
+        #self.to_file('schedule.txt')
 
     #--------------------------------------------------------------------------------
     def __repr__(self):                                                     # Schedule
@@ -721,8 +722,9 @@ class Schedule:
     def to_file(self, name):                                               # Schedule
     #--------------------------------------------------------------------------------
         ' Write schedule to file '
+        print(f'  Writing {self.case.parent/name}')
         with open(self.case.parent/name, 'w', encoding=getpreferredencoding()) as file:
-            file.write(''.join([str(s) for s in flatten(self._schedule)]))
+            file.write('\n'.join([str(s) for s in flatten(self._schedule)]))
 
     # #--------------------------------------------------------------------------------
     # def next_tstep(self):                                                  # Schedule

@@ -1361,7 +1361,7 @@ class Editor(QGroupBox):
         self.editor_.moveCursor(QTextCursor.End)
 
     #-----------------------------------------------------------------------
-    def view_file(self, file, title=''):                            # Editor
+    def view_file(self, file, title=' '):                            # Editor
     #-----------------------------------------------------------------------
         #print('Editor.view_file', file, title)
         self.setTitle(title)
@@ -2342,11 +2342,13 @@ class main_window(QMainWindow):                                    # main_window
         sections = rules(Color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b', DATA_file.section_names)
         globals = rules(Color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b', DATA_file.global_kw)
         common = rules(Color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b', DATA_file.common_kw)
-        self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common), save_func=self.prepare_case)
+        # self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common), save_func=self.prepare_case)
+        self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common), save_func=self.refresh_case)
         ### IORSim editor
         mandatory = rules(Color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b', IORSim_input.keywords.required)
         optional = rules(Color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b', IORSim_input.keywords.optional)
-        self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=(mandatory, optional), save_func=self.prepare_case)
+        # self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=(mandatory, optional), save_func=self.prepare_case)
+        self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=(mandatory, optional), save_func=self.refresh_case)
         ### Chemfile editor
         self.chem_editor = Highlight_editor(name='Chemistry editor', comment='#')
         self.log_viewer = Editor(name='log_viewer', read_only=True, size_limit_mb=5)
@@ -2788,11 +2790,8 @@ class main_window(QMainWindow):                                    # main_window
         return self.get_current_mode() == 'iorsim'
 
     #-----------------------------------------------------------------------
-    def clear(self):
+    def clear_menus(self):
     #-----------------------------------------------------------------------
-        self.unsmry = {}
-        self.ior_files = {}
-        self.data = {}
         self.menu_boxes = {}
         for menu in (self.ior_incl_menu, self.ecl_incl_menu):
             menu.clear()
@@ -2801,6 +2800,22 @@ class main_window(QMainWindow):                                    # main_window
             delete_all_widgets_in_layout(menu.layout())
         self.ior_boxes = {}
         self.ecl_boxes = {}
+
+    #-----------------------------------------------------------------------
+    def clear(self):
+    #-----------------------------------------------------------------------
+        self.clear_menus()
+        self.unsmry = {}
+        self.ior_files = {}
+        self.data = {}
+        # self.menu_boxes = {}
+        # for menu in (self.ior_incl_menu, self.ecl_incl_menu):
+        #     menu.clear()
+        #     menu.setEnabled(False)
+        # for menu in (self.ior_menu, self.ecl_menu):
+        #     delete_all_widgets_in_layout(menu.layout())
+        # self.ior_boxes = {}
+        # self.ecl_boxes = {}
         self.schedule = None
         self.trcinp = None
         for editor in self.editors:
@@ -2854,6 +2869,26 @@ class main_window(QMainWindow):                                    # main_window
         if self.view_group.checkedAction():
            self.view_group.checkedAction().trigger()
 
+    @show_error
+    #-----------------------------------------------------------------------
+    def refresh_case(self):
+    #-----------------------------------------------------------------------
+        root = self.case
+        self.trcinp = IORSim_input(root)
+        self.out_wells, self.in_wells = self.trcinp.wells()
+        self.set_variables_from_casefiles()
+        self.clear_menus()
+        self.update_ecl_menu()
+        self.menu_boxes['ecl'] = self.ecl_boxes
+        self.update_ior_menu()
+        self.menu_boxes['ior'] = self.ior_boxes
+        if self.is_eclipse_mode():
+            self.update_menu_boxes('ecl')
+        if not self.is_eclipse_mode():
+            self.update_menu_boxes('ior')
+        self.update_include_menus()
+        if self.view_group.checkedAction():
+           self.view_group.checkedAction().trigger()
 
     #-----------------------------------------------------------------------
     def get_checked_act(self):
