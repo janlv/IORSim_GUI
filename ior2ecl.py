@@ -827,7 +827,11 @@ class Schedule:
             self.tstep = new_tstep = self._schedule[0][0] - self.days
         self.append(action=action, tstep=new_tstep)
         #self.check()
-        # print(f'END: tstep:{self.tstep}, days:{self.days}, action:{action}, schedule:{self._schedule[:2]}')
+        #print('===== SCHEDULE START =====')
+        #print(f'===== SCHEDULE: tstep:{self.tstep}, days:{self.days}')
+        #print(f'===== SCHEDULE: action:{action}')
+        #print(f'===== SCHEDULE: schedule:{self._schedule[:2]}')
+        #print('===== SCHEDULE END =====')
         return self.days
 
 
@@ -971,7 +975,7 @@ class Simulation:                                                        # Simul
                           ecl_keep_alive=False, time=0, **kwargs):       # Simulation
     #--------------------------------------------------------------------------------
         self.tsteps = self.ECL_inp.tsteps()
-        self.init_days = sum(self.tsteps)
+        self.init_days = sum(self.tsteps) + self.restart_days
         if time > self.init_days:
             self.T = time
         else:
