@@ -501,13 +501,19 @@ class Iorsim(Runner):                                                        # i
     def time(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
         ### Find most recently modified file
-        files = ((f, f.stat().st_size) for f in self.case.parent.glob('*.trcconc'))
+        #files = ((f, f.stat().st_size) for f in self.case.parent.glob(f'{self.case.stem}*.trcconc'))
+        files = ((f, f.stat().st_mtime_ns) for f in self.case.parent.glob(f'{self.case.stem}*.trcconc'))
         files = sorted(files, key=itemgetter(1))
         file = files[-1][0] if files else ''
+        #print('files:', files)
+        #print('file:', file)
         try:
             values = next(tail_file(file, size=1000),'').split('\n')[-2].strip().split()
+            #print('IORSim time:',float(values[0]))
             return float(values[0])
-        except (ValueError, IndexError):
+        except (ValueError, IndexError): # as e:
+            #print(e)
+            #print('IORSim time:',super().time())
             return super().time()
 
 
@@ -690,8 +696,10 @@ class Schedule:
         self.end = 0
         ### Ignore case in file extension
         #self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
-        sch = self.case.parent.glob('*.[Ss][Cc][Hh]')
-        self.file = next((f for f in sch if f.stem == self.case.stem), None)
+        sch = self.case.parent.glob(f'{self.case.stem}.[Ss][Cc][Hh]')
+        #self.file = next((f for f in sch if f.stem == self.case.stem), None)
+        self.file = next(sch, None)
+        #print('SCHEDULE:', self.file)
         if self.file and self.file.exists():
             self.file = DATA_file(self.case.with_suffix(ext), sections=False, ignore_case=True)
             self._schedule = self.get_schedule()
@@ -1265,6 +1273,8 @@ class Simulation:                                                        # Simul
         casedir = str(Path(self.root).parent).replace(rundir, '<Run-dir>')
         s += f'    {"Case-dir":{width}}: {casedir}\n'
         s += f'    {"Log-files":{width}}: {", ".join([Path(file).name for file in logfiles])}\n'
+        s += f'    {"Version":{width}}: {__version__}\n'
+        s += f'    {"Started":{width}}: ' + str(datetime.now()).split('.')[0] + '\n'
         s += '\n'
         return s
 
