@@ -92,7 +92,7 @@ from requests import get as requests_get, exceptions as req_exceptions
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import removeprefix, Progress, clear_dict, convert_float_or_str, copy_recursive, same_length, flatten, get_keyword, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, delete_all, strip_zero, try_except_loop, unique_names, write_file
-from IORlib.ECL import DATA_file, UNSMRY_file, UNRST_file
+from IORlib.ECL import DATA_file, File, UNSMRY_file, UNRST_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
 
@@ -2527,10 +2527,10 @@ class main_window(QMainWindow):                                    # main_window
                 shutil_copy(src_fil, dst_fil)
             elif not src_fil.suffix in optional:
                 missing_files.append(src_fil)
-        ### Copy optional files
-        for file in src.parent.glob('*.CFG'):
-            #print(f'copy_case_files (optional): {file} -> {dst.parent/file.name}')
-            shutil_copy(file, dst.parent/file.name)
+        # ### Copy optional files
+        # for file in src.parent.glob('*.CFG'):
+        #     #print(f'copy_case_files (optional): {file} -> {dst.parent/file.name}')
+        #     shutil_copy(file, dst.parent/file.name)
         if missing_files:
             self.show_message_text(f'WARNING The following case-files are missing: {missing_files}')
 
@@ -2724,7 +2724,8 @@ class main_window(QMainWindow):                                    # main_window
                 self.missing_case_error(tag='clear_case: ')
                 return False
             case = Path(self.case)
-            for fil in case.parent.glob('*UNRST'):
+            #for fil in case.parent.glob('*UNRST'):
+            for fil in File(case).glob('*.UNRST'):
                 fil.unlink()
             clean_dir = case.parents[1]/dirname
             # Make sure the tmp-folder is deleted
@@ -2830,13 +2831,11 @@ class main_window(QMainWindow):                                    # main_window
         self.clear()
         root = self.case or self.input['root']
         self.case = root
-        #self.schedule = next(Path(root).parent.glob('*.[Ss][Cc][Hh]'), None)
-        sch = Path(root).parent.glob('*.[Ss][Cc][Hh]')
-        #print(list(sch))
-        #print(Path(root).stem)
-        self.schedule = next((f for f in sch if f.stem == Path(root).stem), None)
+        #sch = Path(root).parent.glob('*.[Ss][Cc][Hh]')
+        #self.schedule = next((f for f in sch if f.stem == Path(root).stem), None)
+        self.schedule = File(root, suffix='.SCH', ignore_suffix_case=True)
+        #print('schedule', self.schedule)
         self.update_schedule_act()
-        #print(self.schedule)
         #print('prepare_case: ',root)
         self.reset_progress_and_message()
         self.ref_case.setCurrentIndex(0)
@@ -2899,9 +2898,11 @@ class main_window(QMainWindow):                                    # main_window
     def update_schedule_act(self):
     #-----------------------------------------------------------------------
         #print(self.schedule_file_act)
-        self.schedule_file_act.setEnabled(bool(self.schedule))
+        enable_schedule = self.schedule.is_file()
+        self.schedule_file_act.setEnabled(enable_schedule)
         ### Uncheck schedule act if it was checked but is no longer available
-        if not self.schedule and self.schedule_file_act is self.get_checked_act():
+        if not enable_schedule and self.get_checked_act() is self.schedule_file_act:
+            # Check default act, plot
             self.plot_act.setChecked(True)
 
 
@@ -3282,17 +3283,17 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         if not self.trcinp:
             return 
-        if self.current_viewer().file_is_open(self.trcinp.file):
+        if self.current_viewer().file_is_open(self.trcinp.path):
             return
         title = f'IORSim input file {self.trcinp}'
-        self.view_input_file(self.trcinp.file, title=title, editor=self.iorsim_editor)
+        self.view_input_file(self.trcinp.path, title=title, editor=self.iorsim_editor)
   
         
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        days = DATA_file(self.input['root']).including(self.schedule).tsteps(missing_ok=True)
-        self.view_input_file(self.schedule, title=f'Schedule file {self.schedule.name}, total days = {sum(days):.0f}', editor=self.sch_editor)
+        days = DATA_file(self.input['root']).including(self.schedule.path).tsteps(missing_ok=True)
+        self.view_input_file(self.schedule.path, title=f'Schedule file {self.schedule}, total days = {sum(days):.0f}', editor=self.sch_editor)
         
     #-----------------------------------------------------------------------
     def view_log(self, logfile, title=None, viewer=None):       # main_window

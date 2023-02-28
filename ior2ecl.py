@@ -241,7 +241,7 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
         while self.nwell < 1:
             ### Run Eclipse until at least one well is producing and the RFT-file is created
             self.schedule.update(tstep=self.T)
-            self.run_one_step(self.schedule.ifacefile.file, start_stop=False, nwell=True)
+            self.run_one_step(self.schedule.ifacefile.path, start_stop=False, nwell=True)
             self._print(f' nwell = {self.nwell}')
             self.update_function(progress=True, plot=True)
             nblocks = 1
@@ -577,6 +577,7 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
         self.init_tsteps = len(self.tsteps)
         #self.satnum = DATA_file(IOR_SATNUM_FILE, '', reread=True)   # Output-file from IORSim, read by Eclipse as an interface-file
         self.satnum = DATA_file(IOR_SATNUM_FILE)   # Output-file from IORSim, read by Eclipse as an interface-file
+        #print('satnum',self.satnum.path)
         self.endtag = IOR_SATNUM_ENDTAG
         self.schedule = schedule
 
@@ -691,7 +692,7 @@ class Schedule:
         self.skip_empty = skip_empty
         #self.comment = comment
         #self.ifacefile = interface_file and DATA_file(interface_file.file, reread=True) or None
-        self.ifacefile = interface_file and DATA_file(interface_file.file, sections=False) or None
+        self.ifacefile = interface_file and DATA_file(interface_file.path, sections=False) or None
         self.days = init_days 
         self.start = start
         self.tstep = 0
@@ -703,9 +704,8 @@ class Schedule:
         #self.file = next((f for f in sch if f.stem == self.case.stem), None)
         #self.file = next(sch, None)
         #sch = Path(case).with_suffix(self.suffix)
-        self.sch_file = DATA_file(case, suffix='.SCH', ignore_suffix_case=True, exists=True, sections=False)
-        #print('SCHEDULE:', self.file)
-        if self.sch_file: # and self.file.exists():
+        self.sch_file = DATA_file(case, suffix='.SCH', ignore_suffix_case=True, sections=False)
+        if self.sch_file.is_file(): # and self.file.exists():
             #self.file = DATA_file(self.case.with_suffix(ext), sections=False, ignore_case=True)
             self._schedule = self.get_schedule()
             self.end = (len(self._schedule) > 0) and self._schedule[-1][0] or 0
@@ -724,7 +724,7 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def __str__(self):                                                     # Schedule
     #--------------------------------------------------------------------------------
-        return f'{self.sch_file and self.sch_file.name}'
+        return f'{self.sch_file}' # and self.sch_file.name}'
 
     #--------------------------------------------------------------------------------
     def __del__(self):                                                     # Schedule
@@ -735,10 +735,11 @@ class Schedule:
     def to_file(self, name):                                               # Schedule
     #--------------------------------------------------------------------------------
         ' Write schedule to file '
-        if not self.sch_file:
+        name = self.sch_file.with_name(name)
+        if not name:
             return 
-        print(f'  Writing {self.sch_file.parent/name}')
-        with open(self.case.parent/name, 'w', encoding=getpreferredencoding()) as file:
+        print(f'  Writing {name}')
+        with open(name, 'w', encoding='utf8') as file:
             file.write('\n'.join([str(s) for s in flatten(self._schedule)]))
 
     # #--------------------------------------------------------------------------------
@@ -1063,7 +1064,7 @@ class Simulation:                                                        # Simul
             self.print2log(f'\nStep {ecl.n+1}')
             self.update.progress(run=ecl)
             self.update.status(run=ecl, mode=self.mode)
-            ecl.run_one_step(ior.satnum.file)
+            ecl.run_one_step(ior.satnum.path)
             # Run IORSim to prepare satnum input for the next Eclipse run
             self.update.progress(run=ior)
             self.update.status(run=ior, mode=self.mode)
