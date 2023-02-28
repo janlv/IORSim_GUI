@@ -333,8 +333,8 @@ class IORSim_input(File):                                              # iorsim_
     #--------------------------------------------------------------------------------
     def __init__(self, file, check=False, check_format=False):         # iorsim_input
     #--------------------------------------------------------------------------------
-        super().__init__(file, Path(file).suffix or '.trcinp', role='IORSim input-file', ignore_case=True)
-        #self.file = Path(root).with_suffix('.trcinp')
+        #super().__init__(file, suffix=Path(file).suffix or '.trcinp', role='IORSim input-file', ignore_case=True)
+        super().__init__(file, suffix='.trcinp', role='IORSim input-file', ignore_suffix_case=True)
         self.check_format = check_format
         self.warnings = self.check() if check else ''
 
@@ -345,7 +345,7 @@ class IORSim_input(File):                                              # iorsim_
         # Check if required keywords are used, and if the order is correct 
         def raise_error(error):
             raise SystemError(f'ERROR Error in IORSim input file: {error}')    
-        text = remove_comments(self.file, comment='#')
+        text = remove_comments(self.path, comment='#')
         file_kw = [kw.upper() for kw in re_compile(r'(\*[A-Za-z_-]+)').findall(text)]
         # Remove repeated keywords, i.e. make unique list
         file_kw = list(dict.fromkeys(file_kw))
@@ -387,12 +387,12 @@ class IORSim_input(File):                                              # iorsim_
 
         ### Check if included files exists
         if (missing := [f for f in self.include_files() if not f.is_file()]):
-            raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.file.name} is missing in folder {missing[0].parent.resolve()}")
+            raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.path.name} is missing in folder {missing[0].parent.resolve()}")
 
         ### Check if tstart == 0
-        inte = get_keyword(self.file, '\*INTEGRATION', end='\*')
+        inte = get_keyword(self.path, '\*INTEGRATION', end='\*')
         if inte and (tstart := inte[0][0]) > 0:
-            warn += f'WARNING The IORSim start-time should be 0 but is currently {tstart}. Update the *INTEGRATION keyword in {self.file.name} to avoid sync problems.'
+            warn += f'WARNING The IORSim start-time should be 0 but is currently {tstart}. Update the *INTEGRATION keyword in {self.path.name} to avoid sync problems.'
 
         ### Check if required keywords are used, and if the order is correct
         if self.check_format:
@@ -407,13 +407,13 @@ class IORSim_input(File):                                              # iorsim_
         '''
         Return full path to files included in the IORSim .trcinp-file
         '''
-        parent = self.file.parent
-        files = flatten(get_keyword(self.file, '\*CHEMFILE', end='\*', comment='#'))
+        parent = self.path.parent
+        files = flatten(get_keyword(self.path, '\*CHEMFILE', end='\*', comment='#'))
         # Use negative lookahead (?!) to ignore commented lines
         regex = re_compile(rb'^(?!#)\s*add_species[\s"\']*(.*?)[\s"\']*$', flags=MULTILINE)
         for file in set(files):
             yield parent/file
-            for match in regex.finditer(File(parent/file,'').binarydata()):
+            for match in regex.finditer(File(parent/file).binarydata()):
                 yield parent/match.group(1).decode()
 
     #-----------------------------------------------------------------------
@@ -421,13 +421,13 @@ class IORSim_input(File):                                              # iorsim_
     #-----------------------------------------------------------------------
         if not self.exists(raise_error):
             return []
-        species = get_keyword(self.file, '\*solution', end='\*')
+        species = get_keyword(self.path, '\*solution', end='\*')
         #print(species)
         if species:
             species = species[0][1::2]
         else:
             # Read old input format
-            species = flatten(get_keyword(self.file, '\*SPECIES', end='\*'))
+            species = flatten(get_keyword(self.path, '\*SPECIES', end='\*'))
             species = [s for s in species if isinstance(s, str)]
         # Change pH to H 
         species = [s if s.lower() != 'ph' else 'H' for s in species]
@@ -439,7 +439,7 @@ class IORSim_input(File):                                              # iorsim_
         #trcinp = IORSim_input(root)
         if not self.exists(raise_error):
             return []
-        tracers = flatten(get_keyword(self.file, '\*NAME', end='\*'))
+        tracers = flatten(get_keyword(self.path, '\*NAME', end='\*'))
         if tracers:
             tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
         #print(tracers)
@@ -451,14 +451,14 @@ class IORSim_input(File):                                              # iorsim_
         if not self.exists(raise_error):
             return [],[]
         in_wells, out_wells = [], []
-        out_wells = flatten(get_keyword(self.file, '\*PRODUCER', end='\*'))
-        in_wells = flatten(get_keyword(self.file, '\*INJECTOR', end='\*'))
+        out_wells = flatten(get_keyword(self.path, '\*PRODUCER', end='\*'))
+        in_wells = flatten(get_keyword(self.path, '\*INJECTOR', end='\*'))
         if not out_wells or not in_wells:
             # Read old input format
-            ow = get_keyword(self.file, '\*OUTPUT', end='\*')
+            ow = get_keyword(self.path, '\*OUTPUT', end='\*')
             if ow:
                 out_wells = ow[0][1:]
-            w = get_keyword(self.file, '\*WELLSPECIES', end='\*')
+            w = get_keyword(self.path, '\*WELLSPECIES', end='\*')
             if w and w[0]:
                 #print(w)
                 w = w[0]
@@ -489,7 +489,7 @@ class Iorsim(Runner):                                                        # i
         super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, time_regex=r'\bTime\b:\s+([0-9.e+-]+)', **kwargs)
         self.update = kwargs.get('update') or None
         self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
-        self.unrst = UNRST_file(self.funrst.file, end='SATNUM')
+        self.unrst = UNRST_file(self.funrst.path, end='SATNUM')
         self.inputfile = IORSim_input(root, check=True, check_format=kwargs.get('check_input_kw') or False)
         if self.update and (warn:=self.inputfile.warnings):
             self.update.message(warn)
@@ -502,7 +502,8 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
         ### Find most recently modified file
         #files = ((f, f.stat().st_size) for f in self.case.parent.glob(f'{self.case.stem}*.trcconc'))
-        files = ((f, f.stat().st_mtime_ns) for f in self.case.parent.glob(f'{self.case.stem}*.trcconc'))
+        #files = ((f, f.stat().st_mtime_ns) for f in self.case.parent.glob(f'{self.case.stem}*.trcconc'))
+        files = ((f, f.stat().st_mtime_ns) for f in File(self.case).glob('*.trcconc'))
         files = sorted(files, key=itemgetter(1))
         file = files[-1][0] if files else ''
         #print('files:', files)
@@ -545,7 +546,7 @@ class Iorsim(Runner):                                                        # i
         case = str(self.case)
         delete_files_matching(case+'*.trcconc', raise_error=raise_error)
         delete_files_matching(case+'*.trcprd', raise_error=raise_error)
-        silentdelete(self.funrst.file, self.unrst.file)
+        silentdelete(self.funrst.path, self.unrst.path)
 
 
     #--------------------------------------------------------------------------------
@@ -598,7 +599,7 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
         '''
         Return the distribution of SATNUM numbers as a dict
         '''
-        lines = remove_comments(self.satnum.file, comment='--')
+        lines = remove_comments(self.satnum.path, comment='--')
         values = re_compile(r'SATNUM\s+([0-9\s]+)').findall(lines)
         if values:
             values = [int(v) for v in values[0].split('\n') if v.strip()]
@@ -670,9 +671,11 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
 #====================================================================================
 class Schedule:
 #====================================================================================
+    #suffix = '.SCH'
+    comment = '--'
+
     #--------------------------------------------------------------------------------
-    def __init__(self, case, T=0, init_days=0, start=None, ext='.SCH', comment='--', 
-                 interface_file=None, skip_empty=False): #, end='/', tag='TSTEP'):
+    def __init__(self, case, T=0, init_days=0, start=None, interface_file=None, skip_empty=False): 
     #--------------------------------------------------------------------------------
         '''
         Create schedule from a .SCH-file if it exists. 
@@ -684,9 +687,9 @@ class Schedule:
 
         The schedule is a list of lists: [[start-time, ''],[days, 'KEYWORD'],[end-time, '']]
         '''
-        self.case = Path(case)
+        #self.case = Path(case)
         self.skip_empty = skip_empty
-        self.comment = comment
+        #self.comment = comment
         #self.ifacefile = interface_file and DATA_file(interface_file.file, reread=True) or None
         self.ifacefile = interface_file and DATA_file(interface_file.file, sections=False) or None
         self.days = init_days 
@@ -696,12 +699,14 @@ class Schedule:
         self.end = 0
         ### Ignore case in file extension
         #self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
-        sch = self.case.parent.glob(f'{self.case.stem}.[Ss][Cc][Hh]')
+        #sch = self.case.parent.glob(f'{self.case.stem}.[Ss][Cc][Hh]')
         #self.file = next((f for f in sch if f.stem == self.case.stem), None)
-        self.file = next(sch, None)
+        #self.file = next(sch, None)
+        #sch = Path(case).with_suffix(self.suffix)
+        self.sch_file = DATA_file(case, suffix='.SCH', ignore_suffix_case=True, exists=True, sections=False)
         #print('SCHEDULE:', self.file)
-        if self.file and self.file.exists():
-            self.file = DATA_file(self.case.with_suffix(ext), sections=False, ignore_case=True)
+        if self.sch_file: # and self.file.exists():
+            #self.file = DATA_file(self.case.with_suffix(ext), sections=False, ignore_case=True)
             self._schedule = self.get_schedule()
             self.end = (len(self._schedule) > 0) and self._schedule[-1][0] or 0
         #else:
@@ -714,12 +719,12 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def __repr__(self):                                                     # Schedule
     #--------------------------------------------------------------------------------
-        return f'<Schedule(file={self.file}, start={self.start}, end={self.end}, init_days={self.days}, length={len(self._schedule)})>'
+        return f'<Schedule(file={self.sch_file}, start={self.start}, end={self.end}, init_days={self.days}, length={len(self._schedule)})>'
 
     #--------------------------------------------------------------------------------
     def __str__(self):                                                     # Schedule
     #--------------------------------------------------------------------------------
-        return f'{self.file and self.file.name}'
+        return f'{self.sch_file and self.sch_file.name}'
 
     #--------------------------------------------------------------------------------
     def __del__(self):                                                     # Schedule
@@ -730,7 +735,9 @@ class Schedule:
     def to_file(self, name):                                               # Schedule
     #--------------------------------------------------------------------------------
         ' Write schedule to file '
-        print(f'  Writing {self.case.parent/name}')
+        if not self.sch_file:
+            return 
+        print(f'  Writing {self.sch_file.parent/name}')
         with open(self.case.parent/name, 'w', encoding=getpreferredencoding()) as file:
             file.write('\n'.join([str(s) for s in flatten(self._schedule)]))
 
@@ -749,7 +756,7 @@ class Schedule:
     def info(self):                                                        # Schedule
     #--------------------------------------------------------------------------------
         s =   'Schedule\n'
-        s += f'  file   : {self.file}\n'
+        s += f'  file   : {self.sch_file}\n'
         s += f'  start  : {self.start}\n'
         s += f'  days   : {self.days}\n'
         s += f'  length : {len(self._schedule)}\n'
@@ -775,12 +782,12 @@ class Schedule:
         schedule = [(2.0, "WCONHIST \r\n    'P-15P'      'OPEN' "), (9.0, "WCONHIST")]
         '''
         ### Split, accumulate tsteps, and then zip tsteps and pos  
-        tstep, pos = zip(*self.file.tsteps(start=self.start, pos=True)) # + [('',(len(self.file),0),)]
+        tstep, pos = zip(*self.sch_file.tsteps(start=self.start, pos=True)) # + [('',(len(self.file),0),)]
         tstep_pos = list(zip(accumulate(tstep), pos))
         ### Append end to make pairwise pick up the last entry
         tstep_pos.append(tstep_pos[-1])
         #filedata = self.file.data()
-        tstep_act = ((tstep, self.file.data[a:b]) for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
+        tstep_act = ((tstep, self.sch_file.data[a:b]) for (tstep,(_,a)), (_,(b,_)) in pairwise(tstep_pos))
         if self.skip_empty:
             tstep_act = (x for x in tstep_act if x[1])
         return list(tstep_act)
@@ -796,7 +803,7 @@ class Schedule:
         if action is None and tstep is None:
             return
         if tstep == 0:
-            raise SystemError(f'ERROR Schedule gave TSTEP 0 at {self.days} days, simulation stopped. Check {self.file}')
+            raise SystemError(f'ERROR Schedule gave TSTEP 0 at {self.days} days, simulation stopped. Check {self.sch_file}')
         new_action_and_tstep = (action and action or '') + f'TSTEP\n{tstep} /\n'
         self.ifacefile.replace_keyword('TSTEP', new_action_and_tstep)
 
@@ -806,9 +813,9 @@ class Schedule:
     #--------------------------------------------------------------------------------
         # just a check...
         print(f'{self.days}, {self.start+timedelta(days=self.days)}')
-        with open(self.ifacefile.file, 'r') as f:
+        with open(self.ifacefile.path, 'r') as f:
             lines = f.readlines()
-        print(self.ifacefile.file, ': ', ''.join(lines[-10:]))
+        print(self.ifacefile.path, ': ', ''.join(lines[-10:]))
         print('Schedule:')
         print(self._schedule)
 
@@ -827,7 +834,7 @@ class Schedule:
             self.tstep = new_tstep = self.ifacefile.get('TSTEP', raise_error=True)[0]
         else:
             ### Write given tstep to empty satnum.dat (IORSim is not yet running) 
-            self.ifacefile.file.write_text(f'TSTEP\n{tstep} /\n')
+            self.ifacefile.path.write_text(f'TSTEP\n{tstep} /\n')
             self.tstep = new_tstep = tstep
         # print(f'START: tstep:{self.tstep}, days:{self.days}, schedule:{self._schedule[:2]}')
         ### Check arrival of next event and adjust tstep if neccessary
@@ -936,7 +943,7 @@ class Simulation:                                                        # Simul
             ### Get time and step from the restart-file
             self.restart_file = UNRST_file(file)
             if not self.restart_file.is_file():
-                raise SystemError(f'ERROR Restart file {self.restart_file.file} is missing')
+                raise SystemError(f'ERROR Restart file {self.restart_file.path} is missing')
             self.restart_step = step
             time, n = next(self.restart_file.read('time', 'step', drop=lambda x:x[1]<step))
             if n != step:
@@ -1154,7 +1161,7 @@ class Simulation:                                                        # Simul
         if ior.unrst.is_file():
             return True, 'INFO Convert already complete!'
         if not ior.funrst.is_file():
-            return False, f'ERROR Unable to convert IORSim output: {ior.funrst.file} is missing'
+            return False, f'ERROR Unable to convert IORSim output: {ior.funrst.path} is missing'
         start = datetime.now()
         try:
             ior.funrst.fast_convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
@@ -1165,16 +1172,16 @@ class Simulation:                                                        # Simul
                 nblocks = next(ior.unrst.read('step', tail=True))[0]
                 msg = ior.unrst.check.data_saved(nblocks=nblocks, limit=1, wait_func=ior.wait_for)
                 if msg:
-                    raise SystemError(f'ERROR Converted file {ior.unrst.file.name} did not pass the check: {msg}')
+                    raise SystemError(f'ERROR Converted file {ior.unrst.path.name} did not pass the check: {msg}')
         except (Exception, KeyboardInterrupt) as error:
-            silentdelete(ior.unrst.file)
+            silentdelete(ior.unrst.path)
             msg = str(error)
             if isinstance(error, KeyboardInterrupt) or 'run stopped' in msg.lower():
                 return False, 'Convert cancelled'
             else:
                 raise SystemError(f'ERROR Unable to convert IORSim restart: {error}') from error
         if self.output.del_convert:
-            silentdelete(ior.funrst.file)
+            silentdelete(ior.funrst.path)
         return True, 'Convert complete, process-time was '+str(datetime.now()-start).split('.')[0]
 
 
@@ -1191,7 +1198,7 @@ class Simulation:                                                        # Simul
         case = Path(case)
         ecl = self.ecl or Eclipse(root=case)   
         ior = self.ior or Iorsim(root=case)   
-        missing = [f.name for f in (ecl.unrst.file, ior.unrst.file) if not f.is_file()]
+        missing = [f.name for f in (ecl.unrst.path, ior.unrst.path) if not f.is_file()]
         if missing:
             return False, f'Unable to merge restart files due to missing files: {", ".join(missing)}'
         try:
@@ -1224,14 +1231,14 @@ class Simulation:                                                        # Simul
                     raise SystemError(f'ERROR Merged file did not pass the test: {msg}')
             if merged_file and merged_file.is_file():
                 ### Rename original Eclipse UNRST for backup
-                ecl.unrst.file.replace(ecl_backup)
+                ecl.unrst.path.replace(ecl_backup)
                 ### Rename merged UNRST to original Eclipse UNRST
-                merged_file.replace(ecl.unrst.file)
+                merged_file.replace(ecl.unrst.path)
             else:
                 return False, error_msg
         except (Exception, KeyboardInterrupt) as error:
             ### Delete merged file
-            silentdelete(merge_unrst.file)
+            silentdelete(merge_unrst.path)
             if isinstance(error, KeyboardInterrupt):
                 return False, 'Merge cancelled'
             if DEBUG:
@@ -1239,7 +1246,7 @@ class Simulation:                                                        # Simul
             raise SystemError(f'{error_msg}: {error}') from error
             #raise SystemError(f'{error_msg}: {exc_info()[1]}')
         if self.output.del_merge:
-            silentdelete(ecl_backup, ior.unrst.file)
+            silentdelete(ecl_backup, ior.unrst.path)
         ### Create this file to avoid re-merging the merged UNRST-file 
         self.merge_OK.touch()
         return True, 'Merge complete, process-time was '+str(datetime.now()-starttime).split('.')[0]
@@ -1267,7 +1274,7 @@ class Simulation:                                                        # Simul
         inte = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')
         a, b = inte and (inte[0][4],inte[0][5]) or (0,0) 
         s += f'    {"Timestep":{width}}: {a}{(a!=b and f" - {b}" or "")} days\n'
-        s += (self.schedule and self.schedule.file) and f'    {"Schedule":{width}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
+        s += (self.schedule and self.schedule.sch_file) and f'    {"Schedule":{width}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         rundir = str(Path.cwd())
         s += f'    {"Run-dir":{width}}: {rundir}\n'
         casedir = str(Path(self.root).parent).replace(rundir, '<Run-dir>')
