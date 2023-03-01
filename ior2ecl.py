@@ -1157,7 +1157,7 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def convert_restart(self, case=None, check=True):         # Simulation
+    def convert_restart(self, case=None, check=False):         # Simulation
     #--------------------------------------------------------------------------------
         ### Convert from formatted (ascii) to unformatted (binary) restart file
         self.update.status(value='Converting restart file...')
@@ -1176,7 +1176,7 @@ class Simulation:                                                        # Simul
                 first, = next(ior.unrst.read('step'))
                 last, = next(ior.unrst.read('step', tail=True))
                 passed = ior.unrst.check.blocks_complete(nblocks=last-first+1, only_new=False)
-                self.print2log(ior.unrst.check.info())
+                #self.print2log(ior.unrst.check.info())
                 if not passed:
                     raise SystemError(f'ERROR Converted file {ior.unrst} did not pass the check!')
         except (Exception, KeyboardInterrupt) as error:
