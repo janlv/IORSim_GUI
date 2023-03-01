@@ -869,8 +869,9 @@ class Plots:
         self.combs = self.plot_combinations(menuboxes)
         # Enable all wellboxes
         for menu in menuboxes.values():
-            for wellbox in menu['well'].values():
-                wellbox.setEnabled(True)
+            if well:=menu.get('well'):
+                for wellbox in well.values():
+                    wellbox.setEnabled(True)
         if only_nonzero:
             nonzero = [comb for comb in self.combs if self.nonzero_data(comb, data)]
             nz_kind_well = [(c.kind, c.well) for c in nonzero]
@@ -2471,7 +2472,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def missing_file_error(self, tag=''):
     #-----------------------------------------------------------------------
-        show_message(self, 'warning', text=f'The file {Path(tag).name} is missing for the {Path(self.case).name} case')
+        show_message(self, 'warning', text=f'{Path(tag).name} is missing for the {Path(self.case).name} case')
 
 
     #-----------------------------------------------------------------------
@@ -3250,11 +3251,11 @@ class main_window(QMainWindow):                                    # main_window
                 # Do not read a saved file, but update title
                 self.current_viewer().setTitle(title)
                 return
-            if Path(name).is_file():
+            if name and Path(name).is_file():
                 self.view_file(name, viewer=editor, title=title)
             else:
                 self.sender().setChecked(False)
-                self.sender().parent().missing_file_error(tag=name)
+                self.sender().parent().missing_file_error(tag=name or title)
                 return False        
         else:
             self.sender().setChecked(False)

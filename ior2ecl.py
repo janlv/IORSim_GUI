@@ -375,7 +375,7 @@ class IORSim_input(File):                                              # iorsim_
 
 
     #--------------------------------------------------------------------------------
-    def check(self, error_msg=''):                      # iorsim_input
+    def check(self, error_msg=''):                                     # iorsim_input
     #--------------------------------------------------------------------------------
         msg = error_msg and error_msg+': ' or ''
 
@@ -402,11 +402,13 @@ class IORSim_input(File):                                              # iorsim_
 
 
     #--------------------------------------------------------------------------------
-    def include_files(self):
+    def include_files(self):                                           # iorsim_input
     #--------------------------------------------------------------------------------
         '''
         Return full path to files included in the IORSim .trcinp-file
         '''
+        if not self.path:
+            return ()
         parent = self.path.parent
         files = flatten(get_keyword(self.path, '\*CHEMFILE', end='\*', comment='#'))
         # Use negative lookahead (?!) to ignore commented lines
@@ -417,7 +419,7 @@ class IORSim_input(File):                                              # iorsim_
                 yield parent/match.group(1).decode()
 
     #-----------------------------------------------------------------------
-    def species(self, raise_error=False):
+    def species(self, raise_error=False):                     # iorsim_input
     #-----------------------------------------------------------------------
         if not self.exists(raise_error):
             return []
@@ -431,6 +433,7 @@ class IORSim_input(File):                                              # iorsim_
             species = [s for s in species if isinstance(s, str)]
         # Change pH to H 
         species = [s if s.lower() != 'ph' else 'H' for s in species]
+        #print('species', species)
         return species
 
     #-----------------------------------------------------------------------
@@ -440,9 +443,9 @@ class IORSim_input(File):                                              # iorsim_
         if not self.exists(raise_error):
             return []
         tracers = flatten(get_keyword(self.path, '\*NAME', end='\*'))
-        if tracers:
-            tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
-        #print(tracers)
+        #if tracers:
+        #    tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
+        #print('tracers', tracers)
         return tracers
 
     #-----------------------------------------------------------------------
@@ -489,7 +492,7 @@ class Iorsim(Runner):                                                        # i
         super().__init__(name='IORSim', case=root, exe=exe, cmd=cmd, time_regex=r'\bTime\b:\s+([0-9.e+-]+)', **kwargs)
         self.update = kwargs.get('update') or None
         self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
-        self.unrst = UNRST_file(self.funrst.path, end='SATNUM')
+        self.unrst = UNRST_file(self.funrst.path)
         self.inputfile = IORSim_input(root, check=True, check_format=kwargs.get('check_input_kw') or False)
         if self.update and (warn:=self.inputfile.warnings):
             self.update.message(warn)
@@ -1154,33 +1157,34 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def convert_restart(self, case=None, check=False):         # Simulation
+    def convert_restart(self, case=None, check=True):         # Simulation
     #--------------------------------------------------------------------------------
         ### Convert from formatted (ascii) to unformatted (binary) restart file
         self.update.status(value='Converting restart file...')
-        ior = self.ior or Iorsim(root=case)   
+        ior = self.ior or Iorsim(root=case)
+        self.ior = ior
         if ior.unrst.is_file():
             return True, 'INFO Convert already complete!'
         if not ior.funrst.is_file():
             return False, f'ERROR Unable to convert IORSim output: {ior.funrst.path} is missing'
         start = datetime.now()
         try:
-            ior.funrst.fast_convert(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
-                                    progress=lambda n: self.update.progress(value=n), 
+            ior.unrst = ior.funrst.as_UNRST(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
+                                    progress=lambda n: self.update.progress(value=n),
                                     cancel=ior.stop_if_canceled)
             if check:
-                #nblocks = ior.unrst.get('step', N=-1)[0][0]
-                nblocks = next(ior.unrst.read('step', tail=True))[0]
-                msg = ior.unrst.check.data_saved(nblocks=nblocks, limit=1, wait_func=ior.wait_for)
-                if msg:
-                    raise SystemError(f'ERROR Converted file {ior.unrst.path.name} did not pass the check: {msg}')
+                first, = next(ior.unrst.read('step'))
+                last, = next(ior.unrst.read('step', tail=True))
+                passed = ior.unrst.check.blocks_complete(nblocks=last-first+1, only_new=False)
+                self.print2log(ior.unrst.check.info())
+                if not passed:
+                    raise SystemError(f'ERROR Converted file {ior.unrst} did not pass the check!')
         except (Exception, KeyboardInterrupt) as error:
             silentdelete(ior.unrst.path)
             msg = str(error)
             if isinstance(error, KeyboardInterrupt) or 'run stopped' in msg.lower():
                 return False, 'Convert cancelled'
-            else:
-                raise SystemError(f'ERROR Unable to convert IORSim restart: {error}') from error
+            raise SystemError(f'ERROR Unable to convert IORSim restart: {error}') from error
         if self.output.del_convert:
             silentdelete(ior.funrst.path)
         return True, 'Convert complete, process-time was '+str(datetime.now()-start).split('.')[0]
@@ -1197,8 +1201,8 @@ class Simulation:                                                        # Simul
         if self.merge_OK.exists():
             return True, 'Merge already complete!'
         case = Path(case)
-        ecl = self.ecl or Eclipse(root=case)   
-        ior = self.ior or Iorsim(root=case)   
+        ecl = self.ecl# or Eclipse(root=case)
+        ior = self.ior# or Iorsim(root=case)
         missing = [f.name for f in (ecl.unrst.path, ior.unrst.path) if not f.is_file()]
         if missing:
             return False, f'Unable to merge restart files due to missing files: {", ".join(missing)}'
@@ -1207,22 +1211,17 @@ class Simulation:                                                        # Simul
             error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files'
             ecl_backup = Path(f'{case}_ECLIPSE.UNRST')
             ### The merged file ends with SATNUM (IORSim UNRST) instead of ENDSOL (Eclipse UNRST)
-            merge_unrst = UNRST_file(f'{case}_MERGED.UNRST', end='SATNUM')
+            merge_unrst = UNRST_file(f'{case}_MERGED.UNRST', end=ior.unrst.end)
             ### Reset progress-bar
-            #end = min(x.unrst.get('step', N=-1)[0][0] for x in (ecl, ior))
             end = min(next(x.unrst.read('step', tail=True))[0] for x in (ecl, ior))
             self.update.progress(value=-end)
             ### Use the same start index for both files/sections
-            #start = max(x.unrst.get('step', N=1)[0][0] for x in (ecl, ior))
-            #print('ior', list(ior.unrst.read('step')))
-            #print('ecl', list(ecl.unrst.read('step')))
             start = max(next(x.unrst.read('step'))[0] for x in (ecl, ior))
-            #print('start', start)
             ### Define the sections in the restart file where the stitching is done
             ecl_sec = ecl.unrst.sections(start_before='SEQNUM',  end_before='SEQNUM', begin=start)
             ior_sec = ior.unrst.sections(start_after='DOUBHEAD', end_before='SEQNUM', begin=start)
             ### Create merged UNRST file
-            merged_file = merge_unrst.create(sections=(ecl_sec, ior_sec), 
+            merged_file = merge_unrst.create(sections=(ecl_sec, ior_sec),
                                              progress=lambda n: self.update.progress(value=n),
                                              cancel=ior.stop_if_canceled)
             merge_unrst.assert_no_duplicates(raise_error=False)
