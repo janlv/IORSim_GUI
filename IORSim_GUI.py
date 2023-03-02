@@ -38,6 +38,7 @@ IORSIM_DIR = Path.home()/'.iorsim'
 DOWNLOAD_DIR = IORSIM_DIR/'download'
 SETTINGS_FILE = IORSIM_DIR/'settings.dat'
 SESSION_FILE = IORSIM_DIR/'session.txt'
+MIN_PLOT_VALUE = 1e-200
 
 # Update files
 THIS_FILE = Path(sys.argv[0])
@@ -493,26 +494,11 @@ class sim_worker(base_worker):
         #------------------------------------
             if run:
                 value = run.t
-            # if min is not None:
-            #     self.progress_min = min
-            # if run:
-            #     value = run.t
-            # if value is None:
-            #     self.progress_min = None
-            #if run and value is None:
-            # if run:# and value is None:
-            #     value = run.t
-            #self.update_progress((value and int(value), min, n0))
             self.update_progress((value, min, n0, self.fraction))
         #------------------------------------
         def status(run=None, value=None, mode=None, **x):
         #------------------------------------
             if not value and run:
-                # t, T = strip_zero((run.t, run.T))
-                # if self.progress_min:
-                #     a, b = strip_zero((self.progress_min, run.t-self.progress_min))
-                #     t = f'{a} + {b}'    
-                # value = f'{run.name}   {t} / {T} days'
                 value = f'{run.name}   {self.fraction[0]} days'
                 if mode == 'forward':
                     value = run.name + ' ' + value
@@ -524,7 +510,6 @@ class sim_worker(base_worker):
         #------------------------------------
         def message(text=None, **kwargs):
         #------------------------------------
-            #text and self.show_message(text)
             self.show_message(text)
 
         result, msg = False, ''
@@ -697,8 +682,11 @@ class SubPlot():
 #===========================================================================
     # mark = '|'
     ylabel = {
-        'concior' : 'concentration [mol/L]',
-        'prodior' : 'production [mass/day]',
+        'concior' : 'Concentration [mol/L]',
+        'conc_watior' : 'Concentration in water [mol/L]',
+        'conc_oilior' : 'concentration in oil [mol/L]',
+        'conc_gasior' : 'concentration in gas [mol/L]',
+        'prodior' : 'Production [mass/day]',
         'prodecl' : 'Cum. prod. [SM3]',
         'iprodecl' : 'Inj. prod. [SM3]',
         'rateecl' : 'Prod. rate [SM3/day]',
@@ -846,6 +834,7 @@ class Plots:
         for kind in boxes:
             combinations = product((kind,), values('yaxis',kind), sorted(values('well',kind)))
             plot_comb.extend([comb(*c) for c in combinations])
+        #print(plot_comb)
         return plot_comb
 
     #-----------------------------------------------------------------------
@@ -859,7 +848,7 @@ class Plots:
     def nonzero_data(self, comb, data):                              # Plots
     #-----------------------------------------------------------------------
         ydata = self.get_data(comb, data)[1]
-        return comb.well == 'FIELD' or any(sum(var) > 1e-8 for var in ydata.values())
+        return comb.well == 'FIELD' or any(sum(var) > MIN_PLOT_VALUE for var in ydata.values())
 
     #-----------------------------------------------------------------------
     def create(self, data=None, menuboxes=None, only_nonzero=False): # Plots
@@ -1913,7 +1902,8 @@ class main_window(QMainWindow):                                    # main_window
         self.schedule = None
         self.trcinp = None
         self.cases = ()
-        self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 'species':[], 'mode':None, 'cases':[]}
+        self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 
+                      'species':[], 'tracers':[], 'mode':None, 'cases':[]}
         self.input_to_save = ('root', 'days', 'mode', 'cases')
         self.settings = Settings(parent=self, file=str(settings_file))
         self.initUI()
@@ -2397,7 +2387,7 @@ class main_window(QMainWindow):                                    # main_window
     def set_variables_from_casefiles(self):                # main_window
     #-----------------------------------------------------------------------
         inp = self.input
-        inp['ecl_days'] = inp['species'] = inp['tracers'] = None
+        inp['ecl_days'], inp['species'], inp['tracers'] = None, [], []
         if inp['root']:
             tsteps = DATA_file(inp['root']).tsteps(missing_ok=True, negative_ok=True)
             inp['ecl_days'] = sum(tsteps)
@@ -2876,6 +2866,7 @@ class main_window(QMainWindow):                                    # main_window
         root = self.case
         self.trcinp = IORSim_input(root)
         self.out_wells, self.in_wells = self.trcinp.wells()
+        self.days_box.setText(sum(DATA_file(root).tsteps()))
         self.set_variables_from_casefiles()
         self.clear_menus()
         self.update_ecl_menu()
@@ -2991,16 +2982,23 @@ class main_window(QMainWindow):                                    # main_window
         menu = self.ior_menu
         #delete_all_widgets_in_layout(menu.layout())
         self.ior_boxes = {}
-        if not self.input['root'] or not self.input['species']:
+        inp = self.input
+        if not inp['root'] or not inp['species']:
             return False
         # Add conc / prod boxes
         self.ior_boxes['yaxis'] = {}
         menu.column(0).addWidget(QLabel('Y-axis'))
-        for text in ('Prod', 'Conc'):
-            box = self.plot_menu_checkbox(text=text+'.', name=text.lower(), func=self.create_plot)
+        text = ('Prod.', 'Conc.')
+        name = ('prod','conc')
+        if inp['tracers']:
+            text = text[:1] + ('Conc. water', 'Conc. oil', 'Conc. gas')
+            name = name[:1] + ('conc_wat'   , 'conc_oil' , 'conc_gas')
+        for t,n in zip(text, name): #('Prod', 'Conc'):
+            #box = self.plot_menu_checkbox(text=text+'.', name=text.lower(), func=self.create_plot)
+            box = self.plot_menu_checkbox(text=t, name=n, func=self.create_plot)
             box.setStyleSheet(FONT_SMALL)
             menu.column(0).addWidget(box)#, alignment=Qt.AlignTop)
-            self.ior_boxes['yaxis'][text.lower()] = box
+            self.ior_boxes['yaxis'][n] = box
         # Add well boxes
         space = QLabel()
         space.setStyleSheet('font: 1pt')
@@ -3022,8 +3020,7 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_var_box = box
         self.ior_boxes['var'] = {}
         color = Color.cycle()
-        for i,specie in enumerate(self.input['species'] or []):
-            #layout, box = self.plot_menu_box_variable(specie, color=next(color), func=self.on_specie_click)
+        for i,specie in enumerate(self.input['species']): # or []):
             layout, box = self.plot_menu_box_variable(specie, color=next(color), func=self.on_var_click)
             self.ior_boxes['var'][specie] = box
             menu.column(1).addLayout(layout)
@@ -3351,13 +3348,20 @@ class main_window(QMainWindow):                                    # main_window
         case = Path(case or self.input['root']).with_suffix('')
         file = namedtuple('file', 'stem well skip')
         self.ior_files[str(case)] = [file(f'{case}_W_{well}', well, {'conc':0, 'prod':0}) for well in self.out_wells]
+        species, tracers = itemgetter('species', 'tracers')(self.input)
         # Initialize IOR data-dict
         ior = {w:{'days':[]} for w in self.out_wells}
-        [ior[w].update({out:{sp:[] for sp in self.input['species']+['Temp']} for out in ('conc','prod')}) for w in self.out_wells]
+        self.ior_conc = ('conc',)
+        if tracers:
+            self.ior_conc = tuple('conc_'+f for f in ('wat', 'oil', 'gas'))
+        out = ('prod',) + self.ior_conc
+        [ior[w].update({o:{sp:[] for sp in species+['Temp']} for o in out}) for w in self.out_wells]
         ior['days'] = []
         # Temperature only written to conc-file; prod temp refers to conc temp
         for w in self.out_wells:
-            ior[w]['prod']['Temp'] = ior[w]['conc']['Temp']
+            # ior[w]['prod']['Temp'] = ior[w]['conc']['Temp']
+            for yax in ('prod',)+self.ior_conc[1:]:
+                ior[w][yax]['Temp'] = ior[w][self.ior_conc[0]]['Temp']
         return ior
 
 
@@ -3385,6 +3389,9 @@ class main_window(QMainWindow):                                    # main_window
             data = self.data.get('ior')
         suffix = {'conc':'.trcconc', 'prod':'.trcprd'}
         total_days = ()
+        species = self.input['species']
+        nvar_prod = len(species)
+        nvar_conc = len(self.ior_conc)*nvar_prod
         for file in ior_files:
             welldata = []
             pos = []
@@ -3398,9 +3405,11 @@ class main_window(QMainWindow):                                    # main_window
                 welldata.append(list(zip(*new_data)))
             if len(welldata) == 2 and all(welldata):
                 cdata, pdata = welldata
-                days, temp, conc, prod = cdata[0], cdata[-1], cdata[1:-1], pdata[1:]
+                days, conc, prod = cdata[0], cdata[1:1+nvar_conc], pdata[1:1+nvar_prod]
+                #print(days, conc, prod)
                 # Check if data-set is complete
-                if not same_length(days, temp, *conc, *prod):
+                #if not same_length(days, temp, *conc, *prod):
+                if not same_length(days, *conc, *prod):
                     continue
                 # Enable menu-box
                 self.ior_boxes['well'][file.well].setEnabled(True)
@@ -3411,36 +3420,45 @@ class main_window(QMainWindow):                                    # main_window
                     total_days = days[start:]
                 well = data[file.well]
                 well['days'].extend(days[start:])
-                well['conc']['Temp'].extend(temp[start:])
-                for var, cvals, pvals in zip(self.input['species'], conc, prod):
-                    well['conc'][var].extend(cvals[start:])
+                if len(cdata) > nvar_conc + 1:
+                    temp = cdata[-1]
+                    #     temp = len(days[start:])*(0,)
+                    #well['conc']['Temp'].extend(temp[start:])
+                    well[self.ior_conc[0]]['Temp'].extend(temp[start:])
+                #for var, cvals, pvals in zip(self.input['species'], conc, prod):
+                    #well['conc'][var].extend(cvals[start:])
+                for var, pvals in zip(species, prod):
                     well['prod'][var].extend(pvals[start:])
+                for (var,yax), cvals in zip(product(species, self.ior_conc), conc):
+                    well[yax][var].extend(cvals[start:])
+                    #well['conc'][var].extend(cvals[start:])
                 # Save position to avoid reading same data again 
                 file.skip['conc'], file.skip['prod'] = pos
         data['days'].extend(total_days)
-        if all(data[w]['conc']=={} for w in self.out_wells):
+        if all(data[w]['prod']=={} for w in self.out_wells):
             return False
+        #print(data)
         return True
 
 
     
-    #-----------------------------------------------------------------------
-    def add_ior_field_data(self):
-    #-----------------------------------------------------------------------
-        # Sum well data as FIELD data
-        ior = self.data['ior']
-        days = (ior[w]['days'] for w in self.out_wells)
-        days = sort(unique(concatenate(list(days))))
-        #print(days)
-        ior['FIELD'] = {'days':days, 'conc':{}, 'prod':{}}
-        for var in self.input['species']:
-            #ior['FIELD']['conc'][var] = zeros(days.shape)
-            ior['FIELD']['prod'][var] = zeros(days.shape)
-        for w in self.out_wells:
-            size = ior[w]['days'].size
-            for var in self.input['species']:
-                #ior['FIELD']['conc'][var][-size:] += ior[w]['conc'][var]
-                ior['FIELD']['prod'][var][-size:] += ior[w]['prod'][var]    
+    # #-----------------------------------------------------------------------
+    # def add_ior_field_data(self):
+    # #-----------------------------------------------------------------------
+    #     # Sum well data as FIELD data
+    #     ior = self.data['ior']
+    #     days = (ior[w]['days'] for w in self.out_wells)
+    #     days = sort(unique(concatenate(list(days))))
+    #     #print(days)
+    #     ior['FIELD'] = {'days':days, 'conc':{}, 'prod':{}}
+    #     for var in self.input['species']:
+    #         #ior['FIELD']['conc'][var] = zeros(days.shape)
+    #         ior['FIELD']['prod'][var] = zeros(days.shape)
+    #     for w in self.out_wells:
+    #         size = ior[w]['days'].size
+    #         for var in self.input['species']:
+    #             #ior['FIELD']['conc'][var][-size:] += ior[w]['conc'][var]
+    #             ior['FIELD']['prod'][var][-size:] += ior[w]['prod'][var]    
 
     #-----------------------------------------------------------------------
     def create_plot(self, keep_ref=True):                         # main_window

@@ -3,7 +3,6 @@
 
 from collections import Counter, namedtuple
 from itertools import accumulate, chain, dropwhile, takewhile
-from locale import getpreferredencoding
 from operator import itemgetter
 from pathlib import Path
 from sys import platform
@@ -443,8 +442,9 @@ class IORSim_input(File):                                              # iorsim_
         if not self.exists(raise_error):
             return []
         tracers = flatten(get_keyword(self.path, '\*NAME', end='\*'))
-        #if tracers:
+        # if tracers:
         #    tracers = [t+f for t in tracers for f in ('_wat', '_oil', '_gas')]
+        #    #tracers = [''.join(p) for p in product(tracers, ('_wat', '_oil', '_gas'))]
         #print('tracers', tracers)
         return tracers
 
@@ -466,7 +466,7 @@ class IORSim_input(File):                                              # iorsim_
                 #print(w)
                 w = w[0]
                 in_wells = w[1:1+int(w[0])]
-        #print(out_wells, in_wells)
+        #print('IORSim:',out_wells, in_wells)
         return sorted(out_wells), sorted(in_wells)
 
 
@@ -920,13 +920,13 @@ class Simulation:                                                        # Simul
             self.runlog.close()
 
 
-    #--------------------------------------------------------------------------------
-    def versions(self):                                                  # Simulation
-    #--------------------------------------------------------------------------------
-        txt = f'Python: {get_python_version()}\n'
-        txt += f'psutil: {psutil_version}\n'
-        txt += f'Application: {__version__}\n'
-        return txt
+    # #--------------------------------------------------------------------------------
+    # def versions(self):                                                  # Simulation
+    # #--------------------------------------------------------------------------------
+    #     txt = f'Python: {get_python_version()}\n'
+    #     txt += f'psutil: {psutil_version}\n'
+    #     txt += f'Application: {__version__}\n'
+    #     return txt
 
 
     #--------------------------------------------------------------------------------
@@ -1091,7 +1091,7 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
         # Print header
         silentdelete(self.merge_OK)
-        self.print2log(self.versions())
+        # self.print2log(self.versions())
         self.print2log(self.info_header())
         msg = conv_msg = ''
         success = False
