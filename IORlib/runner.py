@@ -398,7 +398,7 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def __init__(self, T=0, n=0, t=0, name='', case='', exe='', cmd=None, pipe=False,
                  verbose=3, timer=None, runlog=None, ext_iface=(), ext_OK=(),
-                 keep_files=False, stop_children=True, keep_alive=False, lognr=None, 
+                 keep_files=False, stop_children=True, keep_alive=False, logtag=None, 
                  time_regex=None, **kwargs):           # Runner
     #--------------------------------------------------------------------------------
         #print('runner.__init__: ',keep_alive, N,T,name,case,exe,cmd,ext_iface,ext_OK)
@@ -411,7 +411,8 @@ class Runner:                                                               # Ru
         self.case = Path(case)
         self.exe = exe
         self.cmd = cmd
-        self.logname = self.case.parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log'
+        #self.logname = self.case.parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log'
+        self.logname = self.case.parent/f'{name.lower()}{logtag or ""}.log'
         self.logname.write_text('') # Clear old logs
         self.log = None
         self.runlog = runlog

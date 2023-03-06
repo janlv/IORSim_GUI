@@ -23,7 +23,7 @@ from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file)
 
-__version__ = '3.3'
+__version__ = '3.3.1'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -377,26 +377,21 @@ class IORSim_input(File):                                              # iorsim_
     def check(self, error_msg=''):                                     # iorsim_input
     #--------------------------------------------------------------------------------
         msg = error_msg and error_msg+': ' or ''
-
         warn = ''
         ### Check if input-file exists
         self.exists(raise_error=True)
         # if not self.file.is_file():
         #     raise SystemError(f'ERROR {msg}missing input file {self.file.name}')
-
         ### Check if included files exists
         if (missing := [f for f in self.include_files() if not f.is_file()]):
             raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.path.name} is missing in folder {missing[0].parent.resolve()}")
-
         ### Check if tstart == 0
         inte = get_keyword(self.path, '\*INTEGRATION', end='\*')
         if inte and (tstart := inte[0][0]) > 0:
             warn += f'WARNING The IORSim start-time should be 0 but is currently {tstart}. Update the *INTEGRATION keyword in {self.path.name} to avoid sync problems.'
-
         ### Check if required keywords are used, and if the order is correct
         if self.check_format:
             self.check_keywords()
-
         return warn
 
 
@@ -878,8 +873,9 @@ class Simulation:                                                        # Simul
         self.output = namedtuple('output',['convert','merge','del_convert','del_merge'])(convert, merge, del_convert, del_merge)
         self.runlog = None
         if self.root and not to_screen:
-            lognr = kwargs.get('lognr')
-            self.runlog = safeopen(self.root.parent/f'{self.logname}{lognr and "_" or ""}{lognr or ""}.log', 'w')
+            logtag = kwargs.get('logtag')
+            #self.runlog = safeopen(self.root.parent/f'{self.logname}{lognr and "_" or ""}{lognr or ""}.log', 'w')
+            self.runlog = safeopen(self.root.parent/f'{self.logname}{logtag or ""}.log', 'w')
         self.print2log = lambda txt, **kwargs: print(txt, file=self.runlog, flush=True, **kwargs)
         self.current_run = None
         self.run_names = run_names
@@ -901,7 +897,7 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def prepare(self):                                                     # Simulation
+    def prepare(self):                                                   # Simulation
     #--------------------------------------------------------------------------------
         if not self.run_sim and self.root:
             try:
@@ -938,8 +934,9 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def init_runs(self):                                                 # Simulation
     #--------------------------------------------------------------------------------
-        'Read Eclipse and IORSim input files, run the init_func, and return the run_func'
-
+        """
+        Read Eclipse and IORSim input files, run the init_func, and return the run_func
+        """
         self.restart_days = 0
         ### Check if this is a restart-run
         file, step = self.ECL_inp.get('RESTART')
@@ -952,17 +949,13 @@ class Simulation:                                                        # Simul
             time, n = next(self.restart_file.read('time', 'step', drop=lambda x:x[1]<step))
             if n != step:
                 raise SystemError(f'ERROR Step {step} is missing in restart file {self.restart_file}')
-            #time, n = self.restart_file.get('time', 'step', stop=('step', step))
-            #if step > n[-1] or not step in n: 
-            #    new_step = min(n, key=lambda x:abs(x-step))
-            #    raise SystemError(f'ERROR Error in the Eclipse input-file ({self.ECL_inp}): Unable to restart from step {step}, use {new_step} instead')
-            #self.restart_days = time[n.index(step)]
             self.restart_days = time
             self.restart = True
         ### Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
-        #self.start = self.restart_file and self.restart_file.dates(N=1) or self.ECL_inp.get('START')[0]
         self.start = next(self.restart_file.dates()) if self.restart_file else self.ECL_inp.get('START')[0]
-        self.mode = self.mode or (('READDATA' in self.ECL_inp) and 'backward' or 'forward')
+        #self.mode = self.mode or (('READDATA' in self.ECL_inp) and 'backward' or 'forward')
+        mode =  'backward' if ('READDATA' in self.ECL_inp) else 'forward'
+        self.mode = self.mode or mode
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
         check_ok = False
@@ -981,6 +974,8 @@ class Simulation:                                                        # Simul
         kwargs.update({'T':self.T})
         if not self.run_names:
             self.run_names = ('eclipse','iorsim')
+        if not IORSim_input(self.root, check=False).is_file():
+            self.run_names = ('eclipse',)
         for name in self.run_names:
             if name=='eclipse':
                 self.ecl = EclipseForward(exe=eclexe, **kwargs)
@@ -999,8 +994,7 @@ class Simulation:                                                        # Simul
             self.T = time
         else:
             self.T = self.init_days + 1
-            self.update.message(text=f'INFO Simulation time increased to advance past the READDATA keyword in {self.ECL_inp}')
-        #self.T = time 
+            self.update.message(text='INFO Simulation time increased to advance past the READDATA keyword')
         kwargs.update({'T':self.T, 'tsteps':self.tsteps})
         # Init runs
         self.ecl = EclipseBackward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs)
@@ -1376,7 +1370,7 @@ def parse_input(settings_file=None):
     parser.add_argument('-ecl_alive',      help=f'Keep Eclipse alive at least {ECL_ALIVE_LIMIT} seconds', action='store_true')
     parser.add_argument('-ior_alive',      help=f'Keep IORSim alive', action='store_true')
     parser.add_argument('-check_input',    help='Check IORSim input file keywords', action='store_true', dest='check_input_kw')
-    parser.add_argument('-lognr',          help='Add this number to the log-files', type=int)
+    parser.add_argument('-logtag',          help='Add this tag to the log-files', type=int)
     args = vars(parser.parse_args())
     if SCHEDULE_SKIP_EMPTY: 
         args['skip_empty'] = not args['not_skip_empty']
@@ -1403,7 +1397,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
            ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, check_input=False, 
-           verbose=DEFAULT_LOG_LEVEL, lognr=None, skip_empty=SCHEDULE_SKIP_EMPTY):
+           verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1438,23 +1432,24 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
     #----------------------------------------
     def message(text=None, **x):
     #----------------------------------------
-        text and print(f'\n\n     {text}\n')
+        if text:
+            print(f'\n\n     {text}\n')
 
     # Check if we only run eclipse or iorsim
     mode, runs = None, []
     if only_eclipse or only_iorsim:
         mode = 'forward'
-        runs = only_eclipse and ['eclipse'] or ['iorsim']
+        runs = ['eclipse'] if only_eclipse else ['iorsim']
 
     sim = Simulation(root=root, time=time, iorexe=iorexe, eclexe=eclexe, 
                      check_unrst=check_unrst, check_rft=check_rft, keep_files=keep_files, 
                      progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert, merge=merge, delete=delete, ecl_keep_alive=ecl_alive,
                      ior_keep_alive=ior_alive, run_names=runs, mode=mode, check_input_kw=check_input, verbose=verbose,
-                     lognr=lognr, skip_empty=skip_empty)
+                     logtag=logtag, skip_empty=skip_empty)
     sim.prepare()
     if not sim.ready():
-        return 
+        return
 
     if only_convert or only_merge:
         sim.convert_and_merge(case=sim.root, only_merge=only_merge)
@@ -1469,7 +1464,6 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
 
 @print_error
 #--------------------------------------------------------------------------------
-#def main(case_dir='GUI/cases', settings_file='GUI/settings.txt'):
 def main(settings_file=None):
 #--------------------------------------------------------------------------------
     from os import _exit as os_exit
@@ -1478,7 +1472,7 @@ def main(settings_file=None):
            to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
            delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
            ecl_alive=args['ecl_alive'] and ECL_ALIVE_LIMIT, ior_alive=args['ior_alive'] and IOR_ALIVE_LIMIT, only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
-           check_input=args['check_input_kw'], verbose=args['v'], lognr=args['lognr'], skip_empty=args['skip_empty'])
+           check_input=args['check_input_kw'], verbose=args['v'], logtag=args['logtag'], skip_empty=args['skip_empty'])
     os_exit(0)
 
 
