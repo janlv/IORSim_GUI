@@ -1902,6 +1902,7 @@ class main_window(QMainWindow):                                    # main_window
         self.schedule = None
         self.trcinp = None
         self.cases = ()
+        self.max_days = None
         self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 
                       'species':[], 'tracers':[], 'mode':None, 'cases':[]}
         self.input_to_save = ('root', 'days', 'mode', 'cases')
@@ -2596,6 +2597,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_mode_select(self, nr):                               # main_window
     #-----------------------------------------------------------------------
+        #print('on_mode_select')
         self.reset_progress_and_message()
         if nr < 0 or not self.case:
             return
