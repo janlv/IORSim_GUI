@@ -267,11 +267,9 @@ def make_scrollable(widget, resizable=True):
     scroll.setWidget(widget)
     scroll.setWidgetResizable(resizable)
     return scroll
-
-
     
 #-----------------------------------------------------------------------
-def show_message(window, kind, text='', extra='', ok_text=None, wait=False, detail=None, button=None):
+def show_message(_window, kind, text='', extra='', ok_text=None, wait=False, detail=None, button=None):
 #-----------------------------------------------------------------------
     kind = kind.lower()
     if kind=='info':
@@ -288,7 +286,7 @@ def show_message(window, kind, text='', extra='', ok_text=None, wait=False, deta
         icon = QMessageBox.Critical
     else:
         raise SystemError(f'Unrecognized kind-option in show_message(): {kind}')
-    msg = QMessageBox(window)
+    msg = QMessageBox(_window)
     msg.setWindowTitle(title)
     msg.setIcon(icon)
     msg.setText(text)
@@ -691,6 +689,7 @@ class SubPlot():
         'iprodecl' : 'Inj. prod. [SM3]',
         'rateecl' : 'Prod. rate [SM3/day]',
         'irateecl' : 'Inj. rate [SM3/day]'}
+        #'presecl' : 'Pressure [BARSA]',
 
     #-----------------------------------------------------------------------
     #def __init__(self, fig=None, nrows=None, index=None, title='', labels=(), data=None, varbox=None):
@@ -1874,15 +1873,13 @@ class main_window(QMainWindow):                                    # main_window
         self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
         self.setStyleSheet(FONT_LARGE)
         self.silent_upgrade = False
-        #self.plot_lines = None
-        self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
-        # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
-        self.ecl_yaxes =       {'PR':'rate',   'PT':'prod',    'PC':'rate',   'IR':'irate',        'IT':'iprod'}
-        self.ecl_yaxes_names = {'rate':'Rate', 'prod':'Prod.', 'rate':'Rate', 'irate':'Inj. rate', 'iprod':'Inj. prod.'}
-        self.ecl_keys = ['WTPCHEA'] + list(''.join(p) for p in product(
-            ('W','F'), ('O','W','G','C'), self.ecl_yaxes.keys()))
+        # self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
+        # # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
+        # self.ecl_yaxes =       {'PR':'rate',   'PT':'prod',    'PC':'rate',   'IR':'irate',        'IT':'iprod'}
+        # self.ecl_yaxes_names = {'rate':'Rate', 'prod':'Prod.', 'rate':'Rate', 'irate':'Inj. rate', 'iprod':'Inj. prod.'}
+        # self.ecl_keys = ['WTPCHEA'] + list(''.join(p) for p in product(
+        #     ('W','F'), ('O','W','G','C'), self.ecl_yaxes.keys()))
         self.data = {}
-        #self.plot_ref_data = {}
         self.ecl_boxes = {}
         self.ior_boxes = {}
         self.log_file = None
@@ -1893,7 +1890,6 @@ class main_window(QMainWindow):                                    # main_window
         self.check_version_worker = None
         self.convert = None
         self.view = False
-        #self.plot_ref = None
         self.progress = None
         # User guide window
         self.pdf_view = None
@@ -1915,13 +1911,13 @@ class main_window(QMainWindow):                                    # main_window
         # Move window if upper left corner is outside limits
         # This check must come after self.show()
         pos = self.frameGeometry().topLeft().toTuple()
-        if any([p<0 for p in pos]):
+        if any(p<0 for p in pos):
             x, y = [-min(p,0) for p in pos]
-            self.setGeometry(self.geometry().adjusted(x, y, x, y))            
+            self.setGeometry(self.geometry().adjusted(x, y, x, y))
         #print(self.screen().geometry())
-        CHECK_VERSION_AT_START and self.check_version(silent=True)
+        if CHECK_VERSION_AT_START:
+            self.check_version(silent=True)
                 
-
     #-----------------------------------------------------------------------
     def initUI(self):                                          # main_window
     #-----------------------------------------------------------------------
@@ -2802,14 +2798,6 @@ class main_window(QMainWindow):                                    # main_window
         self.unsmry = {}
         self.ior_files = {}
         self.data = {}
-        # self.menu_boxes = {}
-        # for menu in (self.ior_incl_menu, self.ecl_incl_menu):
-        #     menu.clear()
-        #     menu.setEnabled(False)
-        # for menu in (self.ior_menu, self.ecl_menu):
-        #     delete_all_widgets_in_layout(menu.layout())
-        # self.ior_boxes = {}
-        # self.ecl_boxes = {}
         self.schedule = None
         self.trcinp = None
         for editor in self.editors:
@@ -2837,6 +2825,8 @@ class main_window(QMainWindow):                                    # main_window
         self.set_variables_from_casefiles()
         if root:
             self.on_mode_select(self.mode_cb.currentIndex())
+        self.data['ecl'] = self.init_ecl_data()
+        self.data['ior'] = self.init_ior_data()
         # Add menu boxes
         self.update_ecl_menu()
         self.menu_boxes['ecl'] = self.ecl_boxes
@@ -2849,9 +2839,9 @@ class main_window(QMainWindow):                                    # main_window
         if not self.is_eclipse_mode():
             self.update_menu_boxes('ior')
         # Init and read data
-        self.data['ecl'] = self.init_ecl_data()
+        #self.data['ecl'] = self.init_ecl_data()
         self.read_ecl_data()
-        self.data['ior'] = self.init_ior_data()
+        #self.data['ior'] = self.init_ior_data()
         self.read_ior_data()
         # Create plot
         self.create_plot()
@@ -3044,7 +3034,6 @@ class main_window(QMainWindow):                                    # main_window
         for box in self.ior_boxes['var'].values():
             box.setChecked(checked)
 
-
     #-----------------------------------------------------------------------
     def get_eclipse_well_yaxis_fluid(self, case=None, raise_error=True):    # main_window
     #-----------------------------------------------------------------------
@@ -3082,6 +3071,13 @@ class main_window(QMainWindow):                                    # main_window
         #  FWCT    - field water cut total (prod)
         #  ROIP    - Reservoir oil in place
 
+        self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
+        # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
+        self.ecl_yaxes =       {'PR':'rate',   'PT':'prod',    'PC':'rate',   'IR':'irate',        'IT':'iprod'}
+        self.ecl_yaxes_names = {'rate':'Rate', 'prod':'Prod.', 'rate':'Rate', 'irate':'Inj. rate', 'iprod':'Inj. prod.'}
+        keys = list(''.join(p) for p in product(('W','F'), ('O','W','G','C'), self.ecl_yaxes.keys()))
+        self.ecl_keys = ['WTPCHEA'] + keys
+
         case = case or self.case #input['root']
         self.unsmry[str(case)] = UNSMRY_file(case)
         ### Create dict of format [well][yaxis][fluid] = []
@@ -3107,23 +3103,30 @@ class main_window(QMainWindow):                                    # main_window
             return False
         if data is None:
             data = self.data.get('ecl')
-        new_data = unsmry.data(keys=self.ecl_keys)
+        new_data = unsmry.read(keys=self.ecl_keys)
         # Enable menu-well-boxes for active wells
-        for well in set(new_data.wells):
+        #for well in set(new_data.wells):
+        for well in set(unsmry.wells):
             if box := self.ecl_boxes['well'].get(well):
                 box.setEnabled(True)
-        if new_data.days:
-            ### Skip zero-time data
+        #if new_data.days:
+        if new_data:
             start = 0
             if skip_zero and new_data.days[0] < 1e-8:
+                ### Skip zero-time data
                 start = 1
             data['days'].extend(new_data.days[start:])
-            for w in set(new_data.wells):
+            #for w in set(new_data.wells):
+            for w in set(unsmry.wells):
                 data[w]['days'].extend(new_data.days[start:])
             ### Index to map read data to ecl[well][yaxis][fluid]
-            wyf_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(new_data.wells, new_data.keys)]
-            for (w,y,f),*d in zip(wyf_index, *new_data.welldata[start:]):
-                data[w][y][f].extend(d)
+            # wyf_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(new_data.wells, new_data.keys)]
+            # for (w,y,f),*d in zip(wyf_index, *new_data.welldata[start:]):
+            #     data[w][y][f].extend(d)
+            for val in new_data.values:
+                y = self.ecl_yaxes[val.key[2:4]]
+                f = self.ecl_fluids[val.key[1]]
+                data[val.well][y][f].extend(val.data[start:])
         return True
 
 
