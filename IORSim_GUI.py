@@ -205,7 +205,9 @@ class Color:
     yellow = GUI_color(188,189,34)  #bcbd22
     turq   = GUI_color(23,190,207)  #17becf
     as_tuple = (blue, orange, green, red, violet, brown, pink, gray, yellow, turq)
-    fluid = {'Oil':red, 'Water':blue, 'Gas':green, 'Polymer':orange}
+    #fluid = {'oil':red, 'water':blue, 'gas':green, 'polymer':orange}
+    fluid = {'oprod':red, 'wprod':blue, 'wcut':dark, 'winj':turq, 'gprod':green, 
+             'temp':black, 'pprod':orange, 'pinj':yellow, 'thead':pink, 'bhole':brown}
     
     @staticmethod
     def cycle():
@@ -685,16 +687,16 @@ class SubPlot():
         'conc_oilior' : 'concentration in oil [mol/L]',
         'conc_gasior' : 'concentration in gas [mol/L]',
         'prodior' : 'Production [mass/day]',
-        'prodecl' : 'Cum. prod. [SM3]',
-        'iprodecl' : 'Inj. prod. [SM3]',
-        'rateecl' : 'Prod. rate [SM3/day]',
-        'irateecl' : 'Inj. rate [SM3/day]'}
-        #'presecl' : 'Pressure [BARSA]',
+        'totalecl': 'Production [SM3]',
+        'rateecl' : 'Rate [SM3/day]',
+        'presecl' : 'Pressure [BARSA]',
+        'cutecl'  : 'Fraction'}
 
     #-----------------------------------------------------------------------
-    #def __init__(self, fig=None, nrows=None, index=None, title='', labels=(), data=None, varbox=None):
     def __init__(self, fig=None, nrows=None, index=None, comb=None, data=None, varbox=None):
     #-----------------------------------------------------------------------
+        self.yaxis = {'conc':'Concentration', 'prod':'Production', 'total':'Total', 'cut':'Water cut',
+                      'pres':'Pressure', 'rate':'Rate'}
         self.data = data
         self.comb = comb    # namedtuple('comb','kind yaxis well')
         self.varbox = varbox
@@ -715,7 +717,7 @@ class SubPlot():
     #-----------------------------------------------------------------------
         name = 'Eclipse' if comb.kind == 'ecl' else 'IORSim'
         tag = 'well ' if comb.well != 'FIELD' else ''
-        lax.title.set_text(f'{name}, {tag}{comb.well}')
+        lax.title.set_text(f'{name}, {tag}{comb.well} {self.yaxis[comb.yaxis]}')
 
     #-----------------------------------------------------------------------
     def set_labels(self, lax, rax, comb):                           # SubPlot
@@ -762,6 +764,11 @@ class SubPlot():
                     print(f'Size mismatch for {var_}: {len(x)} != {len(y[var_])}')
         self.update_axes()
 
+    # #-----------------------------------------------------------------------
+    # def is_visible(self, y, var): 
+    # #-----------------------------------------------------------------------
+    #     return self.varbox[var].isChecked() and any(y[var] > MIN_PLOT_VALUE) 
+
     #-----------------------------------------------------------------------
     def create_lines(self, prop):                                  # SubPlot
     #-----------------------------------------------------------------------
@@ -778,7 +785,10 @@ class SubPlot():
             if 'temp' in var.lower():
                 ax = self.axes[1]
                 self.temp = var
-            self.lines[var], = ax.plot(x, y[var], **prop[var]._asdict())
+            #print(var, y[var][-1:])
+            #print('prop',prop[var])
+            self.lines[var], = ax.plot(x, y[var], **prop[var]._asdict(), visible=self.varbox[var].isChecked())
+            #self.lines[var].set_visible(self.varbox[var].isChecked())
 
     #-----------------------------------------------------------------------
     def create_ref_lines(self, data, lw=1.5, alpha=0.3):                              # SubPlot
@@ -890,7 +900,7 @@ class Plots:
         ecl_prop  = {fluid:prop(str(col)) for fluid,col in Color.fluid.items()}
         color = Color.cycle()
         ior_prop  = {specie:prop(str(next(color))) for specie in species}
-        temp_prop = {temp:prop(str(Color.black), '--', 0.5) for temp in ('Temp','Temp_ecl')}
+        temp_prop = {temp:prop(str(Color.black), '--', 0.5) for temp in ('Temp','Temp_ecl','temp')}
         return {**ecl_prop, **ior_prop, **temp_prop}
 
 
@@ -3044,12 +3054,14 @@ class main_window(QMainWindow):                                    # main_window
         #print('vars', set(vars))
         if not vars and raise_error:
             raise SystemError('SUMMARY keywords missing,\n\nEclipse plotting disabled.')
-        fy = ((f,y) for v in set(vars) if (f:=self.ecl_fluids.get(v[1])) and (y:=self.ecl_yaxes.get(v[2:4])))
+        #fy = ((f,y) for v in set(vars) if (f:=self.ecl_fluids.get(v[1])) and (y:=self.ecl_yaxes.get(v[2:4])))
+        fy = ((f,y) for v in set(vars) if (f:=self.ecl_fluids.get(v[1:3])) and (y:=self.ecl_yaxes.get(v[2:4])))
         fluids, yaxis = zip(*fy)
         wells = sorted(ecl.wellnames())
         if any(v[0]=='F' and v[2:4] in ('PR','PT') for v in vars):
             wells.insert(0, 'FIELD')
-        fluids = list(set(fluids)-set(['Temp_ecl']))
+        fluids = list(set(fluids)-set(['temp']))
+        #fluids = list(set(fluids)-set(['Temp_ecl']))
         #print(fluids)
         #print(yaxis)
         return wells, sorted(set(yaxis)), fluids
@@ -3071,12 +3083,21 @@ class main_window(QMainWindow):                                    # main_window
         #  FWCT    - field water cut total (prod)
         #  ROIP    - Reservoir oil in place
 
-        self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
+        # self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
+        # # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
+        # self.ecl_yaxes =       {'PR':'rate',   'PT':'prod',    'PC':'rate',   'IR':'irate',        'IT':'iprod', 'HP':'pres'}
+        # self.ecl_yaxes_names = {'rate':'Rate', 'prod':'Prod.', 'rate':'Rate', 'irate':'Inj. rate', 'iprod':'Inj. prod.', 'prod'}
+        self.ecl_fluids = {'OP':'oprod', 'WP':'wprod', 'WC':'wcut', 'WI':'winj', 'GP':'gprod', 'TP':'temp', 
+                           'CP':'pprod', 'CI':'pinj', 'TH':'thead', 'BH':'bhole'}
+        self.ecl_fluids_names = {'oprod':'Oil prod.', 'wprod':'Water prod.', 'wcut':'Water cut', 'winj':'Water inj.',
+                                 'gprod':'Gas prod.', 'temp':'Temp.', 'pprod':'Polymer prod.', 'pinj':'Polymer inj.', 'thead':'Tubing head', 'bhole':'Bottom hole'}
+        # self.ecl_fluids_colors = {'oprod':Color.red, 'wprod':Color.blue, 'wcut':Color.dark, 'winj':Color.pink,
+        #                          'gprod':Color.green, 'temp':Color.black, 'pprod':Color.orange, 'thead':Color.turq, 'bhole':Color.brown}
         # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
-        self.ecl_yaxes =       {'PR':'rate',   'PT':'prod',    'PC':'rate',   'IR':'irate',        'IT':'iprod'}
-        self.ecl_yaxes_names = {'rate':'Rate', 'prod':'Prod.', 'rate':'Rate', 'irate':'Inj. rate', 'iprod':'Inj. prod.'}
+        self.ecl_yaxes =       {'IR':'rate', 'PR':'rate', 'PT':'total', 'IT':'total', 'PC':'rate', 'HP':'pres', 'CT':'cut'}
+        self.ecl_yaxes_names = {'rate':'Rate', 'total':'Total', 'pres':'Pressure', 'cut':'Cut'}
         keys = list(''.join(p) for p in product(('W','F'), ('O','W','G','C'), self.ecl_yaxes.keys()))
-        self.ecl_keys = ['WTPCHEA'] + keys
+        self.ecl_keys = ['WTPCHEA','WTHP','WBHP'] + keys
 
         case = case or self.case #input['root']
         self.unsmry[str(case)] = UNSMRY_file(case)
@@ -3089,7 +3110,8 @@ class main_window(QMainWindow):                                    # main_window
         # Prod temp refers to rate temp
         for w in wellnames:
             for yaxis in (set(self.ecl_yaxes.values()) - set('rate')):
-                ecl[w][yaxis]['Temp_ecl'] = ecl[w]['rate']['Temp_ecl']
+                #ecl[w][yaxis]['Temp_ecl'] = ecl[w]['rate']['Temp_ecl']
+                ecl[w][yaxis]['temp'] = ecl[w]['rate']['temp']
         return ecl
 
 
@@ -3105,27 +3127,22 @@ class main_window(QMainWindow):                                    # main_window
             data = self.data.get('ecl')
         new_data = unsmry.read(keys=self.ecl_keys)
         # Enable menu-well-boxes for active wells
-        #for well in set(new_data.wells):
         for well in set(unsmry.wells):
             if box := self.ecl_boxes['well'].get(well):
                 box.setEnabled(True)
-        #if new_data.days:
         if new_data:
             start = 0
             if skip_zero and new_data.days[0] < 1e-8:
                 ### Skip zero-time data
                 start = 1
             data['days'].extend(new_data.days[start:])
-            #for w in set(new_data.wells):
             for w in set(unsmry.wells):
                 data[w]['days'].extend(new_data.days[start:])
-            ### Index to map read data to ecl[well][yaxis][fluid]
-            # wyf_index = [(w, self.ecl_yaxes[k[2:4]], self.ecl_fluids[k[1]]) for w,k in zip(new_data.wells, new_data.keys)]
-            # for (w,y,f),*d in zip(wyf_index, *new_data.welldata[start:]):
-            #     data[w][y][f].extend(d)
             for val in new_data.values:
+                # y = self.ecl_yaxes[val.key[2:4]]
+                # f = self.ecl_fluids[val.key[1]]
                 y = self.ecl_yaxes[val.key[2:4]]
-                f = self.ecl_fluids[val.key[1]]
+                f = self.ecl_fluids[val.key[1:3]]
                 data[val.well][y][f].extend(val.data[start:])
         return True
 
@@ -3146,7 +3163,7 @@ class main_window(QMainWindow):                                    # main_window
             lbl.setText(str(e))
             menu.layout().addWidget(lbl)
             return
-        # prod/rate
+        # yaxis
         menu.column(0).addWidget(QLabel('Y-axis'))
         self.ecl_boxes['yaxis'] = {}
         for i,name in enumerate(yaxis):
@@ -3184,7 +3201,7 @@ class main_window(QMainWindow):                                    # main_window
             all_wells.stateChanged.disconnect()
             all_wells.stateChanged.connect(self.set_all_ecl_well_boxes)
             self.ecl_all_wells = all_wells
-        # variables
+        # variables/fluids
         box = self.plot_menu_checkbox(text='Variables', name='ecl_var')
         box.setStyleSheet(FONT_LARGE)
         box.setChecked(True)
@@ -3192,16 +3209,19 @@ class main_window(QMainWindow):                                    # main_window
         menu.column(1).addWidget(box)
         self.ecl_var_box = box
         self.ecl_boxes['var'] = {}
-        for var in fluids:
+        for var in sorted(fluids):
+            name = self.ecl_fluids_names[var]
             color = Color.fluid.get(var)
             #layout, box = self.plot_menu_box_variable(var, color=color, func=self.on_ecl_var_click)
-            layout, box = self.plot_menu_box_variable(var, color=color, func=self.on_var_click)
+            layout, box = self.plot_menu_box_variable(name, boxname=var, color=color, func=self.on_var_click)
             self.ecl_boxes['var'][var] = box
             menu.column(1).addLayout(layout)
-        layout, box = self.plot_menu_box_variable('Temp', boxname='Temp_ecl', linestyle='dotted',
+        layout, box = self.plot_menu_box_variable('Temp', boxname='temp', linestyle='dotted',
                                                     color=Color.gray, func=self.on_var_click)
-                                                    #color=Color.gray, func=self.on_ecl_var_click)
-        self.ecl_boxes['var']['Temp_ecl'] = box
+        # layout, box = self.plot_menu_box_variable('Temp', boxname='Temp_ecl', linestyle='dotted',
+        #                                             color=Color.gray, func=self.on_var_click)
+        self.ecl_boxes['var']['temp'] = box
+        # self.ecl_boxes['var']['Temp_ecl'] = box
         menu.column(1).addLayout(layout)
         # if checked:
         #     self.update_menu_boxes('ecl')
