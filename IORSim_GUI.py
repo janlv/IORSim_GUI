@@ -3125,7 +3125,7 @@ class main_window(QMainWindow):                                    # main_window
             return False
         if data is None:
             data = self.data.get('ecl')
-        new_data = unsmry.read(keys=self.ecl_keys)
+        new_data = unsmry.read(keys=self.ecl_keys, only_new=True)
         # Enable menu-well-boxes for active wells
         for well in set(unsmry.wells):
             if box := self.ecl_boxes['well'].get(well):

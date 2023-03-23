@@ -84,9 +84,9 @@ class Eclipse(Runner):                                                      # ec
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                          # eclipse
     #--------------------------------------------------------------------------------
-        ''' 
-        Delete output-files
-        '''
+        """ 
+        Delete case-specific output-files
+        """
         file_ext = ('*UNRST','RFT','SMSPEC','UNSMRY','RTELOG','RTEMSG','MSG','session*','dbprtx.lock*')
         delete_files_matching( [f'{self.case}*.{ext}' for ext in file_ext] )
         delete_files_matching(self.case.parent/'fort??????')
@@ -499,16 +499,11 @@ class Iorsim(Runner):                                                        # i
     def time(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
         ### Find most recently modified file
-        #files = ((f, f.stat().st_size) for f in self.case.parent.glob(f'{self.case.stem}*.trcconc'))
-        #files = ((f, f.stat().st_mtime_ns) for f in self.case.parent.glob(f'{self.case.stem}*.trcconc'))
         files = ((f, f.stat().st_mtime_ns) for f in File(self.case).glob('*.trcconc'))
         files = sorted(files, key=itemgetter(1))
         file = files[-1][0] if files else ''
-        #print('files:', files)
-        #print('file:', file)
         try:
             values = next(tail_file(file, size=1000),'').split('\n')[-2].strip().split()
-            #print('IORSim time:',float(values[0]))
             return float(values[0])
         except (ValueError, IndexError): # as e:
             #print(e)
@@ -1085,7 +1080,6 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
         # Print header
         silentdelete(self.merge_OK)
-        # self.print2log(self.versions())
         self.print2log(self.info_header())
         msg = conv_msg = ''
         success = False
@@ -1397,7 +1391,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
            ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, check_input=False, 
-           verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY):
+           verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY, plot=None):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1406,7 +1400,14 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
             value = value.replace('INFO','').strip()
             print('\r   '+value+(80-len(value))*' ', end=x.get('newline') and '\n' or '')
 
+    #----------------------------------------
+    def message(text=None, **x):
+    #----------------------------------------
+        if text:
+            print(f'\n\n     {text}\n')
+
     prog = Progress(format='40#')
+
     #----------------------------------------
     def progress(run=None, value=None, min=None, n0=None):
     #----------------------------------------
@@ -1426,15 +1427,11 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
             # elif value==0:
             #     prog.reset_time(min=prog.min)
             prog.print(value, text=run and f'({run.name})' or '')
-            
+        if plot and run and run.is_eclipse():
+            if isinstance(plot, dict):
+                run.unsmry.plot(**plot)
         #print('progress out:', value, prog)
             
-    #----------------------------------------
-    def message(text=None, **x):
-    #----------------------------------------
-        if text:
-            print(f'\n\n     {text}\n')
-
     # Check if we only run eclipse or iorsim
     mode, runs = None, []
     if only_eclipse or only_iorsim:
