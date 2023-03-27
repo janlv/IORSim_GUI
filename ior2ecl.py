@@ -388,7 +388,7 @@ class IORSim_input(File):                                              # iorsim_
         ### Check if tstart == 0
         inte = get_keyword(self.path, '\*INTEGRATION', end='\*')
         if inte and (tstart := inte[0][0]) > 0:
-            warn += f'WARNING The IORSim start-time should be 0 but is currently {tstart}. Update the *INTEGRATION keyword in {self.path.name} to avoid sync problems.'
+            warn += f'INFO It is recommended to start IORSim at time 0 instead of {tstart}.'
         ### Check if required keywords are used, and if the order is correct
         if self.check_format:
             self.check_keywords()
@@ -1427,9 +1427,9 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
             # elif value==0:
             #     prog.reset_time(min=prog.min)
             prog.print(value, text=run and f'({run.name})' or '')
-        if plot and run and run.is_eclipse():
-            if isinstance(plot, dict):
-                run.unsmry.plot(**plot)
+        #if plot and run and run.is_eclipse:
+        #    if isinstance(plot, dict):
+        #        run.unsmry.plot(**plot)
         #print('progress out:', value, prog)
             
     # Check if we only run eclipse or iorsim
