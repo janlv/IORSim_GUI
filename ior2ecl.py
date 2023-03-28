@@ -1391,7 +1391,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
            ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, check_input=False, 
-           verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY, plot=None):
+           verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY, finished=None):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1456,6 +1456,8 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         print(sim.info_header())
     result, msg = sim.run()
     print()
+    if finished is not None:
+        finished = True
     return sim
 
 
