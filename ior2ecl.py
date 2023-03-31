@@ -1462,8 +1462,8 @@ def runsim_with_plot(line={}, **kwargs):
     unsmry = UNSMRY_file(kwargs.get('root'))
     unsmry.delete()
     thread = Thread(target=runsim, kwargs=kwargs)
-    thread.start()
     unsmry.plot_loop(thread=thread, line=line, **kwargs)
+    thread.start()
 
 @print_error
 #--------------------------------------------------------------------------------
