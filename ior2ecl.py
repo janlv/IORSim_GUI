@@ -13,6 +13,7 @@ from shutil import copy as shutil_copy
 from traceback import print_exc as trace_print_exc, format_exc as trace_format_exc
 from re import compile as re_compile, MULTILINE
 from os.path import relpath
+from threading import Thread
 
 from psutil import NoSuchProcess, __version__ as psutil_version
 
@@ -859,7 +860,7 @@ class Simulation:                                                        # Simul
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.logname = 'ior2ecl'
         self.root = Path(root).with_suffix('').resolve()
-        self.ECL_inp = DATA_file(self.root, check=False)
+        self.ECL_inp = DATA_file(self.root, check=True)
         self.merge_OK = self.root.with_name(MERGE_OK_FILE)
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
@@ -1387,11 +1388,11 @@ def parse_input(settings_file=None):
 
 @print_error
 #--------------------------------------------------------------------------------
-def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False, 
+def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
-           ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, check_input=False, 
-           verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY, finished=None):
+           ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, check_input=False,
+           verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY, **kwargs):
 #--------------------------------------------------------------------------------
     #----------------------------------------
     def status(value=None, **x):
@@ -1427,10 +1428,6 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
             # elif value==0:
             #     prog.reset_time(min=prog.min)
             prog.print(value, text=run and f'({run.name})' or '')
-        #if plot and run and run.is_eclipse:
-        #    if isinstance(plot, dict):
-        #        run.unsmry.plot(**plot)
-        #print('progress out:', value, prog)
             
     # Check if we only run eclipse or iorsim
     mode, runs = None, []
@@ -1456,10 +1453,17 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         print(sim.info_header())
     result, msg = sim.run()
     print()
-    if finished is not None:
-        finished = True
     return sim
 
+@print_error
+#--------------------------------------------------------------------------------
+def runsim_with_plot(line={}, **kwargs):
+#--------------------------------------------------------------------------------
+    unsmry = UNSMRY_file(kwargs.get('root'))
+    unsmry.delete()
+    thread = Thread(target=runsim, kwargs=kwargs)
+    thread.start()
+    unsmry.plot_loop(thread=thread, line=line, **kwargs)
 
 @print_error
 #--------------------------------------------------------------------------------
