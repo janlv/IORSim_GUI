@@ -17,9 +17,9 @@ from threading import Thread
 
 from psutil import NoSuchProcess, __version__ as psutil_version
 
-from IORlib.utils import (flatten, get_keyword, get_python_version, list2text, pairwise,
+from IORlib.utils import (flatten, get_keyword, list2text, pairwise,
     print_error, remove_comments, safeopen, Progress, silentdelete,
-    delete_files_matching, tail_file)
+    delete_files_matching, tail_file, LivePlot)
 from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file)
@@ -1457,13 +1457,18 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
 
 @print_error
 #--------------------------------------------------------------------------------
-def runsim_with_plot(line={}, **kwargs):
+def runsim_with_plot(plot=None, run=None):
 #--------------------------------------------------------------------------------
-    unsmry = UNSMRY_file(kwargs.get('root'))
+    if plot is None:
+        plot = {}
+    if run is None:
+        run = {}
+    unsmry = UNSMRY_file(run.get('root'))
+    live_plot = LivePlot(func=unsmry.plot, **plot)
     unsmry.delete()
-    thread = Thread(target=runsim, kwargs=kwargs)
-    unsmry.plot_loop(thread=thread, line=line, **kwargs)
+    thread = Thread(target=runsim, kwargs=run)
     thread.start()
+    live_plot.loop(thread=thread)
 
 @print_error
 #--------------------------------------------------------------------------------
