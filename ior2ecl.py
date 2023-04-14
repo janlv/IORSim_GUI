@@ -1268,6 +1268,7 @@ class Simulation:                                                        # Simul
         s += f'    {"Run-dir":{width}}: {rundir}\n'
         casedir = str(Path(self.root).parent).replace(rundir, '<Run-dir>')
         s += f'    {"Case-dir":{width}}: {casedir}\n'
+        #s += f'    {"Log-files":{width}}: {", ".join(["["+Path(file).name+"]("+str(file)+")" for file in logfiles])}\n'
         s += f'    {"Log-files":{width}}: {", ".join([Path(file).name for file in logfiles])}\n'
         s += f'    {"Version":{width}}: {__version__}\n'
         s += f'    {"Started":{width}}: ' + str(datetime.now()).split('.')[0] + '\n'
@@ -1325,21 +1326,8 @@ class Simulation:                                                        # Simul
 #############################################################################
 
 
-# #--------------------------------------------------------------------------------
-# def case_from_casedir(case_dir, root):
-# #--------------------------------------------------------------------------------
-#     # Find case in casedir if given DATA-file is missing
-#     case_dir = Path(case_dir)
-#     if case_dir.is_dir() and (case_dir/root/(root+'.DATA')).is_file():
-#         return case_dir/root/root
-#     ### Return path to case not in the case-folder (if it exists)
-#     if (path := Path.cwd()/(root+'.DATA')).is_file():
-#         return path.with_suffix('').resolve()
-#     raise SystemError('\n   '+root+'.DATA'+' not found in '+str(case_dir/root)+'\n')
-
 
 #--------------------------------------------------------------------------------
-#def parse_input(case_dir=None, settings_file=None):
 def parse_input(settings_file=None):
 #--------------------------------------------------------------------------------
     description = 'Script for running IORSim and Eclipse in backward and forward mode'
@@ -1370,12 +1358,7 @@ def parse_input(settings_file=None):
     if SCHEDULE_SKIP_EMPTY: 
         args['skip_empty'] = not args['not_skip_empty']
     # Look for case in case_dir if root is not a file
-    # if case_dir and not Path(args['root']).is_file():
-    #     args['root'] = case_from_casedir(case_dir, args['root'])
-    # Remove suffix from root
-    #args['root'] = Path(args['root']).parent/Path(args['root']).stem
     args['root'] = Path(args['root']).with_suffix('')
-    #print(args['root'])
     # Read iorexe from settings if argument is missing
     if settings_file and not args['iorexe']:
         iorsim = get_keyword(settings_file, 'iorsim', end=' ')
