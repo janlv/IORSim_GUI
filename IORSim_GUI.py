@@ -206,7 +206,7 @@ class Color:
     turq   = GUI_color(23,190,207)  #17becf
     as_tuple = (blue, orange, green, red, violet, brown, pink, gray, yellow, turq)
     #fluid = {'oil':red, 'water':blue, 'gas':green, 'polymer':orange}
-    fluid = {'oprod':red, 'wprod':blue, 'wcut':dark, 'winj':turq, 'gprod':green, 
+    fluid = {'oprod':red, 'wprod':blue, 'wcut':dark, 'winj':turq, 'oinj':violet, 'ginj':gray, 'gprod':green, 
              'temp':black, 'pprod':orange, 'pinj':yellow, 'thead':pink, 'bhole':brown}
     
     @staticmethod
@@ -3087,10 +3087,10 @@ class main_window(QMainWindow):                                    # main_window
         # # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
         # self.ecl_yaxes =       {'PR':'rate',   'PT':'prod',    'PC':'rate',   'IR':'irate',        'IT':'iprod', 'HP':'pres'}
         # self.ecl_yaxes_names = {'rate':'Rate', 'prod':'Prod.', 'rate':'Rate', 'irate':'Inj. rate', 'iprod':'Inj. prod.', 'prod'}
-        self.ecl_fluids = {'OP':'oprod', 'WP':'wprod', 'WC':'wcut', 'WI':'winj', 'GP':'gprod', 'TP':'temp', 
+        self.ecl_fluids = {'OP':'oprod', 'WP':'wprod', 'WC':'wcut', 'WI':'winj', 'OI':'oinj', 'GI':'ginj', 'GP':'gprod', 'TP':'temp', 
                            'CP':'pprod', 'CI':'pinj', 'TH':'thead', 'BH':'bhole'}
-        self.ecl_fluids_names = {'oprod':'Oil prod.', 'wprod':'Water prod.', 'wcut':'Water cut', 'winj':'Water inj.',
-                                 'gprod':'Gas prod.', 'temp':'Temp.', 'pprod':'Polymer prod.', 'pinj':'Polymer inj.', 'thead':'Tubing head', 'bhole':'Bottom hole'}
+        self.ecl_fluids_names = {'oprod':'Oil prod.', 'wprod':'Water prod.', 'wcut':'Water cut', 'winj':'Water inj.', 'oinj':'Oil inj.', 
+                                 'ginj':'Gas inj.', 'gprod':'Gas prod.', 'temp':'Temp.', 'pprod':'Polymer prod.', 'pinj':'Polymer inj.', 'thead':'Tubing head', 'bhole':'Bottom hole'}
         # self.ecl_fluids_colors = {'oprod':Color.red, 'wprod':Color.blue, 'wcut':Color.dark, 'winj':Color.pink,
         #                          'gprod':Color.green, 'temp':Color.black, 'pprod':Color.orange, 'thead':Color.turq, 'bhole':Color.brown}
         # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
@@ -3128,7 +3128,8 @@ class main_window(QMainWindow):                                    # main_window
         #new_data = unsmry.read(keys=self.ecl_keys, only_new=True)
         new_data = unsmry.welldata(keys=self.ecl_keys, only_new=True)
         # Enable menu-well-boxes for active wells
-        for well in set(unsmry.wells):
+        #for well in set(unsmry.wells):
+        for well in unsmry.wells:
             if box := self.ecl_boxes['well'].get(well):
                 box.setEnabled(True)
         if new_data:
@@ -3137,7 +3138,8 @@ class main_window(QMainWindow):                                    # main_window
                 ### Skip zero-time data
                 start = 1
             data['days'].extend(new_data.days[start:])
-            for w in set(unsmry.wells):
+            #for w in set(unsmry.wells):
+            for w in unsmry.wells:
                 data[w]['days'].extend(new_data.days[start:])
             for val in new_data.values:
                 # y = self.ecl_yaxes[val.key[2:4]]
