@@ -19,12 +19,12 @@ from psutil import NoSuchProcess, __version__ as psutil_version
 
 from IORlib.utils import (flatten, get_keyword, list2text, pairwise,
     print_error, remove_comments, safeopen, Progress, silentdelete,
-    delete_files_matching, tail_file, LivePlot)
+    delete_files_matching, tail_file, LivePlot, running_jupyter)
 from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file)
 
-__version__ = '3.5'
+__version__ = '3.5.1'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -1242,7 +1242,7 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def info_header(self):                                               # Simulation
+    def info_header(self, long_lognames=False):                          # Simulation
     #--------------------------------------------------------------------------------
         width = '10s'
         logfiles = [run.logname for run in self.runs]+[log.name for log in (self.runlog,) if log]
@@ -1268,8 +1268,11 @@ class Simulation:                                                        # Simul
         s += f'    {"Run-dir":{width}}: {rundir}\n'
         casedir = str(Path(self.root).parent).replace(rundir, '<Run-dir>')
         s += f'    {"Case-dir":{width}}: {casedir}\n'
-        #s += f'    {"Log-files":{width}}: {", ".join(["["+Path(file).name+"]("+str(file)+")" for file in logfiles])}\n'
-        s += f'    {"Log-files":{width}}: {", ".join([Path(file).name for file in logfiles])}\n'
+        if long_lognames:
+            indent = f'\n    {"    ":{width}}: '
+            s += f'    {"Log-files":{width}}: {indent.join([str(Path(file).resolve()) for file in logfiles])}\n'
+        else:
+            s += f'    {"Log-files":{width}}: {", ".join([Path(file).name for file in logfiles])} (in Case-dir)\n'
         s += f'    {"Version":{width}}: {__version__}\n'
         s += f'    {"Started":{width}}: ' + str(datetime.now()).split('.')[0] + '\n'
         s += '\n'
@@ -1433,7 +1436,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         return
 
     if not to_screen:
-        print(sim.info_header())
+        print(sim.info_header(long_lognames=running_jupyter()))
     result, msg = sim.run()
     print()
     return sim
