@@ -1452,6 +1452,7 @@ def runsim_with_plot(plot=None, run=None, wait=1):
     if run is None:
         run = {}
     unsmry = UNSMRY_file(run.get('root'))
+    plot['only_new'] = True
     live_plot = LivePlot(func=unsmry.plot, **plot)
     unsmry.delete()
     thread = Thread(target=runsim, kwargs=run)
