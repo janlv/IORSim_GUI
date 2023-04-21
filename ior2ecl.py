@@ -99,7 +99,9 @@ class Eclipse(Runner):                                                      # ec
     #--------------------------------------------------------------------------------
         error = 'unexpectedly' + (self.log and f', check {Path(self.log.name).name} for details' or '')
         ### Check for license failure
-        if 'LICENSE FAILURE'.encode() in self.msg.binarydata():
+        #if 'LICENSE FAILURE'.encode() in self.msg.binarydata():
+        #if b'LICENSE FAILURE' in self.msg.binarydata():
+        if 'LICENSE FAILURE' in self.msg:
             error = 'due to a license failure'
         raise SystemError(f'ERROR {self.name} stopped {error}')
 
@@ -1443,7 +1445,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
 
 @print_error
 #--------------------------------------------------------------------------------
-def runsim_with_plot(plot=None, run=None):
+def runsim_with_plot(plot=None, run=None, wait=1):
 #--------------------------------------------------------------------------------
     if plot is None:
         plot = {}
@@ -1454,7 +1456,7 @@ def runsim_with_plot(plot=None, run=None):
     unsmry.delete()
     thread = Thread(target=runsim, kwargs=run)
     thread.start()
-    live_plot.loop(thread=thread)
+    live_plot.loop(thread=thread, wait=wait)
 
 @print_error
 #--------------------------------------------------------------------------------
