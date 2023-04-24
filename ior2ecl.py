@@ -1445,7 +1445,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
 
 @print_error
 #--------------------------------------------------------------------------------
-def runsim_with_plot(plot=None, run=None, wait=1):
+def runsim_with_plot(plot=None, run=None, update=1):
 #--------------------------------------------------------------------------------
     if plot is None:
         plot = {}
@@ -1457,7 +1457,7 @@ def runsim_with_plot(plot=None, run=None, wait=1):
     unsmry.delete()
     thread = Thread(target=runsim, kwargs=run)
     thread.start()
-    live_plot.loop(thread=thread, wait=wait)
+    live_plot.loop(thread=thread, wait=update)
 
 @print_error
 #--------------------------------------------------------------------------------
