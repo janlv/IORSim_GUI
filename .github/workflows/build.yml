@@ -6,7 +6,7 @@ on:
 
 env:
   APP_NAME: IORSim_GUI
-  UPX_VER: '3.96'
+  UPX_VER: '4.0.2'
   GH_TOKEN: ${{secrets.GITHUB_TOKEN}}  # Make gh release upload work 
 
 defaults:
