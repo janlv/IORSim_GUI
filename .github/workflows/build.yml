@@ -49,7 +49,8 @@ jobs:
         fi
         pyinstaller$EXE --onefile --add-data "guides${SEP}guides" --add-data "icons${SEP}icons" --upx-dir "$UPX_FILE" IORSim_GUI.py
         TAG=${{matrix.os}}
-        NEW_NAME=$APP_NAME_${TAG%-*}
+        NEW_NAME=${APP_NAME}_${TAG%-*}
+        echo $NEW_NAME
         mv dist/$APP_NAME$EXE dist/$NEW_NAME$EXE
         echo "ASSET=dist/$NEW_NAME$EXE#'${{matrix.os}} executable'" >> $GITHUB_ENV
     - name: Upload Asset
