@@ -48,6 +48,6 @@ jobs:
           exit 1
         fi
         pyinstaller$EXE --onefile --add-data "guides${SEP}guides" --add-data "icons${SEP}icons" --upx-dir "$UPX_FILE" IORSim_GUI.py
-        echo "ASSET=dist/$APP_NAME$EXE#'${{matrix.os}} executable'" >> $GITHUB_ENV
+        echo "ASSET=dist/$APP_NAME-${{matrix.os}}$EXE#'${{matrix.os}} executable'" >> $GITHUB_ENV
     - name: Upload Asset
       run: gh release upload ${{github.event.release.tag_name}} ${{env.ASSET}}
