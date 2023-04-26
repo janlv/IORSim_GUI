@@ -35,23 +35,23 @@ jobs:
           UPX_FILE=upx-$UPX_VER-win64
           EXT=zip
           SEP=";"
-          curl -LJO $UPX_URL/$UPX_FILE.$EXT 
-          7z x $UPX_FILE.$EXT               
+          curl -LJO $UPX_URL/$UPX_FILE.$EXT    # Download UPX
+          7z x $UPX_FILE.$EXT                  # Extract UPX
         elif [ "$RUNNER_OS" == "Linux" ]; then
           UPX_FILE=upx-$UPX_VER-amd64_linux
           EXT=tar.xz
           SEP=":"
-          wget $UPX_URL/$UPX_FILE.$EXT        
-          tar -xvf $UPX_FILE.$EXT
+          wget $UPX_URL/$UPX_FILE.$EXT        # Download UPX
+          tar -xvf $UPX_FILE.$EXT             # Extract UPX
         else 
           echo "$RUNNER_OS not supported"
           exit 1
         fi
+        # Build executable
         pyinstaller$EXE --onefile --add-data "guides${SEP}guides" --add-data "icons${SEP}icons" --upx-dir "$UPX_FILE" IORSim_GUI.py
-        TAG=${{matrix.os}}
-        NEW_NAME=${APP_NAME}_${TAG%-*}
-        echo $NEW_NAME
-        mv dist/$APP_NAME$EXE dist/$NEW_NAME$EXE
+        TAG=${{matrix.os}}                            # Tag executable with os-type
+        NEW_NAME=${APP_NAME}_${TAG%-*}                # Remove everything after -
+        mv -v dist/$APP_NAME$EXE dist/$NEW_NAME$EXE   # Rename pyinstaller generated file
         echo "ASSET=dist/$NEW_NAME$EXE#'${{matrix.os}} executable'" >> $GITHUB_ENV
     - name: Upload Asset
       run: gh release upload ${{github.event.release.tag_name}} ${{env.ASSET}}
