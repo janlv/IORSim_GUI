@@ -24,7 +24,7 @@ from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file)
 
-__version__ = '3.5.1'
+__version__ = '3.5.2'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -1458,6 +1458,12 @@ def runsim_with_plot(plot=None, run=None, update=1):
     thread = Thread(target=runsim, kwargs=run)
     thread.start()
     live_plot.loop(thread=thread, wait=update)
+    #live_plot.loop(wait=update)
+    #while thread.is_alive():
+    #    pass
+    #live_plot.stop()
+    #print('!!!!!!!!END!!!!!')
+
 
 @print_error
 #--------------------------------------------------------------------------------
