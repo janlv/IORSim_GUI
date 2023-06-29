@@ -76,6 +76,7 @@ class Eclipse(Runner):                                                      # ec
         self.data_file = DATA_file(root, check=True)
         self.is_iorsim = False
         self.is_eclipse = True
+        self.unrst_backup_file = Path(f'{root}_ECLIPSE.UNRST')
 
     #--------------------------------------------------------------------------------
     def time(self):                                                         # eclipse
@@ -99,8 +100,6 @@ class Eclipse(Runner):                                                      # ec
     #--------------------------------------------------------------------------------
         error = 'unexpectedly' + (self.log and f', check {Path(self.log.name).name} for details' or '')
         ### Check for license failure
-        #if 'LICENSE FAILURE'.encode() in self.msg.binarydata():
-        #if b'LICENSE FAILURE' in self.msg.binarydata():
         if 'LICENSE FAILURE' in self.msg:
             error = 'due to a license failure'
         raise SystemError(f'ERROR {self.name} stopped {error}')
@@ -116,6 +115,19 @@ class Eclipse(Runner):                                                      # ec
         # self.wait_for(self.unrst.is_file, loop_func=error_func)
         if self.update:
             self.update.status(value=f'{self.name} running...')
+
+    #--------------------------------------------------------------------------------
+    def make_unrst_backup(self):                                       # eclipse
+    #--------------------------------------------------------------------------------
+        self.unrst.path.replace(self.unrst_backup_file)
+
+    #--------------------------------------------------------------------------------
+    def restore_unrst_backup(self):                                       # eclipse
+    #--------------------------------------------------------------------------------
+        if self.unrst_backup_file.exists():
+            self.unrst_backup_file.replace(self.unrst.path)
+            return True
+        return False
 
 
 #====================================================================================
@@ -857,6 +869,7 @@ class Simulation:                                                        # Simul
                  status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None,
                  message=lambda **x:None, **kwargs):
     #--------------------------------------------------------------------------------
+        #print(kwargs)
         #print('mode',mode,'root',root,'pause',pause,'runs',runs,'to_screen',to_screen,
         #      'convert',convert,'merge',merge,'del_merge',del_merge,'del_convert',del_convert,
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
@@ -979,34 +992,28 @@ class Simulation:                                                        # Simul
                 self.ecl = EclipseForward(exe=eclexe, **kwargs)
             if name=='iorsim':
                 self.ior = Ior_forward(exe=iorexe, **kwargs)
+        self.only_iorsim = self.run_names in (['iorsim'],('iorsim',))
         return [run for run in (self.ecl, self.ior) if run]
-
-
-    #--------------------------------------------------------------------------------
-    def init_backward_run(self, iorexe=None, eclexe=None, ior_keep_alive=False,
-                          ecl_keep_alive=False, time=0, **kwargs):       # Simulation
-    #--------------------------------------------------------------------------------
-        self.tsteps = self.ECL_inp.tsteps()
-        self.init_days = sum(self.tsteps) + self.restart_days
-        if time > self.init_days:
-            self.T = time
-        else:
-            self.T = self.init_days + 1
-            self.update.message(text='INFO Simulation time increased to advance past the READDATA keyword')
-        kwargs.update({'T':self.T, 'tsteps':self.tsteps})
-        # Init runs
-        self.ecl = EclipseBackward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs)
-        self.ior = Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)
-        # Set up schedule of commands to pass to satnum-file
-        self.schedule = Schedule(self.root, T=self.T, start=self.start, init_days=self.init_days, interface_file=self.ior.satnum, 
-                                 skip_empty=self.kwargs.get('skip_empty', False))
-        self.ecl.schedule = self.ior.schedule = self.schedule
-        return [self.ecl, self.ior]
 
 
     #--------------------------------------------------------------------------------
     def forward(self):                                                   # Simulation
     #--------------------------------------------------------------------------------
+        do_merge = True
+        if self.merge_OK.is_file() and self.only_iorsim:
+            # The UNRST-file is a merged file that combine Eclipse and IORSim output. 
+            # It is recommended to run IORSim from an unmerged Eclipse UNRST-file.
+            # Give warning if First, try to recover the original Eclipse output
+            if not Eclipse(self.root).restore_unrst_backup():
+                do_merge = False
+                print('\n   *** WARNING ***')
+                print('   *** You are running IORSim on a merged restart-file. ***')
+                print('   *** Merging is disabled for the current run          ***\n')
+            else:
+                print('RESTORED!')
+        if do_merge:
+            # Delete the merge_OK-file to allow a new merge of Eclipse and IORSim output
+            silentdelete(self.merge_OK)
         run_time = timedelta()
         ret = ''
         self.update.progress(value=-self.T, min=self.restart_days or 0)
@@ -1033,8 +1040,31 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
+    def init_backward_run(self, iorexe=None, eclexe=None, ior_keep_alive=False,
+                          ecl_keep_alive=False, time=0, **kwargs):       # Simulation
+    #--------------------------------------------------------------------------------
+        self.tsteps = self.ECL_inp.tsteps()
+        self.init_days = sum(self.tsteps) + self.restart_days
+        if time > self.init_days:
+            self.T = time
+        else:
+            self.T = self.init_days + 1
+            self.update.message(text='INFO Simulation time increased to advance past the READDATA keyword')
+        kwargs.update({'T':self.T, 'tsteps':self.tsteps})
+        # Init runs
+        self.ecl = EclipseBackward(exe=eclexe, keep_alive=ecl_keep_alive, n=self.restart_step, t=self.restart_days, **kwargs)
+        self.ior = Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)
+        # Set up schedule of commands to pass to satnum-file
+        self.schedule = Schedule(self.root, T=self.T, start=self.start, init_days=self.init_days, interface_file=self.ior.satnum, 
+                                 skip_empty=self.kwargs.get('skip_empty', False))
+        self.ecl.schedule = self.ior.schedule = self.schedule
+        return [self.ecl, self.ior]
+
+
+    #--------------------------------------------------------------------------------
     def backward(self):                                                  # Simulation
     #--------------------------------------------------------------------------------
+        silentdelete(self.merge_OK)
         self.update.progress(value=-self.T)
         ecl, ior = self.runs
         # Start runs
@@ -1082,7 +1112,6 @@ class Simulation:                                                        # Simul
     def run(self):                                                       # Simulation
     #--------------------------------------------------------------------------------
         # Print header
-        silentdelete(self.merge_OK)
         self.print2log(self.info_header())
         msg = conv_msg = ''
         success = False
@@ -1131,13 +1160,19 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def convert_and_merge(self, case=None, only_convert=False, only_merge=False): # Simulation
+    #def convert_and_merge(self, case=None, only_convert=False, only_merge=False): # Simulation
+    def convert_and_merge(self, case=None): # Simulation
     #--------------------------------------------------------------------------------
-        func = (self.convert_restart, self.merge_restart)
-        if only_convert:
-            func = (self.convert_restart,)
-        if only_merge:
-            func = (self.merge_restart,)
+        func = []
+        if self.output.convert:
+            func.append(self.convert_restart)
+        if self.output.merge:
+            func.append(self.merge_restart)            
+        # func = (self.convert_restart, self.merge_restart)
+        # if only_convert:
+        #     func = (self.convert_restart,)
+        # if only_merge:
+        #     func = (self.merge_restart,)
         for f in func:
             success, msg = f(case=case)
             self.print2log(f'\n=====  {msg}  =====')
@@ -1192,7 +1227,7 @@ class Simulation:                                                        # Simul
         if self.merge_OK.exists():
             return True, 'Merge already complete!'
         case = Path(case)
-        ecl = self.ecl# or Eclipse(root=case)
+        ecl = self.ecl or Eclipse(root=case) # In case only_iorsim = True
         ior = self.ior# or Iorsim(root=case)
         missing = [f.name for f in (ecl.unrst.path, ior.unrst.path) if not f.is_file()]
         if missing:
@@ -1200,7 +1235,7 @@ class Simulation:                                                        # Simul
         try:
             starttime = datetime.now()
             error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files'
-            ecl_backup = Path(f'{case}_ECLIPSE.UNRST')
+            #ecl_backup = Path(f'{case}_ECLIPSE.UNRST')
             ### The merged file ends with SATNUM (IORSim UNRST) instead of ENDSOL (Eclipse UNRST)
             merge_unrst = UNRST_file(f'{case}_MERGED.UNRST', end=ior.unrst.end)
             ### Reset progress-bar
@@ -1221,9 +1256,10 @@ class Simulation:                                                        # Simul
                 if msg:
                     raise SystemError(f'ERROR Merged file did not pass the test: {msg}')
             if merged_file and merged_file.is_file():
-                ### Rename original Eclipse UNRST for backup
-                ecl.unrst.path.replace(ecl_backup)
-                ### Rename merged UNRST to original Eclipse UNRST
+                ### Backup the original Eclipse UNRST-file
+                #ecl.unrst.path.replace(ecl_backup)
+                ecl.unrst.path.replace(ecl.unrst_backup_file)
+                ### Rename the merged UNRST to the original Eclipse UNRST
                 merged_file.replace(ecl.unrst.path)
             else:
                 return False, error_msg
@@ -1237,7 +1273,8 @@ class Simulation:                                                        # Simul
             raise SystemError(f'{error_msg}: {error}') from error
             #raise SystemError(f'{error_msg}: {exc_info()[1]}')
         if self.output.del_merge:
-            silentdelete(ecl_backup, ior.unrst.path)
+            #silentdelete(ecl_backup, ior.unrst.path)
+            silentdelete(ecl.unrst_backup_file, ior.unrst.path)
         ### Create this file to avoid re-merging the merged UNRST-file 
         self.merge_OK.touch()
         return True, 'Merge complete, process-time was '+str(datetime.now()-starttime).split('.')[0]
