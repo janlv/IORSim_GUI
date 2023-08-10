@@ -19,10 +19,10 @@ from psutil import NoSuchProcess, __version__ as psutil_version
 
 from IORlib.utils import (flatten, get_keyword, list2text, pairwise,
     print_error, remove_comments, safeopen, Progress, silentdelete,
-    delete_files_matching, tail_file, LivePlot, running_jupyter)
+    delete_files_matching, tail_file, LivePlot, running_jupyter, ordered_intersect_index)
 from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, UNRST_file,
-    UNSMRY_file, MSG_file, PRT_file)
+    UNSMRY_file, MSG_file, PRT_file, IXF_file)
 
 __version__ = '3.5.2'
 __author__ = 'Jan Ludvig Vinningland'
@@ -55,36 +55,36 @@ MERGE_OK_FILE = '.merge_OK'
 
 
 #====================================================================================
-class Eclipse(Runner):                                                      # eclipse
+class SLBRunner(Runner):                                                  # SLBRunner
 #====================================================================================
-    ' Eclipse runner class '
+    """ Common runner class for Eclipse and Intersect """
 
     #--------------------------------------------------------------------------------
-    def __init__(self, root=None, exe='eclrun', **kwargs):
+    def __init__(self, name='SLB', root=None, exe='eclrun', cmd=None, **kwargs):
     #--------------------------------------------------------------------------------
         #print('eclipse.__init__: ',root, exe, kwargs)
         root = str(root)        
         exe = str(exe)
-        super().__init__(name='Eclipse', case=root, exe=exe, cmd=[exe, 'eclipse', root],
-                         time_regex=r'TIME=?\s+([0-9.]+)\s+DAYS', **kwargs)
+        super().__init__(name=name, case=root, exe=exe, cmd=[exe, cmd, root], **kwargs)
         self.update = kwargs.get('update') or None
         self.unrst = UNRST_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
         self.rft = RFT_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
         self.unsmry = UNSMRY_file(root)
         self.msg = MSG_file(root)
         self.prt = PRT_file(root)
-        self.data_file = DATA_file(root, check=True)
+        self.input_file = None
+        self.unrst_backup_file = Path(f'{root}_{self.name.upper()}.UNRST')
         self.is_iorsim = False
-        self.is_eclipse = True
-        self.unrst_backup_file = Path(f'{root}_ECLIPSE.UNRST')
+        self.is_eclipse = False
+        self.is_intersect = False
 
     #--------------------------------------------------------------------------------
-    def time(self):                                                         # eclipse
+    def time(self):                                                       # SLBRunner
     #--------------------------------------------------------------------------------
         return self.prt.last_day() or self.rft.last_day() or self.unrst.last_day() or super().time()
 
     #--------------------------------------------------------------------------------
-    def delete_output_files(self):                                          # eclipse
+    def delete_output_files(self):                                        # SLBRunner
     #--------------------------------------------------------------------------------
         """ 
         Delete case-specific output-files
@@ -96,17 +96,17 @@ class Eclipse(Runner):                                                      # ec
 
 
     #--------------------------------------------------------------------------------
-    def unexpected_stop_error(self, **kwargs):                              # eclipse
+    def unexpected_stop_error(self, **kwargs):                            # SLBRunner
     #--------------------------------------------------------------------------------
         error = 'unexpectedly' + (self.log and f', check {Path(self.log.name).name} for details' or '')
-        ### Check for license failure
-        if 'LICENSE FAILURE' in self.msg:
+        # Check for license failure (uppercase for Eclipse, lowercase for Intersect)
+        if any(lic_fail in self.msg for lic_fail in ('LICENSE FAILURE', 'license failure')):
             error = 'due to a license failure'
         raise SystemError(f'ERROR {self.name} stopped {error}')
 
 
     #--------------------------------------------------------------------------------
-    def start(self, error_func=None):                                       # eclipse
+    def start(self, error_func=None):                                     # SLBRunner
     #--------------------------------------------------------------------------------
         if self.update:
             self.update.status(value=f'Starting {self.name}...')
@@ -117,12 +117,12 @@ class Eclipse(Runner):                                                      # ec
             self.update.status(value=f'{self.name} running...')
 
     #--------------------------------------------------------------------------------
-    def make_unrst_backup(self):                                       # eclipse
+    def make_unrst_backup(self):                                          # SLBRunner
     #--------------------------------------------------------------------------------
         self.unrst.path.replace(self.unrst_backup_file)
 
     #--------------------------------------------------------------------------------
-    def restore_unrst_backup(self):                                       # eclipse
+    def restore_unrst_backup(self):                                       # SLBRunner
     #--------------------------------------------------------------------------------
         if self.unrst_backup_file.exists():
             self.unrst_backup_file.replace(self.unrst.path)
@@ -131,23 +131,50 @@ class Eclipse(Runner):                                                      # ec
 
 
 #====================================================================================
-class ForwardMixin:
+class Eclipse(SLBRunner):                                                   # Eclipse
 #====================================================================================
-    ' Common functions for forward runs '
+    """ Eclipse runner class """
 
     #--------------------------------------------------------------------------------
-    def init_control_func(self, update=(), count=5):
+    def __init__(self, root=None, **kwargs):
     #--------------------------------------------------------------------------------
-        ' Set up control for forward runs '
+        super().__init__(name='Eclipse', root=root, cmd='eclipse',
+                         time_regex=r'TIME=?\s+([0-9.]+)\s+DAYS', **kwargs)
+        self.input_file = DATA_file(root, check=True)
+        self.is_eclipse = True
+
+#====================================================================================
+class Intersect(SLBRunner):                                               # Intersect
+#====================================================================================
+    """ Intersect runner class """
+
+    #--------------------------------------------------------------------------------
+    def __init__(self, root=None, **kwargs):
+    #--------------------------------------------------------------------------------
+        super().__init__(name='Intersect', root=root, cmd='ix',
+                         time_regex=r' (?:Rep |Init|HRep)   ;\s*([0-9.]+)\s+', **kwargs)
+        self.is_intersect = True
+
+
+
+#====================================================================================
+class ForwardMixin:                                                    # ForwardMixin
+#====================================================================================
+    """ Common functions for forward runs """
+
+    #--------------------------------------------------------------------------------
+    def init_control_func(self, update=(), count=5):                   # ForwardMixin
+    #--------------------------------------------------------------------------------
+        ''' Set up control for forward runs '''
         self.update = update
         self.loop_count = 0
         #self.pause = pause
         self.count = count
 
     #--------------------------------------------------------------------------------
-    def control_func(self):
+    def control_func(self):                                            # ForwardMixin
     #--------------------------------------------------------------------------------
-        ' Enable plotting, progress and stop during forward runs '
+        ''' Enable plotting, progress and stop during forward runs '''
         self.stop_if_canceled()
         self.loop_count += 1
         if self.loop_count == self.count:
@@ -160,26 +187,31 @@ class ForwardMixin:
 #====================================================================================
 class EclipseForward(ForwardMixin, Eclipse):                         # EclipseForward
 #====================================================================================
-    ' Eclipse forward runner'
+    """ Eclipse forward runner """
 
     #--------------------------------------------------------------------------------
     def check_input(self):                                           # EclipseForward
     #--------------------------------------------------------------------------------
         super().check_input()
         ### Check root.DATA exists and that READDATA keyword is NOT present
-        if 'READDATA' in self.data_file: #.data():
+        if 'READDATA' in self.input_file:
             raise SystemError('WARNING The current case cannot run in forward-mode: '+
                               'Eclipse input contains the READDATA keyword.')
         return True
 
+#====================================================================================
+class IntersectForward(ForwardMixin, Intersect):                   # IntersectForward
+#====================================================================================
+    """ Intersect forward runner """
+    pass
 
 #====================================================================================
-class BackwardMixin:
+class BackwardMixin:                                                  # BackwardMixin
 #====================================================================================
-    ' Common functions for backward runs '
+    """ Common functions for backward runs """
 
     #--------------------------------------------------------------------------------
-    def update_function(self, progress=True, plot=False):            # BackwardMixin
+    def update_function(self, progress=True, plot=False):             # BackwardMixin
     #--------------------------------------------------------------------------------
         self.assert_running_and_stop_if_canceled()
         self.t = self.time()
@@ -201,7 +233,7 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
     #--------------------------------------------------------------------------------
         # super().__init__(ext_iface='I{:04d}', ext_OK='OK', keep_alive=keep_alive, **kwargs)
         super().__init__(ext_iface=('.I','04d'), ext_OK=('.OK',), keep_alive=keep_alive, **kwargs)
-        self.tsteps = kwargs.get('tsteps') or self.data_file.get('TSTEP')
+        self.tsteps = kwargs.get('tsteps') or self.input_file.get('TSTEP')
         self.delete_interface = kwargs.get('delete_interface') or True
         self.init_tsteps = len(self.tsteps) 
         self.check_unrst = check_unrst
@@ -218,12 +250,12 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
             raise SystemError(f'ERROR To run the current case in backward-mode you need to insert {msg}')
         ### Check that root.DATA exists 
         super().check_input()
-        if 'READDATA' not in self.data_file: #.data():
-            raise_error(f"'READDATA /' between 'TSTEP' and 'END' in {self.data_file}.")
+        if 'READDATA' not in self.input_file: #.data():
+            raise_error(f"'READDATA /' between 'TSTEP' and 'END' in {self.input_file}.")
         ### Check presence of RPTSOL RESTART>1
         regex = r"\bRPTSOL\b\s+[A-Z0-9=_'\s]*\bRESTART\b *= *[2-9]{1}"
-        if not self.data_file.section('SOLUTION').search('RPTSOL', regex):
-            raise_error(f"'RPTSOL \\n RESTART=2 /' in the SOLUTION section of {self.data_file}.")
+        if not self.input_file.section('SOLUTION').search('RPTSOL', regex):
+            raise_error(f"'RPTSOL \\n RESTART=2 /' in the SOLUTION section of {self.input_file}.")
         return True
 
 
@@ -347,11 +379,24 @@ class IORSim_input(File):                                              # iorsim_
     #--------------------------------------------------------------------------------
     def __init__(self, file, check=False, check_format=False):         # iorsim_input
     #--------------------------------------------------------------------------------
-        #super().__init__(file, suffix=Path(file).suffix or '.trcinp', role='IORSim input-file', ignore_case=True)
         super().__init__(file, suffix='.trcinp', role='IORSim input-file', ignore_suffix_case=True)
+        self._variables = {'INTEGRATION' : ('tstart', 'tstop', 'dtmin', 'dtmax', 'dtmin_ecl', 'dtmax_ecl', 'metnum')}
         self.check_format = check_format
         self.warnings = self.check() if check else ''
 
+
+    #--------------------------------------------------------------------------------
+    def get(self, *items):                                      
+    #--------------------------------------------------------------------------------
+        # Get the indices of given items in self._variables dict
+        key_index = {k:ind for k,v in self._variables.items() if (ind:=ordered_intersect_index(v, items))}
+        out = []
+        for key, ind in key_index.items():
+            if values := get_keyword(self.path, f'\*{key}', end='\*'):
+                out.extend([values[0][i] for i in ind])
+        if len(out) != len(items):
+            raise SystemError(f'ERROR Unable to read {items} from {self}')
+        return out if len(out) > 1 else out[0] 
 
     #--------------------------------------------------------------------------------
     def check_keywords(self):                                          # iorsim_input
@@ -401,8 +446,9 @@ class IORSim_input(File):                                              # iorsim_
         if (missing := [f for f in self.include_files() if not f.is_file()]):
             raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.path.name} is missing in folder {missing[0].parent.resolve()}")
         ### Check if tstart == 0
-        inte = get_keyword(self.path, '\*INTEGRATION', end='\*')
-        if inte and (tstart := inte[0][0]) > 0:
+        #inte = get_keyword(self.path, '\*INTEGRATION', end='\*')
+        #if inte and (tstart := inte[0][0]) > 0:
+        if (tstart := self.get('tstart')) and tstart > 0:
             warn += f'INFO It is recommended to start IORSim at time 0 instead of {tstart}.'
         ### Check if required keywords are used, and if the order is correct
         if self.check_format:
@@ -503,8 +549,8 @@ class Iorsim(Runner):                                                        # i
         self.update = kwargs.get('update') or None
         self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
         self.unrst = UNRST_file(self.funrst.path)
-        self.inputfile = IORSim_input(root, check=True, check_format=kwargs.get('check_input_kw') or False)
-        if self.update and (warn:=self.inputfile.warnings):
+        self.input_file = IORSim_input(root, check=True, check_format=kwargs.get('check_input_kw') or False)
+        if self.update and (warn:=self.input_file.warnings):
             self.update.message(warn)
         self.is_iorsim = True
         self.is_eclipse = False
@@ -532,7 +578,7 @@ class Iorsim(Runner):                                                        # i
         self.update and self.update.status(value=f'Starting {self.name}...')
         ### Copy chem-files to working dir 
         if COPY_CHEMFILE:
-            for file in self.inputfile.include_files():
+            for file in self.input_file.include_files():
                 dest = Path.cwd()/file.name
                 if not dest.exists(): # and not dest.samefile(file):
                     # print(f'{file} -> {dest}')
@@ -867,7 +913,7 @@ class Simulation:                                                        # Simul
     def __init__(self, mode=None, root=None, pause=0, run_names=(), to_screen=False,
                  convert=True, merge=True, del_convert=False, del_merge=False, delete=False,
                  status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None,
-                 message=lambda **x:None, **kwargs):
+                 message=lambda **x:None, ix=False, **kwargs):
     #--------------------------------------------------------------------------------
         #print(kwargs)
         #print('mode',mode,'root',root,'pause',pause,'runs',runs,'to_screen',to_screen,
@@ -875,7 +921,11 @@ class Simulation:                                                        # Simul
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.logname = 'ior2ecl'
         self.root = Path(root).with_suffix('').resolve()
-        self.ECL_inp = DATA_file(self.root, check=True)
+        if ix:
+            self.ECL_inp = IXF_file(self.root)
+        else:
+            self.ECL_inp = DATA_file(self.root, check=True)
+        self.IOR_inp = IORSim_input(self.root)
         self.merge_OK = self.root.with_name(MERGE_OK_FILE)
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
@@ -906,6 +956,10 @@ class Simulation:                                                        # Simul
         kwargs.update({'root':str(self.root), 'runlog':self.runlog, 'update':self.update, 'to_screen':to_screen})
         self.kwargs = kwargs
 
+    #--------------------------------------------------------------------------------
+    def __repr__(self):                                                   # Simulation
+    #--------------------------------------------------------------------------------
+        return f'<Simulation root={self.root}, mode={self.mode}>'
 
     #--------------------------------------------------------------------------------
     def prepare(self):                                                   # Simulation
@@ -965,7 +1019,7 @@ class Simulation:                                                        # Simul
         ### Simulation start date given by first entry of restart-file (UNRST-file) or START keyword of DATA-file
         self.start = next(self.restart_file.dates()) if self.restart_file else self.ECL_inp.get('START')[0]
         #self.mode = self.mode or (('READDATA' in self.ECL_inp) and 'backward' or 'forward')
-        mode =  'backward' if ('READDATA' in self.ECL_inp) else 'forward'
+        mode = 'backward' if ('READDATA' in self.ECL_inp) else 'forward'
         self.mode = self.mode or mode
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
@@ -976,7 +1030,7 @@ class Simulation:                                                        # Simul
         return check_ok and run_func
 
     #--------------------------------------------------------------------------------
-    def init_forward_run(self, iorexe=None, eclexe=None, **kwargs): # Simulation
+    def init_forward_run(self, iorexe=None, eclexe=None, **kwargs):      # Simulation
     #--------------------------------------------------------------------------------
         start = self.start + timedelta(days=self.restart_days)
         self.tsteps = self.ECL_inp.tsteps(start=start, skiprest='SKIPREST' in self.ECL_inp)
@@ -985,11 +1039,13 @@ class Simulation:                                                        # Simul
         kwargs.update({'T':self.T})
         if not self.run_names:
             self.run_names = ('eclipse','iorsim')
-        if not IORSim_input(self.root, check=False).is_file():
+        if not self.IOR_inp.is_file():
             self.run_names = ('eclipse',)
         for name in self.run_names:
             if name=='eclipse':
                 self.ecl = EclipseForward(exe=eclexe, **kwargs)
+            elif name=='intersect':
+                self.ecl = IntersectForward(exe=eclexe, **kwargs)
             if name=='iorsim':
                 self.ior = Ior_forward(exe=iorexe, **kwargs)
         self.only_iorsim = self.run_names in (['iorsim'],('iorsim',))
@@ -1010,7 +1066,7 @@ class Simulation:                                                        # Simul
                 print('   *** You are running IORSim on a merged restart-file. ***')
                 print('   *** Merging is disabled for the current run          ***\n')
             else:
-                print('RESTORED!')
+                self.print2log('=====  Original Eclipse UNRST-file restored from backup  =====')
         if do_merge:
             # Delete the merge_OK-file to allow a new merge of Eclipse and IORSim output
             silentdelete(self.merge_OK)
@@ -1155,12 +1211,10 @@ class Simulation:                                                        # Simul
             finally:
                 self.close()
                 self.update.status(value=msg+conv_msg, newline=True)
-                #return success, msg + ' ' + conv_msg
         return success, msg + ' ' + conv_msg
 
 
     #--------------------------------------------------------------------------------
-    #def convert_and_merge(self, case=None, only_convert=False, only_merge=False): # Simulation
     def convert_and_merge(self, case=None): # Simulation
     #--------------------------------------------------------------------------------
         func = []
@@ -1168,11 +1222,6 @@ class Simulation:                                                        # Simul
             func.append(self.convert_restart)
         if self.output.merge:
             func.append(self.merge_restart)            
-        # func = (self.convert_restart, self.merge_restart)
-        # if only_convert:
-        #     func = (self.convert_restart,)
-        # if only_merge:
-        #     func = (self.merge_restart,)
         for f in func:
             success, msg = f(case=case)
             self.print2log(f'\n=====  {msg}  =====')
@@ -1291,17 +1340,13 @@ class Simulation:                                                        # Simul
         mode = len(self.runs)<2 and self.runs[0].name or self.mode
         s += f'    {"Mode":{width}}: {mode.capitalize()}\n'
         s += f'    {"Days":{width}}: {self.T}' 
-        # if self.mode=='forward':
-        #     s += f' (edit TSTEP in the DATA-file to change days)'
         if self.restart:
             days = timedelta(days=self.restart_days)
-            # s += f' (restart after {days.days} days, at  {self.schedule.start.date() + days})'
             s += f' (restart after {days.days} days, at {(self.start + days).date()})'
             s += self.skiprest and ' (SKIPREST)' or ''
         s += '\n'
-        inte = get_keyword(f'{self.root}.trcinp', '\*INTEGRATION', end='\*')
-        a, b = inte and (inte[0][4],inte[0][5]) or (0,0) 
-        s += f'    {"Timestep":{width}}: {a}{(a!=b and f" - {b}" or "")} days\n'
+        dtmin, dtmax = self.IOR_inp.get('dtmin_ecl', 'dtmax_ecl')
+        s += f'    {"Timestep":{width}}: {dtmin}{(f" - {dtmax}" if dtmin!=dtmax else "")} days\n'
         s += (self.schedule and self.schedule.sch_file) and f'    {"Schedule":{width}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         rundir = str(Path.cwd())
         s += f'    {"Run-dir":{width}}: {rundir}\n'
