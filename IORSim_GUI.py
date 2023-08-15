@@ -516,8 +516,8 @@ class sim_worker(base_worker):
         self.sim = Simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
         self.sim.prepare()
         if self.sim.ready():
-            #self.days_box.setText(str(self.sim.get_time()).rstrip('0').rstrip('.'))
-            self.days_box.setText(self.sim.get_time())
+            #self.days_box.setText(self.sim.get_time())
+            self.days_box.setText(self.sim.end_time)
             result, msg = self.sim.run()
         else:
             DEBUG and print('Simulation not ready in sim_worker!')
@@ -2396,10 +2396,8 @@ class main_window(QMainWindow):                                    # main_window
         inp = self.input
         inp['ecl_days'], inp['species'], inp['tracers'] = None, [], []
         if inp['root']:
-            tsteps = DATA_file(inp['root']).tsteps(missing_ok=True, negative_ok=True)
+            tsteps = DATA_file(inp['root']).timesteps(missing_ok=True, negative_ok=True)
             inp['ecl_days'] = sum(tsteps)
-            # inp['species'] = get_species_iorsim(inp['root'], raise_error=False)
-            # inp['tracers'] = get_tracers_iorsim(inp['root'], raise_error=False)
             inp['species'] = self.trcinp.species()
             inp['tracers'] = self.trcinp.tracers()
             inp['species'] += inp['tracers']
@@ -2665,8 +2663,7 @@ class main_window(QMainWindow):                                    # main_window
             # set simulation mode based on READDATA keyword in .DATA-file
             mode = 'forward'
             try:
-                #if file_contains(self.case+'.DATA', text='READDATA', comment='--', end='END'):
-                if 'READDATA' in DATA_file(self.case): #.data():
+                if 'READDATA' in DATA_file(self.case):
                     mode = 'backward'
                     self.days_box.setEnabled(False)
             except (FileNotFoundError, SystemError):
@@ -2868,7 +2865,7 @@ class main_window(QMainWindow):                                    # main_window
         root = self.case
         self.trcinp = IORSim_input(root)
         self.out_wells, self.in_wells = self.trcinp.wells()
-        self.days_box.setText(sum(DATA_file(root).tsteps()))
+        self.days_box.setText(sum(DATA_file(root).timesteps()))
         self.set_variables_from_casefiles()
         self.clear_menus()
         self.update_ecl_menu()
@@ -3318,7 +3315,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        days = DATA_file(self.input['root']).including(self.schedule.path).tsteps(missing_ok=True)
+        days = DATA_file(self.input['root']).including(self.schedule.path).timesteps(missing_ok=True)
         self.view_input_file(self.schedule.path, title=f'Schedule file {self.schedule}, total days = {sum(days):.0f}', editor=self.sch_editor)
         
     #-----------------------------------------------------------------------

@@ -71,12 +71,9 @@ class Control_file:
     #--------------------------------------------------------------------------------
         args = [str(a) for a in args]  # Ensure Path is cast to str
         self._base = ''.join(args[:2]) if len(args)>=2 else ''
-        self._nr = (lambda x : f'{x:{args[2]}}') if len(args)>2 else (lambda x : '')
-        self._path = Path(path) if path else self.__call__(0)._path
+        self._nr = (lambda x : f'{int(x):{args[2]}}') if len(args)>2 else (lambda x : '')
+        self._path = Path(path if path else self._base + self._nr(0))
         self._log = log
-        #self._base = len(args)>=2 and ''.join(args[:2]) or '' 
-        #self._nr = len(args)>2 and (lambda x : f'{x:{args[2]}}') or (lambda x : '')
-        #self._path = path and Path(path) or self.__call__(0)._path
 
     #--------------------------------------------------------------------------------
     def __repr__(self) -> str:
@@ -92,7 +89,6 @@ class Control_file:
     def __call__(self, n):
     #--------------------------------------------------------------------------------
         self._path = Path(self._base + self._nr(n))
-        #print('__call__', self)
         return self
 
     #--------------------------------------------------------------------------------
@@ -189,16 +185,16 @@ class Process:                                                              # Pr
 #====================================================================================
     
     #--------------------------------------------------------------------------------
-    def __init__(self, proc, app_name=None, error_func=None):               # Process
+    def __init__(self, process=None, pid=None, app_name=None, error_func=None):    # Process
     #--------------------------------------------------------------------------------
-        self._process = proc
-        self._pid = proc.pid
-        #self._user = proc.username()
-        self._name = proc.name()
+        if not process and not pid:
+            raise SyntaxError('Process takes a psutil-process or pid argument')
+        self._process = process or psutil.Process(pid=pid)
+        self._pid = self._process.pid
+        self._name = self._process.name()
         self._app_name = app_name
         self._suspend_errors = 0
         self._error_func = error_func or self.raise_error
-        #self.name = proc.name()
         if DEBUG:
             print(f'Creating {self}')
 
@@ -343,8 +339,8 @@ class Process:                                                              # Pr
     #--------------------------------------------------------------------------------
     def get_children(self, raise_error=True, log=False, wait=CHILD_SEARCH_WAIT, limit=CHILD_SEARCH_LIMIT):      # Process
     #--------------------------------------------------------------------------------
-        ### Looking for child-processes with a name that match the app_name
-        ### Only do search if app_name is different from the name of this process  
+        # Looking for child-processes with a name that match the app_name
+        # Only do search if app_name is different from the name of this process  
         if not self._process:
             if raise_error:
                 raise SystemError('Parent-process missing, unable to look for child-processes')
@@ -353,7 +349,6 @@ class Process:                                                              # Pr
         # Return if this is the main process
         if self._process.name().lower().startswith(name):
             return [], None
-        #found = False
         time = None
         for i in range(limit):
             sleep(wait)
@@ -363,16 +358,17 @@ class Process:                                                              # Pr
                 )
             children = self._process.children(recursive=True)
             if log:
-                log(children and children or '  child-process search ...', v=3)
+                log(children and children or f"  searching for child-process '{name}' ...", v=3)
             # Stop if named child process is found
             if any(p.name().lower().startswith(name) for p in children):
-                #found = True
                 time = wait*i
                 break
         if time is None and raise_error:
             raise SystemError(
                 f'Unable to find child process of {self} in {wait*limit:.1f} seconds, aborting...'
             )
+        # Child processes inherit app_name and error_func from parent
+        children = [Process(process=c, app_name=self._app_name, error_func=self._error_func) for c in children]
         return children, time
 
 
@@ -396,14 +392,15 @@ class Runner:                                                               # Ru
     """
     
     #--------------------------------------------------------------------------------
-    def __init__(self, T=0, n=0, t=0, name='', case='', exe='', cmd=None, pipe=False,
+    def __init__(self, end_time=0, n=0, t=0, name='', app_name='', case='', exe='', cmd=None, pipe=False,
                  verbose=3, timer=None, runlog=None, ext_iface=(), ext_OK=(),
                  keep_files=False, stop_children=True, keep_alive=False, logtag=None, 
                  time_regex=None, **kwargs):           # Runner
     #--------------------------------------------------------------------------------
-        #print('runner.__init__: ',keep_alive, N,T,name,case,exe,cmd,ext_iface,ext_OK)
+        #print('runner.__init__: ',end_time, n, t, name, case,exe,cmd,ext_iface,ext_OK)
         self.reset_processes()
         self.name = name
+        self.app_name = app_name
         self.parent = None
         self.children = ()
         self.main = None
@@ -411,7 +408,6 @@ class Runner:                                                               # Ru
         self.case = Path(case)
         self.exe = exe
         self.cmd = cmd
-        #self.logname = self.case.parent/f'{name.lower()}{lognr and "_" or ""}{lognr or ""}.log'
         self.logname = self.case.parent/f'{name.lower()}{logtag or ""}.log'
         self.logname.write_text('') # Clear old logs
         self.log = None
@@ -428,9 +424,9 @@ class Runner:                                                               # Ru
             self.timer = Timer(name.lower())
         self.keep_files = keep_files
         self.canceled = False
-        self.t = t
-        self.n = int(n)
-        self.T = T   # Max time
+        self.t = t      # current time  
+        self.n = int(n) # timestep counter
+        self.end_time = end_time   # Max time
         #self.N = int(N)   # Max number of steps
         self.starttime = None
         self.keep_alive = keep_alive
@@ -454,7 +450,7 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def set_time(self, time):                                                # Runner
     #--------------------------------------------------------------------------------
-        self.T = int(time)
+        self.end_time = int(time)
 
     #--------------------------------------------------------------------------------
     def reset_processes(self):                                               # Runner
@@ -490,7 +486,6 @@ class Runner:                                                               # Ru
         else:
             self._print(f"Starting \'{' '.join(self.cmd)}\'", v=1)
             self.popen = Popen(self.cmd, stdout=self.log, stderr=STDOUT)      
-            #self.popen = Popen(self.cmd, stdin=DEVNULL, stdout=self.log, stderr=DEVNULL)      
         self.set_processes(error_func=error_func)
         if self.keep_alive > 0:
             self.suspend_timer = TimerThread(limit=self.keep_alive, prec=SUSPEND_TIMER_PRECICION, func=self.suspend_active)
@@ -502,13 +497,11 @@ class Runner:                                                               # Ru
         if error_func is None:
             error_func = self.unexpected_stop_error
         # Parent process
-        kwargs = {'app_name':self.name, 'error_func':error_func}
-        self.parent = self.main = Process(psutil.Process(pid=self.popen.pid), **kwargs)
+        self.parent = self.main = Process(pid=self.popen.pid, app_name=self.app_name, error_func=error_func)
         self._print(f'Parent process : {self.parent}, ')
         #self.parent.assert_running()
-        # Child processes (if they exists)
-        children, time = self.parent.get_children(log=self.verbose>3 and self._print)
-        self.children = [Process(c, **kwargs) for c in children]
+        # Find child processes (if they exists)
+        self.children, time = self.parent.get_children(log=self.verbose>3 and self._print)
         self._print(
             'Child process' + (len(self.children)>1 and 'es' or '')
             + (time is not None and f' ({time:.1f} sec)' or '')
@@ -645,7 +638,7 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
         time = self.time()
         # if time > self.T:
-        if int(time) > int(self.T):
+        if int(time) > int(self.end_time):
             #print(f'Time-limit reached, {time} > {self.T}!')
             raise SystemError(self.complete_msg())
         return time
