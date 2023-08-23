@@ -52,6 +52,9 @@ jobs:
         TAG=${{matrix.os}}                            # Tag executable with os-type
         NEW_NAME=${APP_NAME}_${TAG%-*}                # Remove everything after -
         mv -v dist/$APP_NAME$EXE dist/$NEW_NAME$EXE   # Rename pyinstaller generated file
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          chmod u+x dist/$NEW_NAME$EXE                # Make the file user executable
+        fi
         echo "ASSET=dist/$NEW_NAME$EXE#'${{matrix.os}} executable'" >> $GITHUB_ENV
     - name: Upload Asset
       run: gh release upload ${{github.event.release.tag_name}} ${{env.ASSET}}
