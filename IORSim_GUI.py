@@ -4,7 +4,7 @@
 DEBUG = False
 
 # Options
-CHECK_VERSION_AT_START = True
+CHECK_VERSION_AT_START = True # False
 
 from datetime import datetime
 from itertools import chain, cycle, product
