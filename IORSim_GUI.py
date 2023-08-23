@@ -62,7 +62,7 @@ def github_url(version):
 
 
 # External libraries
-from PySide6.QtWidgets import QScrollArea, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox
+from PySide6.QtWidgets import QScrollArea, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox, QProgressDialog
 from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression, QRect, QPoint
 #from PySide6.QtPdfWidgets import QPdfView
@@ -93,7 +93,7 @@ from requests import get as requests_get, exceptions as req_exceptions
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
 from IORlib.utils import removeprefix, Progress, clear_dict, convert_float_or_str, copy_recursive, same_length, flatten, get_keyword, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, delete_all, strip_zero, try_except_loop, unique_names, write_file
-from IORlib.ECL import DATA_file, File, UNSMRY_file, UNRST_file
+from IORlib.ECL import DATA_file, IX_input, File, UNSMRY_file, UNRST_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
 
@@ -101,10 +101,10 @@ QDir.addSearchPath('icons', resource_path()/'icons/')
 #FONT = 'Segoe UI'
 #LARGE_FONT = QFont(FONT, 9)
 #SMALL_FONT = QFont(FONT, 8)
-FONT_LARGE = 'font-size: 9pt' # for stylesheet
-FONT_SMALL = 'font-size: 8pt'
+FONT_LARGE = 'font-size: 9pt; color: black' # for stylesheet
+FONT_SMALL = 'font-size: 8pt; color: black'
 FONT_PLOT = 7
-
+FONT_MONO = QFont('Monospace', 8)
 
 #-----------------------------------------------------------------------
 def new_version(version_str):
@@ -279,7 +279,7 @@ def show_message(_window, kind, text='', extra='', ok_text=None, wait=False, det
         icon = QMessageBox.Information
     elif kind=='question':
         title = 'Question'
-        icon = QMessageBox.Information
+        icon = QMessageBox.Question
     elif kind=='warning':
         title = 'Warning'
         icon = QMessageBox.Warning
@@ -532,9 +532,10 @@ class download_worker(base_worker):
     #  Download updated executable in update_dir as a separate process
     #
     #-----------------------------------------------------------------------
-    def __init__(self, new_version, folder):
+    def __init__(self, new_version, folder):               # download_worker
     #-----------------------------------------------------------------------
         super().__init__(print_exception=False, log='download.log')
+        self._progess = None
         self.running = False
         self.new_version = new_version
         #print('new_version:',new_version)
@@ -547,9 +548,15 @@ class download_worker(base_worker):
         #self.log = folder/'download.log'
         self.log(f'Time: {datetime.now()}\nSavename: {self.savename}')
 
+    #-----------------------------------------------------------------------
+    def progress(self, parent):                        # download_worker
+    #-----------------------------------------------------------------------
+        self._progress = QProgressDialog(f"Downloading version {self.new_version}", "Cancel", 0, 0, parent)
+        self._progress.setMinimumDuration(0)
+        self._progress.setWindowModality(Qt.NonModal)
 
     #-----------------------------------------------------------------------
-    def runnable(self):
+    def runnable(self):                                    # download_worker
     #-----------------------------------------------------------------------
         if self.savename.is_file():
             ### File already downloaded!
@@ -569,6 +576,9 @@ class download_worker(base_worker):
         tot_size = int(response.headers.get('content-length', 0)) or len(response.content)
         self.update_progress((-tot_size, None, None))
         self.status_message(f'Downloading version {self.new_version}')
+        if self._progess:
+            self._progress.setMaximum(tot_size)
+            self._progress.open()
         size = 0
         block_size = 1024*1024 # 1 MB
         self.log(f'Size: {tot_size}\nBlocks: {tot_size/block_size}\nStart-time: {datetime.now()}')
@@ -579,6 +589,8 @@ class download_worker(base_worker):
                 size += len(data)
                 #print(f'{size/tot_size:.2f}%')
                 self.update_progress((size, None, None))
+                if self._progess:
+                    self._progress.setValue(size)
                 file.write(data)
         self.log(f'End-time: {datetime.now()}')
         if tot_size != 0 and tot_size != size:
@@ -593,6 +605,8 @@ class download_worker(base_worker):
             self.savename.unlink()
             # Point to unpacked folder
             self.savename = next(savedir.iterdir(), None)
+        if self._progess:
+            self._progress.close()
 
 
 #===========================================================================
@@ -696,7 +710,8 @@ class SubPlot():
     def __init__(self, fig=None, nrows=None, index=None, comb=None, data=None, varbox=None):
     #-----------------------------------------------------------------------
         self.yaxis = {'conc':'Concentration', 'prod':'Production', 'total':'Total', 'cut':'Water cut',
-                      'pres':'Pressure', 'rate':'Rate'}
+                      'pres':'Pressure', 'rate':'Rate', 'conc_wat':'Concentration in water',
+                      'conc_oil':'Concentration in oil', 'conc_gas':'Concentration in gas'}
         self.data = data
         self.comb = comb    # namedtuple('comb','kind yaxis well')
         self.varbox = varbox
@@ -843,7 +858,8 @@ class Plots:
         for kind in boxes:
             combinations = product((kind,), values('yaxis',kind), sorted(values('well',kind)))
             plot_comb.extend([comb(*c) for c in combinations])
-        #print(plot_comb)
+        # print(boxes)
+        # print(plot_comb)
         return plot_comb
 
     #-----------------------------------------------------------------------
@@ -1108,7 +1124,7 @@ class Editor(QGroupBox):
     def __init__(self, parent=None, name='', read_only=False, save=True, save_func=None, browser=False,
                  top=True, top_name='Top', end=True, search=True, search_width=None,
                  refresh=True, space=0, match_case=False, size_limit_mb=None,
-                 comment=None):
+                 comment=None, font=FONT_MONO):
     #-----------------------------------------------------------------------
         super().__init__(parent)
         self.btn_width = 60
@@ -1130,6 +1146,8 @@ class Editor(QGroupBox):
         self.match_case = match_case
         self.size_limit = size_limit_mb*1024**2 if size_limit_mb else None
         self.editor_ = MyQPlainTextEdit(self, comment=comment)
+        if font:
+            self.editor_.setFont(font)
         #self.editor_.setLineWrapMode(QPlainTextEdit.NoWrap)
         #self.set_text = self.editor_.setPlainText
         self.init_UI()
@@ -1906,13 +1924,17 @@ class main_window(QMainWindow):                                    # main_window
         self.user_guide = None
         self.case = None
         self.schedule = None
-        self.trcinp = None
+        self.iorsim_input = None
+        self.host_input = None
         self.cases = ()
         self.max_days = None
         self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 
                       'species':[], 'tracers':[], 'mode':None, 'cases':[]}
         self.input_to_save = ('root', 'days', 'mode', 'cases')
         self.settings = Settings(parent=self, file=str(settings_file))
+        self.view_host_input = {'Eclipse':self.view_eclipse_input, 'Intersect':self.view_intersect_input}
+        self.view_host_log   = {'Eclipse':self.view_eclipse_log,   'Intersect':self.view_intersect_log}
+        self.input_file = {'Eclipse' : DATA_file, 'Intersect': IX_input}
         self.initUI()
         self.load_session()
         self.set_input_field()
@@ -1975,17 +1997,20 @@ class main_window(QMainWindow):                                    # main_window
         #                                      func=self.delete_current_case)
         self.plot_act = create_action(self, text='Plot', icon='guide.png', func=self.view_plot, checkable=True)
         self.plot_act.setChecked(True)
+        host = 'Eclipse'
+        self.ix_convert_act = create_action(self, text='Create input from ECL', icon=None, 
+                                            func=self.convert_eclipse_to_intersect, checkable=False)
         self.ecl_inp_act = create_action(self, text='Input file', icon='document-attribute-e.png',
-                                         func=self.view_eclipse_input, checkable=True)
+                                         func=self.view_host_input[host], checkable=True)
         self.ior_inp_act = create_action(self, text='Input file', icon='document-attribute-i.png',
                                          func=self.view_iorsim_input, checkable=True)
         self.schedule_file_act = create_action(self, text='Schedule file', icon='document-attribute-s.png',
                                           func=self.view_schedule_file, checkable=True)
-        self.ecl_log_act = create_action(self, text='Run log', icon='script-attribute-e.png',
-                                         func=self.view_eclipse_log, checkable=True)
-        self.ior_log_act = create_action(self, text='Run log', icon='script-attribute-i.png',
+        self.ecl_log_act = create_action(self, text='Log file', icon='script-attribute-e.png',
+                                         func=self.view_host_log[host], checkable=True)
+        self.ior_log_act = create_action(self, text='Log file', icon='script-attribute-i.png',
                                          func=self.view_iorsim_log, checkable=True)
-        self.py_log_act = create_action(self, text='Script run log', icon='script-attribute.png',
+        self.py_log_act = create_action(self, text='Script log', icon='script-attribute.png',
                                         func=self.view_program_log, checkable=True)
                 
         
@@ -2015,6 +2040,7 @@ class main_window(QMainWindow):                                    # main_window
         self.ecl_incl_menu.setStyleSheet(FONT_SMALL)
         ecl_menu.addAction(self.ecl_log_act)
         self.view_group.addAction(self.ecl_log_act)
+        self.host_menu = ecl_menu
         ### IORSim
         ior_menu = menu.addMenu('&IORSim')
         ior_menu.addAction(self.ior_inp_act)
@@ -2178,6 +2204,7 @@ class main_window(QMainWindow):                                    # main_window
         signals.finished.connect(self.download_finished)
         signals.result.connect(self.download_success)
         if not self.silent_upgrade:
+            self.download_worker.progress(self)
             signals.status_message.connect(self.update_message)
             signals.show_message.connect(self.show_message_text)
             signals.progress.connect(self.update_progress)
@@ -2224,15 +2251,17 @@ class main_window(QMainWindow):                                    # main_window
     def create_toolbar_widgets(self):                           # main_window
     #-----------------------------------------------------------------------
         ### simulation controls
-        widgets = {'run'    : QComboBox(),
+        widgets = {'host'    : QComboBox(),
+                   'run'     : QComboBox(),
                    'case'    : QComboBox(),
                    'days'    : FloatEdit(),
                    'compare' : QComboBox()}
-        tips = ('Set running mode',
+        tips = ('Choose host simulator',
+                'Set running mode',
                 'Select recently opened case',
                 'Set total time interval',
                 'Compare current case against a previous case')
-        for i,(text,wid) in enumerate(list(widgets.items())[:3]):
+        for i,(text,wid) in enumerate(list(widgets.items())[:4]):
             ql = QLabel()
             ql.setText(text.capitalize())
             ql.setStatusTip(tips[i])
@@ -2253,6 +2282,14 @@ class main_window(QMainWindow):                                    # main_window
         wid.setStatusTip(tips[i])
         self.toolbar.addWidget(ql)
         self.toolbar.addWidget(wid)
+        # host
+        self.hosts = ('Eclipse','Intersect')
+        self.host_cb = widgets['host']
+        self.host_cb.addItems(self.hosts)
+        # Uncomment to disable Intersect 
+        #self.host_cb.model().item(1).setEnabled(False)
+        self.host_cb.setCurrentIndex(0)
+        self.host_cb.currentIndexChanged[int].connect(self.on_host_select)
         # mode
         self.modes = ['forward','backward','eclipse','iorsim']
         mode_names = ['Forward','Backward','Eclipse','IORSim']
@@ -2333,25 +2370,25 @@ class main_window(QMainWindow):                                    # main_window
         # Plain editor with no syntax-highlight or save-function
         self.editor = Editor(name='editor', save_func=None)
         # Schedule-file editor
-        #self.sch_editor = Editor(name='sch_editor', save_func=self.view_schedule_file, comment='--')
         self.sch_editor = Highlight_editor(name='sch_editor', save_func=self.view_schedule_file, comment='--')
         ### Eclipse editor
         rules = namedtuple('rules',('color weight option front back words'))
         sections = rules(Color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b', DATA_file.section_names)
         globals = rules(Color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b', DATA_file.global_kw)
         common = rules(Color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b', DATA_file.common_kw)
-        # self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common), save_func=self.prepare_case)
         self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common), save_func=self.refresh_case)
-        ### IORSim editor
+        # IORSim editor
         mandatory = rules(Color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b', IORSim_input.keywords.required)
         optional = rules(Color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b', IORSim_input.keywords.optional)
-        # self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=(mandatory, optional), save_func=self.prepare_case)
         self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=(mandatory, optional), save_func=self.refresh_case)
-        ### Chemfile editor
+        # Intersect editor
+        self.ix_editor = Highlight_editor(name='Intersect editor', comment='#')
+        self.host_editor = {'Eclipse':self.eclipse_editor, 'Intersect':self.ix_editor}
+        # Chemfile editor
         self.chem_editor = Highlight_editor(name='Chemistry editor', comment='#')
         self.log_viewer = Editor(name='log_viewer', read_only=True, size_limit_mb=5)
-        self.editors = (self.eclipse_editor, self.iorsim_editor, self.editor, self.chem_editor, self.log_viewer)
-        ### Plot is the default view at startup
+        self.editors = (self.eclipse_editor, self.ix_editor, self.iorsim_editor, self.editor, self.chem_editor, self.log_viewer)
+        # Plot is the default view at startup
         self.layout.addWidget(self.plot_area, *self.position['plot'])
 
 
@@ -2396,10 +2433,11 @@ class main_window(QMainWindow):                                    # main_window
         inp = self.input
         inp['ecl_days'], inp['species'], inp['tracers'] = None, [], []
         if inp['root']:
-            tsteps = DATA_file(inp['root']).timesteps(missing_ok=True, negative_ok=True)
+            #tsteps = DATA_file(inp['root']).timesteps(missing_ok=True, negative_ok=True)
+            tsteps = self.host_input.timesteps(missing_ok=True, negative_ok=True)
             inp['ecl_days'] = sum(tsteps)
-            inp['species'] = self.trcinp.species()
-            inp['tracers'] = self.trcinp.tracers()
+            inp['species'] = self.iorsim_input.species()
+            inp['tracers'] = self.iorsim_input.tracers()
             inp['species'] += inp['tracers']
 
 
@@ -2514,7 +2552,9 @@ class main_window(QMainWindow):                                    # main_window
         optional = ('.SCH',)
         inp_files = [(src.with_suffix(ext), dst.with_suffix(ext)) for ext in mandatory + optional]
         # Included files, same name but different folders
-        include_files = chain(DATA_file(src).include_files(), IORSim_input(src).include_files())
+        #include_files = chain(DATA_file(src).include_files(), IORSim_input(src).include_files())
+        host = self.get_current_host()
+        include_files = chain(self.input_file[host](src).include_files(), IORSim_input(src).include_files())
         inc_files = [(path, dst.parent/path.name) for path in include_files]
         missing_files = []
         for src_fil, dst_fil in inp_files + inc_files:
@@ -2580,10 +2620,11 @@ class main_window(QMainWindow):                                    # main_window
             self.missing_case_error(tag='set_mode: ')
             return False
         self.mode = self.input['mode'] = mode
-        mode_tip = {'forward' : 'Eclipse completes before IORSim starts',
-                    'backward': 'Eclipse and IORSim run one step in alternation',
-                    'eclipse' : 'Only run Eclipse',
-                    'iorsim'  : 'Only run IORSim'}
+        mode_tip = {'forward'   : 'Eclipse completes before IORSim starts',
+                    'backward'  : 'Eclipse and IORSim run one step in alternation',
+                    'eclipse'   : 'Only run Eclipse',
+                    'intersect' : 'Only run Intersect',
+                    'iorsim'    : 'Only run IORSim'}
         self.mode_cb.setStatusTip(mode_tip.get(mode))
         if days:
             self.days_box.setText(days)
@@ -2599,6 +2640,24 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
+    def on_host_select(self, nr):                               # main_window
+    #-----------------------------------------------------------------------
+        host = self.hosts[nr]
+        self.host_menu.setTitle('&'+host)
+        self.ecl_menu.setTitle(f'{host.upper()} plot options')
+        self.modes[2] = host.lower()
+        self.mode_cb.removeItem(2)
+        self.mode_cb.insertItem(2, host)
+        self.mode_cb.update()
+        #self.on_mode_select(self.mode_cb.currentIndex())
+        # Update file view actions
+        for act, func in ((self.ecl_inp_act, self.view_host_input), (self.ecl_log_act, self.view_host_log)):
+            act.triggered.disconnect()
+            act.triggered.connect(func[host])
+        #self.refresh_case()
+        self.on_case_select(self.case_cb.currentIndex())
+
+    #-----------------------------------------------------------------------
     def on_mode_select(self, nr):                               # main_window
     #-----------------------------------------------------------------------
         #print('on_mode_select')
@@ -2609,12 +2668,13 @@ class main_window(QMainWindow):                                    # main_window
         mode = self.modes[nr]
         fwd_tip = 'Edit TSTEP in Eclipse input to change the total time interval'
         back_tip = 'Set total time interval'
+        host = self.get_current_host().lower()
         if mode=='forward':
-            # need to run Eclipse before IORSim
-            self.set_mode(mode, days=self.input['ecl_days'], tip=fwd_tip, box=False, run=('eclipse','iorsim'))
+            # need to run Eclipse/Intersect before IORSim
+            self.set_mode(mode, days=self.input['ecl_days'], tip=fwd_tip, box=False, run=(host, 'iorsim'))
         elif mode=='backward':
             self.set_mode(mode, box=True, tip=back_tip)
-        elif mode=='eclipse':
+        elif mode in ('eclipse', 'intersect'):
             self.set_mode(mode, days=self.input['ecl_days'], box=False, tip=fwd_tip, run=mode)
             self.update_menu_boxes('ecl')
             self.create_plot()
@@ -2644,6 +2704,29 @@ class main_window(QMainWindow):                                    # main_window
             self.input[name] = val
             
     #-----------------------------------------------------------------------
+    def convert_eclipse_to_intersect(self):                  # main_window
+    #-----------------------------------------------------------------------
+        progress = QProgressDialog("Creating Intersect input from Eclipse case", "Cancel", 0, 0, self)
+        progress.setMinimumDuration(0)
+        #progress.setWindowModality(Qt.WindowModal)
+        progress.open()
+        status = IX_input.from_eclipse(self.case, progress=lambda x: progress.setValue(x), abort=progress.wasCanceled)
+        self.convert_status = int(status)
+        progress.close()
+
+
+    #-----------------------------------------------------------------------
+    def create_intersect_input_from_eclipse(self):                 # main_window
+    #-----------------------------------------------------------------------
+        self.convert_status = 1
+        if cause := IX_input.need_convert(self.case):
+            self.convert_status = -1
+            show_message(self, 'question', button=('Create', self.convert_eclipse_to_intersect), 
+                         text=cause+' Create Intersect input?', ok_text='Cancel', wait=True)
+        return self.convert_status
+
+
+    #-----------------------------------------------------------------------
     def on_case_select(self, nr):                              # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
@@ -2660,14 +2743,20 @@ class main_window(QMainWindow):                                    # main_window
             # Show full case-path in statusbar
             self.case_cb.setStatusTip(case)
             self.input['root'] = self.case = case
-            # set simulation mode based on READDATA keyword in .DATA-file
-            mode = 'forward'
             try:
-                if 'READDATA' in DATA_file(self.case):
-                    mode = 'backward'
-                    self.days_box.setEnabled(False)
-            except (FileNotFoundError, SystemError):
-                show_message(self, 'error', text='The Eclipse DATA-file is missing for this case')
+                host = self.get_current_host()
+                if host == 'Intersect':
+                    status = self.create_intersect_input_from_eclipse()
+                    if status < 1:
+                        # Set host back to Eclipse
+                        self.host_cb.setCurrentIndex(0)
+                        if status == 0:
+                            self.show_message_text('INFO Unable to create Intersect input from the existing Eclipse case.')
+                        return
+                self.host_input = self.input_file[host](self.case, check=True)
+            except SystemError as error:
+                show_message(self, 'error', text=str(error))
+            mode = self.host_input.mode()
             # on_mode_select() is called in prepare_case() and 
             # dont need to be triggered here    
             self.mode_cb.blockSignals(True)
@@ -2770,6 +2859,13 @@ class main_window(QMainWindow):                                    # main_window
 
         
     #-----------------------------------------------------------------------
+    def get_current_host(self):
+    #-----------------------------------------------------------------------
+        ind = self.host_cb.currentIndex()
+        if ind >= 0:
+            return self.hosts[ind]
+
+    #-----------------------------------------------------------------------
     def get_current_mode(self):
     #-----------------------------------------------------------------------
         ind = self.mode_cb.currentIndex()
@@ -2806,7 +2902,8 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_files = {}
         self.data = {}
         self.schedule = None
-        self.trcinp = None
+        #self.iorsim_input = None
+        #self.host_input = None
         for editor in self.editors:
             editor.clear()
         self.plot_area.clear()
@@ -2819,16 +2916,14 @@ class main_window(QMainWindow):                                    # main_window
         self.clear()
         root = self.case or self.input['root']
         self.case = root
-        #sch = Path(root).parent.glob('*.[Ss][Cc][Hh]')
-        #self.schedule = next((f for f in sch if f.stem == Path(root).stem), None)
         self.schedule = File(root, suffix='.SCH', ignore_suffix_case=True)
         #print('schedule', self.schedule)
         self.update_schedule_act()
         #print('prepare_case: ',root)
         self.reset_progress_and_message()
         self.ref_case.setCurrentIndex(0)
-        self.trcinp = IORSim_input(root)
-        self.out_wells, self.in_wells = self.trcinp.wells()
+        self.iorsim_input = IORSim_input(root)
+        self.out_wells, self.in_wells = self.iorsim_input.wells()
         self.set_variables_from_casefiles()
         if root:
             self.on_mode_select(self.mode_cb.currentIndex())
@@ -2863,9 +2958,12 @@ class main_window(QMainWindow):                                    # main_window
     def refresh_case(self):
     #-----------------------------------------------------------------------
         root = self.case
-        self.trcinp = IORSim_input(root)
-        self.out_wells, self.in_wells = self.trcinp.wells()
-        self.days_box.setText(sum(DATA_file(root).timesteps()))
+        host = self.get_current_host()
+        self.iorsim_input = IORSim_input(root)
+        self.host_input = self.input_file[host](root)
+        self.out_wells, self.in_wells = self.iorsim_input.wells()
+        #self.days_box.setText(sum(DATA_file(root).timesteps()))
+        self.days_box.setText(sum(self.host_input.timesteps()))
         self.set_variables_from_casefiles()
         self.clear_menus()
         self.update_ecl_menu()
@@ -2900,17 +2998,20 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_file_menu(self, files, menu, viewer=None, editor=None, title=''):
     #-----------------------------------------------------------------------
-        ### Clear menu
+        # Clear menu
         menu.clear()
-        ### Disable if empty 
+        # Disable if empty 
         enable = False
         for file in files:
-            #print(file)
+            _editor = editor
+            # Choose non-highlight editor if file is too large due to speed
+            if file.stat().st_size > 100*1024:
+                _editor = self.editor
             enable = True
-            act = create_action(self, text=file.name, checkable=True, func=partial(viewer, file, title=f'{title} {Path(file).name}', editor=editor), icon='document-c')
+            act = create_action(self, text=file.name, checkable=True, func=partial(viewer, file, title=f'{title} {Path(file).name}', editor=_editor), icon='document-c')
             act.setIconText('include')
             self.view_group.addAction(act)
-            ### Disable for non-existing file
+            # Disable for non-existing file
             act.setEnabled(file.is_file())
             menu.addAction(act)
             #self.view_group.addAction(act)
@@ -2932,8 +3033,11 @@ class main_window(QMainWindow):                                    # main_window
         ### Remove old include-files from the view-group
         [self.view_group.removeAction(act) for act in include_act]
         ### Add case-specific include files
-        self.update_file_menu(IORSim_input(root).include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry file', editor=self.chem_editor)
-        self.update_file_menu(DATA_file(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include file', editor=self.editor)
+        #self.update_file_menu(IORSim_input(root).include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry file', editor=self.chem_editor)
+        #self.update_file_menu(DATA_file(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include file', editor=self.editor)
+        self.update_file_menu(self.iorsim_input.include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry file', editor=self.chem_editor)
+        editor = self.host_editor[self.get_current_host()]
+        self.update_file_menu(self.host_input.include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include file', editor=editor)
 
         
     #-----------------------------------------------------------------------
@@ -3044,13 +3148,14 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def get_eclipse_well_yaxis_fluid(self, case=None, raise_error=True):    # main_window
     #-----------------------------------------------------------------------
-        ecl = DATA_file(case or self.input['root'])
+        #ecl = DATA_file(case or self.input['root'])
+        ecl = self.host_input
         ecl.check(include=False)
         #vars = [line for line in ecl.section('SUMMARY').lines() if line[0] in ('W','F','R')]
         vars = ecl.summary_keys(matching=self.ecl_keys)
         #print('vars', set(vars))
         if not vars and raise_error:
-            raise SystemError('SUMMARY keywords missing,\n\nEclipse plotting disabled.')
+            raise SystemError(f'SUMMARY keywords missing,\n\n{self.get_current_host()} plotting disabled.')
         #fy = ((f,y) for v in set(vars) if (f:=self.ecl_fluids.get(v[1])) and (y:=self.ecl_yaxes.get(v[2:4])))
         fy = ((f,y) for v in set(vars) if (f:=self.ecl_fluids.get(v[1:3])) and (y:=self.ecl_yaxes.get(v[2:4])))
         fluids, yaxis = zip(*fy)
@@ -3080,26 +3185,20 @@ class main_window(QMainWindow):                                    # main_window
         #  FWCT    - field water cut total (prod)
         #  ROIP    - Reservoir oil in place
 
-        # self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
-        # # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
-        # self.ecl_yaxes =       {'PR':'rate',   'PT':'prod',    'PC':'rate',   'IR':'irate',        'IT':'iprod', 'HP':'pres'}
-        # self.ecl_yaxes_names = {'rate':'Rate', 'prod':'Prod.', 'rate':'Rate', 'irate':'Inj. rate', 'iprod':'Inj. prod.', 'prod'}
         self.ecl_fluids = {'OP':'oprod', 'WP':'wprod', 'WC':'wcut', 'WI':'winj', 'OI':'oinj', 'GI':'ginj', 'GP':'gprod', 'TP':'temp', 
                            'CP':'pprod', 'CI':'pinj', 'TH':'thead', 'BH':'bhole'}
         self.ecl_fluids_names = {'oprod':'Oil prod.', 'wprod':'Water prod.', 'wcut':'Water cut', 'winj':'Water inj.', 'oinj':'Oil inj.', 
                                  'ginj':'Gas inj.', 'gprod':'Gas prod.', 'temp':'Temp.', 'pprod':'Polymer prod.', 'pinj':'Polymer inj.', 'thead':'Tubing head', 'bhole':'Bottom hole'}
-        # self.ecl_fluids_colors = {'oprod':Color.red, 'wprod':Color.blue, 'wcut':Color.dark, 'winj':Color.pink,
-        #                          'gprod':Color.green, 'temp':Color.black, 'pprod':Color.orange, 'thead':Color.turq, 'bhole':Color.brown}
         # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
         self.ecl_yaxes =       {'IR':'rate', 'PR':'rate', 'PT':'total', 'IT':'total', 'PC':'rate', 'HP':'pres', 'CT':'cut'}
         self.ecl_yaxes_names = {'rate':'Rate', 'total':'Total', 'pres':'Pressure', 'cut':'Cut'}
         keys = list(''.join(p) for p in product(('W','F'), ('O','W','G','C'), self.ecl_yaxes.keys()))
         self.ecl_keys = ['WTPCHEA','WTHP','WBHP'] + keys
 
-        case = case or self.case #input['root']
+        case = case or self.case
         self.unsmry[str(case)] = UNSMRY_file(case)
         ### Create dict of format [well][yaxis][fluid] = []
-        wellnames = DATA_file(case).wellnames()
+        wellnames = self.host_input.wellnames()
         field_wells = ('FIELD',) + wellnames
         ecl = {w:{'days':[]} for w in field_wells}
         [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in field_wells]
@@ -3302,20 +3401,35 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
+    def view_intersect_input(self, name=None, title=None):                 # main_window
+    #-----------------------------------------------------------------------
+        if not self.input['root']:
+            return
+        file = IX_input(self.input['root'], convert=False, check=False)
+        name = name or str(file.path)
+        title = title or str(file)
+        # Avoid re-opening file after it is saved
+        if self.current_viewer().file_is_open(name):
+            return
+        self.view_input_file(name, title=title, editor=self.ix_editor)
+
+
+    #-----------------------------------------------------------------------
     def view_iorsim_input(self):                                # main_window
     #-----------------------------------------------------------------------
-        if not self.trcinp:
+        if not self.iorsim_input:
             return 
-        if self.current_viewer().file_is_open(self.trcinp.path):
+        if self.current_viewer().file_is_open(self.iorsim_input.path):
             return
-        title = f'IORSim input file {self.trcinp}'
-        self.view_input_file(self.trcinp.path, title=title, editor=self.iorsim_editor)
+        title = f'IORSim input file {self.iorsim_input}'
+        self.view_input_file(self.iorsim_input.path, title=title, editor=self.iorsim_editor)
   
         
     #-----------------------------------------------------------------------
     def view_schedule_file(self):                                # main_window
     #-----------------------------------------------------------------------
-        days = DATA_file(self.input['root']).including(self.schedule.path).timesteps(missing_ok=True)
+        #days = DATA_file(self.input['root']).including(self.schedule.path).timesteps(missing_ok=True)
+        days = self.host_input.including(self.schedule.path).timesteps(missing_ok=True)
         self.view_input_file(self.schedule.path, title=f'Schedule file {self.schedule}, total days = {sum(days):.0f}', editor=self.sch_editor)
         
     #-----------------------------------------------------------------------
@@ -3333,6 +3447,11 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.view_log('eclipse.log', title='ECLIPSE run log', viewer=self.log_viewer)
         
+    #-----------------------------------------------------------------------
+    def view_intersect_log(self):                                # main_window
+    #-----------------------------------------------------------------------
+        self.view_log('intersect.log', title='INTERSECT run log', viewer=self.log_viewer)
+
     #-----------------------------------------------------------------------
     def view_iorsim_log(self):                                # main_window
     #-----------------------------------------------------------------------
@@ -3634,12 +3753,13 @@ class main_window(QMainWindow):                                    # main_window
         if self.mode=='backward':
             kwargs = {'mode':'backward', 'check_unrst':s.get('unrst'), 'check_rft':s.get('rft')}
         # forward mode
-        elif self.mode in ('forward','eclipse','iorsim'):
+        elif self.mode in ('forward','eclipse','intersect','iorsim'):
             kwargs = {'mode':'forward', 'run_names':self.run}
         # start simulation
         for opt in ('convert','del_convert','merge','del_merge','check_input_kw'):
             kwargs[opt] = s.get(opt)
-        self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get('iorsim'), eclexe=s.get('eclrun'),
+        self.worker = sim_worker(root=i['root'], time=i['days'], iorexe=s.get('iorsim'), eclexe=s.get('eclrun'),                                 
+                                 host_inp=self.host_input, ior_inp=self.iorsim_input,
                                  ecl_keep_alive=s.get('ecl_keep_alive') and float(s.get('ecl_alive_limit')),
                                  ior_keep_alive=s.get('ior_keep_alive') and IOR_ALIVE_LIMIT,
                                  days_box=self.days_box, verbose=int(s.get('log_level')), skip_empty=s.get('skip_empty'),

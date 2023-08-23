@@ -15,14 +15,14 @@ from re import compile as re_compile, MULTILINE
 from os.path import relpath
 from threading import Thread
 
-from psutil import NoSuchProcess, __version__ as psutil_version
+from psutil import NoSuchProcess
 
 from IORlib.utils import (flatten, get_keyword, list2text, pairwise,
     print_error, remove_comments, safeopen, Progress, silentdelete,
     delete_files_matching, tail_file, LivePlot, running_jupyter, ordered_intersect_index)
 from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, UNRST_file,
-    UNSMRY_file, MSG_file, PRT_file, IXF_file)
+    UNSMRY_file, MSG_file, PRT_file, IX_input)
 
 __version__ = '3.5.2'
 __author__ = 'Jan Ludvig Vinningland'
@@ -905,20 +905,21 @@ class Simulation:                                                        # Simul
     def __init__(self, mode=None, root=None, pause=0, run_names=(), to_screen=False,
                  convert=True, merge=True, del_convert=False, del_merge=False, delete=False,
                  status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None,
-                 message=lambda **x:None, intersect=False, **kwargs):
+                 message=lambda **x:None, intersect=0, host_inp=None, ior_inp=None, **kwargs):
     #--------------------------------------------------------------------------------
-        #print(kwargs)
-        #print('mode',mode,'root',root,'pause',pause,'runs',runs,'to_screen',to_screen,
+        #print('Simulation', 'mode',mode,'root',root,'pause',pause,'run_names',run_names,'to_screen',to_screen,
         #      'convert',convert,'merge',merge,'del_merge',del_merge,'del_convert',del_convert,
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
         self.logname = 'ior2ecl'
         self.root = Path(root).with_suffix('').resolve()
-        if intersect or 'intersect' in run_names:
-            ecl_inp = IXF_file
-        else:
-            ecl_inp = DATA_file
-        self.ECL_inp = ecl_inp(self.root, check=True)
-        self.IOR_inp = IORSim_input(self.root)
+        #input_kwargs = dict(check=True)
+        if host_inp is None:
+            if intersect or 'intersect' in run_names:
+                host_inp = IX_input(self.root, check=True, convert=intersect > 1)
+            else:
+                host_inp = DATA_file(self.root, check=True)
+        self.ECL_inp = host_inp
+        self.IOR_inp = ior_inp or IORSim_input(self.root, check=True)
         self.merge_OK = self.root.with_name(MERGE_OK_FILE)
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
@@ -1014,14 +1015,16 @@ class Simulation:                                                        # Simul
         tsteps = self.ECL_inp.timesteps(start=start, skiprest='SKIPREST' in self.ECL_inp)
         self.end_time = sum(tsteps) + self.restart.days
         kwargs.update({'end_time':self.end_time})
+        host = 'eclipse' if isinstance(self.ecl, DATA_file) else 'intersect'
         if not self.run_names:
-            self.run_names = ('eclipse','iorsim')
+            self.run_names = (host,'iorsim')
         if not self.IOR_inp.is_file():
-            self.run_names = ('eclipse',)
+            self.run_names = (host,)
         for name in self.run_names:
-            if name=='eclipse':
-                ecl = EclipseForward if isinstance(self.ECL_inp, DATA_file) else IntersectForward
-                self.ecl = ecl(exe=eclexe, **kwargs)
+            if name == 'eclipse':
+                self.ecl = EclipseForward(exe=eclexe, **kwargs)
+            if name == 'intersect':
+                self.ecl = IntersectForward(exe=eclexe, **kwargs)
             if name=='iorsim':
                 self.ior = Ior_forward(exe=iorexe, **kwargs)
         self.only_iorsim = self.run_names in (['iorsim'],('iorsim',))
@@ -1403,7 +1406,7 @@ def parse_input(settings_file=None):
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
     parser.add_argument('-iorsim',         help="Run only IORSim", action='store_true')
     parser.add_argument('-eclipse',        help="Run only Eclipse", action='store_true')
-    parser.add_argument('-intersect',      help="Use Intersect instead of Eclipse", action='store_true')
+    parser.add_argument('-intersect',      default=0, help="1: Use Intersect instead of Eclipse, 2: Use Intersect and convert from Eclipse case", type=int)
     parser.add_argument('-v',              default=DEFAULT_LOG_LEVEL, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
     if SCHEDULE_SKIP_EMPTY:
         parser.add_argument('-not_skip_empty', help='Do not skip empty schedule-file entries', action='store_true')
@@ -1432,13 +1435,21 @@ def parse_input(settings_file=None):
             raise SystemError('IORSim executable is missing')    
     return args
 
+#--------------------------------------------------------------------------------
+def progress_without_end(text='', length=20):
+#--------------------------------------------------------------------------------
+    def progress(n):
+        pos = n%length
+        rest = length-pos-1
+        print('\r' + text + ' [' + '-'*pos + '#' + '-'*rest + ']', end='', flush=True)
+    return progress
 
 @print_error
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
-           ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, intersect=False,
+           ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, intersect=0,
            check_input=False, verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY, **kwargs):
 #--------------------------------------------------------------------------------
     #----------------------------------------
@@ -1482,8 +1493,10 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         mode = 'forward'
         runs = ['eclipse'] if only_eclipse else ['iorsim']
 
-    #if intersect and 'eclipse' in runs:
-    #    runs[runs.index('eclipse')] = 'intersect'
+    if intersect > 1 and IX_input.need_convert(root):
+        conv_prog = progress_without_end(text='   Convert Eclipse case to Intersect', length=20)
+        IX_input.from_eclipse(root, progress=conv_prog, freq=10)
+        print('\r' + ' '*80, end='')
 
     sim = Simulation(root=root, time=time, iorexe=iorexe, eclexe=eclexe, intersect=intersect,
                      check_unrst=check_unrst, check_rft=check_rft, keep_files=keep_files, 

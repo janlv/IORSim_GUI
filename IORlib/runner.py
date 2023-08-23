@@ -27,8 +27,6 @@ def catch_permission_error(func):
             return func(*args, **kwargs)
         except PermissionError as error:
             raise SystemError(f'WARNING PermissionError in {func.__qualname__}()') from error
-            #print('PermissionError in ' + func.__qualname__)
-            #print('PermissionError in ' + func.__qualname__ + ': ',e)
     return inner
 
 #--------------------------------------------------------------------------------
@@ -229,9 +227,17 @@ class Process:                                                              # Pr
         return self._process
 
     #--------------------------------------------------------------------------------
-    def kill(self):                                                         # Process
+    def kill(self, children=False):                              # Process
     #--------------------------------------------------------------------------------
-        self._process.kill()
+        if children:
+            procs = self._process.children(recursive=True) + [self._process]
+            while procs:
+                for p in procs:
+                    p.kill()
+                _, procs = psutil.wait_procs(procs, timeout=None)
+        else:
+            self._process.kill()
+
 
     #--------------------------------------------------------------------------------
     def name(self):                                                         # Process
