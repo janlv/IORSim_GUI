@@ -554,6 +554,7 @@ class download_worker(base_worker):
         self._progress = QProgressDialog(f"Downloading version {self.new_version}", "Cancel", 0, 100, parent)
         self._progress.setMinimumDuration(0)
         self._progress.setWindowModality(Qt.NonModal)
+        print('PROGRESS', bool(self._progress), self._progess)
 
     #-----------------------------------------------------------------------
     def runnable(self):                                    # download_worker
@@ -579,7 +580,7 @@ class download_worker(base_worker):
         if self._progess:
             self._progress.setMaximum(tot_size)
             self._progress.open()
-            print(self._progress)
+        print('RUNNABLE progress', self._progress, self._progress and self._progress.maximum())
         size = 0
         block_size = 1024*1024 # 1 MB
         self.log(f'Size: {tot_size}\nBlocks: {tot_size/block_size}\nStart-time: {datetime.now()}')
@@ -591,6 +592,7 @@ class download_worker(base_worker):
                 #print(f'{size/tot_size:.2f}%')
                 self.update_progress((size, None, None, ['']))
                 if self._progess:
+                    print('RUNNABLE size', size)
                     self._progress.setValue(size)
                 file.write(data)
         self.log(f'End-time: {datetime.now()}')
@@ -607,8 +609,9 @@ class download_worker(base_worker):
             # Point to unpacked folder
             self.savename = next(savedir.iterdir(), None)
             # Make file executable
-            make_user_executable(self.savename)
+            #make_user_executable(self.savename)
         if self._progess:
+            print('RUNNABLE close') 
             self._progress.close()
 
 
