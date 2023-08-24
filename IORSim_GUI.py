@@ -535,7 +535,7 @@ class download_worker(base_worker):
     def __init__(self, new_version, folder):               # download_worker
     #-----------------------------------------------------------------------
         super().__init__(print_exception=False, log='download.log')
-        self._progess = None
+        self._progress = None
         self.running = False
         self.new_version = new_version
         #print('new_version:',new_version)
@@ -551,10 +551,10 @@ class download_worker(base_worker):
     #-----------------------------------------------------------------------
     def progress(self, parent):                        # download_worker
     #-----------------------------------------------------------------------
-        self._progress = QProgressDialog(f"Downloading version {self.new_version}", "Cancel", 0, 100, parent)
+        self._progress = QProgressDialog(f"Downloading version {self.new_version}", "Cancel", 0, 1, parent)
         self._progress.setMinimumDuration(0)
         self._progress.setWindowModality(Qt.NonModal)
-        print('PROGRESS', bool(self._progress), self._progess)
+        #print('PROGRESS', bool(self._progress), self._progress)
 
     #-----------------------------------------------------------------------
     def runnable(self):                                    # download_worker
@@ -577,10 +577,10 @@ class download_worker(base_worker):
         tot_size = int(response.headers.get('content-length', 0)) or len(response.content)
         self.update_progress((-tot_size, None, None, ['']))
         self.status_message(f'Downloading version {self.new_version}')
-        if self._progess:
+        if self._progress:
             self._progress.setMaximum(tot_size)
             self._progress.open()
-        print('RUNNABLE progress', self._progress, self._progress and self._progress.maximum())
+        #print('RUNNABLE progress', self._progress, self._progress and self._progress.maximum())
         size = 0
         block_size = 1024*1024 # 1 MB
         self.log(f'Size: {tot_size}\nBlocks: {tot_size/block_size}\nStart-time: {datetime.now()}')
@@ -591,8 +591,8 @@ class download_worker(base_worker):
                 size += len(data)
                 #print(f'{size/tot_size:.2f}%')
                 self.update_progress((size, None, None, ['']))
-                if self._progess:
-                    print('RUNNABLE size', size)
+                if self._progress:
+                    #print('RUNNABLE size', size)
                     self._progress.setValue(size)
                 file.write(data)
         self.log(f'End-time: {datetime.now()}')
@@ -610,8 +610,8 @@ class download_worker(base_worker):
             self.savename = next(savedir.iterdir(), None)
             # Make file executable
             #make_user_executable(self.savename)
-        if self._progess:
-            print('RUNNABLE close') 
+        if self._progress:
+            #print('RUNNABLE close') 
             self._progress.close()
 
 

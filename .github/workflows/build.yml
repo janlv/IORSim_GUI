@@ -52,6 +52,7 @@ jobs:
         TAG=${{matrix.os}}                            # Tag executable with os-type
         NEW_NAME=${APP_NAME}_${TAG%-*}                # Remove everything after -
         mv -v dist/$APP_NAME$EXE dist/$NEW_NAME$EXE   # Rename pyinstaller generated file
+        ls -l dist/$NEW_NAME$EXE
         echo "ASSET=dist/$NEW_NAME$EXE#'${{matrix.os}} executable'" >> $GITHUB_ENV
     # - name: Tar files
     #   run: tar -cvf my_files.tar dist
