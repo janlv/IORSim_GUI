@@ -92,7 +92,7 @@ from requests import get as requests_get, exceptions as req_exceptions
 
 # Local libraries
 from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import removeprefix, Progress, clear_dict, convert_float_or_str, copy_recursive, same_length, flatten, get_keyword, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, delete_all, strip_zero, try_except_loop, unique_names, write_file
+from IORlib.utils import make_user_executable, removeprefix, Progress, clear_dict, convert_float_or_str, copy_recursive, same_length, flatten, get_keyword, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, delete_all, strip_zero, try_except_loop, unique_names, write_file
 from IORlib.ECL import DATA_file, IX_input, File, UNSMRY_file, UNRST_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
@@ -488,7 +488,7 @@ class sim_worker(base_worker):
     def runnable(self):
     #-----------------------------------------------------------------------
         #self.progress_min = None
-        self.fraction = ['']
+        self.fraction = [''] # Fraction is updated in update_progress
         #------------------------------------
         def progress(run=None, value=None, min=None, n0=None):
         #------------------------------------
@@ -551,7 +551,7 @@ class download_worker(base_worker):
     #-----------------------------------------------------------------------
     def progress(self, parent):                        # download_worker
     #-----------------------------------------------------------------------
-        self._progress = QProgressDialog(f"Downloading version {self.new_version}", "Cancel", 0, 0, parent)
+        self._progress = QProgressDialog(f"Downloading version {self.new_version}", "Cancel", 0, 100, parent)
         self._progress.setMinimumDuration(0)
         self._progress.setWindowModality(Qt.NonModal)
 
@@ -574,11 +574,12 @@ class download_worker(base_worker):
         if not response.status_code == 200:
             self.raise_error(msg=f'{self.url} not found!')            
         tot_size = int(response.headers.get('content-length', 0)) or len(response.content)
-        self.update_progress((-tot_size, None, None))
+        self.update_progress((-tot_size, None, None, ['']))
         self.status_message(f'Downloading version {self.new_version}')
         if self._progess:
             self._progress.setMaximum(tot_size)
             self._progress.open()
+            print(self._progress)
         size = 0
         block_size = 1024*1024 # 1 MB
         self.log(f'Size: {tot_size}\nBlocks: {tot_size/block_size}\nStart-time: {datetime.now()}')
@@ -588,7 +589,7 @@ class download_worker(base_worker):
                     return
                 size += len(data)
                 #print(f'{size/tot_size:.2f}%')
-                self.update_progress((size, None, None))
+                self.update_progress((size, None, None, ['']))
                 if self._progess:
                     self._progress.setValue(size)
                 file.write(data)
@@ -605,6 +606,8 @@ class download_worker(base_worker):
             self.savename.unlink()
             # Point to unpacked folder
             self.savename = next(savedir.iterdir(), None)
+            # Make file executable
+            make_user_executable(self.savename)
         if self._progess:
             self._progress.close()
 
