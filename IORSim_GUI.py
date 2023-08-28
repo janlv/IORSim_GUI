@@ -158,7 +158,7 @@ class Upgrader:
         # Move new files over old ones
         # Keep trying to overwrite if PermissionError
         try_except_loop(self.new_file, dest, log=self.log, func=copy_recursive,
-            limit=limit, pause=pause, error=PermissionError)
+                        limit=limit, pause=pause, error=(PermissionError, OSError))
         # Start new version 
         with Popen(self.cmd) as proc:
             self.log(f'Started {self.cmd} as {proc}')
@@ -194,9 +194,15 @@ class Color:
     black  = GUI_color(00,00,00)
     dark   = GUI_color(100,100,100) #646464
     white  = GUI_color(255,255,255)
+    blue3  = GUI_color(110,155,245)  #
     blue   = GUI_color(31,119,180)  #1f77b4 
+    blue2  = GUI_color(124,82,252)   #
     orange = GUI_color(255,127,14)  #ff7f0e  
     green  = GUI_color(44,160,44)   #2ca02c
+    green2 = GUI_color(10,250,150) #
+    green3 = GUI_color(4,140,4)     #green - 40
+    green4 = GUI_color(160,209,36)   #
+    green5 = GUI_color(41,135,41)   #2ca02c
     red    = GUI_color(214,39,40)   #d62728
     violet = GUI_color(148,103,189) #9467bd
     brown  = GUI_color(140,86,75)   #8c564b
@@ -204,10 +210,12 @@ class Color:
     gray   = GUI_color(127,127,127) #7f7f7f
     yellow = GUI_color(188,189,34)  #bcbd22
     turq   = GUI_color(23,190,207)  #17becf
+    turq2  = GUI_color(3,207,252)  #
     as_tuple = (blue, orange, green, red, violet, brown, pink, gray, yellow, turq)
     #fluid = {'oil':red, 'water':blue, 'gas':green, 'polymer':orange}
-    fluid = {'oprod':red, 'wprod':blue, 'wcut':dark, 'winj':turq, 'oinj':violet, 'ginj':gray, 'gprod':green, 
-             'temp':black, 'pprod':orange, 'pinj':yellow, 'thead':pink, 'bhole':brown}
+    fluid = {'oprod':red,   'wprod':blue3,  'wcut':blue2, 'winj':turq2,   'oinj':violet, 'ginj':green4, 
+             'gprod':green5, 'gcons':green2, 'temp':black, 'pprod':orange, 'pinj':yellow, 
+             'thead':pink,  'bhole':brown}
     
     @staticmethod
     def cycle():
@@ -455,7 +463,9 @@ class sim_worker(base_worker):
     #-----------------------------------------------------------------------
     def current_run(self):
     #-----------------------------------------------------------------------
+        #print('\nWORKER.CURRENT_RUN')
         if self.sim:
+            #print('SIM.CURRENT_RUN', self.sim.current_run)
             return self.sim.current_run 
 
     #-----------------------------------------------------------------------
@@ -713,7 +723,15 @@ class SubPlot():
         'totalecl': 'Production [SM3]',
         'rateecl' : 'Rate [SM3/day]',
         'presecl' : 'Pressure [BARSA]',
-        'cutecl'  : 'Fraction'}
+        'cutecl'  : 'Fraction',
+        'totalix' : 'Production [SM3]',
+        'rateix'  : 'Rate [SM3/day]',
+        'presix'  : 'Pressure [BARSA]',
+        'cutix'   : 'Fraction'}
+    names = {
+        'ecl' : 'Eclipse',
+        'ix'  : 'Intersect',
+        'ior' : 'IORSim'}
 
     #-----------------------------------------------------------------------
     def __init__(self, fig=None, nrows=None, index=None, comb=None, data=None, varbox=None):
@@ -739,7 +757,8 @@ class SubPlot():
     #-----------------------------------------------------------------------
     def set_title(self, lax, comb):                            # SubPlot
     #-----------------------------------------------------------------------
-        name = 'Eclipse' if comb.kind == 'ecl' else 'IORSim'
+        #name = 'Eclipse' if comb.kind == 'ecl' else 'IORSim'
+        name = self.names[comb.kind]
         tag = 'well ' if comb.well != 'FIELD' else ''
         lax.title.set_text(f'{name}, {tag}{comb.well} {self.yaxis[comb.yaxis]}')
 
@@ -766,6 +785,7 @@ class SubPlot():
     #-----------------------------------------------------------------------
     def update_ref_lines(self, var=None):               # SubPlot
     #-----------------------------------------------------------------------
+        #print('UPDATE_LINES', var, self.ref_lines)
         self.update_lines(var=var, set_data=False, lines=self.ref_lines)
 
     #-----------------------------------------------------------------------
@@ -796,6 +816,7 @@ class SubPlot():
     #-----------------------------------------------------------------------
     def create_lines(self, prop):                                  # SubPlot
     #-----------------------------------------------------------------------
+        #print('CREATE_LINES()')
         self.lines = {}
         x, y = self.data
         if x is None or y is None:
@@ -875,7 +896,9 @@ class Plots:
     def get_data(self, comb, data):                                 # Plots
     #-----------------------------------------------------------------------
         #data = data or self._data
-        welldata = data and (k:=data.get(comb.kind)) and k.get(comb.well)
+        kind = 'ecl' if comb.kind == 'ix' else comb.kind
+        welldata = data and (k:=data.get(kind)) and k.get(comb.well)
+        #print(welldata.get('days'))
         return (welldata.get('days'), welldata.get(comb.yaxis)) if welldata else ([],{})
 
     #-----------------------------------------------------------------------
@@ -887,6 +910,7 @@ class Plots:
     #-----------------------------------------------------------------------
     def create(self, data=None, menuboxes=None, only_nonzero=False): # Plots
     #-----------------------------------------------------------------------
+        #print('PLOTS.CREATE()')
         self.fig.clf()
         self.plot_list = []
         self.combs = self.plot_combinations(menuboxes)
@@ -1007,6 +1031,7 @@ class PlotArea(QGroupBox):
     #-----------------------------------------------------------------------
     def create(self, data=None, menuboxes=None, only_nonzero=False): # PlotArea
     #-----------------------------------------------------------------------
+        #print('PLOT_AREA.CREATE()')
         self.plots.create(data, menuboxes, only_nonzero)
         if self.ref_data:
             self.add_ref_plot(self.ref_data, draw=False)
@@ -2077,7 +2102,11 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def about_app(self):
     #-----------------------------------------------------------------------
-        about = f'IORSim brings chemistry-based IOR methods to existing reservoir simulators with minor modifications of the original input files. IORSim currently runs with Eclipse 100, but can be made available for other reservoir simulators with some adaptations.'
+        about = '''
+        IORSim brings chemistry-based IOR methods to existing reservoir simulators 
+        with minor modifications of the original input files. IORSim currently runs 
+        with Eclipse 100 and Intersect, but can be made available for other reservoir 
+        simulators with some adaptations.'''
         self.show_message_text('INFO ' + about, extra=f'Version : {__version__}')
 
 
@@ -2606,6 +2635,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_menu_boxes(self, data, block_signal=True):       # main_window
     #-----------------------------------------------------------------------
+        #print('UPDATE_MENU_BOXES()')
         if data=='ecl':
             if not self.ecl_boxes:
                 return
@@ -2669,7 +2699,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_mode_select(self, nr):                               # main_window
     #-----------------------------------------------------------------------
-        #print('on_mode_select')
+        #print('ON_MODE_SELECT()')
         self.reset_progress_and_message()
         if nr < 0 or not self.case:
             return
@@ -2688,7 +2718,7 @@ class main_window(QMainWindow):                                    # main_window
             self.update_menu_boxes('ecl')
             self.create_plot()
         elif mode=='iorsim':
-            self.max_days = UNRST_file(self.input['root']).last_day() or 1
+            self.max_days = UNRST_file(self.input['root']).end_time() or 1
             self.set_mode(mode, days=self.max_days, box=True, tip='Set total time interval, maximun is '+str(self.max_days), run=mode)
             self.update_menu_boxes('ior')
             self.create_plot()
@@ -2765,6 +2795,8 @@ class main_window(QMainWindow):                                    # main_window
                 self.host_input = self.input_file[host](self.case, check=True)
             except SystemError as error:
                 show_message(self, 'error', text=str(error))
+                return
+                #self.host_input = self.input_file[host](self.case, check=False)
             mode = self.host_input.mode()
             # on_mode_select() is called in prepare_case() and 
             # dont need to be triggered here    
@@ -2906,6 +2938,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def clear(self):
     #-----------------------------------------------------------------------
+        #print('CLEAR()')
         self.clear_menus()
         self.unsmry = {}
         self.ior_files = {}
@@ -2940,7 +2973,8 @@ class main_window(QMainWindow):                                    # main_window
         self.data['ior'] = self.init_ior_data()
         # Add menu boxes
         self.update_ecl_menu()
-        self.menu_boxes['ecl'] = self.ecl_boxes
+        menu_name = 'ecl' if self.get_current_host() == 'Eclipse' else 'ix'
+        self.menu_boxes[menu_name] = self.ecl_boxes
         self.update_ior_menu()
         self.menu_boxes['ior'] = self.ior_boxes
         #self.enable_well_boxes(True)
@@ -3011,6 +3045,7 @@ class main_window(QMainWindow):                                    # main_window
         menu.clear()
         # Disable if empty 
         enable = False
+        #print(files)
         for file in files:
             _editor = editor
             # Choose non-highlight editor if file is too large due to speed
@@ -3194,10 +3229,15 @@ class main_window(QMainWindow):                                    # main_window
         #  FWCT    - field water cut total (prod)
         #  ROIP    - Reservoir oil in place
 
-        self.ecl_fluids = {'OP':'oprod', 'WP':'wprod', 'WC':'wcut', 'WI':'winj', 'OI':'oinj', 'GI':'ginj', 'GP':'gprod', 'TP':'temp', 
-                           'CP':'pprod', 'CI':'pinj', 'TH':'thead', 'BH':'bhole'}
-        self.ecl_fluids_names = {'oprod':'Oil prod.', 'wprod':'Water prod.', 'wcut':'Water cut', 'winj':'Water inj.', 'oinj':'Oil inj.', 
-                                 'ginj':'Gas inj.', 'gprod':'Gas prod.', 'temp':'Temp.', 'pprod':'Polymer prod.', 'pinj':'Polymer inj.', 'thead':'Tubing head', 'bhole':'Bottom hole'}
+        #print('INIT_ECL_DATA()')
+        self.ecl_fluids = {
+            'OP':'oprod', 'WP':'wprod', 'WC':'wcut', 'WI':'winj', 'OI':'oinj', 
+            'GI':'ginj', 'GP':'gprod', 'GC':'gcons', 'TP':'temp', 'CP':'pprod', 
+            'CI':'pinj', 'TH':'thead', 'BH':'bhole'}
+        self.ecl_fluids_names = {
+            'oprod':'Oil prod.', 'wprod':'Water prod.', 'wcut':'Water cut', 'winj':'Water inj.', 'oinj':'Oil inj.', 
+            'ginj':'Gas inj.', 'gprod':'Gas prod.', 'gcons':'Gas cons.', 'temp':'Temp.', 'pprod':'Polymer prod.', 
+            'pinj':'Polymer inj.', 'thead':'Tubing head', 'bhole':'Bottom hole'}
         # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
         self.ecl_yaxes =       {'IR':'rate', 'PR':'rate', 'PT':'total', 'IT':'total', 'PC':'rate', 'HP':'pres', 'CT':'cut'}
         self.ecl_yaxes_names = {'rate':'Rate', 'total':'Total', 'pres':'Pressure', 'cut':'Cut'}
@@ -3223,6 +3263,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def read_ecl_data(self, data=None, case=None, skip_zero=True):   # main_window
     #-----------------------------------------------------------------------
+        #print('READ_ECL_DATA()')
         #print(f'read_ecl_data(self, data={data}, case={case}, skip_zero={skip_zero}')
         case = case or self.case
         unsmry = self.unsmry.get(str(case))
@@ -3252,6 +3293,7 @@ class main_window(QMainWindow):                                    # main_window
                 y = self.ecl_yaxes[val.key[2:4]]
                 f = self.ecl_fluids[val.key[1:3]]
                 data[val.well][y][f].extend(val.data[start:])
+        #print('READ DONE')
         return True
 
 
@@ -3616,7 +3658,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_plot(self, keep_ref=True):                         # main_window
     #-----------------------------------------------------------------------                
+        #print('CREATE_PLOT', self.menu_boxes.keys())
         self.plot_area.create(self.data, self.menu_boxes, only_nonzero=not self.worker)
+        #self.plot_area.create(self.data, self.menu_boxes, only_nonzero=True)
             
     #-----------------------------------------------------------------------
     def update_remaining_time(self, text='0:00:00'):           # main_window
@@ -3682,25 +3726,46 @@ class main_window(QMainWindow):                                    # main_window
         #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
 
 
+    #-----------------------------------------------------------------------
+    def read_all_data(self):
+    #-----------------------------------------------------------------------
+        ok = {'ecl':True, 'ior':True}
+        if self.mode == 'backward':
+            ok['ior'] = self.read_ior_data()
+            ok['ecl'] = self.read_ecl_data()
+        #if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current_run():
+        else:
+            if self.worker and (run:=self.worker.current_run()):
+                #run = self.worker.current_run()
+                if run in ('ecl', 'eclipse', 'eclrun', 'intersect'):
+                    run = 'ecl'
+                    ok[run] = self.read_ecl_data()
+                if run in ('ior','iorsim'):
+                    run = 'ior'
+                    ok[run] = self.read_ior_data()
+
 
     #-----------------------------------------------------------------------
     def update_view_area(self):
     #-----------------------------------------------------------------------
         #print('update_view_area')
-        ok = {'ecl':True, 'ior':True}
-        if self.mode == 'backward':
-            ok['ior'] = self.read_ior_data()
-            ok['ecl'] = self.read_ecl_data()
-        if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current_run():
-            run = self.worker.current_run()
-            if run in ('ecl','eclipse','eclrun'):
-                run = 'ecl'
-                ok[run] = self.read_ecl_data()
-            if run in ('ior','iorsim'):
-                run = 'ior'
-                ok[run] = self.read_ior_data()
+        # ok = {'ecl':True, 'ior':True}
+        # if self.mode == 'backward':
+        #     ok['ior'] = self.read_ior_data()
+        #     ok['ecl'] = self.read_ecl_data()
+        # #if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current_run():
+        # else:
+        #     if self.worker and (run:=self.worker.current_run()):
+        #         #run = self.worker.current_run()
+        #         if run in ('ecl', 'eclipse', 'eclrun', 'intersect'):
+        #             run = 'ecl'
+        #             ok[run] = self.read_ecl_data()
+        #         if run in ('ior','iorsim'):
+        #             run = 'ior'
+        #             ok[run] = self.read_ior_data()
         view = self.current_viewer()
         if view == self.plot_area: 
+            self.read_all_data()
             self.plot_area.update_plots()
         elif view == self.log_viewer:
             self.update_log(view)

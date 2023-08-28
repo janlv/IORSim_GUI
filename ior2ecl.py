@@ -21,7 +21,7 @@ from IORlib.utils import (flatten, get_keyword, list2text, pairwise,
     print_error, remove_comments, safeopen, Progress, silentdelete,
     delete_files_matching, tail_file, LivePlot, running_jupyter, ordered_intersect_index)
 from IORlib.runner import Runner
-from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, UNRST_file,
+from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, Restart, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file, IX_input)
 
 __version__ = '3.6.0'
@@ -81,7 +81,7 @@ class SLBRunner(Runner):                                                  # SLBR
     #--------------------------------------------------------------------------------
     def time(self):                                                       # SLBRunner
     #--------------------------------------------------------------------------------
-        return self.prt.last_day() or self.rft.last_day() or self.unrst.last_day() or super().time()
+        return self.prt.end_time() or self.rft.end_time() or self.unrst.end_time() or super().time()
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                        # SLBRunner
@@ -913,13 +913,14 @@ class Simulation:                                                        # Simul
         self.logname = 'ior2ecl'
         self.root = Path(root).with_suffix('').resolve()
         #input_kwargs = dict(check=True)
-        if host_inp is None:
-            if intersect or 'intersect' in run_names:
-                host_inp = IX_input(self.root, check=True, convert=intersect > 1)
-            else:
-                host_inp = DATA_file(self.root, check=True)
-        self.ECL_inp = host_inp
-        self.IOR_inp = ior_inp or IORSim_input(self.root, check=True)
+        self.ECL_inp = None
+        self.IOR_inp = None
+        if intersect or 'intersect' in run_names:
+            self.ECL_inp = host_inp or IX_input(self.root, check=True, convert=intersect > 1)
+        if 'eclipse' in run_names:
+            self.ECL_inp = host_inp or DATA_file(self.root, check=True)
+        if 'iorsim' in run_names:
+            self.IOR_inp = ior_inp or IORSim_input(self.root, check=True)
         self.merge_OK = self.root.with_name(MERGE_OK_FILE)
         self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
@@ -991,15 +992,22 @@ class Simulation:                                                        # Simul
         """
         Read Eclipse and IORSim input files, run the init_func, and return the run_func
         """
-        # Check if this is a restart-run
-        self.restart = self.ECL_inp.restart()
-        if self.restart.run:
-            # Start date given by first entry of restart-file (UNRST-file)
-            self.start = next(self.restart.file.dates()) 
+        if self.ECL_inp:
+            # Check if this is a restart-run
+            self.restart = self.ECL_inp.restart()
+            if self.restart.run:
+                # Start date given by first entry of restart-file (UNRST-file)
+                self.start = next(self.restart.file.dates()) 
+            else:
+                # Read start from DATA-file
+                self.start = self.ECL_inp.start()
+            self.mode = self.mode or self.ECL_inp.mode()
         else:
-            # Read start from DATA-file
-            self.start = self.ECL_inp.start()
-        self.mode = self.mode or self.ECL_inp.mode()
+            # This is a forward IORSim run
+            self.restart = Restart()
+            #self.start = next(UNRST_file(self.root).dates())
+            self.mode = 'forward'
+
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
         run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
         self.runs = init_func(**self.kwargs)
@@ -1011,15 +1019,19 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def init_forward_run(self, iorexe=None, eclexe=None, **kwargs):      # Simulation
     #--------------------------------------------------------------------------------
-        start = self.start + timedelta(days=self.restart.days)
-        tsteps = self.ECL_inp.timesteps(start=start, skiprest='SKIPREST' in self.ECL_inp)
-        self.end_time = sum(tsteps) + self.restart.days
+        if self.ECL_inp:
+            start = self.start + timedelta(days=self.restart.days)
+            tsteps = self.ECL_inp.timesteps(start=start, skiprest='SKIPREST' in self.ECL_inp)
+            self.end_time = sum(tsteps) + self.restart.days
+        else:
+            # This is a forward IORSim run
+            self.end_time = UNRST_file(self.root).end_time()
         kwargs.update({'end_time':self.end_time})
-        host = 'eclipse' if isinstance(self.ecl, DATA_file) else 'intersect'
-        if not self.run_names:
-            self.run_names = (host,'iorsim')
-        if not self.IOR_inp.is_file():
-            self.run_names = (host,)
+        # host = 'eclipse' if isinstance(self.ecl, DATA_file) else 'intersect'
+        # if not self.run_names:
+        #     self.run_names = (host,'iorsim')
+        # if not self.IOR_inp or not self.IOR_inp.is_file():
+        #     self.run_names = (host,)
         for name in self.run_names:
             if name == 'eclipse':
                 self.ecl = EclipseForward(exe=eclexe, **kwargs)
@@ -1051,7 +1063,8 @@ class Simulation:                                                        # Simul
             silentdelete(self.merge_OK)
         run_time = timedelta()
         ret = ''
-        self.update.progress(value=-self.end_time, min=self.restart.days or 0)
+        # self.update.progress(value=-self.end_time, min=self.restart.days or 0)
+        self.update.progress(value=-self.end_time, min=self.restart.days)
         for run in self.runs:
             self.current_run = run.name.lower()
             run.delete_output_files()
@@ -1065,6 +1078,7 @@ class Simulation:                                                        # Simul
             self.update.progress(run)
             self.update.plot()
             run.t = run.time()
+            #print('time:',run.t)
             dec = min(len(str(t).split('.')[-1]) for t in (run.t, run.end_time))
             #print(run.name, dec, run.t, run.T)
             if round(run.t, dec) < round(run.end_time, dec):
@@ -1324,8 +1338,9 @@ class Simulation:                                                        # Simul
             s += f' (restart after {days.days} days, at {(self.start + days).date()})'
             s += self.skiprest and ' (SKIPREST)' or ''
         s += '\n'
-        dtmin, dtmax = self.IOR_inp.get('dtmin_ecl', 'dtmax_ecl')
-        s += f'    {"Timestep":{width}}: {dtmin}{(f" - {dtmax}" if dtmin!=dtmax else "")} days\n'
+        if self.IOR_inp:
+            dtmin, dtmax = self.IOR_inp.get('dtmin_ecl', 'dtmax_ecl')
+            s += f'    {"Timestep":{width}}: {dtmin}{(f" - {dtmax}" if dtmin!=dtmax else "")} days\n'
         s += (self.schedule and self.schedule.sch_file) and f'    {"Schedule":{width}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         rundir = str(Path.cwd())
         s += f'    {"Run-dir":{width}}: {rundir}\n'
