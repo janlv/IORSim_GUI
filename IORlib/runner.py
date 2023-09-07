@@ -483,7 +483,8 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def start(self, error_func=None):                                        # Runner
     #--------------------------------------------------------------------------------
-        self.log = not self.kwargs.get('to_screen', False) and safeopen(self.logname, 'w') or None
+        #self.log = not self.kwargs.get('to_screen', False) and safeopen(self.logname, 'w') or None
+        self.log = safeopen(self.logname, 'w') if not self.kwargs.get('to_screen', False) else None
         self.starttime = datetime.now()
         if self.pipe:
             self._print("Starting in PIPE-mode", v=1)
@@ -599,9 +600,9 @@ class Runner:                                                               # Ru
         t = 0
         if self.log:
             self.log.flush() 
-            match = matches(file=self.log.name, pattern=self.time_regex)
+            match = matches(file=self.logname, pattern=self.time_regex)
             time = [m.group(1) for m in match]
-            t = time and time[-1] or 0           
+            t = time[-1] if time else 0           
         return float(t)
 
 
@@ -643,6 +644,7 @@ class Runner:                                                               # Ru
     def get_time_and_stop_if_limit_reached(self):                          # Runner
     #--------------------------------------------------------------------------------
         time = self.time()
+        # print('TIME',time)
         # if time > self.T:
         if int(time) > int(self.end_time):
             #print(f'Time-limit reached, {time} > {self.T}!')
@@ -699,7 +701,8 @@ class Runner:                                                               # Ru
         self.log and self.log.close()
         self.log = None
         # Stop and delete the suspend-timer-thread
-        self.suspend_timer and self.suspend_timer.close()
+        if self.suspend_timer:
+            self.suspend_timer.close()
         self.suspend_timer = None # For garbage collector (__del__)
         # Delete interface-files 
         # if self.ext_iface and not self.keep_files:

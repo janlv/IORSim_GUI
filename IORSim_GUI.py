@@ -473,26 +473,7 @@ class sim_worker(base_worker):
     #-----------------------------------------------------------------------
         if self.sim:
             self.sim.cancel()
-
-    # #----------------------------------------
-    # def progress(run=None, value=None, min=None, n0=None):
-    # #----------------------------------------
-    #     #print('progress in:', value, min, n0)
-    #     if n0 is not None:
-    #         prog.reset_time(n=n0)
-    #     if min is not None:
-    #         prog.set_min(min)
-    #     if run:
-    #         value = run.t
-    #     if value is None:
-    #         prog.reset_time(min=prog.min)
-    #     else:
-    #         if value<0:
-    #             prog.reset(N=abs(value), min=min)
-    #             return
-    #         prog.print(value, text=run and f'({run.name})' or '')
             
-
     @Slot()
     #-----------------------------------------------------------------------
     def runnable(self):
@@ -502,12 +483,18 @@ class sim_worker(base_worker):
         #------------------------------------
         def progress(run=None, value=None, min=None, n0=None):
         #------------------------------------
+            #print('PROGRESS', run, value, min, n0)
+            self.signals.progress
             if run:
                 value = run.t
+                #print('PROGRESS', value)
             self.update_progress((value, min, n0, self.fraction))
+            #print('PROGRESS FRACTION', self.fraction)
         #------------------------------------
         def status(run=None, value=None, mode=None, **x):
         #------------------------------------
+            #print('STATUS', value, mode)
+            #print('STATUS FRACTION', self.fraction)
             if not value and run:
                 value = f'{run.name}   {self.fraction[0]} days'
                 if mode == 'forward':
@@ -740,6 +727,7 @@ class SubPlot():
                       'pres':'Pressure', 'rate':'Rate', 'conc_wat':'Concentration in water',
                       'conc_oil':'Concentration in oil', 'conc_gas':'Concentration in gas'}
         self.data = data
+        #print('SUBPLOT', id(self.data))
         self.comb = comb    # namedtuple('comb','kind yaxis well')
         self.varbox = varbox
         # Add left and right axis
@@ -791,11 +779,13 @@ class SubPlot():
     #-----------------------------------------------------------------------
     def update_lines(self, var=None, set_data=True, lines=None):               # SubPlot
     #-----------------------------------------------------------------------
+        # print('UPDATE_LINES',var, set_data, lines)
         if lines is None:
             lines = self.lines
         x, y = 2*[None]
         if set_data:
             x, y = self.data
+        # print('X',x)
         for var_,line_ in lines.items():
             if var and var != var_:
                 continue
@@ -807,6 +797,7 @@ class SubPlot():
                 elif DEBUG:
                     print(f'Size mismatch for {var_}: {len(x)} != {len(y[var_])}')
         self.update_axes()
+        # print('DONE')
 
     # #-----------------------------------------------------------------------
     # def is_visible(self, y, var): 
@@ -816,11 +807,12 @@ class SubPlot():
     #-----------------------------------------------------------------------
     def create_lines(self, prop):                                  # SubPlot
     #-----------------------------------------------------------------------
-        #print('CREATE_LINES()')
+        # print('CREATE_LINES')
         self.lines = {}
         x, y = self.data
         if x is None or y is None:
             return
+        # print('X',x)
         all_vars = self.varbox.keys()
         ok_vars = [var for var in all_vars if len(x) == len(y[var])]
         if DEBUG and (not_ok := set(all_vars) - set(ok_vars)):
@@ -834,6 +826,7 @@ class SubPlot():
             #print('prop',prop[var])
             self.lines[var], = ax.plot(x, y[var], **prop[var]._asdict(), visible=self.varbox[var].isChecked())
             #self.lines[var].set_visible(self.varbox[var].isChecked())
+        # print('DONE')
 
     #-----------------------------------------------------------------------
     def create_ref_lines(self, data, lw=1.5, alpha=0.3):                              # SubPlot
@@ -898,28 +891,32 @@ class Plots:
         #data = data or self._data
         kind = 'ecl' if comb.kind == 'ix' else comb.kind
         welldata = data and (k:=data.get(kind)) and k.get(comb.well)
-        #print(welldata.get('days'))
         return (welldata.get('days'), welldata.get(comb.yaxis)) if welldata else ([],{})
+        # print('GET_DATA', id(ret), 'id(data)=',id(data), ret[0])
+        #return ret
 
     #-----------------------------------------------------------------------
     def nonzero_data(self, comb, data):                              # Plots
     #-----------------------------------------------------------------------
+        # print('NONZERO_DATA')
         ydata = self.get_data(comb, data)[1]
         return comb.well == 'FIELD' or any(sum(var) > MIN_PLOT_VALUE for var in ydata.values())
 
     #-----------------------------------------------------------------------
     def create(self, data=None, menuboxes=None, only_nonzero=False): # Plots
     #-----------------------------------------------------------------------
-        #print('PLOTS.CREATE()')
+        # print('PLOTS.CREATE()', id(data))
         self.fig.clf()
         self.plot_list = []
         self.combs = self.plot_combinations(menuboxes)
+        # print('COMBS', self.combs)
         # Enable all wellboxes
         for menu in menuboxes.values():
             if well:=menu.get('well'):
                 for wellbox in well.values():
                     wellbox.setEnabled(True)
         if only_nonzero:
+            # Remove combinations with all zero values
             nonzero = [comb for comb in self.combs if self.nonzero_data(comb, data)]
             nz_kind_well = [(c.kind, c.well) for c in nonzero]
             # Disable wellboxes with no data
@@ -1031,7 +1028,7 @@ class PlotArea(QGroupBox):
     #-----------------------------------------------------------------------
     def create(self, data=None, menuboxes=None, only_nonzero=False): # PlotArea
     #-----------------------------------------------------------------------
-        #print('PLOT_AREA.CREATE()')
+        # print('PLOT_AREA.CREATE()', id(data))
         self.plots.create(data, menuboxes, only_nonzero)
         if self.ref_data:
             self.add_ref_plot(self.ref_data, draw=False)
@@ -2896,6 +2893,8 @@ class main_window(QMainWindow):                                    # main_window
         self.create_caselist(remove=case)
         if self.case_cb.currentIndex() < 0:
             self.clear()
+        self.iorsim_input = None
+        self.host_input = None
         return case
 
         
@@ -3263,7 +3262,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def read_ecl_data(self, data=None, case=None, skip_zero=True):   # main_window
     #-----------------------------------------------------------------------
-        #print('READ_ECL_DATA()')
+        # print('READ_ECL_DATA()', id(self.data))
         #print(f'read_ecl_data(self, data={data}, case={case}, skip_zero={skip_zero}')
         case = case or self.case
         unsmry = self.unsmry.get(str(case))
@@ -3273,6 +3272,7 @@ class main_window(QMainWindow):                                    # main_window
             data = self.data.get('ecl')
         #new_data = unsmry.read(keys=self.ecl_keys, only_new=True)
         new_data = unsmry.welldata(keys=self.ecl_keys, only_new=True)
+        #print('NEW_DATA', new_data)
         # Enable menu-well-boxes for active wells
         #for well in set(unsmry.wells):
         for well in unsmry.wells:
@@ -3284,6 +3284,7 @@ class main_window(QMainWindow):                                    # main_window
                 ### Skip zero-time data
                 start = 1
             data['days'].extend(new_data.days[start:])
+            # print('DAYS', data['days'])
             #for w in set(unsmry.wells):
             for w in unsmry.wells:
                 data[w]['days'].extend(new_data.days[start:])
@@ -3293,7 +3294,7 @@ class main_window(QMainWindow):                                    # main_window
                 y = self.ecl_yaxes[val.key[2:4]]
                 f = self.ecl_fluids[val.key[1:3]]
                 data[val.well][y][f].extend(val.data[start:])
-        #print('READ DONE')
+        # print('READ DONE')
         return True
 
 
@@ -3672,6 +3673,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_progressbar(self, t):
     #-----------------------------------------------------------------------
+        #print('update_progressbar', t)
         if t >= 0:
             self.progressbar.setValue(t)
 
@@ -3692,12 +3694,15 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
-    def update_progress(self, t_min_n0_tuple):
+    def update_progress(self, t_min_n0_frac_tuple):
     #-----------------------------------------------------------------------
-        t, min_, n0, fraction = t_min_n0_tuple
-        #print('update_progress, ',t, min_, n0)
+        t, min_, n0, fraction = t_min_n0_frac_tuple
+        #print('update_progress, ',t, min_, n0, fraction)
         if not self.progress:
             self.progress = Progress()
+        # print('BEFORE', fraction)
+        fraction[0] = self.progress.fraction(t)
+        # print('AFTER', fraction)
         if n0 is not None:
             self.progress.reset_time(n=n0)
         if min_ is not None:
@@ -3708,12 +3713,6 @@ class main_window(QMainWindow):                                    # main_window
             self.update_remaining_time()
             self.progressbar.setMinimum(0)
         else:
-            # if t==0: 
-            #     self.update_remaining_time()
-            #     self.progressbar.setMinimum(0)
-            #     if self.progress:
-            #         self.progress.set_min(0)
-            #     return
             if t < 0:
                 N = abs(int(t)) 
                 self.progress.reset(N=N, min=min_)
@@ -3722,8 +3721,6 @@ class main_window(QMainWindow):                                    # main_window
             else:
                 self.update_progressbar(t)
                 self.update_remaining_time(text=self.progress.remaining_time(t))
-        fraction[0] = self.progress.fraction(t)
-        #print(self.progressbar.minimum(), self.progressbar.maximum(), self.progressbar.value())
 
 
     #-----------------------------------------------------------------------
@@ -3838,9 +3835,12 @@ class main_window(QMainWindow):                                    # main_window
                                  ior_keep_alive=s.get('ior_keep_alive') and IOR_ALIVE_LIMIT,
                                  days_box=self.days_box, verbose=int(s.get('log_level')), skip_empty=s.get('skip_empty'),
                                  **kwargs)
+        # The progress function needs to complete before other functions are called.
+        # This is to ensure an updated progress fraction is displayed when status_message() is called. 
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
-        self.worker.signals.progress.connect(self.update_progress)
+        self.worker.signals.progress.connect(self.update_progress, Qt.ConnectionType.BlockingQueuedConnection)
+        #self.worker.signals.progress.connect(self.update_progress)
         self.worker.signals.plot.connect(self.update_view_area)
         self.worker.signals.finished.connect(self.run_finished)
         self.threadpool.start(self.worker)
@@ -3905,6 +3905,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_message(self, text='', limit=100):
     #-----------------------------------------------------------------------
+        # print('UPDATE_MESSAGE', text)
         if text.startswith(('WARNING','ERROR','INFO')):
             text = text.replace(text.split()[0],'')
         #print('|'+text+'|')

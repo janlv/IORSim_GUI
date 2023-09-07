@@ -81,6 +81,7 @@ class SLBRunner(Runner):                                                  # SLBR
     #--------------------------------------------------------------------------------
     def time(self):                                                       # SLBRunner
     #--------------------------------------------------------------------------------
+        # print('PRT', self.prt.end_time(), 'RFT', self.rft.end_time(),'UNRST', self.unrst.end_time(), 'self', super().time())
         return self.prt.end_time() or self.rft.end_time() or self.unrst.end_time() or super().time()
 
     #--------------------------------------------------------------------------------
@@ -89,7 +90,7 @@ class SLBRunner(Runner):                                                  # SLBR
         """ 
         Delete case-specific output-files
         """
-        file_ext = ('*UNRST','RFT','SMSPEC','UNSMRY','RTELOG','RTEMSG','MSG','session*','dbprtx.lock*')
+        file_ext = ('*UNRST','RFT','SMSPEC','UNSMRY','MSG','PRT','session*','dbprtx.lock*')
         delete_files_matching( [f'{self.case}*.{ext}' for ext in file_ext] )
         delete_files_matching(self.case.parent/'fort??????')
         delete_files_matching(self.case.parent/'hostfile.*')
@@ -166,7 +167,7 @@ class ForwardMixin:                                                    # Forward
     #--------------------------------------------------------------------------------
     def init_control_func(self, update=(), count=5):                   # ForwardMixin
     #--------------------------------------------------------------------------------
-        ''' Set up control for forward runs '''
+        """ Set up control for forward runs """
         self.update = update
         self.loop_count = 0
         #self.pause = pause
@@ -175,14 +176,17 @@ class ForwardMixin:                                                    # Forward
     #--------------------------------------------------------------------------------
     def control_func(self):                                            # ForwardMixin
     #--------------------------------------------------------------------------------
-        ''' Enable plotting, progress and stop during forward runs '''
+        """ Enable plotting, progress and stop during forward runs """
         self.stop_if_canceled()
         self.loop_count += 1
         if self.loop_count == self.count:
+            #print('\nCONTROL_FUNC')
             self.loop_count = 0
             self.t = self.get_time_and_stop_if_limit_reached()
             for func in self.update:
+                #print('CALL UPDATE', func.__name__)
                 func(run=self)
+                #print('DONE!', func.__name__)
 
 
 #====================================================================================
@@ -230,7 +234,6 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
     """ Eclipse backward mode runner """
 
     #--------------------------------------------------------------------------------
-    #def __init__(self, check_unrst=True, check_rft=True, keep_alive=False, schedule=None, init_tsteps=None, **kwargs):
     def __init__(self, check_unrst=True, check_rft=True, keep_alive=False, schedule=None, init_tsteps=None, restart=None, **kwargs):
     #--------------------------------------------------------------------------------
         # super().__init__(ext_iface='I{:04d}', ext_OK='OK', keep_alive=keep_alive, **kwargs)
@@ -922,7 +925,8 @@ class Simulation:                                                        # Simul
         if 'iorsim' in run_names:
             self.IOR_inp = ior_inp or IORSim_input(self.root, check=True)
         self.merge_OK = self.root.with_name(MERGE_OK_FILE)
-        self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
+        self.update = namedtuple('update',['progress','plot','message','status'])(progress, plot, message, status)
+        #self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
         if delete:
             del_convert = del_merge = True
@@ -1071,7 +1075,7 @@ class Simulation:                                                        # Simul
             run.start()
             self.update.progress()  # Reset
             #self.update.progress(value=-run.T, min=run is self.ecl and self.restart_days or 0)
-            ### Progress is updated after 25*0.2 = 5 sec
+            ### Progress is updated after 15*0.2 = 3 sec
             ### Check for cancelled run every 0.2 sec
             run.init_control_func(update=self.update, count=15)
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
@@ -1193,7 +1197,10 @@ class Simulation:                                                        # Simul
                 run.kill()
             self.print2log(f'\n=====  {msg.replace("INFO","")}  =====')
             self.current_run = None
+            #print('PROGRESS')
             self.update.progress()   # Reset progress time
+            #self.update.status() 
+            #print('DONE')
             self.update.plot()
             try:
                 if self.output.convert and success and any(run.is_iorsim for run in self.runs):
@@ -1503,7 +1510,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
             prog.print(value, text=run and f'({run.name})' or '')
             
     # Check if we only run eclipse or iorsim
-    mode, runs = None, []
+    mode, runs = None, ['eclipse', 'iorsim']
     if only_eclipse or only_iorsim:
         mode = 'forward'
         runs = ['eclipse'] if only_eclipse else ['iorsim']
