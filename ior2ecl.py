@@ -24,7 +24,7 @@ from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, Restart, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file, IX_input)
 
-__version__ = '3.6.0'
+__version__ = '3.6.1'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -81,7 +81,7 @@ class SLBRunner(Runner):                                                  # SLBR
     #--------------------------------------------------------------------------------
     def time(self):                                                       # SLBRunner
     #--------------------------------------------------------------------------------
-        print('PRT', self.prt.end_time(), 'RFT', self.rft.end_time(),'UNRST', self.unrst.end_time(), 'self', super().time())
+        #print('PRT', self.prt.end_time(), 'RFT', self.rft.end_time(),'UNRST', self.unrst.end_time(), 'self', super().time())
         return self.prt.end_time() or self.rft.end_time() or self.unrst.end_time() or super().time()
 
     #--------------------------------------------------------------------------------
