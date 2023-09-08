@@ -81,7 +81,7 @@ class SLBRunner(Runner):                                                  # SLBR
     #--------------------------------------------------------------------------------
     def time(self):                                                       # SLBRunner
     #--------------------------------------------------------------------------------
-        # print('PRT', self.prt.end_time(), 'RFT', self.rft.end_time(),'UNRST', self.unrst.end_time(), 'self', super().time())
+        print('PRT', self.prt.end_time(), 'RFT', self.rft.end_time(),'UNRST', self.unrst.end_time(), 'self', super().time())
         return self.prt.end_time() or self.rft.end_time() or self.unrst.end_time() or super().time()
 
     #--------------------------------------------------------------------------------
