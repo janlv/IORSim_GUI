@@ -81,7 +81,7 @@ class SLBRunner(Runner):                                                  # SLBR
     #--------------------------------------------------------------------------------
     def time(self):                                                       # SLBRunner
     #--------------------------------------------------------------------------------
-        #print('PRT', self.prt.end_time(), 'RFT', self.rft.end_time(),'UNRST', self.unrst.end_time(), 'self', super().time())
+        # print('PRT', self.prt.end_time(), 'RFT', self.rft.end_time(),'UNRST', self.unrst.end_time(), 'self', super().time())
         return self.prt.end_time() or self.rft.end_time() or self.unrst.end_time() or super().time()
 
     #--------------------------------------------------------------------------------
@@ -168,7 +168,7 @@ class ForwardMixin:                                                    # Forward
     def init_control_func(self, update=(), count=5):                   # ForwardMixin
     #--------------------------------------------------------------------------------
         """ Set up control for forward runs """
-        self.update = update
+        self.update_funcs = update
         self.loop_count = 0
         #self.pause = pause
         self.count = count
@@ -183,10 +183,10 @@ class ForwardMixin:                                                    # Forward
             #print('\nCONTROL_FUNC')
             self.loop_count = 0
             self.t = self.get_time_and_stop_if_limit_reached()
-            for func in self.update:
-                #print('CALL UPDATE', func.__name__)
+            for func in self.update_funcs:
+                # print('CALL UPDATE', func.__name__)
                 func(run=self)
-                #print('DONE!', func.__name__)
+                # print('DONE!', func.__name__)
 
 
 #====================================================================================
@@ -1077,7 +1077,7 @@ class Simulation:                                                        # Simul
             #self.update.progress(value=-run.T, min=run is self.ecl and self.restart_days or 0)
             ### Progress is updated after 15*0.2 = 3 sec
             ### Check for cancelled run every 0.2 sec
-            run.init_control_func(update=self.update, count=15)
+            run.init_control_func(update=(self.update.progress, self.update.plot), count=15)
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             self.update.progress(run)
             self.update.plot()
@@ -1141,11 +1141,11 @@ class Simulation:                                                        # Simul
         while ior.t < ior.end_time:
             self.print2log(f'\nStep {ecl.n+1}')
             self.update.progress(run=ecl)
-            self.update.status(run=ecl, mode=self.mode)
+            #self.update.status(run=ecl, mode=self.mode)
             ecl.run_one_step(ior.satnum.path)
             # Run IORSim to prepare satnum input for the next Eclipse run
             self.update.progress(run=ior)
-            self.update.status(run=ior, mode=self.mode)
+            #self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
             # ecl.t = ior.t = self.schedule.update()
             self.schedule.update()
@@ -1153,7 +1153,7 @@ class Simulation:                                                        # Simul
             #self.update.progress(value=ior.t)
             self.update.plot()
         self.update.progress(run=ior)
-        self.update.status(run=ior, mode=self.mode)
+        #self.update.status(run=ior, mode=self.mode)
         # Timestep loop finished
         for run in self.runs:
             self.update.status(value=f'Stopping {run.name}...')

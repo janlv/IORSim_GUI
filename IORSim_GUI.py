@@ -463,9 +463,7 @@ class sim_worker(base_worker):
     #-----------------------------------------------------------------------
     def current_run(self):
     #-----------------------------------------------------------------------
-        #print('\nWORKER.CURRENT_RUN')
         if self.sim:
-            #print('SIM.CURRENT_RUN', self.sim.current_run)
             return self.sim.current_run 
 
     #-----------------------------------------------------------------------
@@ -479,27 +477,25 @@ class sim_worker(base_worker):
     def runnable(self):
     #-----------------------------------------------------------------------
         #self.progress_min = None
-        self.fraction = [''] # Fraction is updated in update_progress
+        #self.fraction = [''] # Fraction is updated in update_progress
         #------------------------------------
         def progress(run=None, value=None, min=None, n0=None):
         #------------------------------------
-            #print('PROGRESS', run, value, min, n0)
             self.signals.progress
             if run:
                 value = run.t
-                #print('PROGRESS', value)
-            self.update_progress((value, min, n0, self.fraction))
-            #print('PROGRESS FRACTION', self.fraction)
+            self.update_progress((run, value, min, n0))
+            #self.update_progress((value, min, n0, self.fraction))
         #------------------------------------
-        def status(run=None, value=None, mode=None, **x):
+        # def status(run=None, value=None, mode=None, **x):
+        def status(value=None, **x):
         #------------------------------------
-            #print('STATUS', value, mode)
-            #print('STATUS FRACTION', self.fraction)
-            if not value and run:
-                value = f'{run.name}   {self.fraction[0]} days'
-                if mode == 'forward':
-                    value = run.name + ' ' + value
-            self.status_message(value)
+            # if not value and run:
+            #     value = f'{run.name}   {self.fraction[0]} days'
+            #     if mode == 'forward':
+            #         value = run.name + ' ' + value
+            if value:
+                self.status_message(value)
         #------------------------------------
         def plot(run=None, value=None):
         #------------------------------------
@@ -2099,11 +2095,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def about_app(self):
     #-----------------------------------------------------------------------
-        about = '''
-        IORSim brings chemistry-based IOR methods to existing reservoir simulators 
-        with minor modifications of the original input files. IORSim currently runs 
-        with Eclipse 100 and Intersect, but can be made available for other reservoir 
-        simulators with some adaptations.'''
+        about = ('IORSim brings chemistry-based IOR methods to existing reservoir simulators'
+                 'with minor modifications of the original input files. IORSim currently runs' 
+                 'with Eclipse 100 and Intersect, but can be made available for other reservoir' 
+                 'simulators with some adaptations.')
         self.show_message_text('INFO ' + about, extra=f'Version : {__version__}')
 
 
@@ -2144,7 +2139,10 @@ class main_window(QMainWindow):                                    # main_window
         self.new_version = result[0]
         if self.new_version:
             if THIS_FILE.with_name('.git').is_dir():
-                not self.silent_upgrade and self.show_message_text(f"INFO Version {self.new_version} is available, but this script is running in a folder under Git version control.\n\nExecute 'git pull' from the command line to upgrade.")
+                if not self.silent_upgrade:
+                    self.show_message_text(f'INFO Version {self.new_version} is available, but this script '
+                                           'is running in a folder under Git version control.\n\nExecute '
+                                           "'git pull' from the command line to upgrade.")
                 return
             if self.silent_upgrade:
                 self.download()
@@ -2154,7 +2152,9 @@ class main_window(QMainWindow):                                    # main_window
                 msg = f'INFO The latest version is {ver}, you are running {__version__}. Download latest version?'
                 self.show_message_text(msg, button=button, ok_text='Not now', wait=True)
         else:
-            not self.silent_upgrade and self.show_message_text(f'INFO No update available, {__version__} is the latest version')
+            # No new version
+            if not self.silent_upgrade:
+                self.show_message_text(f'INFO No update available, {__version__} is the latest version')
 
 
     #-----------------------------------------------------------------------
@@ -3228,7 +3228,7 @@ class main_window(QMainWindow):                                    # main_window
         #  FWCT    - field water cut total (prod)
         #  ROIP    - Reservoir oil in place
 
-        #print('INIT_ECL_DATA()')
+        # print('INIT_ECL_DATA()')
         self.ecl_fluids = {
             'OP':'oprod', 'WP':'wprod', 'WC':'wcut', 'WI':'winj', 'OI':'oinj', 
             'GI':'ginj', 'GP':'gprod', 'GC':'gcons', 'TP':'temp', 'CP':'pprod', 
@@ -3245,8 +3245,10 @@ class main_window(QMainWindow):                                    # main_window
 
         case = case or self.case
         self.unsmry[str(case)] = UNSMRY_file(case)
+        # print('UNSMRY', self.unsmry)
         ### Create dict of format [well][yaxis][fluid] = []
         wellnames = self.host_input.wellnames()
+        # print('WELLNAMES', wellnames)
         field_wells = ('FIELD',) + wellnames
         ecl = {w:{'days':[]} for w in field_wells}
         [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in field_wells]
@@ -3286,14 +3288,17 @@ class main_window(QMainWindow):                                    # main_window
             data['days'].extend(new_data.days[start:])
             # print('DAYS', data['days'])
             #for w in set(unsmry.wells):
+            # print('WELLS', unsmry.wells)
             for w in unsmry.wells:
-                data[w]['days'].extend(new_data.days[start:])
+                if well := data.get(w):
+                    well['days'].extend(new_data.days[start:])
             for val in new_data.values:
-                # y = self.ecl_yaxes[val.key[2:4]]
-                # f = self.ecl_fluids[val.key[1]]
-                y = self.ecl_yaxes[val.key[2:4]]
-                f = self.ecl_fluids[val.key[1:3]]
-                data[val.well][y][f].extend(val.data[start:])
+                if well := data.get(val.well):
+                    # y = self.ecl_yaxes[val.key[2:4]]
+                    # f = self.ecl_fluids[val.key[1]]
+                    y = self.ecl_yaxes[val.key[2:4]]
+                    f = self.ecl_fluids[val.key[1:3]]
+                    well[y][f].extend(val.data[start:])
         # print('READ DONE')
         return True
 
@@ -3694,15 +3699,14 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
-    def update_progress(self, t_min_n0_frac_tuple):
+    #def update_progress(self, t_min_n0_frac_tuple):
+    def update_progress(self, run_t_min_n0_tuple):
     #-----------------------------------------------------------------------
-        t, min_, n0, fraction = t_min_n0_frac_tuple
+        #t, min_, n0, fraction = t_min_n0_frac_tuple
+        run, t, min_, n0 = run_t_min_n0_tuple
         #print('update_progress, ',t, min_, n0, fraction)
         if not self.progress:
             self.progress = Progress()
-        # print('BEFORE', fraction)
-        fraction[0] = self.progress.fraction(t)
-        # print('AFTER', fraction)
         if n0 is not None:
             self.progress.reset_time(n=n0)
         if min_ is not None:
@@ -3721,6 +3725,13 @@ class main_window(QMainWindow):                                    # main_window
             else:
                 self.update_progressbar(t)
                 self.update_remaining_time(text=self.progress.remaining_time(t))
+            if run:
+                self.update_message(f'{run.name}   {self.progress.fraction(t)} days')
+        # print('BEFORE', fraction)
+        #     value = f'{run.name}   {self.fraction[0]} days'
+        
+        #fraction[0] = self.progress.fraction(t)
+        # print('AFTER', fraction)
 
 
     #-----------------------------------------------------------------------
@@ -3822,7 +3833,8 @@ class main_window(QMainWindow):                                    # main_window
         s = self.settings
         # backward mode
         if self.mode=='backward':
-            kwargs = {'mode':'backward', 'check_unrst':s.get('unrst'), 'check_rft':s.get('rft')}
+            kwargs = {'mode':'backward', 'check_unrst':s.get('unrst'), 'check_rft':s.get('rft'),
+                      'run_names': (self.get_current_host().lower(), 'iorsim')}
         # forward mode
         elif self.mode in ('forward','eclipse','intersect','iorsim'):
             kwargs = {'mode':'forward', 'run_names':self.run}
@@ -3839,8 +3851,8 @@ class main_window(QMainWindow):                                    # main_window
         # This is to ensure an updated progress fraction is displayed when status_message() is called. 
         self.worker.signals.status_message.connect(self.update_message)
         self.worker.signals.show_message.connect(self.show_message_text)
-        self.worker.signals.progress.connect(self.update_progress, Qt.ConnectionType.BlockingQueuedConnection)
-        #self.worker.signals.progress.connect(self.update_progress)
+        #self.worker.signals.progress.connect(self.update_progress, Qt.ConnectionType.BlockingQueuedConnection)
+        self.worker.signals.progress.connect(self.update_progress)
         self.worker.signals.plot.connect(self.update_view_area)
         self.worker.signals.finished.connect(self.run_finished)
         self.threadpool.start(self.worker)
