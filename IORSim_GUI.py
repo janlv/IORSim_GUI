@@ -99,10 +99,12 @@ QDir.addSearchPath('icons', resource_path()/'icons/')
 
 # Font settings
 #FONT = 'Segoe UI'
-#LARGE_FONT = QFont(FONT, 9)
-#SMALL_FONT = QFont(FONT, 8)
+#FONT_LARGE = QFont(FONT, 9)
+#FONT_SMALL = QFont(FONT, 8)
 FONT_LARGE = 'font-size: 9pt; color: black' # for stylesheet
 FONT_SMALL = 'font-size: 8pt; color: black'
+#FONT_LARGE = 'font-size: 9pt'# for stylesheet
+#FONT_SMALL = 'font-size: 8pt'
 FONT_PLOT = 7
 FONT_MONO = QFont('Monospace', 8)
 
@@ -355,7 +357,8 @@ def set_checkbox(box, value, block_signal=True):
     box.blockSignals(block_signal)
     box.setChecked(value)
     #box.setEnabled(value)
-    box.blockSignals(not block_signal)
+    #box.blockSignals(not block_signal)
+    box.blockSignals(False)
 
 
 #-----------------------------------------------------------------------
@@ -918,6 +921,7 @@ class Plots:
             # Disable wellboxes with no data
             zero = (c for c in set(self.combs)-set(nonzero) if not (c.kind, c.well) in nz_kind_well)
             for comb in zero:
+                #print(comb)
                 menuboxes[comb.kind]['well'][comb.well].setEnabled(False)
             self.combs = nonzero
         ior_var = menuboxes['ior'].get('var') or ()
@@ -1548,66 +1552,34 @@ class Settings(QDialog):
         self._set = {}
         variable = namedtuple('variable', 'text default tip required ')
         self.vars = {
-            'iorsim': variable('IORSim', None, 'Path to the IORSim executable', True),
-            'eclrun': 
-                variable('Eclipse', 'eclrun', "Eclipse command, default is 'eclrun'", True),
-            'check_input_kw': 
-                variable('Check IORSim input file', False, 'Check IORSim input file keywords', False),
-            'convert': variable(
-                'Convert to unformatted output',
-                True,
-                'Make IORSim output readable by ResInsight',
-                False),
-            'del_convert': variable(
-                'Delete original after convert',
-                True,
-                'Delete file if successfully converted',
-                False),
-            'merge': variable(
-                'Merge Eclipse and IORSim output',
-                True,
-                'Merge the unformatted output from Eclipse and IORSim into one file',
-                False),
-            'del_merge': variable(
-                'Delete originals after merge',
-                True,
-                'Delete the original UNRST-files from Elipse and IORSim if successfully merged',
-                False),
-            'unrst': variable(
-                'Confirm flushed UNRST-file during Eclipse step',
-                True,
-                'Check that the UNRST-file is properly flushed before suspending Eclipse',
-                False),
-            'rft': variable(
-                'Confirm flushed RFT-file during Eclipse step',
-                True,
-                'Check that the RFT-file is properly flushed before suspending Eclipse',
-                False),
-            'ecl_keep_alive': variable(
-                f'Eclipse process not paused if idle for less than',
-                False,
-                "Eclipse process is running also when idle ('e' to edit)",
-                False),
-            'ecl_alive_limit': variable(
-                f'seconds',
-                str(ECL_ALIVE_LIMIT),
-                "If on, set this limit lower than 100 seconds to avoid unexpected Eclipse termination ('e' to edit)",
-                False),
-            'ior_keep_alive': variable(
-                f'IORSim process not paused when idle',
-                False,
-                "IORSim process is running when idle. WARNING! Consumes more CPU ('e' to edit)",
-                False),
-            'log_level': variable(
-                'Detail level of the application log',
-                str(DEFAULT_LOG_LEVEL),
-                'A higher value gives a more detailed application log',
-                False),
-            'skip_empty': variable(
-                'Skip empty DATES/TSTEP entries in the schedule-file',
-                SCHEDULE_SKIP_EMPTY,
-                'Skip DATES/TSTEP entries in the schedule-file with missing statements',
-                False)}
+            'iorsim': variable('IORSim', None, 
+                               'Path to the IORSim executable', True),
+            'eclrun': variable('Eclipse', 'eclrun', 
+                               "Eclipse command, default is 'eclrun'", True),
+            'check_input_kw': variable('Check IORSim input file', False, 
+                                       'Check IORSim input file keywords', False),
+            'convert': variable('Convert to unformatted output', True,
+                                'Make IORSim output readable by ResInsight', False),
+            'del_convert': variable('Delete original after convert', True,
+                                    'Delete file if successfully converted',False),
+            'merge': variable('Merge Eclipse and IORSim output', True,
+                              'Merge the unformatted output from Eclipse and IORSim into one file', False),
+            'del_merge': variable('Delete originals after merge', True,
+                                  'Delete the original UNRST-files from Elipse and IORSim if successfully merged', False),
+            'unrst': variable('Confirm flushed UNRST-file during Eclipse step', True,
+                              'Check that the UNRST-file is properly flushed before suspending Eclipse', False),
+            'rft': variable('Confirm flushed RFT-file during Eclipse step', True,
+                            'Check that the RFT-file is properly flushed before suspending Eclipse', False),
+            'ecl_keep_alive': variable(f'Eclipse process not paused if idle for less than', False,
+                                       "Eclipse process is running also when idle ('e' to edit)", False),
+            'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT),
+                                        "If on, set this limit lower than 100 seconds to avoid unexpected Eclipse termination ('e' to edit)", False),
+            'ior_keep_alive': variable(f'IORSim process not paused when idle', False,
+                                       "IORSim process is running when idle. WARNING! Consumes more CPU ('e' to edit)", False),
+            'log_level': variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL),
+                                  'A higher value gives a more detailed application log', False),
+            'skip_empty': variable('Skip empty DATES/TSTEP entries in the schedule-file', SCHEDULE_SKIP_EMPTY,
+                                   'Skip DATES/TSTEP entries in the schedule-file with missing statements', False)}
         #'savedir'        : variable('Download directory', None, 'Download location for updates', False),
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
@@ -1928,12 +1900,6 @@ class main_window(QMainWindow):                                    # main_window
         self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
         self.setStyleSheet(FONT_LARGE)
         self.silent_upgrade = False
-        # self.ecl_fluids = {'O':'Oil', 'W':'Water', 'G':'Gas', 'T':'Temp_ecl', 'C':'Polymer'}
-        # # 'PC' must be 'rate', not 'conc' to pick up temp in WTPCHEA
-        # self.ecl_yaxes =       {'PR':'rate',   'PT':'prod',    'PC':'rate',   'IR':'irate',        'IT':'iprod'}
-        # self.ecl_yaxes_names = {'rate':'Rate', 'prod':'Prod.', 'rate':'Rate', 'irate':'Inj. rate', 'iprod':'Inj. prod.'}
-        # self.ecl_keys = ['WTPCHEA'] + list(''.join(p) for p in product(
-        #     ('W','F'), ('O','W','G','C'), self.ecl_yaxes.keys()))
         self.data = {}
         self.ecl_boxes = {}
         self.ior_boxes = {}
@@ -2411,13 +2377,15 @@ class main_window(QMainWindow):                                    # main_window
         sections = rules(Color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b', DATA_file.section_names)
         globals = rules(Color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b', DATA_file.global_kw)
         common = rules(Color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b', DATA_file.common_kw)
-        self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common), save_func=self.refresh_case)
+        self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common), 
+                                               save_func=self.prepare_case) # Alternative is self.refresh_case
         # IORSim editor
         mandatory = rules(Color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b', IORSim_input.keywords.required)
         optional = rules(Color.green, QFont.Normal, QRegularExpression.CaseInsensitiveOption, '\\', '\\b', IORSim_input.keywords.optional)
-        self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=(mandatory, optional), save_func=self.refresh_case)
+        self.iorsim_editor = Highlight_editor(name='IORSim editor', comment='#', keywords=(mandatory, optional), 
+                                              save_func=self.prepare_case)
         # Intersect editor
-        self.ix_editor = Highlight_editor(name='Intersect editor', comment='#')
+        self.ix_editor = Highlight_editor(name='Intersect editor', comment='#', save_func=self.prepare_case)
         self.host_editor = {'Eclipse':self.eclipse_editor, 'Intersect':self.ix_editor}
         # Chemfile editor
         self.chem_editor = Highlight_editor(name='Chemistry editor', comment='#')
@@ -2761,6 +2729,24 @@ class main_window(QMainWindow):                                    # main_window
                          text=cause+' Create Intersect input?', ok_text='Cancel', wait=True)
         return self.convert_status
 
+    #-----------------------------------------------------------------------
+    def set_host(self):
+    #-----------------------------------------------------------------------
+        try:
+            host = self.get_current_host()
+            if host == 'Intersect':
+                status = self.create_intersect_input_from_eclipse()
+                if status < 1:
+                    # Set host back to Eclipse
+                    self.host_cb.setCurrentIndex(0)
+                    if status == 0:
+                        self.show_message_text('INFO Unable to create Intersect input from the existing Eclipse case.')
+                    return
+            self.host_input = self.input_file[host](self.case, check=True)
+        except SystemError as error:
+            show_message(self, 'error', text=str(error))
+            return
+        return True
 
     #-----------------------------------------------------------------------
     def on_case_select(self, nr):                              # main_window
@@ -2779,21 +2765,23 @@ class main_window(QMainWindow):                                    # main_window
             # Show full case-path in statusbar
             self.case_cb.setStatusTip(case)
             self.input['root'] = self.case = case
-            try:
-                host = self.get_current_host()
-                if host == 'Intersect':
-                    status = self.create_intersect_input_from_eclipse()
-                    if status < 1:
-                        # Set host back to Eclipse
-                        self.host_cb.setCurrentIndex(0)
-                        if status == 0:
-                            self.show_message_text('INFO Unable to create Intersect input from the existing Eclipse case.')
-                        return
-                self.host_input = self.input_file[host](self.case, check=True)
-            except SystemError as error:
-                show_message(self, 'error', text=str(error))
+            # try:
+            #     host = self.get_current_host()
+            #     if host == 'Intersect':
+            #         status = self.create_intersect_input_from_eclipse()
+            #         if status < 1:
+            #             # Set host back to Eclipse
+            #             self.host_cb.setCurrentIndex(0)
+            #             if status == 0:
+            #                 self.show_message_text('INFO Unable to create Intersect input from the existing Eclipse case.')
+            #             return
+            #     self.host_input = self.input_file[host](self.case, check=True)
+            # except SystemError as error:
+            #     show_message(self, 'error', text=str(error))
+            #     return
+            #     #self.host_input = self.input_file[host](self.case, check=False)
+            if not self.set_host():
                 return
-                #self.host_input = self.input_file[host](self.case, check=False)
             mode = self.host_input.mode()
             # on_mode_select() is called in prepare_case() and 
             # dont need to be triggered here    
@@ -2968,6 +2956,7 @@ class main_window(QMainWindow):                                    # main_window
         self.set_variables_from_casefiles()
         if root:
             self.on_mode_select(self.mode_cb.currentIndex())
+        # Init data
         self.data['ecl'] = self.init_ecl_data()
         self.data['ior'] = self.init_ior_data()
         # Add menu boxes
@@ -2982,10 +2971,8 @@ class main_window(QMainWindow):                                    # main_window
             self.update_menu_boxes('ecl')
         if not self.is_eclipse_mode():
             self.update_menu_boxes('ior')
-        # Init and read data
-        #self.data['ecl'] = self.init_ecl_data()
+        # Read data
         self.read_ecl_data()
-        #self.data['ior'] = self.init_ior_data()
         self.read_ior_data()
         # Create plot
         self.create_plot()
@@ -3171,7 +3158,6 @@ class main_window(QMainWindow):                                    # main_window
             self.ior_boxes['var'][specie] = box
             menu.column(1).addLayout(layout)
         # Add temperature box
-        #layout, box = self.plot_menu_box_variable('Temp', linestyle='dotted', color=Color.gray, func=self.on_specie_click)
         layout, box = self.plot_menu_box_variable('Temp', linestyle='dotted', color=Color.gray, func=self.on_var_click)
         self.ior_boxes['var']['Temp'] = box
         menu.column(1).addLayout(layout)
@@ -3478,7 +3464,7 @@ class main_window(QMainWindow):                                    # main_window
             return 
         if self.current_viewer().file_is_open(self.iorsim_input.path):
             return
-        title = f'IORSim input file {self.iorsim_input}'
+        title = f'{self.iorsim_input}'
         self.view_input_file(self.iorsim_input.path, title=title, editor=self.iorsim_editor)
   
         
@@ -3623,16 +3609,12 @@ class main_window(QMainWindow):                                    # main_window
                 well['days'].extend(days[start:])
                 if len(cdata) > nvar_conc + 1:
                     temp = cdata[-1]
-                    #     temp = len(days[start:])*(0,)
                     #well['conc']['Temp'].extend(temp[start:])
                     well[self.ior_conc[0]]['Temp'].extend(temp[start:])
-                #for var, cvals, pvals in zip(self.input['species'], conc, prod):
-                    #well['conc'][var].extend(cvals[start:])
                 for var, pvals in zip(species, prod):
                     well['prod'][var].extend(pvals[start:])
                 for (var,yax), cvals in zip(product(species, self.ior_conc), conc):
                     well[yax][var].extend(cvals[start:])
-                    #well['conc'][var].extend(cvals[start:])
                 # Save position to avoid reading same data again 
                 file.skip['conc'], file.skip['prod'] = pos
         data['days'].extend(total_days)
@@ -3666,7 +3648,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------                
         #print('CREATE_PLOT', self.menu_boxes.keys())
         self.plot_area.create(self.data, self.menu_boxes, only_nonzero=not self.worker)
-        #self.plot_area.create(self.data, self.menu_boxes, only_nonzero=True)
+        #self.plot_area.create(self.data, self.menu_boxes, only_nonzero=False)
             
     #-----------------------------------------------------------------------
     def update_remaining_time(self, text='0:00:00'):           # main_window
