@@ -1031,11 +1031,6 @@ class Simulation:                                                        # Simul
             # This is a forward IORSim run
             self.end_time = UNRST_file(self.root).end_time()
         kwargs.update({'end_time':self.end_time})
-        # host = 'eclipse' if isinstance(self.ecl, DATA_file) else 'intersect'
-        # if not self.run_names:
-        #     self.run_names = (host,'iorsim')
-        # if not self.IOR_inp or not self.IOR_inp.is_file():
-        #     self.run_names = (host,)
         for name in self.run_names:
             if name == 'eclipse':
                 self.ecl = EclipseForward(exe=eclexe, **kwargs)
@@ -1054,12 +1049,13 @@ class Simulation:                                                        # Simul
         if self.merge_OK.is_file() and self.only_iorsim:
             # The UNRST-file is a merged file that combine Eclipse and IORSim output. 
             # It is recommended to run IORSim from an unmerged Eclipse UNRST-file.
-            # Give warning if First, try to recover the original Eclipse output
+            # Try to recover the original Eclipse output, and turn off merging if it fails.
             if not Eclipse(self.root).restore_unrst_backup():
                 do_merge = False
-                print('\n   *** WARNING ***')
-                print('   *** You are running IORSim on a merged restart-file. ***')
-                print('   *** Merging is disabled for the current run          ***\n')
+                warn = ('   ***                    WARNING                       ***\n'
+                        '   *** You are running IORSim on a merged restart-file. ***\n'
+                        '   *** Merging is disabled for the current run          ***\n')
+                print(f'\n{warn}\n') 
             else:
                 self.print2log('=====  Original Eclipse UNRST-file restored from backup  =====')
         if do_merge:
@@ -1074,7 +1070,6 @@ class Simulation:                                                        # Simul
             run.delete_output_files()
             run.start()
             self.update.progress()  # Reset
-            #self.update.progress(value=-run.T, min=run is self.ecl and self.restart_days or 0)
             ### Progress is updated after 15*0.2 = 3 sec
             ### Check for cancelled run every 0.2 sec
             run.init_control_func(update=(self.update.progress, self.update.plot), count=15)
@@ -1245,8 +1240,8 @@ class Simulation:                                                        # Simul
         start = datetime.now()
         try:
             ior.unrst = ior.funrst.as_UNRST(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
-                                    progress=lambda n: self.update.progress(value=n),
-                                    cancel=ior.stop_if_canceled)
+                                            progress=lambda n: self.update.progress(value=n),
+                                            cancel=ior.stop_if_canceled)
             if check:
                 first, = next(ior.unrst.read('step'))
                 last, = next(ior.unrst.read('step', tail=True))
@@ -1523,7 +1518,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
     sim = Simulation(root=root, time=time, iorexe=iorexe, eclexe=eclexe, intersect=intersect,
                      check_unrst=check_unrst, check_rft=check_rft, keep_files=keep_files, 
                      progress=progress, status=status, message=message, to_screen=to_screen,
-                     convert=convert, merge=merge, delete=delete, ecl_keep_alive=ecl_alive,
+                     convert=convert and not only_merge, merge=merge and not only_convert, delete=delete, ecl_keep_alive=ecl_alive,
                      ior_keep_alive=ior_alive, run_names=runs, mode=mode, check_input_kw=check_input, verbose=verbose,
                      logtag=logtag, skip_empty=skip_empty)
     sim.prepare()
@@ -1531,7 +1526,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         return
 
     if only_convert or only_merge:
-        sim.convert_and_merge(case=sim.root, only_merge=only_merge)
+        sim.convert_and_merge(case=sim.root)
         return
 
     if not to_screen:

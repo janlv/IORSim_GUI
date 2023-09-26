@@ -73,6 +73,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
+#from matplotlib.pyplot import grid as plotgrid
 from matplotlib import rcParams
 
 from numpy import genfromtxt, asarray, zeros, concatenate, sort, unique
@@ -83,7 +84,6 @@ from traceback import format_exc, print_exc, format_exc
 from time import sleep
 from collections import namedtuple
 from shutil import copy as shutil_copy
-#import warnings
 from copy import deepcopy 
 from functools import partial
 if BUNDLE_VERSION:
@@ -101,8 +101,8 @@ QDir.addSearchPath('icons', resource_path()/'icons/')
 #FONT = 'Segoe UI'
 #FONT_LARGE = QFont(FONT, 9)
 #FONT_SMALL = QFont(FONT, 8)
-FONT_LARGE = 'font-size: 9pt; color: black' # for stylesheet
-FONT_SMALL = 'font-size: 8pt; color: black'
+FONT_LARGE = 'font-size: 9pt; color: black;' # for stylesheet
+FONT_SMALL = 'font-size: 8pt; color: black;'
 #FONT_LARGE = 'font-size: 9pt'# for stylesheet
 #FONT_SMALL = 'font-size: 8pt'
 FONT_PLOT = 7
@@ -908,7 +908,7 @@ class Plots:
         self.fig.clf()
         self.plot_list = []
         self.combs = self.plot_combinations(menuboxes)
-        # print('COMBS', self.combs)
+        #print('COMBS', self.combs)
         # Enable all wellboxes
         for menu in menuboxes.values():
             if well:=menu.get('well'):
@@ -964,9 +964,8 @@ class PlotArea(QGroupBox):
         layout = QVBoxLayout()
         self.setLayout(layout)
         self.canvas = Canvas(width=5, height=5, dpi=100)
-        self.fontsize = fontsize
         self.plot_height = plot_height
-        rcParams['font.size'] = self.fontsize
+        rcParams['font.size'] = fontsize
         self.dpi = self.canvas.fig.dpi
         # Make canvas scrollable
         self.scroll_area = make_scrollable(self.canvas, resizable=False)
@@ -978,6 +977,7 @@ class PlotArea(QGroupBox):
         self.min_height = self.height()
         self.plots = Plots(self.canvas.fig)
         self.ref_data = None
+        self.create_args = None
 
     #-----------------------------------------------------------------------
     def clear(self):                                             # PlotArea
@@ -1029,10 +1029,18 @@ class PlotArea(QGroupBox):
     def create(self, data=None, menuboxes=None, only_nonzero=False): # PlotArea
     #-----------------------------------------------------------------------
         # print('PLOT_AREA.CREATE()', id(data))
+        # Keep args if we need to refresh the plot for e.g. font change
+        self.create_args = dict(data=data, menuboxes=menuboxes, only_nonzero=only_nonzero)
         self.plots.create(data, menuboxes, only_nonzero)
         if self.ref_data:
             self.add_ref_plot(self.ref_data, draw=False)
         self.draw()
+
+    #-----------------------------------------------------------------------
+    def refresh(self):
+    #-----------------------------------------------------------------------
+        if self.create_args:
+           self.create(**self.create_args)
 
     #-----------------------------------------------------------------------
     def update_plots(self, var=None):                             # PlotArea
@@ -1061,6 +1069,29 @@ class PlotArea(QGroupBox):
             plot.update_axes()
         self.draw()
             
+    #-----------------------------------------------------------------------
+    def show_grid(self, visible, alpha=0.5):                  # PlotArea
+    #-----------------------------------------------------------------------
+        kwargs = {}
+        if visible:
+            kwargs = dict(alpha=alpha)
+        for plot in self.plots.plot_list:
+            plot.axes[0].grid(visible=visible, **kwargs) # can also set color
+        self.draw()
+
+    #-----------------------------------------------------------------------
+    def font_size(self, size):                  # PlotArea
+    #-----------------------------------------------------------------------
+        rcParams.update({'font.size':size})
+        self.refresh()
+        # Recreate the plots to update fontsize
+
+    #-----------------------------------------------------------------------
+    def facecolor(self, color=(0.95, 0.95, 0.95)):                # PlotArea
+    #-----------------------------------------------------------------------
+        for plot in self.plots.plot_list:
+            plot.axes[0].set_facecolor(color)
+        self.draw()
 
 #===========================================================================
 class Menu(QGroupBox):
@@ -1579,7 +1610,9 @@ class Settings(QDialog):
             'log_level': variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL),
                                   'A higher value gives a more detailed application log', False),
             'skip_empty': variable('Skip empty DATES/TSTEP entries in the schedule-file', SCHEDULE_SKIP_EMPTY,
-                                   'Skip DATES/TSTEP entries in the schedule-file with missing statements', False)}
+                                   'Skip DATES/TSTEP entries in the schedule-file with missing statements', False),
+            'grid': variable('Show grid-lines in plots', True, 'Toggle grid in plots', False),
+            'fontsize': variable('Font size in plots', str(FONT_PLOT), 'Toggle grid in plots', False)}
         #'savedir'        : variable('Download directory', None, 'Download location for updates', False),
         self.required = [k for k,v in self.vars.items() if v.required]
         self.expert = []
@@ -1644,54 +1677,66 @@ class Settings(QDialog):
         for i, stretch in enumerate(self.col_stretch):
             self.grid.setColumnStretch(i, stretch)
 
-        ### IORSim executable
+        # IORSim executable
         self.add_heading('IORSim and Eclipse program paths')
         self.add_line_with_button(var='iorsim', open_func=self.open_ior_prog)
-        ### Eclipse executable
+        # Eclipse executable
         self.add_line_with_button(var='eclrun', open_func=self.open_ecl_prog)
 
-        ### Input options
+        # Input options
         self.add_heading()
         self.add_heading('Input options')
-        ### Check IORSim input format
-        self.add_items([self.new_checkbox('check_input_kw')])
+        # Check IORSim input format
+        #self.add_items([self.new_checkbox('check_input_kw')])
+        self.add_items(self.new_checkbox('check_input_kw'))
 
-        ### Output options
+        # Output options
         self.add_heading()
         self.add_heading('Output options')
-        ### Convert and merge
-        self.add_items([self.new_checkbox(var) for var in ('convert', 'del_convert', 'merge', 'del_merge')], nrow=2)
+        # Convert and merge
+        self.add_items(*[self.new_checkbox(var) for var in ('convert', 'del_convert', 'merge', 'del_merge')], nrow=2)
 
-        ### Backward options
+        # Backward options
         self.add_heading()
         self.add_heading("Backward options")
-        # lbl = QLabel("  (press 'e' for expert options)")
-        # self.grid.addWidget(lbl, self.line, 1)
-        ### UNRST and RFT checks
-        self.add_items([self.new_checkbox(var) for var in ('unrst', 'rft')], nrow=2)
-        ### Merge empty actions in the schedule?
+        # UNRST and RFT checks
+        self.add_items(*[self.new_checkbox(var) for var in ('unrst', 'rft')], nrow=2)
+        # Merge empty actions in the schedule?
         me = self.new_checkbox('skip_empty')
-        #self.expert.append(me)
-        self.add_items([me])
-        ### Keep processes alive between steps? 
-        ### Expert mode: Type 'e' to edit  
+        #self.add_items([me])
+        self.add_items(me)
+        # Keep processes alive between steps? 
+        # Expert mode: Type 'e' to edit  
         cb = [self.new_checkbox(var) for var in ('ecl_keep_alive', 'ior_keep_alive')]
         le = self.new_lineedit('ecl_alive_limit', width=30)
         # Add widget in layout to expert mode
-        self.expert.extend( (le.itemAt(i).widget() for i in range(le.count())) )
-        self.expert.extend(cb)
-        self.add_items([cb[0], le])
-        self.add_items([cb[1]])
+        # self.expert.extend( (le.itemAt(i).widget() for i in range(le.count())) )
+        # self.expert.extend(cb)
+        # self.add_items(cb[0], le)
+        # self.add_items(cb[1])
 
-        ### Log options
+        # Plot options
+        self.add_heading()
+        self.add_heading("Plot options")
+        def show_grid():
+            if plot_area := getattr(self.parent, 'plot_area', False):
+                plot_area.show_grid(self.get('grid'))
+        self.add_items(self.new_checkbox('grid', func=show_grid))
+        def set_font(index): 
+            # QComboBox signal sends index as argument
+            if plot_area := getattr(self.parent, 'plot_area', False):
+                plot_area.font_size(int(self.get('fontsize')))
+        self.add_items(self.new_combobox(var='fontsize', width=50, func=set_font, values=('7','8','9','10')))
+        
+        # Log options
         self.add_heading()
         self.add_heading('Log options')
-        ### Log verbosity level
+        # Log verbosity level
         values = list(map(str, range(LOG_LEVEL_MIN, LOG_LEVEL_MAX+1)))
         log = self.new_combobox(var='log_level', width=50, values=values)
-        self.add_items([log])
+        self.add_items(log)
 
-        ### OK / Cancel buttons
+        # OK / Cancel buttons
         yes_no = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         self.yes_no_btns = QDialogButtonBox(yes_no)
         layout.addWidget(self.yes_no_btns)
@@ -1716,7 +1761,7 @@ class Settings(QDialog):
 
 
     #-----------------------------------------------------------------------
-    def add_items(self, items, nrow=1):
+    def add_items(self, *items, nrow=1):
     #-----------------------------------------------------------------------
         self.line += 1
         layout = QGridLayout()
@@ -1731,7 +1776,7 @@ class Settings(QDialog):
         return items
 
     #-----------------------------------------------------------------------
-    def new_combobox(self, width=None, var=None, values=[]):             # settings
+    def new_combobox(self, width=None, var=None, values=(), func=None):             # settings
     #-----------------------------------------------------------------------
         box = QComboBox()
         v = self.vars[var]
@@ -1745,22 +1790,26 @@ class Settings(QDialog):
         layout.addWidget(box)
         layout.addWidget(label)
         box.addItems(values)
+        if func:
+            box.currentIndexChanged[int].connect(func)
         return layout
 
     #-----------------------------------------------------------------------
-    def new_checkbox(self, var=None, size=15):             # settings
+    def new_checkbox(self, var=None, size=15, func=None):             # settings
     #-----------------------------------------------------------------------
         v = self.vars[var]
         box = QCheckBox(v.text)
         box.setStyleSheet('QCheckBox::indicator { width: '+str(size)+'px; height: '+str(size)+'px;};')
         #box.setMinimumSize(50, 50)
         box.setToolTip(v.tip)
+        if func:
+            box.stateChanged.connect(func)
         self._get[var] = box.isChecked
         self._set[var] = box.setChecked
         return box
 
     #-----------------------------------------------------------------------
-    def new_lineedit(self, var=None, width=None):             # settings
+    def new_lineedit(self, var=None, width=None, func=None):             # settings
     #-----------------------------------------------------------------------
         v = self.vars[var]
         layout = QHBoxLayout()
@@ -1769,6 +1818,8 @@ class Settings(QDialog):
         line.setToolTip(v.tip)
         layout.addWidget(line)
         layout.addWidget(QLabel(v.text))
+        if func:
+            line.textChanged.connect(func)
         self._get[var] = line.text
         self._set[var] = line.setText
         return layout
@@ -1798,7 +1849,8 @@ class Settings(QDialog):
     def set_default(self):                                # settings
     #-----------------------------------------------------------------------
         for k,v in self.vars.items():
-            self._set[k](v.default)
+            if set_func:=self._set.get(k):
+                set_func(v.default)
 
 
     #-----------------------------------------------------------------------
@@ -1955,7 +2007,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_actions(self):                                  # main_window
     #-----------------------------------------------------------------------
-        ### actions
+        # actions
         self.set_act = create_action(self, text='&Settings', icon='gear.png', shortcut='Ctrl+S',
                                      tip='Edit settings', func=self.settings.open)
         self.start_act = create_action(self, text=None, icon='start.svg', shortcut='Ctrl+R',
@@ -1966,18 +2018,18 @@ class main_window(QMainWindow):                                    # main_window
                                       tip='IORSim User Guide', func=self.show_iorsim_guide)
         self.script_guide_act = create_action(self, text='GUI User Guide', icon='lifebuoy.png', shortcut='',
                                       tip='User guide for this application', func=self.show_script_guide)
-        ### Check updates
+        # Check updates
         self.download_act = create_action(self, text='Check for updates', icon='drive-download.png', shortcut='',
                                       tip='Check if a new version is avaliable', func=self.check_version)
         #has_updates = default_savedir.is_dir() and next(default_savedir.iterdir(), None) or None
         #has_updates and self.download_act_upgrade()
-        ### About
+        # About
         self.about_act = create_action(self, text='About', icon='question.png', shortcut='',
                                       tip='Application details', func=self.about_app)
-        ### Quit
+        # Quit
         self.exit_act = create_action(self, text='&Exit', icon='control-power.png', shortcut='Ctrl+Q',
                                       tip='Exit application', func=self.quit)
-        ### Add case
+        # Add case
         self.open_case_act = create_action(self, text='Open case...', icon='blue-folder-open-document.png',
                                           func=self.open_case)
         self.copy_case_act = create_action(self, text='Copy current case...', icon='document-copy.png',
@@ -2010,10 +2062,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_menus(self):                                    # main_window
     #-----------------------------------------------------------------------
-        ### Menu
+        # Menu
         menu = self.menuBar()
         self.view_group = QActionGroup(self)
-        ### File
+        # File
         file_menu = menu.addMenu('&File')
         file_menu.addAction(self.open_case_act)
         file_menu.addAction(self.copy_case_act)
@@ -2025,7 +2077,7 @@ class main_window(QMainWindow):                                    # main_window
         file_menu.addAction(self.download_act)
         file_menu.addSeparator()
         file_menu.addAction(self.exit_act)
-        ### Eclipse
+        # Eclipse
         ecl_menu = menu.addMenu('&Eclipse')
         ecl_menu.addAction(self.ecl_inp_act)
         self.view_group.addAction(self.ecl_inp_act)
@@ -2034,7 +2086,7 @@ class main_window(QMainWindow):                                    # main_window
         ecl_menu.addAction(self.ecl_log_act)
         self.view_group.addAction(self.ecl_log_act)
         self.host_menu = ecl_menu
-        ### IORSim
+        # IORSim
         ior_menu = menu.addMenu('&IORSim')
         ior_menu.addAction(self.ior_inp_act)
         self.view_group.addAction(self.ior_inp_act)
@@ -2044,14 +2096,14 @@ class main_window(QMainWindow):                                    # main_window
         self.view_group.addAction(self.schedule_file_act)
         ior_menu.addAction(self.ior_log_act)
         self.view_group.addAction(self.ior_log_act)
-        ### View
+        # View
         view_menu = menu.addMenu('&View')
         view_menu.addAction(self.plot_act)
         self.view_group.addAction(self.plot_act)
         view_menu.addSeparator()
         view_menu.addAction(self.py_log_act)
         self.view_group.addAction(self.py_log_act)
-        ### Help
+        # Help
         help_menu = menu.addMenu('&Help')
         help_menu.addAction(self.iorsim_guide_act)
         help_menu.addAction(self.script_guide_act)
@@ -2072,7 +2124,7 @@ class main_window(QMainWindow):                                    # main_window
     def check_version(self, silent=False):
     #-----------------------------------------------------------------------
         if self.check_version_worker or self.download_worker:
-            ### Version check already in progress...
+            # Version check already in progress...
             # self.show_message_text('INFO Download of new version in progress')
             return
         self.download_act.setEnabled(False)
@@ -2195,7 +2247,7 @@ class main_window(QMainWindow):                                    # main_window
     def download(self):
     #-----------------------------------------------------------------------
         if self.download_worker:
-            ### Download already in progress...
+            # Download already in progress...
             return
         self.download_act.setEnabled(False)
         # print('enabled 1:',self.download_act.isEnabled())
@@ -2239,7 +2291,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_toolbar(self):                                  # main_window
     #-----------------------------------------------------------------------
-        ### toolbar
+        # toolbar
         self.toolbar = QToolBar('Toolbar')
         self.toolbar.setStyleSheet('QToolBar{spacing:15px; padding:5px;}')
         self.toolbar.setIconSize(QSize(20, 20))
@@ -2251,7 +2303,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_toolbar_widgets(self):                           # main_window
     #-----------------------------------------------------------------------
-        ### simulation controls
+        # simulation controls
         widgets = {'host'    : QComboBox(),
                    'run'     : QComboBox(),
                    'case'    : QComboBox(),
@@ -2324,7 +2376,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_statusbar(self):                                          # main_window
     #-----------------------------------------------------------------------
-        ### statusbar
+        # statusbar
         self.remaining_time = QLabel()
         self.remaining_time.setStyleSheet('QLabel {margin-top:10px; margin-bottom: 10px;}')
         self.update_remaining_time()
@@ -2344,8 +2396,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def create_central_widget(self):                                          # main_window
     #-----------------------------------------------------------------------
-        ### Central widget
-        ### Layout position given as (row, col, rowspan, colspan)
+        # Central widget
+        # Layout position given as (row, col, rowspan, colspan)
         self.position = {'ior_menu' : (0, 0),
                          'ecl_menu' : (1, 0),
                          'plot'     : (0, 1, 2, 1)}
@@ -2360,19 +2412,19 @@ class main_window(QMainWindow):                                    # main_window
         #widget.setStyleSheet('QWidget {border: 1px solid black}')
         widget.setLayout(self.layout)
         self.setCentralWidget(widget)
-        ### Create IORSim plot menu
+        # Create IORSim plot menu
         self.ior_menu = Menu(parent=self, title='IORSim plot options')
         self.layout.addWidget(make_scrollable(self.ior_menu), *self.position['ior_menu']) # 
-        ### Create ECLIPSE plot menu
+        # Create ECLIPSE plot menu
         self.ecl_menu = Menu(parent=self, title='ECLIPSE plot options')
         self.layout.addWidget(make_scrollable(self.ecl_menu), *self.position['ecl_menu']) # 
-        ### Create plot- and file-view area
-        self.plot_area = PlotArea(self)
+        # Create plot- and file-view area
+        self.plot_area = PlotArea(self, fontsize=self.settings.get('fontsize'))
         # Plain editor with no syntax-highlight or save-function
         self.editor = Editor(name='editor', save_func=None)
         # Schedule-file editor
         self.sch_editor = Highlight_editor(name='sch_editor', save_func=self.view_schedule_file, comment='--')
-        ### Eclipse editor
+        # Eclipse editor
         rules = namedtuple('rules',('color weight option front back words'))
         sections = rules(Color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b', DATA_file.section_names)
         globals = rules(Color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b', DATA_file.global_kw)
@@ -2398,15 +2450,15 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def set_input_field(self):
     #-----------------------------------------------------------------------
-        ### set values from input-file or default
+        # set values from input-file or default
         days = 100
-        ### case
+        # case
         self.cases = self.input.get('cases')
         if not isinstance(self.cases, list):
             self.cases = [self.cases]
         self.case = self.input.get('root')
         self.create_caselist(choose=self.case)
-        ### number of days
+        # number of days
         self.days_box.setText(self.input.get('days') or days)
         
         
@@ -2458,7 +2510,8 @@ class main_window(QMainWindow):                                    # main_window
     def create_caselist(self, remove=(), insert=(), choose=None, sort=False):
     #-----------------------------------------------------------------------
         for rem in get_tuple(remove):
-            self.cases.pop(self.case_nr(rem))
+            if self.cases: # to avoid pop from empty list
+                self.cases.pop(self.case_nr(rem))
         for ins in get_tuple(insert):
             if str(ins) in self.cases:
                 self.show_message_text(f'INFO Case {ins} is already in the case list')
@@ -2793,6 +2846,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_compare_select(self, nr):                              # main_window
     #-----------------------------------------------------------------------
+        #print('COMPARE')
         self.update_message()
         self.plot_area.clear_ref_plots()
         if nr > 0:
@@ -3018,7 +3072,7 @@ class main_window(QMainWindow):                                    # main_window
         #print(self.schedule_file_act)
         enable_schedule = self.schedule.is_file()
         self.schedule_file_act.setEnabled(enable_schedule)
-        ### Uncheck schedule act if it was checked but is no longer available
+        # Uncheck schedule act if it was checked but is no longer available
         if not enable_schedule and self.get_checked_act() is self.schedule_file_act:
             # Check default act, plot
             self.plot_act.setChecked(True)
@@ -3055,16 +3109,15 @@ class main_window(QMainWindow):                                    # main_window
         root = self.input['root']
         if not root:
             return
-        ### Check if any include-files are checked, i.e. displayed. If checked, show plot instead
+        # Check if any include-files are checked, i.e. displayed. If checked, show plot instead
         checked_act = self.get_checked_act()
         include_act = [act for act in self.view_group.actions() if act.iconText()=='include']
         if checked_act and include_act and checked_act in include_act:
             self.plot_act.setChecked(True)
-        ### Remove old include-files from the view-group
+        # Remove old include-files from the view-group
         [self.view_group.removeAction(act) for act in include_act]
-        ### Add case-specific include files
-        #self.update_file_menu(IORSim_input(root).include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry file', editor=self.chem_editor)
-        #self.update_file_menu(DATA_file(root).include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include file', editor=self.editor)
+        # Add case-specific include files
+
         self.update_file_menu(self.iorsim_input.include_files(), self.ior_incl_menu, viewer=self.view_input_file, title='Chemistry file', editor=self.chem_editor)
         editor = self.host_editor[self.get_current_host()]
         self.update_file_menu(self.host_input.include_files(), self.ecl_incl_menu, viewer=self.view_input_file, title='Include file', editor=editor)
@@ -3232,7 +3285,7 @@ class main_window(QMainWindow):                                    # main_window
         case = case or self.case
         self.unsmry[str(case)] = UNSMRY_file(case)
         # print('UNSMRY', self.unsmry)
-        ### Create dict of format [well][yaxis][fluid] = []
+        # Create dict of format [well][yaxis][fluid] = []
         wellnames = self.host_input.wellnames()
         # print('WELLNAMES', wellnames)
         field_wells = ('FIELD',) + wellnames
@@ -3269,7 +3322,7 @@ class main_window(QMainWindow):                                    # main_window
         if new_data:
             start = 0
             if skip_zero and new_data.days[0] < 1e-8:
-                ### Skip zero-time data
+                # Skip zero-time data
                 start = 1
             data['days'].extend(new_data.days[start:])
             # print('DAYS', data['days'])
@@ -3567,7 +3620,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def read_ior_data(self, case=None, data=None, skip_zero=True):
     #-----------------------------------------------------------------------
-        #print(self.ior_files.keys())
+        #print('KEYS', self.ior_files.keys())
         case = case or self.case
         ior_files = self.ior_files.get(str(case))
         if not case or not ior_files:
@@ -3593,7 +3646,6 @@ class main_window(QMainWindow):                                    # main_window
             if len(welldata) == 2 and all(welldata):
                 cdata, pdata = welldata
                 days, conc, prod = cdata[0], cdata[1:1+nvar_conc], pdata[1:1+nvar_prod]
-                #print(days, conc, prod)
                 # Check if data-set is complete
                 #if not same_length(days, temp, *conc, *prod):
                 if not same_length(days, *conc, *prod):
@@ -3620,7 +3672,6 @@ class main_window(QMainWindow):                                    # main_window
         data['days'].extend(total_days)
         if all(data[w]['prod']=={} for w in self.out_wells):
             return False
-        #print(data)
         return True
 
 
@@ -3647,8 +3698,9 @@ class main_window(QMainWindow):                                    # main_window
     def create_plot(self, keep_ref=True):                         # main_window
     #-----------------------------------------------------------------------                
         #print('CREATE_PLOT', self.menu_boxes.keys())
-        self.plot_area.create(self.data, self.menu_boxes, only_nonzero=not self.worker)
-        #self.plot_area.create(self.data, self.menu_boxes, only_nonzero=False)
+        #self.plot_area.create(self.data, self.menu_boxes, only_nonzero=not self.worker)
+        self.plot_area.create(self.data, self.menu_boxes, only_nonzero=False)
+        self.plot_area.show_grid(self.settings.get('grid'))
             
     #-----------------------------------------------------------------------
     def update_remaining_time(self, text='0:00:00'):           # main_window
@@ -3739,23 +3791,11 @@ class main_window(QMainWindow):                                    # main_window
     def update_view_area(self):
     #-----------------------------------------------------------------------
         #print('update_view_area')
-        # ok = {'ecl':True, 'ior':True}
-        # if self.mode == 'backward':
-        #     ok['ior'] = self.read_ior_data()
-        #     ok['ecl'] = self.read_ecl_data()
-        # #if self.mode in ('forward','eclipse','iorsim') and self.worker and self.worker.current_run():
-        # else:
-        #     if self.worker and (run:=self.worker.current_run()):
-        #         #run = self.worker.current_run()
-        #         if run in ('ecl', 'eclipse', 'eclrun', 'intersect'):
-        #             run = 'ecl'
-        #             ok[run] = self.read_ecl_data()
-        #         if run in ('ior','iorsim'):
-        #             run = 'ior'
-        #             ok[run] = self.read_ior_data()
         view = self.current_viewer()
         if view == self.plot_area: 
-            self.read_all_data()
+            #self.read_all_data()
+            self.read_ior_data()
+            self.read_ecl_data()
             self.plot_area.update_plots()
         elif view == self.log_viewer:
             self.update_log(view)
@@ -3907,10 +3947,10 @@ class main_window(QMainWindow):                                    # main_window
             self.messages.setText(text)
         #self.statusBar().showMessage(text) 
         
-### 
-###  Adapted from code at:         
-###  https://github.com/pyside/Examples/blob/master/examples/richtext/syntaxhighlighter.py
-###
+# 
+#  Adapted from code at:         
+#  https://github.com/pyside/Examples/blob/master/examples/richtext/syntaxhighlighter.py
+#
 class Highlighter(QSyntaxHighlighter):
     def __init__(self, parent=None, comment='#', color=Qt.gray, keywords=()):
         super().__init__(parent)
