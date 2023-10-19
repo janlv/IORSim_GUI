@@ -440,7 +440,7 @@ class IORSim_input(File):                                              # iorsim_
 
 
     #--------------------------------------------------------------------------------
-    def check(self, error_msg=''):                                     # iorsim_input
+    def check(self, error_msg='', warn_time=False):                     # iorsim_input
     #--------------------------------------------------------------------------------
         msg = error_msg and error_msg+': ' or ''
         warn = ''
@@ -449,8 +449,8 @@ class IORSim_input(File):                                              # iorsim_
         # Check if included files exists
         if (missing := [f for f in self.include_files() if not f.is_file()]):
             raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.path.name} is missing in folder {missing[0].parent.resolve()}")
-        # Check if tstart == 0
-        if (tstart := self.get('tstart')) and tstart > 0:
+        # Warn if tstart > 0 (might not be important, so check is off by default)
+        if warn_time and (tstart := self.get('tstart')) and tstart > 0:
             warn += f'INFO It is recommended to start IORSim at time 0 instead of {tstart}.'
         # Check if required keywords are used, and if the order is correct
         if self.check_format:
@@ -574,28 +574,29 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
     def start(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
-        self.update and self.update.status(value=f'Starting {self.name}...')
-        ### Copy chem-files to working dir 
+        if self.update:
+            self.update.status(value=f'Starting {self.name}...')
+        # Copy chem-files to current working dir 
         if COPY_CHEMFILE:
             for file in self.input_file.include_files():
                 dest = Path.cwd()/file.name
                 if not dest.exists(): # and not dest.samefile(file):
-                    # print(f'{file} -> {dest}')
                     shutil_copy(file, dest)
                     self.copied_chemfiles.append(dest)
-        ### Check if the necessary Eclipse output files exist 
-        files = [self.case.with_suffix(ext) for ext in ('.UNRST', '.RFT', '.EGRID', '.INIT')]
-        missing = [f.name for f in files if not f.is_file()]
-        if missing:
+                    self._print(f'Copied chemfile: {file} -> {dest}')
+        # Check if the necessary Eclipse output files exist 
+        files = (self.case.with_suffix(ext) for ext in ('.UNRST', '.RFT', '.EGRID', '.INIT'))
+        if missing := [f.name for f in files if not f.is_file()]:
             raise SystemError(f'ERROR Unable to start IORSim: Eclipse output file {", ".join(missing)} is missing')
         super().start()
-        self.update and self.update.status(value=f'{self.name} running...')
+        if self.update:
+            self.update.status(value=f'{self.name} running...')
 
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self, raise_error=False):                        # iorsim
     #--------------------------------------------------------------------------------
-        ### Delete old output files before starting new run
+        # Delete old output files before starting new run
         case = str(self.case)
         delete_files_matching(case+'*.trcconc', raise_error=raise_error)
         delete_files_matching(case+'*.trcprd', raise_error=raise_error)
@@ -606,7 +607,7 @@ class Iorsim(Runner):                                                        # i
     def close(self):                                                         # iorsim
     #--------------------------------------------------------------------------------
         super().close()
-        ### Delete chem-files copied to working directory
+        # Delete chem-files copied to working directory
         silentdelete(*self.copied_chemfiles)
 
 
@@ -640,7 +641,9 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
         if not self.satnum.is_file() or self.satnum.size() < tag_length:
             return False
         #print(self.satnum.binarydata()[-(tag_length+3):])
-        if self.endtag.encode() in self.satnum.binarydata()[-tag_length:]:
+        # if self.endtag.encode() in self.satnum.binarydata()[-tag_length:]:
+        #     return True
+        if self.endtag in self.satnum.tail(size=tag_length):
             return True
         return False
 
@@ -690,7 +693,6 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
             self.n += 1
             self.interface_file(self.n).create()
             self.OK_file.create()
-            # silentdelete(self.satnum)
             self.satnum.delete()
             if n == 0:
                 if start:
@@ -700,12 +702,13 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
             self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted')
             self.t = self.time()
         self.wait_for(self.satnum_flushed, pause=CHECK_PAUSE)
-        #warn_empty_file(self.satnum, comment='--')
-        if self.satnum.is_empty():
-            self.update and self.update.message(f'WARNING {self.satnum} is empty!')
+        if self.satnum.is_empty() and self.update:
+            self.update.message(f'WARNING {self.satnum} is empty!')
         self.suspend()
         if self.delete_interface:
-            [self.interface_file(self.n-n).delete() for n in range(N)] 
+            #[self.interface_file(self.n-n).delete() for n in range(N)] 
+            for n in range(N):
+                self.interface_file(self.n-n).delete()
 #        self.t = self.time()
         if log:
             self._print(f' {self.t:.3f}/{self.end_time} days')
@@ -947,6 +950,7 @@ class Simulation:                                                        # Simul
         self.start = None
         self.restart = None
         self.skiprest = False
+        self.only_iorsim = False
         kwargs.update({'root':str(self.root), 'runlog':self.runlog, 'update':self.update, 'to_screen':to_screen})
         self.kwargs = kwargs
 
@@ -1001,7 +1005,7 @@ class Simulation:                                                        # Simul
             self.restart = self.ECL_inp.restart()
             if self.restart.run:
                 # Start date given by first entry of restart-file (UNRST-file)
-                self.start = next(self.restart.file.dates()) 
+                self.start = next(self.restart.file.dates())
             else:
                 # Read start from DATA-file
                 self.start = self.ECL_inp.start()
@@ -1013,11 +1017,10 @@ class Simulation:                                                        # Simul
             self.mode = 'forward'
 
         init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
-        run_func  = {'backward':self.backward,          'forward': self.forward}[self.mode]
         self.runs = init_func(**self.kwargs)
         # Check input
         if all(run.check_input() for run in self.runs):
-            return run_func
+            return {'backward':self.backward, 'forward': self.forward}[self.mode]
         return None
 
     #--------------------------------------------------------------------------------
@@ -1510,12 +1513,15 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         mode = 'forward'
         runs = ['eclipse'] if only_eclipse else ['iorsim']
 
+    if intersect and runs[0] == 'eclipse':
+        runs[0] = 'intersect'
+
     if intersect > 1 and IX_input.need_convert(root):
         conv_prog = progress_without_end(text='   Convert Eclipse case to Intersect', length=20)
         IX_input.from_eclipse(root, progress=conv_prog, freq=10)
         print('\r' + ' '*80, end='')
 
-    sim = Simulation(root=root, time=time, iorexe=iorexe, eclexe=eclexe, intersect=intersect,
+    sim = Simulation(root=root, time=time, iorexe=iorexe, eclexe=eclexe,
                      check_unrst=check_unrst, check_rft=check_rft, keep_files=keep_files, 
                      progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert and not only_merge, merge=merge and not only_convert, delete=delete, ecl_keep_alive=ecl_alive,
