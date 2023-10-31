@@ -1,25 +1,66 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from datetime import datetime
+from itertools import chain, cycle, product
+from operator import itemgetter
+import sys
+from pathlib import Path
+from urllib.parse import urlparse
+import os
+from zipfile import ZipFile, is_zipfile
+from psutil import Popen
+# External libraries
+from PySide6.QtWidgets import (QScrollArea, QStatusBar, QDialog, QWidget, QMainWindow,
+                               QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout,
+                               QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox,
+                               QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog,
+                               QMessageBox, QProgressDialog)
+from PySide6.QtGui import (QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter,
+                           QTextCharFormat, QTextCursor)
+from PySide6.QtCore import (QDir, QCoreApplication, QSize, QObject, Signal, Slot, QRunnable,
+                            QThreadPool, Qt, QRegularExpression, QRect, QPoint)
+from PySide6.QtPdfWidgets import QPdfView
+from PySide6.QtPdf import QPdfDocument, QPdfSearchModel
+#from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+#from PySide6.QtWebEngineWidgets import QWebEngineView
+
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
+from matplotlib.colors import to_rgb as colors_to_rgb
+from matplotlib.figure import Figure
+#from matplotlib.pyplot import grid as plotgrid
+from matplotlib import rcParams
+
+from numpy import asarray
+#from numpy import genfromtxt, asarray, zeros, concatenate, sort, unique
+#from re import compile
+# Python libraries
+from traceback import format_exc, print_exc
+from time import sleep
+from collections import namedtuple
+from shutil import copy as shutil_copy
+#from copy import deepcopy 
+from functools import partial
+from requests import get as requests_get, exceptions as req_exceptions
+# Local libraries
+from ior2ecl import (SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT,
+                     Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, 
+                     LOG_LEVEL_MAX, LOG_LEVEL_MIN)
+from IORlib.utils import (make_user_executable, removeprefix, Progress, clear_dict, 
+                          convert_float_or_str, copy_recursive, same_length, flatten, 
+                          get_keyword, get_tuple, kill_process, pad_zero, read_file, 
+                          remove_leading_nondigits, replace_line, delete_all, 
+                          try_except_loop, unique_names, write_file)
+from IORlib.ECL import DATA_file, IX_input, File, UNSMRY_file, UNRST_file
 
 DEBUG = False
 
 # Options
 CHECK_VERSION_AT_START = False
 
-from datetime import datetime
-from itertools import chain, cycle, product
-from operator import itemgetter
-import sys
-import os
-from zipfile import ZipFile, is_zipfile
-
-from psutil import Popen
-
-### Check if this is a bundle version (pyinstaller)
+# Check if this is a bundle version (pyinstaller)
 BUNDLE_VERSION = getattr(sys, 'frozen', False)
-
-from pathlib import Path
-from urllib.parse import urlparse
+if BUNDLE_VERSION:
+    import pip_system_certs.wrapt_requests
 
 #-----------------------------------------------------------------------
 def resource_path():
@@ -44,8 +85,8 @@ MIN_PLOT_VALUE = 1e-200
 THIS_FILE = Path(sys.argv[0])
 
 # Guide files
-GUIDE_PATH = "file:///" + str(resource_path()).replace('\\','/')
-#GUIDE_PATH = str(resource_path()) # Use this for PDF_viewer_v2
+#GUIDE_PATH = "file:///" + str(resource_path()).replace('\\','/')
+GUIDE_PATH = str(resource_path()) # Use this for PDF_viewer_v2
 IORSIM_GUIDE = GUIDE_PATH + "/guides/IORSim_2021_User_Guide.pdf"
 SCRIPT_GUIDE = GUIDE_PATH + "/guides/IORSim_GUI_guide.pdf"
 
@@ -60,40 +101,6 @@ def github_url(version):
         return GITHUB_REPO + f'archive/refs/tags/{version}.zip'
     return GITHUB_REPO + f'releases/download/{version}/{THIS_FILE.name}'
 
-
-# External libraries
-from PySide6.QtWidgets import QScrollArea, QStatusBar, QDialog, QWidget, QMainWindow, QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout, QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox, QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog, QMessageBox, QProgressDialog
-from PySide6.QtGui import QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextCursor
-from PySide6.QtCore import QDir, QCoreApplication, QSize, QUrl, QObject, Signal, Slot, QRunnable, QThreadPool, Qt, QRegularExpression, QRect, QPoint
-#from PySide6.QtPdfWidgets import QPdfView
-#from PySide6.QtPdf import QPdfDocument
-from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
-from PySide6.QtWebEngineWidgets import QWebEngineView
-
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
-from matplotlib.colors import to_rgb as colors_to_rgb
-from matplotlib.figure import Figure
-#from matplotlib.pyplot import grid as plotgrid
-from matplotlib import rcParams
-
-from numpy import genfromtxt, asarray, zeros, concatenate, sort, unique
-from re import compile
-
-# Python libraries
-from traceback import format_exc, print_exc, format_exc
-from time import sleep
-from collections import namedtuple
-from shutil import copy as shutil_copy
-from copy import deepcopy 
-from functools import partial
-if BUNDLE_VERSION:
-    import pip_system_certs.wrapt_requests
-from requests import get as requests_get, exceptions as req_exceptions
-
-# Local libraries
-from ior2ecl import SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT, Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, LOG_LEVEL_MAX, LOG_LEVEL_MIN
-from IORlib.utils import make_user_executable, removeprefix, Progress, clear_dict, convert_float_or_str, copy_recursive, same_length, flatten, get_keyword, get_tuple, kill_process, pad_zero, read_file, remove_comments, remove_leading_nondigits, replace_line, delete_all, strip_zero, try_except_loop, unique_names, write_file
-from IORlib.ECL import DATA_file, IX_input, File, UNSMRY_file, UNRST_file
 
 QDir.addSearchPath('icons', resource_path()/'icons/')
 
@@ -1514,53 +1521,80 @@ class Highlight_editor(Editor):
 #         self.show()
 
 #===========================================================================
-class PDF_viewer(Editor):
+#class PDF_viewer(Editor):
+class PDF_viewer(QWidget):
 #===========================================================================
+
     #-----------------------------------------------------------------------
     def __init__(self, *args, **kwargs):                        # PDF_viewer
     #-----------------------------------------------------------------------
-        super().__init__(*args, search=True, save=False, refresh=False, top=False, end=False, **kwargs)
-        viewer = QWebEngineView(self)
-        viewer.settings().setAttribute(QWebEngineSettings.PluginsEnabled, True)
-        viewer.settings().setAttribute(QWebEngineSettings.PdfViewerEnabled, True)
-        delete_all_widgets_in_layout(self.layout(), recursive=False)
-        self.layout().addWidget(viewer)
-        self.editor_ = viewer
+        super().__init__(*args, **kwargs)
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+        buttons = QHBoxLayout()
+        layout.addLayout(buttons)
+        self.search_field = QLineEdit()
+        self.search_field.setClearButtonEnabled(True)
+        self.search_field.setPlaceholderText('Search text')
+        self.search_field.textChanged.connect(self.search_text)
+        buttons.addWidget(self.search_field)
+        prev_btn = QPushButton('Previous')
+        prev_btn.clicked.connect(self.search_prev)
+        buttons.addWidget(prev_btn)
+        next_btn = QPushButton('Next')
+        next_btn.clicked.connect(self.search_next)
+        buttons.addWidget(next_btn)
+        self.viewer = QPdfView()
+        layout.addWidget(self.viewer)
+        #self.viewer.setPageMode(QPdfView.PageMode.MultiPage)
+        self.pdf = QPdfDocument()
+        self.viewer.setDocument(self.pdf)
+        self.navigator = self.viewer.pageNavigator()
+        self.searcher = QPdfSearchModel()
+        self.searcher.setDocument(self.pdf)
+        self.viewer.setSearchModel(self.searcher)
+        self.ind = 0
 
     #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                        # PDF_viewer
     #-----------------------------------------------------------------------
-        self.clear_search()
-        self.file = str(file)
-        self.editor_.setUrl(QUrl(file))
-        self.editor_.setWindowTitle(title)
+        self.search_field.setText('')
+        self.pdf.load(str(file))
+        self.viewer.setWindowTitle(title)
 
     #-----------------------------------------------------------------------
-    def search_text(self, string, start=0, ignore_case=True):    # PDF_viewer
+    def search_text(self, string):                               # PDF_viewer
     #-----------------------------------------------------------------------
-        #flags = QWebEnginePage.FindFlag(0)
-        #if self.case_box.isChecked():
-        #    flags = QWebEnginePage.FindCaseSensitively
-        #print(flags)
-        self.editor_.findText(string)
+        self.viewer.setCurrentSearchResultIndex(-1)
+        self.searcher.setSearchString(string)
+        self.ind = 0
+        self.viewer.setCurrentSearchResultIndex(self.ind)
+
+    #-----------------------------------------------------------------------
+    def jump(self, result):                                      # PDF_viewer
+    #-----------------------------------------------------------------------
+        self.navigator.jump(result)
+        self.viewer.verticalScrollBar().setValue(result.location().y())
 
     #-----------------------------------------------------------------------
     def search_next(self):                                      # PDF_viewer
     #-----------------------------------------------------------------------
-        self.search_text(self.search_field.text())
+        result = self.searcher.resultAtIndex(self.ind+1)
+        if result.page() >= 0:
+            self.ind += 1
+            self.viewer.setCurrentSearchResultIndex(self.ind)
+            self.jump(result)
 
     #-----------------------------------------------------------------------
     def search_prev(self):                                      # PDF_viewer
     #-----------------------------------------------------------------------
-        flags = QWebEnginePage.FindBackward
-        #if self.case_box.isChecked():
-        #    flags = flags or QWebEnginePage.FindCaseSensitively
-        self.editor_.findText(self.search_field.text(), flags)
+        self.ind = max(self.ind-1, 0)
+        result = self.searcher.resultAtIndex(self.ind)
+        if result.page() >= 0:
+            self.viewer.setCurrentSearchResultIndex(self.ind)
+            self.jump(self.searcher.resultAtIndex(self.ind))
 
-    #-----------------------------------------------------------------------
-    def refresh_func(self):                                      # PDF_viewer
-    #-----------------------------------------------------------------------
-        pass
+
 
 #===========================================================================
 class Window(QMainWindow):                                          # Window
@@ -1799,7 +1833,8 @@ class Settings(QDialog):
         self._get[var] = box.currentText
         self._set[var] = box.setCurrentText
         box.setToolTip(v.tip)
-        width and box.setFixedWidth(width)
+        if width:
+            box.setFixedWidth(width)
         label = QLabel(v.text)
         label.setToolTip(v.tip)
         layout = QHBoxLayout()
