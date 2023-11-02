@@ -45,7 +45,7 @@ from requests import get as requests_get, exceptions as req_exceptions
 from ior2ecl import (SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT,
                      Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, 
                      LOG_LEVEL_MAX, LOG_LEVEL_MIN)
-from IORlib.utils import (make_user_executable, removeprefix, Progress, clear_dict, 
+from IORlib.utils import (has_write_access, make_user_executable, removeprefix, Progress, clear_dict, 
                           convert_float_or_str, copy_recursive, same_length, flatten, 
                           get_keyword, get_tuple, kill_process, pad_zero, read_file, 
                           remove_leading_nondigits, replace_line, delete_all, 
@@ -1729,7 +1729,7 @@ class Settings(QDialog):
 
         # IORSim executable
         self.add_heading('IORSim and Eclipse program paths')
-        self.add_line_with_button(var='iorsim', open_func=self.open_ior_prog)
+        self.add_line_with_button(var='iorsim', open_func=self.open_ior_prog, read_only=False)
         # Eclipse executable
         self.add_line_with_button(var='eclrun', open_func=self.open_ecl_prog)
 
@@ -2113,7 +2113,7 @@ class main_window(QMainWindow):                                    # main_window
         self.py_log_act = create_action(self, text='Script log', icon='script-attribute.png',
                                         func=self.view_program_log, checkable=True)
         # Actions for Intersect, invisible for Eclipse cases
-        self.ix_convert_act = create_action(self, text='From Eclipse to Intersect', icon='document-convert.png',
+        self.ix_convert_act = create_action(self, text='Convert Eclipse to Intersect', icon='document-convert.png',
                                             func=self.convert_from_eclipse_to_intersect, checkable=False)
         self.ix_convert_act.setVisible(False)
         self.ix_convert_log_act = create_action(self, text='Convert log', icon='script-attribute-c.png',
@@ -2525,6 +2525,16 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
+    def choose_case(self, case, block_signal=False):
+    #-----------------------------------------------------------------------
+        if block_signal:
+            self.case_cb.blockSignals(block_signal)
+        nr = max(self.case_nr(case), 0)
+        self.case_cb.setCurrentIndex(nr)
+        if block_signal:
+            self.case_cb.blockSignals(False)
+
+    #-----------------------------------------------------------------------
     def set_input_field(self):
     #-----------------------------------------------------------------------
         # set values from input-file or default
@@ -2534,7 +2544,8 @@ class main_window(QMainWindow):                                    # main_window
         if not isinstance(self.cases, list):
             self.cases = [self.cases]
         self.case = self.input.get('root')
-        self.create_caselist(choose=self.case)
+        self.create_caselist() #choose=self.case)
+        self.choose_case(self.case)
         # number of days
         self.days_box.setText(self.input.get('days') or days)
         
@@ -2577,14 +2588,16 @@ class main_window(QMainWindow):                                    # main_window
     def missing_case_numbers(self, message=True):
     #-----------------------------------------------------------------------
         # Check for missing case-folders
-        exists = [c for c in self.cases if Path(c).with_suffix('.DATA').is_file()]
+        #exists = [c for c in self.cases if Path(c).with_suffix('.DATA').is_file()]
+        exists = [c for c in self.cases if any(Path(c).with_suffix(ext).is_file() for ext in ('.DATA', '.afi'))]
         missing = tuple(set(self.cases) - set(exists))
         if missing and message:
             self.show_message_text(f'WARNING The following cases no longer exist and have been removed: {missing}')
         return (self.case_nr(m) for m in missing)
 
     #-----------------------------------------------------------------------
-    def create_caselist(self, remove=(), insert=(), choose=None, sort=False):
+    #def create_caselist(self, remove=(), insert=(), choose=None, sort=False):
+    def create_caselist(self, remove=(), insert=(), sort=False):
     #-----------------------------------------------------------------------
         for rem in get_tuple(remove):
             if self.cases: # to avoid pop from empty list
@@ -2623,12 +2636,11 @@ class main_window(QMainWindow):                                    # main_window
         self.ref_case.addItems(['None']+items)
         self.ref_case.setCurrentIndex(0)
         self.ref_case.blockSignals(False)
-        nr = 0
-        if choose:
-            nr = self.case_nr(choose)
-            if nr < 0:
-                nr = 0
-        self.case_cb.setCurrentIndex(nr)
+        # nr = 0
+        # if choose:
+        #     nr = self.case_nr(choose)
+        #     nr = max(nr, 0)
+        # self.case_cb.setCurrentIndex(nr)
 
     #-----------------------------------------------------------------------
     def missing_case_error(self, tag=''):
@@ -2664,7 +2676,8 @@ class main_window(QMainWindow):                                    # main_window
             return
         self.copy_case_files(self.case, dest_root)
         self.case = str(dest_root)
-        self.create_caselist(insert=self.case, choose=choose_new and self.case or None)
+        self.create_caselist(insert=self.case) #, choose=choose_new and self.case or None)
+        self.choose_case(self.case if choose_new else None)
         return self.case
 
 
@@ -2705,18 +2718,25 @@ class main_window(QMainWindow):                                    # main_window
 
         
     #-----------------------------------------------------------------------
-    def case_nr(self, case):
+    def case_nr(self, case, raise_error=False):
     #-----------------------------------------------------------------------
-        if not case:
-            return -1
-        nr = -1
-        try:
-            cases = [Path(c) for c in self.cases]
-            nr = cases.index(Path(case))
-            return nr
-        except ValueError:
-            #show_message(self, 'warning', text="Case '{}' not found!".format(case))
-            return nr
+        #if case is None:
+        #   return -1
+        #nr = -1
+        # try:
+        #     cases = [Path(c) for c in self.cases]
+        #     nr = cases.index(Path(case))
+        #     return nr
+        # except ValueError:
+        #     #show_message(self, 'warning', text="Case '{}' not found!".format(case))
+        #     return nr
+        case = Path(case if case else '')
+        cases = [Path(c) for c in self.cases]
+        if case in cases:
+            return cases.index(case)
+        if raise_error:
+            raise SystemError(f'ERROR Missing case {case}')
+        return -1
             
     #-----------------------------------------------------------------------
     def enable_well_boxes(self, enable): 
@@ -2938,16 +2958,27 @@ class main_window(QMainWindow):                                    # main_window
             self.plot_area.add_ref_plot({'ecl':ecl, 'ior':ior})
 
                 
+    @show_error
     #-----------------------------------------------------------------------
     def open_case(self):                                       # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
         case, _ = QFileDialog.getOpenFileName(self,
-            'Locate Eclipse DATA-file', str(Path.cwd()), 'DATA files (*.DATA)')
+            'Locate Eclipse DATA-file or Intersect afi-file', str(Path.cwd()), 'Input files (*.DATA, *.afi)')
         # case = open_file_dialog(self, 'Locate Eclipse DATA-file', 'DATA files (*.DATA)')
         if case:
-            case = Path(case).resolve().with_suffix('')
-            self.create_caselist(insert=case, choose=case)
+            path = Path(case).resolve()
+            err_msg = ('ERROR You do not have write access to the folder where the input-files are located')
+            has_write_access(path.parent, error=err_msg)
+            host = 0
+            if path.suffix.lower() == '.afi':
+                host = 1
+            root = path.with_suffix('')
+            self.create_caselist(insert=root) #, choose=root)
+            self.choose_case(root, block_signal=True)
+            #self.case_cb.blockSignals(True)
+            self.host_cb.setCurrentIndex(host)
+            #self.case_cb.blockSignals(False)
 
             
     #-----------------------------------------------------------------------

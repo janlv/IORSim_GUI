@@ -637,13 +637,17 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
     #--------------------------------------------------------------------------------
     def satnum_flushed(self):                                          # ior_backward
     #--------------------------------------------------------------------------------
-        tag_length = len(self.endtag) + 3
-        if not self.satnum.is_file() or self.satnum.size() < tag_length:
-            return False
+        #tag_length = len(self.endtag) + 3
+        #if not self.satnum.is_file() or self.satnum.size() < tag_length:
+        #    return False
         #print(self.satnum.binarydata()[-(tag_length+3):])
         # if self.endtag.encode() in self.satnum.binarydata()[-tag_length:]:
         #     return True
-        if self.endtag in self.satnum.tail(size=tag_length):
+        #tail = next(self.satnum.tail(size=tag_length))
+        #print('SATNUM', tail)
+        #print('END', self.endtag)
+        if self.endtag in self.satnum.tail(size=len(self.endtag)+3):
+        #if self.endtag in tail:
             return True
         return False
 

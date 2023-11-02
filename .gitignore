@@ -198,3 +198,5 @@ testdir
 *.out
 *.txt
 *.bat
+IXF_Examples
+OPM
