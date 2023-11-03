@@ -50,7 +50,7 @@ from IORlib.utils import (has_write_access, make_user_executable, removeprefix, 
                           get_keyword, get_tuple, kill_process, pad_zero, read_file, 
                           remove_leading_nondigits, replace_line, delete_all, 
                           try_except_loop, unique_names, write_file)
-from IORlib.ECL import DATA_file, IX_input, File, UNSMRY_file, UNRST_file
+from IORlib.ECL import DATA_file, AFI_file, IX_input, File, UNSMRY_file, UNRST_file
 
 DEBUG = False
 
@@ -2024,9 +2024,9 @@ class main_window(QMainWindow):                                    # main_window
         self.host_input = None
         self.cases = ()
         self.max_days = None
-        self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None, 
-                      'species':[], 'tracers':[], 'mode':None, 'cases':[]}
-        self.input_to_save = ('root', 'days', 'mode', 'cases')
+        self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None,
+                      'species':[], 'tracers':[], 'mode':None, 'cases':[], 'host':'Eclipse'}
+        self.input_to_save = ('root', 'days', 'mode', 'cases', 'host')
         self.settings = Settings(parent=self, file=str(settings_file))
         self.view_host_input = {'Eclipse':self.view_eclipse_input, 'Intersect':self.view_intersect_input}
         self.view_host_log   = {'Eclipse':self.view_eclipse_log,   'Intersect':self.view_intersect_log}
@@ -2096,7 +2096,7 @@ class main_window(QMainWindow):                                    # main_window
 
         self.ecl_inp_act = create_action(self, text='Eclipse input', icon='document-attribute-e.png',
                                          func=self.view_host_input['Eclipse'], checkable=True)
-        self.ix_inp_act = create_action(self, text='Intersect input', icon='document-attribute-x.png',
+        self.ix_inp_act = create_action(self, text='Intersect input', icon='document-attribute-ix.png',
                                          func=self.view_host_input['Intersect'], checkable=True)
         self.ix_inp_act.setVisible(False)
         self.ior_inp_act = create_action(self, text='IORSim input', icon='document-attribute-i.png',
@@ -2105,7 +2105,7 @@ class main_window(QMainWindow):                                    # main_window
                                           func=self.view_schedule_file, checkable=True)
         self.ecl_log_act = create_action(self, text='Run log', icon='script-attribute-e.png',
                                          func=self.view_host_log['Eclipse'], checkable=True)
-        self.ix_log_act = create_action(self, text='Run log', icon='script-attribute-x.png',
+        self.ix_log_act = create_action(self, text='Run log', icon='script-attribute-ix.png',
                                          func=self.view_host_log['Intersect'], checkable=True)
         self.ix_log_act.setVisible(False)
         self.ior_log_act = create_action(self, text='Run log', icon='script-attribute-i.png',
@@ -2796,28 +2796,25 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_host_select(self, nr):                               # main_window
     #-----------------------------------------------------------------------
-        host = self.hosts[nr]
+        host = self.input['host'] = self.hosts[nr]
         self.host_menu.setTitle('&'+host)
         is_intersect = False
         if host.lower() == 'intersect':
             is_intersect = True
+        has_ecl_input = Path(self.case).with_suffix('.DATA').is_file()
         self.ix_inp_act.setVisible(is_intersect)
+        self.ecl_inp_act.setVisible(has_ecl_input)
         self.ix_incl_menu.menuAction().setVisible(is_intersect)
+        self.ecl_incl_menu.menuAction().setVisible(has_ecl_input)
         self.ix_log_act.setVisible(is_intersect)
-        self.ix_convert_act.setVisible(is_intersect)
-        self.ix_convert_log_act.setVisible(is_intersect)
+        self.ix_convert_act.setVisible(is_intersect and has_ecl_input)
+        self.ix_convert_log_act.setVisible(is_intersect and has_ecl_input)
         self.ecl_log_act.setVisible(not is_intersect)
         self.ecl_menu.setTitle(f'{host.upper()} plot options')
         self.modes[2] = host.lower()
         self.mode_cb.removeItem(2)
         self.mode_cb.insertItem(2, host)
         self.mode_cb.update()
-        #self.on_mode_select(self.mode_cb.currentIndex())
-        # Update file view actions
-        #for act, func in ((self.ecl_inp_act, self.view_host_input), (self.ecl_log_act, self.view_host_log)):
-        #    act.triggered.disconnect()
-        #    act.triggered.connect(func[host])
-        #self.refresh_case()
         self.on_case_select(self.case_cb.currentIndex())
 
     #-----------------------------------------------------------------------
@@ -2893,6 +2890,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         try:
             host = self.get_current_host()
+            #print('HOST', self.case)
+            if host == 'Eclipse' and not DATA_file(self.case).exists() and AFI_file(self.case).exists():
+                self.host_cb.setCurrentIndex(1)
+                return
             if host == 'Intersect':
                 status = self.create_intersect_input_from_eclipse()
                 if status < 1:
@@ -3189,13 +3190,12 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_file_menu(self, files, menu, viewer=None, editor=None, title=''):
     #-----------------------------------------------------------------------
-        if missing := [file for file in files if not file.is_file()]:
-            raise SystemError(f'ERROR Missing include files: {tuple(map(str, missing))}')
+        #if missing := [file for file in files if not file.is_file()]:
+        #    raise SystemError(f'ERROR Missing include files: {tuple(map(str, missing))}')
         # Clear menu
         menu.clear()
         # Disable if empty
         enable = False
-        #print(files)
         for file in files:
             _editor = editor
             # Choose non-highlight editor if file is too large to avoid lagging display
@@ -3204,7 +3204,9 @@ class main_window(QMainWindow):                                    # main_window
             if file.stat().st_size > 100*1024:
                 _editor = self.editor
             enable = True
-            act = create_action(self, text=file.name, checkable=True, func=partial(viewer, file, title=f'{title} {Path(file).name}', editor=_editor), icon='document-c')
+            act = create_action(self, text=file.name, checkable=True,
+                                func=partial(viewer, file, title=f'{title} {Path(file).name}', editor=_editor),
+                                icon='document-c')
             act.setIconText('include')
             self.view_group.addAction(act)
             # Disable for non-existing file
@@ -3462,9 +3464,11 @@ class main_window(QMainWindow):                                    # main_window
         #print('NEW_DATA', new_data)
         # Enable menu-well-boxes for active wells
         #for well in set(unsmry.wells):
-        for well in unsmry.wells:
-            if box := self.ecl_boxes['well'].get(well):
-                box.setEnabled(True)
+        if wellboxes := self.ecl_boxes.get('well'):
+            for well in unsmry.wells:
+                #if box := self.ecl_boxes['well'].get(well):
+                if box := wellboxes.get(well):
+                    box.setEnabled(True)
         if new_data:
             start = 0
             if skip_zero and new_data.days[0] < 1e-8:

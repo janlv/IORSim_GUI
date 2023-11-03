@@ -698,7 +698,8 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
         self.reset_processes()
         # Close log-file
-        self.log and self.log.close()
+        if self.log:
+            self.log.close()
         self.log = None
         # Stop and delete the suspend-timer-thread
         if self.suspend_timer:

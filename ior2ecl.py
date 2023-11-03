@@ -635,6 +635,12 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
 
 
     #--------------------------------------------------------------------------------
+    def delete_output_files(self, raise_error=False):                  # ior_backward
+    #--------------------------------------------------------------------------------
+        super().delete_output_files(raise_error)
+        self.satnum.unlink(missing_ok=True)
+
+    #--------------------------------------------------------------------------------
     def satnum_flushed(self):                                          # ior_backward
     #--------------------------------------------------------------------------------
         #tag_length = len(self.endtag) + 3
@@ -646,7 +652,8 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
         #tail = next(self.satnum.tail(size=tag_length))
         #print('SATNUM', tail)
         #print('END', self.endtag)
-        if self.endtag in self.satnum.tail(size=len(self.endtag)+3):
+        #print(self.satnum.tail(size=len(self.endtag)+3))
+        if self.endtag in self.satnum.tail(size=len(self.endtag)+3, size_limit=True):
         #if self.endtag in tail:
             return True
         return False
@@ -710,10 +717,8 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
             self.update.message(f'WARNING {self.satnum} is empty!')
         self.suspend()
         if self.delete_interface:
-            #[self.interface_file(self.n-n).delete() for n in range(N)] 
             for n in range(N):
                 self.interface_file(self.n-n).delete()
-#        self.t = self.time()
         if log:
             self._print(f' {self.t:.3f}/{self.end_time} days')
 
@@ -725,6 +730,14 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
         self.OK_file.create()
         super().quit(v, loop_func)
 
+    #--------------------------------------------------------------------------------
+    def close(self):                                                   # ior_backward
+    #--------------------------------------------------------------------------------
+        super().close()
+        if not self.keep_files:
+            self.satnum.unlink(missing_ok=True)
+            Path('block0_firstsolutioninit.out').unlink(missing_ok=True)
+        
 
 #====================================================================================
 class Schedule:
