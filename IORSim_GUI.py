@@ -3328,7 +3328,6 @@ class main_window(QMainWindow):                                    # main_window
             text = text[:1] + ('Conc. water', 'Conc. oil', 'Conc. gas')
             name = name[:1] + ('conc_wat'   , 'conc_oil' , 'conc_gas')
         for t,n in zip(text, name): #('Prod', 'Conc'):
-            #box = self.plot_menu_checkbox(text=text+'.', name=text.lower(), func=self.create_plot)
             box = self.plot_menu_checkbox(text=t, name=n, func=self.create_plot)
             box.setStyleSheet(FONT_SMALL)
             menu.column(0).addWidget(box)#, alignment=Qt.AlignTop)
