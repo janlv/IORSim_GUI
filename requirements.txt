@@ -3,3 +3,5 @@ matplotlib
 requests 
 pip-system-certs
 psutil
+numpy
+

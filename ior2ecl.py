@@ -17,7 +17,7 @@ from threading import Thread
 
 from psutil import NoSuchProcess
 
-from IORlib.utils import (flatten, get_keyword, list2text, pairwise,
+from IORlib.utils import (flat_list, get_keyword, list2text, pairwise,
     print_error, remove_comments, safeopen, Progress, silentdelete,
     delete_files_matching, tail_file, LivePlot, running_jupyter, ordered_intersect_index)
 from IORlib.runner import Runner
@@ -467,7 +467,7 @@ class IORSim_input(File):                                              # iorsim_
         if not self.path:
             return ()
         parent = self.path.parent
-        files = flatten(get_keyword(self.path, '\*CHEMFILE', end='\*', comment='#'))
+        files = flat_list(get_keyword(self.path, '\*CHEMFILE', end='\*', comment='#'))
         # Use negative lookahead (?!) to ignore commented lines
         regex = re_compile(rb'^(?!#)\s*add_species[\s"\']*(.*?)[\s"\']*$', flags=MULTILINE)
         for file in set(files):
@@ -486,7 +486,7 @@ class IORSim_input(File):                                              # iorsim_
             species = species[0][1::2]
         else:
             # Read old input format
-            species = flatten(get_keyword(self.path, '\*SPECIES', end='\*'))
+            species = flat_list(get_keyword(self.path, '\*SPECIES', end='\*'))
             species = [s for s in species if isinstance(s, str)]
         # Change pH to H 
         species = [s if s.lower() != 'ph' else 'H' for s in species]
@@ -498,7 +498,7 @@ class IORSim_input(File):                                              # iorsim_
     #-----------------------------------------------------------------------
         if not self.exists(raise_error):
             return []
-        tracers = flatten(get_keyword(self.path, '\*NAME', end='\*'))
+        tracers = flat_list(get_keyword(self.path, '\*NAME', end='\*'))
         return tracers
 
     #-----------------------------------------------------------------------
@@ -507,8 +507,8 @@ class IORSim_input(File):                                              # iorsim_
         if not self.exists(raise_error):
             return [],[]
         in_wells, out_wells = [], []
-        out_wells = flatten(get_keyword(self.path, '\*PRODUCER', end='\*'))
-        in_wells = flatten(get_keyword(self.path, '\*INJECTOR', end='\*'))
+        out_wells = flat_list(get_keyword(self.path, '\*PRODUCER', end='\*'))
+        in_wells = flat_list(get_keyword(self.path, '\*INJECTOR', end='\*'))
         if not out_wells or not in_wells:
             # Read old input format
             ow = get_keyword(self.path, '\*OUTPUT', end='\*')
@@ -758,32 +758,22 @@ class Schedule:
 
         The schedule is a list of lists: [[start-time, ''],[days, 'KEYWORD'],[end-time, '']]
         '''
-        #self.case = Path(case)
         self.skip_empty = skip_empty
-        #self.comment = comment
-        #self.ifacefile = interface_file and DATA_file(interface_file.file, reread=True) or None
-        self.ifacefile = interface_file and DATA_file(interface_file.path, sections=False) or None
-        self.days = init_days 
+        self.ifacefile = DATA_file(interface_file.path, sections=False) if interface_file else None
+        self.days = init_days
         self.start = start
         self.tstep = 0
         self._schedule = ()
         self.end = 0
-        ### Ignore case in file extension
-        #self.file = is_file_ignore_suffix_case( self.case.with_suffix(ext) )
-        #sch = self.case.parent.glob(f'{self.case.stem}.[Ss][Cc][Hh]')
-        #self.file = next((f for f in sch if f.stem == self.case.stem), None)
-        #self.file = next(sch, None)
-        #sch = Path(case).with_suffix(self.suffix)
+        # Ignore case in file extension
         self.sch_file = DATA_file(case, suffix='.SCH', ignore_suffix_case=True, sections=False)
         if self.sch_file.is_file(): # and self.file.exists():
-            #self.file = DATA_file(self.case.with_suffix(ext), sections=False, ignore_case=True)
             self._schedule = self.get_schedule()
             self.end = (len(self._schedule) > 0) and self._schedule[-1][0] or 0
-        #else:
-        #    self.file = None
-        ### Add simulation end time 
+        # Add simulation end time
         self.insert(days=end_time, remove=True)
-        DEBUG and print(f'Creating {self}')
+        if DEBUG:
+            print(f'Creating {self}')
         #self.to_file('schedule.txt')
 
     #--------------------------------------------------------------------------------
@@ -799,7 +789,8 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def __del__(self):                                                     # Schedule
     #--------------------------------------------------------------------------------
-        DEBUG and print(f'Deleting {self}')
+        if DEBUG:
+            print(f'Deleting {self}')
 
     #--------------------------------------------------------------------------------
     def to_file(self, name):                                               # Schedule
@@ -810,7 +801,7 @@ class Schedule:
             return 
         print(f'  Writing {name}')
         with open(name, 'w', encoding='utf8') as file:
-            file.write('\n'.join([str(s) for s in flatten(self._schedule)]))
+            file.write('\n'.join([str(s) for s in flat_list(self._schedule)]))
 
     # #--------------------------------------------------------------------------------
     # def next_tstep(self):                                                  # Schedule

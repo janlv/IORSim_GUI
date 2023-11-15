@@ -46,7 +46,7 @@ from ior2ecl import (SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALI
                      Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, 
                      LOG_LEVEL_MAX, LOG_LEVEL_MIN)
 from IORlib.utils import (has_write_access, make_user_executable, removeprefix, Progress, clear_dict, 
-                          convert_float_or_str, copy_recursive, same_length, flatten, 
+                          convert_float_or_str, copy_recursive, same_length, flat_list, 
                           get_keyword, get_tuple, kill_process, pad_zero, read_file, 
                           remove_leading_nondigits, replace_line, delete_all, 
                           try_except_loop, unique_names, write_file)
@@ -935,7 +935,7 @@ class Plots:
         species = (var for var in ior_var if not 'temp' in var.lower())
         self.line_prop = self.line_properties(species)
         self.num = len(self.combs)
-        varboxes = flatten((box.get('var') or {}).keys() for box in menuboxes.values())
+        varboxes = flat_list((box.get('var') or {}).keys() for box in menuboxes.values())
         self.lines = {var:[] for var in varboxes}
         i = 1
         for comb in self.combs:
@@ -1184,7 +1184,12 @@ class MyQPlainTextEdit(QPlainTextEdit):
         newpos = shift + vbar.value()
         if newpos > 0:
             vbar.setValue(newpos)
-
+            
+    #-----------------------------------------------------------------------
+    def set_text_properties(self, color='black', style='normal', weight='normal'):
+    #-----------------------------------------------------------------------
+        self.setStyleSheet(f'QPlainTextEdit {{color: {color}; font-style: {style}; font-weight: {weight};}}')
+        
 
 #===========================================================================
 class Editor(QGroupBox):
@@ -1393,6 +1398,7 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def save_text(self, save_func=None):            # Editor
     #-----------------------------------------------------------------------
+        #print('SAVE_TEXT', save_func)
         write_file(self.file, self.editor_.toPlainText())
         #self.save_btn.setEnabled(False)
         self.enable_save(False)
@@ -1439,6 +1445,7 @@ class Editor(QGroupBox):
     def set_text_from_file(self):
     #-----------------------------------------------------------------------
         text = ''
+        self.editor_.set_text_properties() # use default values
         if self.file:
             if Path(self.file).is_file():
                 text = read_file(self.file)
@@ -1447,7 +1454,8 @@ class Editor(QGroupBox):
                             + f'\n --- SKIPPED {(size-self.size_limit-100)/1024**2:.0f} MB ---\n'
                             + text[-100:])
             else:
-                text = f'{self.file} is missing' if self.file else ''
+                text = f'\nThis file is missing ({self.file})' if self.file else ''
+                self.editor_.set_text_properties(color='gray', style='italic')
         self.editor_.setPlainText(text)
         self.enable_save(False)
         #if self.save_btn:
@@ -2098,29 +2106,29 @@ class main_window(QMainWindow):                                    # main_window
                                          func=self.view_host_input['Eclipse'], checkable=True)
         self.ix_inp_act = create_action(self, text='Intersect input', icon='document-attribute-ix.png',
                                          func=self.view_host_input['Intersect'], checkable=True)
-        self.ix_inp_act.setVisible(False)
+        #self.ix_inp_act.setVisible(False)
         self.ior_inp_act = create_action(self, text='IORSim input', icon='document-attribute-i.png',
                                          func=self.view_iorsim_input, checkable=True)
         self.schedule_file_act = create_action(self, text='Schedule file', icon='document-attribute-s.png',
                                           func=self.view_schedule_file, checkable=True)
-        self.ecl_log_act = create_action(self, text='Run log', icon='script-attribute-e.png',
+        self.ecl_log_act = create_action(self, text='Eclipse log', icon='script-attribute-e.png',
                                          func=self.view_host_log['Eclipse'], checkable=True)
-        self.ix_log_act = create_action(self, text='Run log', icon='script-attribute-ix.png',
+        self.ix_log_act = create_action(self, text='Intersect log', icon='script-attribute-ix.png',
                                          func=self.view_host_log['Intersect'], checkable=True)
-        self.ix_log_act.setVisible(False)
-        self.ior_log_act = create_action(self, text='Run log', icon='script-attribute-i.png',
+        #self.ix_log_act.setVisible(False)
+        self.ior_log_act = create_action(self, text='IORSim log', icon='script-attribute-i.png',
                                          func=self.view_iorsim_log, checkable=True)
         self.py_log_act = create_action(self, text='Script log', icon='script-attribute.png',
                                         func=self.view_program_log, checkable=True)
         # Actions for Intersect, invisible for Eclipse cases
         self.ix_convert_act = create_action(self, text='Convert Eclipse to Intersect', icon='document-convert.png',
                                             func=self.convert_from_eclipse_to_intersect, checkable=False)
-        self.ix_convert_act.setVisible(False)
+        #self.ix_convert_act.setVisible(False)
         self.ix_convert_log_act = create_action(self, text='Convert log', icon='script-attribute-c.png',
                                             func=self.view_ix_convert_log, checkable=True)
-        self.ix_convert_act.setVisible(False)
-        self.ix_convert_log_act.setVisible(False)
-                
+        #self.ix_convert_act.setVisible(False)
+        #self.ix_convert_log_act.setVisible(False)
+    
         
     #-----------------------------------------------------------------------
     def create_menus(self):                                    # main_window
@@ -2140,46 +2148,55 @@ class main_window(QMainWindow):                                    # main_window
         file_menu.addAction(self.download_act)
         file_menu.addSeparator()
         file_menu.addAction(self.exit_act)
-        # Eclipse / Intersect (host menu)
-        host_menu = menu.addMenu('&Eclipse')
-        host_menu.addAction(self.ix_inp_act)
-        self.view_group.addAction(self.ix_inp_act)
-        self.ix_incl_menu = host_menu.addMenu(QIcon('icons:documents-stack.png'), 'Intersect includes')
-        self.ix_incl_menu.setStyleSheet(FONT_SMALL)
-        self.ix_incl_menu.menuAction().setVisible(False)
-        host_menu.addSeparator()
-        host_menu.addAction(self.ecl_inp_act)
-        self.view_group.addAction(self.ecl_inp_act)
-        self.ecl_incl_menu = host_menu.addMenu(QIcon('icons:documents-stack.png'), 'Eclipse includes')
-        self.ecl_incl_menu.setStyleSheet(FONT_SMALL)
-        host_menu.addAction(self.ix_convert_act)
-        host_menu.addSeparator()
-        host_menu.addAction(self.ecl_log_act)
-        self.view_group.addAction(self.ecl_log_act)
-        host_menu.addAction(self.ix_log_act)
-        self.view_group.addAction(self.ix_log_act)
-        host_menu.addAction(self.ix_convert_log_act)
-        self.view_group.addAction(self.ix_convert_log_act)
-        self.host_menu = host_menu
-        # IORSim
-        ior_menu = menu.addMenu('&IORSim')
-        ior_menu.addAction(self.ior_inp_act)
+        # Edit menu (Eclipse / Intersect / IORSim input)
+        edit_menu = menu.addMenu('&Edit')
+        # Edit IORSim
+        edit_menu.addAction(self.ior_inp_act)
         self.view_group.addAction(self.ior_inp_act)
-        self.ior_incl_menu = ior_menu.addMenu(QIcon('icons:documents-stack.png'), 'Chemistry files')
+        self.ior_incl_menu = edit_menu.addMenu(QIcon('icons:documents-stack.png'), 'Chemistry files')
         self.ior_incl_menu.setStyleSheet(FONT_SMALL)
-        ior_menu.addAction(self.schedule_file_act)
+        edit_menu.addAction(self.schedule_file_act)
         self.view_group.addAction(self.schedule_file_act)
-        ior_menu.addSeparator()
-        ior_menu.addAction(self.ior_log_act)
-        self.view_group.addAction(self.ior_log_act)
-        # View
+        edit_menu.addSeparator()
+        # Edit Eclipse
+        edit_menu.addAction(self.ecl_inp_act)
+        self.view_group.addAction(self.ecl_inp_act)
+        ecl_incl = edit_menu.addMenu(QIcon('icons:documents-stack.png'), 'Eclipse includes')
+        ecl_incl.setStyleSheet(FONT_SMALL)
+        edit_menu.addSeparator()
+        # Edit Intersect
+        edit_menu.addAction(self.ix_inp_act)
+        self.view_group.addAction(self.ix_inp_act)
+        ix_incl = edit_menu.addMenu(QIcon('icons:documents-stack.png'), 'Intersect includes')
+        ix_incl.setStyleSheet(FONT_SMALL)
+        self.incl_menu = {'Eclipse':ecl_incl, 'Intersect': ix_incl}
+        # Tools menu
+        tools_menu = menu.addMenu('&Tools')
+        tools_menu.addAction(self.ix_convert_act)
+        # View menu
         view_menu = menu.addMenu('&View')
-        view_menu.addAction(self.plot_act)
-        self.view_group.addAction(self.plot_act)
+        # IORSim log
+        view_menu.addAction(self.ior_log_act)
+        self.view_group.addAction(self.ior_log_act)
+        # Eclipse log
+        view_menu.addAction(self.ecl_log_act)
+        self.view_group.addAction(self.ecl_log_act)
+        # Intersect log
+        view_menu.addAction(self.ix_log_act)
+        self.view_group.addAction(self.ix_log_act)
+        # Script log
         view_menu.addSeparator()
         view_menu.addAction(self.py_log_act)
         self.view_group.addAction(self.py_log_act)
-        # Help
+        # Convert log
+        view_menu.addSeparator()
+        view_menu.addAction(self.ix_convert_log_act)
+        self.view_group.addAction(self.ix_convert_log_act)
+        # Plot
+        view_menu.addSeparator()
+        view_menu.addAction(self.plot_act)
+        self.view_group.addAction(self.plot_act)
+        # Help menu
         help_menu = menu.addMenu('&Help')
         help_menu.addAction(self.iorsim_guide_act)
         help_menu.addAction(self.script_guide_act)
@@ -2428,10 +2445,11 @@ class main_window(QMainWindow):                                    # main_window
         self.mode_cb.currentIndexChanged[int].connect(self.on_mode_select)
         # case
         self.case_cb = widgets['case']
+        # Change size-adjust-policy from the default AdjustToContentsOnFirstShow
+        # Might slow the GUI down for long lists
+        self.case_cb.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.case_cb.setMinimumWidth(120)
-        #self.case_cb.setMaximumWidth(360)
-        self.case_cb.setMinimumWidth(120)
-        #self.case_cb.setMaximumWidth(200)
+        self.case_cb.setPlaceholderText('Select or open case')
         self.case_cb.setStyleSheet('QComboBox {min-width: 100px;}')
         self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
         # days
@@ -2446,7 +2464,7 @@ class main_window(QMainWindow):                                    # main_window
         self.ref_case.setObjectName('compare')
         self.ref_case.setStyleSheet('QComboBox {min-width: 100px;}')
         self.ref_case.currentIndexChanged[int].connect(self.on_compare_select)
-        self.ref_case.setProperty('lastitem',0)    
+        self.ref_case.setProperty('lastitem',0)
 
 
     #-----------------------------------------------------------------------
@@ -2506,7 +2524,7 @@ class main_window(QMainWindow):                                    # main_window
         sections = rules(Color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b', DATA_file.section_names)
         globals = rules(Color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b', DATA_file.global_kw)
         common = rules(Color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b', DATA_file.common_kw)
-        self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common), 
+        self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common),
                                                save_func=self.refresh_case) # Alternative is self.refresh_case
         # IORSim editor
         mandatory = rules(Color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b', IORSim_input.keywords.required)
@@ -2596,7 +2614,6 @@ class main_window(QMainWindow):                                    # main_window
         return (self.case_nr(m) for m in missing)
 
     #-----------------------------------------------------------------------
-    #def create_caselist(self, remove=(), insert=(), choose=None, sort=False):
     def create_caselist(self, remove=(), insert=(), sort=False):
     #-----------------------------------------------------------------------
         for rem in get_tuple(remove):
@@ -2741,7 +2758,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def enable_well_boxes(self, enable): 
     #-----------------------------------------------------------------------
-        boxes = flatten(box['well'].values() for box in (self.ecl_boxes, self.ior_boxes) if 'well' in box)
+        boxes = flat_list(box['well'].values() for box in (self.ecl_boxes, self.ior_boxes) if 'well' in box)
         for box in boxes:
             if 'FIELD' in box.objectName():
                 continue
@@ -2796,26 +2813,38 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def on_host_select(self, nr):                               # main_window
     #-----------------------------------------------------------------------
+        # print('ON_HOST_SELECT', nr)
         host = self.input['host'] = self.hosts[nr]
-        self.host_menu.setTitle('&'+host)
-        is_intersect = False
-        if host.lower() == 'intersect':
-            is_intersect = True
-        has_ecl_input = Path(self.case).with_suffix('.DATA').is_file()
-        self.ix_inp_act.setVisible(is_intersect)
-        self.ecl_inp_act.setVisible(has_ecl_input)
-        self.ix_incl_menu.menuAction().setVisible(is_intersect)
-        self.ecl_incl_menu.menuAction().setVisible(has_ecl_input)
-        self.ix_log_act.setVisible(is_intersect)
-        self.ix_convert_act.setVisible(is_intersect and has_ecl_input)
-        self.ix_convert_log_act.setVisible(is_intersect and has_ecl_input)
-        self.ecl_log_act.setVisible(not is_intersect)
+        #self.host_menu.setTitle('&'+host)
         self.ecl_menu.setTitle(f'{host.upper()} plot options')
         self.modes[2] = host.lower()
         self.mode_cb.removeItem(2)
         self.mode_cb.insertItem(2, host)
         self.mode_cb.update()
+        self.update_ecl_ix_menu_visibility()
         self.on_case_select(self.case_cb.currentIndex())
+
+    #-----------------------------------------------------------------------
+    def update_ecl_ix_menu_visibility(self):
+    #-----------------------------------------------------------------------
+        # print('UPDATE_ECL_IX_MENUS')
+        # is_intersect = False
+        # host = host or self.get_current_host()
+        # if host.lower() == 'intersect':
+        #     is_intersect = True
+        #self.case = self.input['root']
+        # Eclipse
+        has_ecl_input = Path(self.case).with_suffix('.DATA').is_file()
+        self.ecl_inp_act.setEnabled(has_ecl_input)
+        self.incl_menu['Eclipse'].menuAction().setEnabled(has_ecl_input)
+        #self.ecl_log_act.setEnabled(not is_intersect)
+        # Intersect
+        has_ix_input = Path(self.case).with_suffix('.afi').is_file()
+        self.ix_inp_act.setEnabled(has_ix_input)
+        self.incl_menu['Intersect'].menuAction().setEnabled(has_ix_input)
+        #self.ix_log_act.setEnabled(is_intersect)
+        self.ix_convert_act.setEnabled(has_ecl_input)
+        self.ix_convert_log_act.setEnabled(has_ecl_input)
 
     #-----------------------------------------------------------------------
     def on_mode_select(self, nr):                               # main_window
@@ -2913,6 +2942,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
         if self.cases:
+            # print('ON_CASE_SELECT', nr)
             case = str(self.cases[nr])
             if missing := self.missing_case_numbers():
                 for miss_nr in missing:
@@ -2965,7 +2995,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
         case, _ = QFileDialog.getOpenFileName(self,
-            'Locate Eclipse DATA-file or Intersect afi-file', str(Path.cwd()), 'Input files (*.DATA, *.afi)')
+            'Locate Eclipse DATA-file or Intersect afi-file', str(Path.cwd()), 'Input files (*.DATA *.afi)')
         # case = open_file_dialog(self, 'Locate Eclipse DATA-file', 'DATA files (*.DATA)')
         if case:
             path = Path(case).resolve()
@@ -3099,9 +3129,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def prepare_case(self):
     #-----------------------------------------------------------------------
+        #print('PREPARE_CASE')
         self.clear()
-        root = self.case or self.input['root']
-        self.case = root
+        root = self.case = self.input['root']
+        #self.case = root
         self.schedule = File(root, suffix='.SCH', ignore_suffix_case=True)
         #print('schedule', self.schedule)
         self.update_schedule_act()
@@ -3116,10 +3147,12 @@ class main_window(QMainWindow):                                    # main_window
         # Init data
         self.data['ecl'] = self.init_ecl_data()
         self.data['ior'] = self.init_ior_data()
+        # Fix Edit menu
+        host = self.get_current_host()
+        self.update_ecl_ix_menu_visibility()
         # Add menu boxes
         self.update_ecl_menu()
-        menu_name = 'ecl' if self.get_current_host() == 'Eclipse' else 'ix'
-        self.menu_boxes[menu_name] = self.ecl_boxes
+        self.menu_boxes['ecl' if host == 'Eclipse' else 'ix'] = self.ecl_boxes
         self.update_ior_menu()
         self.menu_boxes['ior'] = self.ior_boxes
         #self.enable_well_boxes(True)
@@ -3143,8 +3176,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def refresh_case(self):
     #-----------------------------------------------------------------------
-        root = self.case or self.input['root']
-        self.case = root
+        current_view = self.view_group.checkedAction()
+        root = self.case = self.input['root']
         self.schedule = File(root, suffix='.SCH', ignore_suffix_case=True)
         self.update_schedule_act()
         self.iorsim_input = IORSim_input(root)
@@ -3166,8 +3199,12 @@ class main_window(QMainWindow):                                    # main_window
         self.enable_well_boxes(True)
         # Update menus
         self.update_include_menus()
-        if act := self.view_group.checkedAction():
-           act.trigger()
+        if current_view:
+            current_view.trigger()
+        #print(self.view_group.actions())
+        #print(current_view)
+        #if act := self.view_group.checkedAction():
+        #    act.trigger()
 
     # #-----------------------------------------------------------------------
     # def self.view_group.checkedAction(self):
@@ -3199,8 +3236,8 @@ class main_window(QMainWindow):                                    # main_window
         for file in files:
             _editor = editor
             # Choose non-highlight editor if file is too large to avoid lagging display
-            #if not file.is_file():
-            #    raise SystemError(f'ERROR File {file} does not exist')
+            if not file.is_file():
+                raise SystemError(f'ERROR File {file} does not exist')
             if file.stat().st_size > 100*1024:
                 _editor = self.editor
             enable = True
@@ -3243,19 +3280,29 @@ class main_window(QMainWindow):                                    # main_window
         # IORSim
         self.update_file_menu(self.iorsim_input.include_files(), self.ior_incl_menu, viewer=self.view_input_file,
                               title='Chemistry file', editor=self.chem_editor)
-        # Eclipse / Intersect
-        host = self.get_current_host()
-        if host == 'Eclipse':
-            inputs = (self.host_input,)
-            menus = (self.ecl_incl_menu,)
-            editors = (self.host_editor[host],)
-        elif host == 'Intersect':
-            inputs = (self.input_file['Eclipse'](self.case), self.host_input)
-            menus = (self.ecl_incl_menu, self.ix_incl_menu)
-            editors = (self.host_editor['Eclipse'], self.host_editor[host])
-            self.ix_incl_menu.menuAction().setVisible(True)
-        else:
-            raise SystemError(f'ERROR Unknown host: {host}')
+        # Add input of current host
+        current_host = self.get_current_host()
+        inputs = [self.host_input]
+        menus = [self.incl_menu[current_host]]
+        editors = [self.host_editor[current_host]]
+        # Add input of other host if file exists
+        other_host = next(h for h in self.hosts if h != current_host)
+        other_input = self.input_file[other_host](self.case)
+        if other_input.exists():
+            inputs.append(other_input)
+            menus.append(self.incl_menu[other_host])
+            editors.append(self.host_editor[other_host])
+        # if host == 'Eclipse':
+        #     inputs = (self.host_input,)
+        #     menus = (self.ecl_incl_menu,)
+        #     editors = (self.host_editor[host],)
+        # elif host == 'Intersect':
+        #     inputs = (self.input_file['Eclipse'](self.case), self.host_input)
+        #     menus = (self.ecl_incl_menu, self.ix_incl_menu)
+        #     editors = (self.host_editor['Eclipse'], self.host_editor[host])
+        #     self.ix_incl_menu.menuAction().setEnabled(True)
+        # else:
+        #     raise SystemError(f'ERROR Unknown host: {host}')
         for input, menu, editor in zip(inputs, menus, editors):
             self.update_file_menu(input.include_files(), menu, viewer=self.view_input_file,
                                   title='Include file', editor=editor)
