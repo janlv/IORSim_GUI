@@ -461,9 +461,9 @@ class IORSim_input(File):                                              # iorsim_
     #--------------------------------------------------------------------------------
     def include_files(self):                                           # iorsim_input
     #--------------------------------------------------------------------------------
-        '''
+        """
         Return full path to files included in the IORSim .trcinp-file
-        '''
+        """
         if not self.path:
             return ()
         parent = self.path.parent
@@ -662,9 +662,9 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
     #--------------------------------------------------------------------------------
     def satnum_dist(self, echo=False):                                 # ior_backward
     #--------------------------------------------------------------------------------
-        '''
+        """
         Return the distribution of SATNUM numbers as a dict
-        '''
+        """
         lines = remove_comments(self.satnum.path, comment='--')
         values = re_compile(r'SATNUM\s+([0-9\s]+)').findall(lines)
         if values:
@@ -748,7 +748,7 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def __init__(self, case, end_time=0, init_days=0, start=None, interface_file=None, skip_empty=False): 
     #--------------------------------------------------------------------------------
-        '''
+        """
         Create schedule from a .SCH-file if it exists. 
         The TSTEP in the satnum-file (created by IORSim) is modified to 
         ensure the next report time coincides with the next schedule-events.  
@@ -757,7 +757,7 @@ class Schedule:
         If a .SCH-file is present, the first entry in the schedule is the start-time.  
 
         The schedule is a list of lists: [[start-time, ''],[days, 'KEYWORD'],[end-time, '']]
-        '''
+        """
         self.skip_empty = skip_empty
         self.ifacefile = DATA_file(interface_file.path, sections=False) if interface_file else None
         self.days = init_days
@@ -839,10 +839,10 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def get_schedule(self):                                                # Schedule
     #--------------------------------------------------------------------------------
-        '''
+        """
         Return a list of tuples with days at index 0 and actions at index 1, such as:
         schedule = [(2.0, "WCONHIST \r\n    'P-15P'      'OPEN' "), (9.0, "WCONHIST")]
-        '''
+        """
         # Split, accumulate tsteps, and then zip tsteps and pos  
         tstep, pos = zip(*self.sch_file.timesteps(start=self.start, pos=True)) # + [('',(len(self.file),0),)]
         tstep_pos = list(zip(accumulate(tstep), pos))
@@ -857,9 +857,9 @@ class Schedule:
     #--------------------------------------------------------------------------------
     def append(self, action=None, tstep=None):                             # Schedule
     #--------------------------------------------------------------------------------
-        '''
+        """
         line : line number of TSTEP
-        '''
+        """
         #print(f'append(action={action}, tstep={tstep})')
         if action is None and tstep is None:
             return

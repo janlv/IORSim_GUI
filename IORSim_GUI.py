@@ -333,11 +333,11 @@ def show_message(_window, kind, text='', extra='', ok_text=None, wait=False, det
 #-----------------------------------------------------------------------
 def delete_all_widgets_in_layout(layout, recursive=True):
 #-----------------------------------------------------------------------
-    '''
-   Deletes all widgets in a given layout, and all its
-   nested layout recursively
+    """
+    Deletes all widgets in a given layout, and all its
+    nested layout recursively
 
-    '''
+    """
     for i in reversed(range(layout.count())):
         widget = layout.itemAt(i).widget()
         if widget:
@@ -2702,10 +2702,10 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def copy_case_files(self, from_root, to_root):             # main_window
     #-----------------------------------------------------------------------
-        '''
+        """
         Copy case input-files and files included by the input-files.
         The file suffix match is not sensitive to case.
-        '''
+        """
         src = Path(from_root)
         dst = Path(to_root)
         # Create missing destination folders
