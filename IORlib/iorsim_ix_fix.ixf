@@ -1,0 +1,55 @@
+Initial3DReport "InitialReport" {
+    On=TRUE
+    Units=ECLIPSE_METRIC
+    FileFormat=BINARY
+}
+
+Initial3DReport "InitialReport" [
+    SelectedProperties    ReportLabels
+    TRANSMISSIBILITY_I         "TRANX"
+    TRANSMISSIBILITY_J         "TRANY"
+    TRANSMISSIBILITY_K         "TRANZ"
+	          POROSITY          "PORO"
+                PERM_I         "PERMX"
+                PERM_J         "PERMY"
+                PERM_K         "PERMZ"
+]
+
+Recurrent3DReport "RestartReport" {
+    remove_all()
+    Units=ECLIPSE_METRIC
+    FileFormat=BINARY
+    Unified=TRUE
+    On=TRUE
+    Frequency=TARGET_TIMES
+    Period=1
+}
+
+Recurrent3DReport "RestartReport" [
+               SelectedProperties    ReportLabels    
+                  OIL_FLOW_RATE_I      "FLOOILI+"    
+                  OIL_FLOW_RATE_J      "FLOOILJ+"    
+                  OIL_FLOW_RATE_K      "FLOOILK+"    
+                  GAS_FLOW_RATE_I      "FLOGASI+"    
+                  GAS_FLOW_RATE_J      "FLOGASJ+"    
+                  GAS_FLOW_RATE_K      "FLOGASK+"    
+                WATER_FLOW_RATE_I      "FLOWATI+"    
+                WATER_FLOW_RATE_J      "FLOWATJ+"    
+                WATER_FLOW_RATE_K      "FLOWATK+"    
+      GAS_FORMATION_VOLUME_FACTOR            "BG"    
+      OIL_FORMATION_VOLUME_FACTOR            "BO"    
+    WATER_FORMATION_VOLUME_FACTOR            "BW"    
+]
+
+RFTPLTReport "RFTPLTReport" {
+    On=TRUE
+    Units=ECLIPSE_METRIC
+    FileFormat=BINARY
+    Frequency=TARGET_TIMES
+}
+
+RFTPLTReport "RFTPLTReport" [
+    WellNames    WellRFTFlags    WellPLTFlags    WellSegmentFlags    
+       "*"           FALSE            TRUE               FALSE    
+]
+

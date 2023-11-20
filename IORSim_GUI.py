@@ -309,6 +309,7 @@ def show_message(_window, kind, text='', extra='', ok_text=None, wait=False, det
     msg.setWindowTitle(title)
     msg.setIcon(icon)
     msg.setText(text)
+    msg.setTextFormat(Qt.MarkdownText)
     msg.setInformativeText(extra)
     if detail:
         msg.setdetailedText(detail)
@@ -1808,7 +1809,11 @@ class Settings(QDialog):
     #-----------------------------------------------------------------------
         col = 0
         self.line += 1
-        self.grid.addWidget(QLabel(text), self.line, col, 1, self.ncol)
+        label = QLabel(text)
+        # label.setTextFormat(Qt.MarkdownText)
+        # if text:
+        #     text = '**'+text+'**'
+        self.grid.addWidget(label, self.line, col, 1, self.ncol)
         if text:
             self.line += 1
             line = QFrame()
@@ -2097,8 +2102,6 @@ class main_window(QMainWindow):                                    # main_window
                                             func=self.clear_current_case)
         self.remove_case_act = create_action(self, text='Remove current case', icon='document--minus.png',
                                              func=self.remove_current_case)
-        # self.delete_case_act = create_action(self, text='Delete current case', icon='document--minus.png',
-        #                                      func=self.delete_current_case)
         self.plot_act = create_action(self, text='Plot', icon='guide.png', func=self.view_plot, checkable=True)
         self.plot_act.setChecked(True)
 
@@ -2106,7 +2109,6 @@ class main_window(QMainWindow):                                    # main_window
                                          func=self.view_host_input['Eclipse'], checkable=True)
         self.ix_inp_act = create_action(self, text='Intersect input', icon='document-attribute-ix.png',
                                          func=self.view_host_input['Intersect'], checkable=True)
-        #self.ix_inp_act.setVisible(False)
         self.ior_inp_act = create_action(self, text='IORSim input', icon='document-attribute-i.png',
                                          func=self.view_iorsim_input, checkable=True)
         self.schedule_file_act = create_action(self, text='Schedule file', icon='document-attribute-s.png',
@@ -2115,7 +2117,6 @@ class main_window(QMainWindow):                                    # main_window
                                          func=self.view_host_log['Eclipse'], checkable=True)
         self.ix_log_act = create_action(self, text='Intersect log', icon='script-attribute-ix.png',
                                          func=self.view_host_log['Intersect'], checkable=True)
-        #self.ix_log_act.setVisible(False)
         self.ior_log_act = create_action(self, text='IORSim log', icon='script-attribute-i.png',
                                          func=self.view_iorsim_log, checkable=True)
         self.py_log_act = create_action(self, text='Script log', icon='script-attribute.png',
@@ -2123,11 +2124,10 @@ class main_window(QMainWindow):                                    # main_window
         # Actions for Intersect, invisible for Eclipse cases
         self.ix_convert_act = create_action(self, text='Convert Eclipse to Intersect', icon='document-convert.png',
                                             func=self.convert_from_eclipse_to_intersect, checkable=False)
-        #self.ix_convert_act.setVisible(False)
         self.ix_convert_log_act = create_action(self, text='Convert log', icon='script-attribute-c.png',
                                             func=self.view_ix_convert_log, checkable=True)
-        #self.ix_convert_act.setVisible(False)
-        #self.ix_convert_log_act.setVisible(False)
+        self.ix_ior_comp_act = create_action(self, text='Make Intersect case compatible with IORSim', icon='document-convert.png',
+                                            func=self.make_intersect_iorsim_compatible, checkable=False)
     
         
     #-----------------------------------------------------------------------
@@ -2170,9 +2170,6 @@ class main_window(QMainWindow):                                    # main_window
         ix_incl = edit_menu.addMenu(QIcon('icons:documents-stack.png'), 'Intersect includes')
         ix_incl.setStyleSheet(FONT_SMALL)
         self.incl_menu = {'Eclipse':ecl_incl, 'Intersect': ix_incl}
-        # Tools menu
-        tools_menu = menu.addMenu('&Tools')
-        tools_menu.addAction(self.ix_convert_act)
         # View menu
         view_menu = menu.addMenu('&View')
         # IORSim log
@@ -2196,6 +2193,10 @@ class main_window(QMainWindow):                                    # main_window
         view_menu.addSeparator()
         view_menu.addAction(self.plot_act)
         self.view_group.addAction(self.plot_act)
+        # Tools menu
+        tools_menu = menu.addMenu('&Tools')
+        tools_menu.addAction(self.ix_convert_act)
+        tools_menu.addAction(self.ix_ior_comp_act)
         # Help menu
         help_menu = menu.addMenu('&Help')
         help_menu.addAction(self.iorsim_guide_act)
@@ -2828,11 +2829,6 @@ class main_window(QMainWindow):                                    # main_window
     def update_ecl_ix_menu_visibility(self):
     #-----------------------------------------------------------------------
         # print('UPDATE_ECL_IX_MENUS')
-        # is_intersect = False
-        # host = host or self.get_current_host()
-        # if host.lower() == 'intersect':
-        #     is_intersect = True
-        #self.case = self.input['root']
         # Eclipse
         has_ecl_input = Path(self.case).with_suffix('.DATA').is_file()
         self.ecl_inp_act.setEnabled(has_ecl_input)
@@ -2845,6 +2841,7 @@ class main_window(QMainWindow):                                    # main_window
         #self.ix_log_act.setEnabled(is_intersect)
         self.ix_convert_act.setEnabled(has_ecl_input)
         self.ix_convert_log_act.setEnabled(has_ecl_input)
+        self.ix_ior_comp_act.setEnabled(has_ix_input)
 
     #-----------------------------------------------------------------------
     def on_mode_select(self, nr):                               # main_window
@@ -2893,7 +2890,21 @@ class main_window(QMainWindow):                                    # main_window
             self.input[name] = val
             
     #-----------------------------------------------------------------------
-    def convert_from_eclipse_to_intersect(self):                  # main_window
+    def make_intersect_iorsim_compatible(self):                # main_window
+    #-----------------------------------------------------------------------
+        self.ix_ior_backup = None
+        if self.get_current_host() == 'Intersect' and self.host_input:
+            file, backup = self.host_input.make_iorsim_compatible()
+            if backup is None:
+                msg = f'Input file *{file.name}* is previously updated, no changes applied.'
+            else:
+                msg = (f'Input file *{file.name}* is updated to be compatible with IORSim. '
+                       f'The copy of the original file is *{backup.name}*.')
+            show_message(self, 'info', msg)
+
+
+    #-----------------------------------------------------------------------
+    def convert_from_eclipse_to_intersect(self):               # main_window
     #-----------------------------------------------------------------------
         progress = QProgressDialog("Creating Intersect input from Eclipse case", "Cancel", 0, 0, self)
         progress.setMinimumDuration(0)
@@ -2905,7 +2916,7 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
-    def create_intersect_input_from_eclipse(self):                 # main_window
+    def create_intersect_input_from_eclipse(self):             # main_window
     #-----------------------------------------------------------------------
         self.convert_status = 1
         if cause := IX_input.need_convert(self.case):
@@ -2915,7 +2926,7 @@ class main_window(QMainWindow):                                    # main_window
         return self.convert_status
 
     #-----------------------------------------------------------------------
-    def set_host_input(self):
+    def set_host_input(self):                                  # main_window
     #-----------------------------------------------------------------------
         try:
             host = self.get_current_host()

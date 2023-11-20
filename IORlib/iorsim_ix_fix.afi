@@ -1,0 +1,3 @@
+SIMULATION ix "res1" {
+  INCLUDE "iorsim_ix_fix.ixf"
+} 
