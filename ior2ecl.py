@@ -141,7 +141,8 @@ class Eclipse(SLBRunner):                                                   # Ec
     #--------------------------------------------------------------------------------
         regex = r'TIME=?\s+([0-9.]+)\s+DAYS'
         super().__init__(name='Eclipse', root=root, cmd='eclipse', time_regex=regex, **kwargs)
-        self.input_file = DATA_file(root, check=True)
+        self.input_file = DATA_file(root) #, check=True)
+        self.input_file.check(include=True, uppercase=True)
         self.is_eclipse = True
 
 
@@ -155,6 +156,8 @@ class Intersect(SLBRunner):                                               # Inte
     #--------------------------------------------------------------------------------
         super().__init__(name='Intersect', root=root, cmd='ix',
                          time_regex=r' (?:Rep |Init|HRep)   ;\s*([0-9.]+)\s+', **kwargs)
+        # Necessary for IX backward mode (not yet implemented)
+        #self.input_file = IX_input(root, check=True)
         self.is_intersect = True
 
 

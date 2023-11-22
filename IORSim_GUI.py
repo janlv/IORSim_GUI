@@ -2126,7 +2126,7 @@ class main_window(QMainWindow):                                    # main_window
                                             func=self.convert_from_eclipse_to_intersect, checkable=False)
         self.ix_convert_log_act = create_action(self, text='Convert log', icon='script-attribute-c.png',
                                             func=self.view_ix_convert_log, checkable=True)
-        self.ix_ior_comp_act = create_action(self, text='Make Intersect case compatible with IORSim', icon='document-convert.png',
+        self.ix_ior_comp_act = create_action(self, text='Make Intersect case compatible with IORSim', icon='document--pencil.png',
                                             func=self.make_intersect_iorsim_compatible, checkable=False)
     
         
@@ -2552,6 +2552,7 @@ class main_window(QMainWindow):                                    # main_window
         self.case_cb.setCurrentIndex(nr)
         if block_signal:
             self.case_cb.blockSignals(False)
+        return nr
 
     #-----------------------------------------------------------------------
     def set_input_field(self):
@@ -2590,7 +2591,7 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
-    def set_variables_from_casefiles(self):                # main_window
+    def set_variables_from_inputfiles(self):                # main_window
     #-----------------------------------------------------------------------
         inp = self.input
         inp['ecl_days'], inp['species'], inp['tracers'] = None, [], []
@@ -2671,12 +2672,33 @@ class main_window(QMainWindow):                                    # main_window
         show_message(self, 'warning', text=f'{Path(tag).name} is missing for the {Path(self.case).name} case')
 
 
+    # #-----------------------------------------------------------------------
+    # def ask_for_new_casename(self):                 # main_window
+    # #-----------------------------------------------------------------------
+    #     rename = User_input(self, title='Give the case a new name', label='New case name', text=Path(self.case).name)
+    #     def func():
+    #         oldname = Path(self.case).stem
+    #         newname = rename.var.text().upper()
+    #         casedir = Path(self.casedir)
+    #         newdir = casedir/newname
+    #         newdir = (casedir/oldname).rename(newdir)
+    #         #print(str(casedir/oldname)+' => '+str(newdir))
+    #         for x in newdir.iterdir():
+    #             if x.is_file() and oldname in str(x):
+    #                 new = str(x.name).replace(oldname,newname)
+    #                 #print(str(x)+' -> '+str(newdir/new))
+    #                 x.rename(newdir/new)
+    #         newroot = casedir/newname/newname
+    #         #self.create_caselist(remove=self.case, insert=newroot, choose=newroot)
+    #     rename.set_func(func)
+    #     rename.open()
+
     #-----------------------------------------------------------------------
     def copy_current_case(self, dest=None, choose_new=True):
     #-----------------------------------------------------------------------
-        dest = dest or QFileDialog.getExistingDirectory(self,
-                'Choose destination folder',
-                str(Path.cwd()), QFileDialog.ShowDirsOnly)
+        if not dest:
+            dest = QFileDialog.getExistingDirectory(self, 'Choose destination folder',
+                                                    str(Path.cwd()), QFileDialog.ShowDirsOnly)
         if not dest:
             return
         dest_root = Path(dest)/Path(self.case).stem
@@ -2694,7 +2716,7 @@ class main_window(QMainWindow):                                    # main_window
             return
         self.copy_case_files(self.case, dest_root)
         self.case = str(dest_root)
-        self.create_caselist(insert=self.case) #, choose=choose_new and self.case or None)
+        self.create_caselist(insert=self.case)
         self.choose_case(self.case if choose_new else None)
         return self.case
 
@@ -2830,6 +2852,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         # print('UPDATE_ECL_IX_MENUS')
         # Eclipse
+        if self.case is None:
+            return
         has_ecl_input = Path(self.case).with_suffix('.DATA').is_file()
         self.ecl_inp_act.setEnabled(has_ecl_input)
         self.incl_menu['Eclipse'].menuAction().setEnabled(has_ecl_input)
@@ -2925,27 +2949,25 @@ class main_window(QMainWindow):                                    # main_window
                          text=cause+' Create Intersect input?', ok_text='Cancel', wait=True)
         return self.convert_status
 
+    @show_error
     #-----------------------------------------------------------------------
     def set_host_input(self):                                  # main_window
     #-----------------------------------------------------------------------
-        try:
-            host = self.get_current_host()
-            #print('HOST', self.case)
-            if host == 'Eclipse' and not DATA_file(self.case).exists() and AFI_file(self.case).exists():
-                self.host_cb.setCurrentIndex(1)
-                return
-            if host == 'Intersect':
-                status = self.create_intersect_input_from_eclipse()
-                if status < 1:
-                    # Set host back to Eclipse
-                    self.host_cb.setCurrentIndex(0)
-                    if status == 0:
-                        self.show_message_text('INFO Unable to create Intersect input from the existing Eclipse case.')
-                    return
-            self.host_input = self.input_file[host](self.case, check=True)
-        except SystemError as error:
-            show_message(self, 'error', text=str(error))
+        host = self.get_current_host()
+        #print('HOST', self.case)
+        if host == 'Eclipse' and not DATA_file(self.case).exists() and AFI_file(self.case).exists():
+            self.host_cb.setCurrentIndex(1)
             return
+        if host == 'Intersect':
+            status = self.create_intersect_input_from_eclipse()
+            if status < 1:
+                # Set host back to Eclipse
+                self.host_cb.setCurrentIndex(0)
+                if status == 0:
+                    self.show_message_text('INFO Unable to create Intersect input from the existing Eclipse case.')
+                return
+        self.host_input = self.input_file[host](self.case, check=True)
+        #print('END')
         return True
 
     #-----------------------------------------------------------------------
@@ -2953,7 +2975,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.reset_progress_and_message()
         if self.cases:
-            # print('ON_CASE_SELECT', nr)
+            #print('ON_CASE_SELECT', nr)
             case = str(self.cases[nr])
             if missing := self.missing_case_numbers():
                 for miss_nr in missing:
@@ -2975,6 +2997,7 @@ class main_window(QMainWindow):                                    # main_window
             self.mode_cb.setCurrentIndex(self.modes.index(mode))
             self.mode_cb.blockSignals(False)
             self.prepare_case()
+
 
     #-----------------------------------------------------------------------
     def on_compare_select(self, nr):                              # main_window
@@ -3017,10 +3040,9 @@ class main_window(QMainWindow):                                    # main_window
                 host = 1
             root = path.with_suffix('')
             self.create_caselist(insert=root) #, choose=root)
-            self.choose_case(root, block_signal=True)
-            #self.case_cb.blockSignals(True)
+            case_nr = self.choose_case(root, block_signal=True)
             self.host_cb.setCurrentIndex(host)
-            #self.case_cb.blockSignals(False)
+            self.on_case_select(case_nr)
 
             
     #-----------------------------------------------------------------------
@@ -3062,13 +3084,13 @@ class main_window(QMainWindow):                                    # main_window
             return item.widget()
         return None
 
-    #-----------------------------------------------------------------------
-    def remove_case(self, case):                              # main_window
-    #-----------------------------------------------------------------------
-        self.reset_progress_and_message()
-        #self.checked_boxes = []
-        self.cases.pop()
-        self.create_caselist(remove=case)
+    # #-----------------------------------------------------------------------
+    # def remove_case(self, case):                              # main_window
+    # #-----------------------------------------------------------------------
+    #     self.reset_progress_and_message()
+    #     #self.checked_boxes = []
+    #     self.cases.pop()
+    #     self.create_caselist(remove=case)
 
     #-----------------------------------------------------------------------
     def remove_current_case(self):
@@ -3081,6 +3103,7 @@ class main_window(QMainWindow):                                    # main_window
             self.clear()
         self.iorsim_input = None
         self.host_input = None
+        #print(self.cases)
         return case
 
         
@@ -3152,7 +3175,7 @@ class main_window(QMainWindow):                                    # main_window
         self.ref_case.setCurrentIndex(0)
         self.iorsim_input = IORSim_input(root)
         self.out_wells, self.in_wells = self.iorsim_input.wells()
-        self.set_variables_from_casefiles()
+        self.set_variables_from_inputfiles()
         if root:
             self.on_mode_select(self.mode_cb.currentIndex())
         # Init data
@@ -3183,6 +3206,7 @@ class main_window(QMainWindow):                                    # main_window
         if act := self.view_group.checkedAction():
            act.trigger()
 
+
     @show_error
     #-----------------------------------------------------------------------
     def refresh_case(self):
@@ -3196,7 +3220,7 @@ class main_window(QMainWindow):                                    # main_window
         host = self.get_current_host()
         self.host_input = self.input_file[host](root)
         self.days_box.setText(sum(self.host_input.timesteps()))
-        self.set_variables_from_casefiles()
+        self.set_variables_from_inputfiles()
         # Init data
         self.data['ecl'] = self.init_ecl_data()
         self.data['ior'] = self.init_ior_data()
