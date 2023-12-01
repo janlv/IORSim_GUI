@@ -45,7 +45,7 @@ from requests import get as requests_get, exceptions as req_exceptions
 from ior2ecl import (SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT,
                      Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, 
                      LOG_LEVEL_MAX, LOG_LEVEL_MIN)
-from IORlib.utils import (has_write_access, make_user_executable, removeprefix, Progress, clear_dict, 
+from IORlib.utils import (flatten, has_write_access, make_user_executable, removeprefix, Progress, clear_dict, 
                           convert_float_or_str, copy_recursive, same_length, flat_list, 
                           get_keyword, get_tuple, kill_process, pad_zero, read_file, 
                           remove_leading_nondigits, replace_line, delete_all, 
@@ -2019,6 +2019,7 @@ class main_window(QMainWindow):                                    # main_window
         self.data = {}
         self.ecl_boxes = {}
         self.ior_boxes = {}
+        self.checked_menuboxes = {'ecl':(), 'ior':()}
         self.log_file = None
         self.unsmry = {}
         self.ior_files = {}
@@ -2844,22 +2845,26 @@ class main_window(QMainWindow):                                    # main_window
         self.mode_cb.removeItem(2)
         self.mode_cb.insertItem(2, host)
         self.mode_cb.update()
-        self.update_ecl_ix_menu_visibility()
+        self.update_edit_menu_visibility()
         self.on_case_select(self.case_cb.currentIndex())
 
     #-----------------------------------------------------------------------
-    def update_ecl_ix_menu_visibility(self):
+    def update_edit_menu_visibility(self):
     #-----------------------------------------------------------------------
         # print('UPDATE_ECL_IX_MENUS')
-        # Eclipse
         if self.case is None:
             return
-        has_ecl_input = Path(self.case).with_suffix('.DATA').is_file()
+        has_ior_input = IORSim_input(self.case).is_file()
+        self.ior_inp_act.setEnabled(has_ior_input)
+        # Eclipse
+        #has_ecl_input = Path(self.case).with_suffix('.DATA').is_file()
+        has_ecl_input = DATA_file(self.case).is_file()
         self.ecl_inp_act.setEnabled(has_ecl_input)
         self.incl_menu['Eclipse'].menuAction().setEnabled(has_ecl_input)
         #self.ecl_log_act.setEnabled(not is_intersect)
         # Intersect
-        has_ix_input = Path(self.case).with_suffix('.afi').is_file()
+        #has_ix_input = Path(self.case).with_suffix('.afi').is_file()
+        has_ix_input = IX_input(self.case).is_file()
         self.ix_inp_act.setEnabled(has_ix_input)
         self.incl_menu['Intersect'].menuAction().setEnabled(has_ix_input)
         #self.ix_log_act.setEnabled(is_intersect)
@@ -3132,12 +3137,22 @@ class main_window(QMainWindow):                                    # main_window
         return self.get_current_mode() == 'iorsim'
 
     #-----------------------------------------------------------------------
+    def get_checked_menuboxes(self, boxes):
+    #-----------------------------------------------------------------------
+        checked = ([(key,k) for k,v in val.items() if v.isChecked()] for key, val in boxes.items())
+        return list(flatten(checked))
+
+    #-----------------------------------------------------------------------
     def clear_menus(self):
     #-----------------------------------------------------------------------
         #for menu in (self.ior_incl_menu, self.ecl_incl_menu, self.ix_incl_menu):
         #    menu.clear()
         #    menu.setEnabled(False)
         self.menu_boxes = {}
+        self.checked_menuboxes['ecl'] = self.get_checked_menuboxes(self.ecl_boxes)
+        self.checked_menuboxes['ior'] = self.get_checked_menuboxes(self.ior_boxes)
+        #print([[(key,k) for k,v in val.items() if v.isChecked()] for key, val in self.ecl_boxes.items()])
+        #print([(key, val) for key, val in self.ecl_boxes.items()])
         for menu in (self.ior_menu, self.ecl_menu):
             delete_all_widgets_in_layout(menu.layout())
         self.ior_boxes = {}
@@ -3174,37 +3189,53 @@ class main_window(QMainWindow):                                    # main_window
         self.reset_progress_and_message()
         self.ref_case.setCurrentIndex(0)
         self.iorsim_input = IORSim_input(root)
+        if not self.iorsim_input.exists():
+            self.mode_cb.blockSignals(True)
+            self.mode_cb.setCurrentIndex(2)
+            self.mode_cb.blockSignals(False)
         self.out_wells, self.in_wells = self.iorsim_input.wells()
         self.set_variables_from_inputfiles()
-        if root:
-            self.on_mode_select(self.mode_cb.currentIndex())
         # Init data
+        #print('init_data')
         self.data['ecl'] = self.init_ecl_data()
         self.data['ior'] = self.init_ior_data()
         # Fix Edit menu
         host = self.get_current_host()
-        self.update_ecl_ix_menu_visibility()
+        self.update_edit_menu_visibility()
         # Add menu boxes
+        #print('menu')
         self.update_ecl_menu()
         self.menu_boxes['ecl' if host == 'Eclipse' else 'ix'] = self.ecl_boxes
         self.update_ior_menu()
         self.menu_boxes['ior'] = self.ior_boxes
         #self.enable_well_boxes(True)
         # Check default boxes depending on run
+        #print('update menu')
         if self.is_eclipse_mode():
             self.update_menu_boxes('ecl')
         if not self.is_eclipse_mode():
             self.update_menu_boxes('ior')
         # Read data
+        #print('read data')
         self.read_ecl_data()
         self.read_ior_data()
         # Create plot
+        #print('create plot')
         self.create_plot()
         # Update menus
+        #print('include menu')
         self.update_include_menus()
         #self.update_schedule_act()
+        if root:
+            # if not self.iorsim_input.exists():
+            #     self.mode_cb.blockSignals(True)
+            #     self.mode_cb.setCurrentIndex(2)
+            #     self.mode_cb.blockSignals(False)
+            #print('set mode')
+            self.on_mode_select(self.mode_cb.currentIndex())
         if act := self.view_group.checkedAction():
            act.trigger()
+        #print('DONE')
 
 
     @show_error
@@ -3443,12 +3474,14 @@ class main_window(QMainWindow):                                    # main_window
         layout, box = self.plot_menu_box_variable('Temp', linestyle='dotted', color=Color.gray, func=self.on_var_click)
         self.ior_boxes['var']['Temp'] = box
         menu.column(1).addLayout(layout)
-        # Disable prod box for tracer cases 
+        # Disable prod box for tracer cases
         if self.input['tracers']:
             box = self.ior_boxes['yaxis']['prod']
             box.setEnabled(False)
             box.setChecked(False)
-            
+        self.set_checked_boxes(self.checked_menuboxes['ior'], self.ior_boxes)
+
+   
     #-----------------------------------------------------------------------
     def set_ior_variable_boxes(self):
     #-----------------------------------------------------------------------
@@ -3649,8 +3682,18 @@ class main_window(QMainWindow):                                    # main_window
         self.ecl_boxes['var']['temp'] = box
         # self.ecl_boxes['var']['Temp_ecl'] = box
         menu.column(1).addLayout(layout)
-        # if checked:
-        #     self.update_menu_boxes('ecl')
+        self.set_checked_boxes(self.checked_menuboxes['ecl'], self.ecl_boxes)
+
+
+    #-----------------------------------------------------------------------
+    def set_checked_boxes(self, checked_boxes, boxes):
+    #-----------------------------------------------------------------------
+        for group, value in checked_boxes:
+            if (g:=boxes.get(group)) and (box:=g.get(value)):
+                #print('Checking', group, value)
+                box.blockSignals(True)
+                box.setChecked(True)
+                box.blockSignals(False)
 
     #-----------------------------------------------------------------------
     def set_all_ecl_var_boxes(self):
