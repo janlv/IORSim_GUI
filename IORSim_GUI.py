@@ -1311,9 +1311,13 @@ class Editor(QGroupBox):
 
 
     #-----------------------------------------------------------------------
-    def file_is_open(self, filename):
+    def file_is_open(self, filename, check_size=True):              # Editor
     #-----------------------------------------------------------------------
         if filename and str(filename).lower() == str(self.file).lower():
+            # File is open
+            if check_size and Path(filename).stat().st_size != len(self.editor_.toPlainText()):
+                # Size changed on disk
+                return False
             return True
         return False
 
@@ -2927,6 +2931,7 @@ class main_window(QMainWindow):                                    # main_window
             if backup is None:
                 msg = f'Input file *{file.name}* is previously updated, no changes applied.'
             else:
+                self.refresh_case()
                 msg = (f'Input file *{file.name}* is updated to be compatible with IORSim. '
                        f'The copy of the original file is *{backup.name}*.')
             show_message(self, 'info', msg)
@@ -3243,6 +3248,7 @@ class main_window(QMainWindow):                                    # main_window
     def refresh_case(self):
     #-----------------------------------------------------------------------
         current_view = self.view_group.checkedAction()
+        #print('REFRESH_CASE', current_view)
         root = self.case = self.input['root']
         self.schedule = File(root, suffix='.SCH', ignore_suffix_case=True)
         self.update_schedule_act()
@@ -3293,8 +3299,6 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
     def update_file_menu(self, files, menu, viewer=None, editor=None, title=''):
     #-----------------------------------------------------------------------
-        #if missing := [file for file in files if not file.is_file()]:
-        #    raise SystemError(f'ERROR Missing include files: {tuple(map(str, missing))}')
         # Clear menu
         menu.clear()
         # Disable if empty
@@ -3338,7 +3342,7 @@ class main_window(QMainWindow):                                    # main_window
         root = self.input['root']
         if not root:
             return
-        # Keep track of checked include file 
+        # Keep track of checked include file
         checked_act = self.view_group.checkedAction()
         # Remove old include-files from the view-group
         self.remove_include_file_actions()
@@ -3358,17 +3362,6 @@ class main_window(QMainWindow):                                    # main_window
             inputs.append(other_input)
             menus.append(self.incl_menu[other_host])
             editors.append(self.host_editor[other_host])
-        # if host == 'Eclipse':
-        #     inputs = (self.host_input,)
-        #     menus = (self.ecl_incl_menu,)
-        #     editors = (self.host_editor[host],)
-        # elif host == 'Intersect':
-        #     inputs = (self.input_file['Eclipse'](self.case), self.host_input)
-        #     menus = (self.ecl_incl_menu, self.ix_incl_menu)
-        #     editors = (self.host_editor['Eclipse'], self.host_editor[host])
-        #     self.ix_incl_menu.menuAction().setEnabled(True)
-        # else:
-        #     raise SystemError(f'ERROR Unknown host: {host}')
         for input, menu, editor in zip(inputs, menus, editors):
             self.update_file_menu(input.include_files(), menu, viewer=self.view_input_file,
                                   title='Include file', editor=editor)
@@ -3747,7 +3740,7 @@ class main_window(QMainWindow):                                    # main_window
             else:
                 self.sender().setChecked(False)
                 self.sender().parent().missing_file_error(tag=name or title)
-                return False        
+                return False
         else:
             self.sender().setChecked(False)
             self.sender().parent().missing_case_error(tag='input: ')
