@@ -1,66 +1,64 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
+# Python libraries
+import sys
 from datetime import datetime
 from itertools import chain, cycle, product
 from operator import itemgetter
-import sys
 from pathlib import Path
 from urllib.parse import urlparse
 import os
 from zipfile import ZipFile, is_zipfile
 from psutil import Popen
+from traceback import format_exc, print_exc
+from time import sleep
+from collections import namedtuple
+from shutil import copy as shutil_copy
+from functools import partial
+
 # External libraries
 from PySide6.QtWidgets import (QScrollArea, QStatusBar, QDialog, QWidget, QMainWindow,
                                QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout,
                                QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox,
                                QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog,
                                QMessageBox, QProgressDialog)
-from PySide6.QtGui import (QPalette, QAction, QActionGroup, QColor, QFont, QIcon, QSyntaxHighlighter,
-                           QTextCharFormat, QTextCursor)
+from PySide6.QtGui import (QPalette, QAction, QActionGroup, QColor, QFont, QIcon, 
+                           QSyntaxHighlighter, QTextCharFormat, QTextCursor)
 from PySide6.QtCore import (QDir, QCoreApplication, QSize, QObject, Signal, Slot, QRunnable,
                             QThreadPool, Qt, QRegularExpression, QRect, QPoint)
 from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtPdf import QPdfDocument, QPdfSearchModel
-#from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
-#from PySide6.QtWebEngineWidgets import QWebEngineView
 
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
+from matplotlib.backends.backend_qtagg import (FigureCanvasQTAgg, 
+                                               NavigationToolbar2QT as NavigationToolbar)
 from matplotlib.colors import to_rgb as colors_to_rgb
 from matplotlib.figure import Figure
-#from matplotlib.pyplot import grid as plotgrid
 from matplotlib import rcParams
-
 from numpy import asarray
-#from numpy import genfromtxt, asarray, zeros, concatenate, sort, unique
-#from re import compile
-# Python libraries
-from traceback import format_exc, print_exc
-from time import sleep
-from collections import namedtuple
-from shutil import copy as shutil_copy
-#from copy import deepcopy 
-from functools import partial
-from requests import get as requests_get, exceptions as req_exceptions
+
 # Local libraries
 from ior2ecl import (SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT,
-                     Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL, 
+                     Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL,
                      LOG_LEVEL_MAX, LOG_LEVEL_MIN)
-from IORlib.utils import (flatten, has_write_access, make_user_executable, removeprefix, Progress, clear_dict, 
-                          convert_float_or_str, copy_recursive, same_length, flat_list, 
-                          get_keyword, get_tuple, kill_process, pad_zero, read_file, 
-                          remove_leading_nondigits, replace_line, delete_all, 
-                          try_except_loop, unique_names, write_file)
+from IORlib.utils import (flatten, has_write_access, make_user_executable, removeprefix, Progress,
+                          clear_dict, convert_float_or_str, copy_recursive, same_length, flat_list,
+                          get_keyword, get_tuple, kill_process, pad_zero, read_file,
+                          remove_leading_nondigits, replace_line, delete_all, try_except_loop,
+                          unique_names, write_file)
 from IORlib.ECL import DATA_file, AFI_file, IX_input, File, UNSMRY_file, UNRST_file
-
-DEBUG = False
-
-# Options
-CHECK_VERSION_AT_START = False
 
 # Check if this is a bundle version (pyinstaller)
 BUNDLE_VERSION = getattr(sys, 'frozen', False)
 if BUNDLE_VERSION:
     import pip_system_certs.wrapt_requests
+from requests import get as requests_get, exceptions as req_exceptions
+
+DEBUG = False
+
+# Options
+CHECK_VERSION_AT_START = True
+
 
 #-----------------------------------------------------------------------
 def resource_path():
