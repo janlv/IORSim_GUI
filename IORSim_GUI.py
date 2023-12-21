@@ -486,25 +486,16 @@ class sim_worker(base_worker):
     @Slot()
     #-----------------------------------------------------------------------
     def runnable(self):
-    #-----------------------------------------------------------------------
-        #self.progress_min = None
-        #self.fraction = [''] # Fraction is updated in update_progress
+    #---------------------------------------------------------------------
         #------------------------------------
         def progress(run=None, value=None, min=None, n0=None):
         #------------------------------------
-            self.signals.progress
             if run:
                 value = run.t
             self.update_progress((run, value, min, n0))
-            #self.update_progress((value, min, n0, self.fraction))
         #------------------------------------
-        # def status(run=None, value=None, mode=None, **x):
         def status(value=None, **x):
         #------------------------------------
-            # if not value and run:
-            #     value = f'{run.name}   {self.fraction[0]} days'
-            #     if mode == 'forward':
-            #         value = run.name + ' ' + value
             if value:
                 self.status_message(value)
         #------------------------------------
@@ -520,11 +511,11 @@ class sim_worker(base_worker):
         self.sim = Simulation(status=status, progress=progress, plot=plot, message=message, **self.kwargs)
         self.sim.prepare()
         if self.sim.ready():
-            #self.days_box.setText(self.sim.get_time())
             self.days_box.setText(self.sim.end_time)
             result, msg = self.sim.run()
         else:
-            DEBUG and print('Simulation not ready in sim_worker!')
+            if DEBUG:
+                print('Simulation not ready in sim_worker!')
         self.show_message(msg)
         return result
 
@@ -1782,12 +1773,12 @@ class Settings(QDialog):
         self.add_heading()
         self.add_heading("Plot options")
         def show_grid():
-            if plot_area := getattr(self.parent, 'plot_area', False):
+            if plot_area := getattr(self.parent, 'plot_area', None):
                 plot_area.show_grid(self.get('grid'))
         self.add_items(self.new_checkbox('grid', func=show_grid))
-        def set_font(index): 
+        def set_font():
             # QComboBox signal sends index as argument
-            if plot_area := getattr(self.parent, 'plot_area', False):
+            if plot_area := getattr(self.parent, 'plot_area', None):
                 plot_area.font_size(int(self.get('fontsize')))
         self.add_items(self.new_combobox(var='fontsize', width=50, func=set_font, values=('7','8','9','10')))
         
@@ -2213,9 +2204,9 @@ class main_window(QMainWindow):                                    # main_window
     def about_app(self):
     #-----------------------------------------------------------------------
         about = ('IORSim brings chemistry-based IOR methods to existing reservoir simulators'
-                 'with minor modifications of the original input files. IORSim currently runs' 
-                 'with Eclipse 100 and Intersect, but can be made available for other reservoir' 
-                 'simulators with some adaptations.')
+                 ' with minor modifications of the original input files. IORSim currently runs' 
+                 ' with Eclipse 100 and Intersect, but can be made available for other reservoir' 
+                 ' simulators with some adaptations.')
         self.show_message_text('INFO ' + about, extra=f'Version : {__version__}')
 
 
@@ -2474,7 +2465,7 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
-    def create_statusbar(self):                                          # main_window
+    def create_statusbar(self):                                # main_window
     #-----------------------------------------------------------------------
         # statusbar
         self.remaining_time = QLabel()
@@ -4005,8 +3996,7 @@ class main_window(QMainWindow):                                    # main_window
 
 
     #-----------------------------------------------------------------------
-    #def update_progress(self, t_min_n0_frac_tuple):
-    def update_progress(self, run_t_min_n0_tuple):
+    def update_progress(self, run_t_min_n0_tuple):             # main_window
     #-----------------------------------------------------------------------
         #t, min_, n0, fraction = t_min_n0_frac_tuple
         run, t, min_, n0 = run_t_min_n0_tuple
@@ -4024,7 +4014,7 @@ class main_window(QMainWindow):                                    # main_window
             self.progressbar.setMinimum(0)
         else:
             if t < 0:
-                N = abs(int(t)) 
+                N = abs(int(t))
                 self.progress.reset(N=N, min=min_)
                 self.reset_progressbar(N=N)
                 t = 0

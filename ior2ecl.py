@@ -63,7 +63,7 @@ class SLBRunner(Runner):                                                  # SLBR
     def __init__(self, name='SLB', root=None, exe='eclrun', cmd=None, **kwargs):
     #--------------------------------------------------------------------------------
         #print('eclipse.__init__: ',root, exe, kwargs)
-        root = str(root)        
+        root = str(root)
         exe = str(exe)
         super().__init__(name=name, case=root, exe=exe, cmd=[exe, cmd, root], app_name=cmd, **kwargs)
         self.update = kwargs.get('update') or None
@@ -101,7 +101,8 @@ class SLBRunner(Runner):                                                  # SLBR
     #--------------------------------------------------------------------------------
         error = 'unexpectedly' + (self.log and f', check {Path(self.log.name).name} for details' or '')
         # Check for license failure (uppercase for Eclipse, lowercase for Intersect)
-        if any(lic_fail in self.msg for lic_fail in ('LICENSE FAILURE', 'license failure')):
+        if self.msg.contains_any('LICENSE FAILURE', 'LICENSE ERROR', 'license failure',
+                                 'Unable to checkout license'):
             error = 'due to a license failure'
         raise SystemError(f'ERROR {self.name} stopped {error}')
 
@@ -173,7 +174,6 @@ class ForwardMixin:                                                    # Forward
         """ Set up control for forward runs """
         self.update_funcs = update
         self.loop_count = 0
-        #self.pause = pause
         self.count = count
 
     #--------------------------------------------------------------------------------
@@ -1069,7 +1069,7 @@ class Simulation:                                                        # Simul
                 warn = ('   ***                    WARNING                       ***\n'
                         '   *** You are running IORSim on a merged restart-file. ***\n'
                         '   *** Merging is disabled for the current run          ***\n')
-                print(f'\n{warn}\n') 
+                print(f'\n{warn}\n')
             else:
                 self.print2log('=====  Original Eclipse UNRST-file restored from backup  =====')
         if do_merge:
@@ -1077,23 +1077,20 @@ class Simulation:                                                        # Simul
             silentdelete(self.merge_OK)
         run_time = timedelta()
         ret = ''
-        # self.update.progress(value=-self.end_time, min=self.restart.days or 0)
         self.update.progress(value=-self.end_time, min=self.restart.days)
         for run in self.runs:
             self.current_run = run.name.lower()
             run.delete_output_files()
             run.start()
             self.update.progress()  # Reset
-            ### Progress is updated after 15*0.2 = 3 sec
-            ### Check for cancelled run every 0.2 sec
+            # Progress is updated after 15*0.2 = 3 sec
+            # Check for cancelled run every 0.2 sec
             run.init_control_func(update=(self.update.progress, self.update.plot), count=15)
             run.wait_for_process_to_finish(pause=0.2, loop_func=run.control_func)
             self.update.progress(run)
             self.update.plot()
             run.t = run.time()
-            #print('time:',run.t)
             dec = min(len(str(t).split('.')[-1]) for t in (run.t, run.end_time))
-            #print(run.name, dec, run.t, run.T)
             if round(run.t, dec) < round(run.end_time, dec):
                 run.unexpected_stop_error()
             run_time += run.run_time()
@@ -1130,14 +1127,11 @@ class Simulation:                                                        # Simul
         self.update.progress(value=-self.end_time)
         ecl, ior = self.runs
         # Start runs
-        #for run in self.runs:
         ecl.delete_output_files()
         ior.delete_output_files()
         ecl.start(restart=self.restart.run)
-        #ior.delete_output_files()
         ior.start(restart=self.restart.run, tsteps=ecl.init_tsteps)
         # The schedule appends keywords to the interface file (satnum.dat)
-        # ecl.t = ior.t = self.schedule.update()
         self.schedule.update()
         # Update progress
         if self.restart.run:
@@ -1150,19 +1144,14 @@ class Simulation:                                                        # Simul
         while ior.t < ior.end_time:
             self.print2log(f'\nStep {ecl.n+1}')
             self.update.progress(run=ecl)
-            #self.update.status(run=ecl, mode=self.mode)
             ecl.run_one_step(ior.satnum.path)
             # Run IORSim to prepare satnum input for the next Eclipse run
             self.update.progress(run=ior)
-            #self.update.status(run=ior, mode=self.mode)
             ior.run_one_step()
-            # ecl.t = ior.t = self.schedule.update()
             self.schedule.update()
             self.print2log(f'Step {ecl.n} ({self.schedule.now().date()}) completed')
-            #self.update.progress(value=ior.t)
             self.update.plot()
         self.update.progress(run=ior)
-        #self.update.status(run=ior, mode=self.mode)
         # Timestep loop finished
         for run in self.runs:
             self.update.status(value=f'Stopping {run.name}...')
@@ -1198,17 +1187,18 @@ class Simulation:                                                        # Simul
             if r'\x00\x00\x00\x00' in fr'{exception}':
                 msg += f', try increasing the CHECK_PAUSE value ({CHECK_PAUSE}).'
             else:
-                msg += self.runlog and f', check {Path(self.runlog.name).name} for details' or ''
+                msg += f', check {Path(self.runlog.name).name} for details' if self.runlog else ''
         finally:
             # Kill possible remaining processes
             self.print2log('')
             for run in self.runs:
+                #self.update.progress(run)
                 run.kill()
             self.print2log(f'\n=====  {msg.replace("INFO","")}  =====')
             self.current_run = None
             #print('PROGRESS')
             self.update.progress()   # Reset progress time
-            #self.update.status() 
+            #self.update.status()
             #print('DONE')
             self.update.plot()
             try:

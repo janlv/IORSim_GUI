@@ -483,7 +483,6 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def start(self, error_func=None):                                        # Runner
     #--------------------------------------------------------------------------------
-        #self.log = not self.kwargs.get('to_screen', False) and safeopen(self.logname, 'w') or None
         self.log = safeopen(self.logname, 'w') if not self.kwargs.get('to_screen', False) else None
         self.starttime = datetime.now()
         if self.pipe:
@@ -492,7 +491,7 @@ class Runner:                                                               # Ru
             self.stdin = self.popen.stdin
         else:
             self._print(f"Starting \'{' '.join(self.cmd)}\'", v=1)
-            self.popen = Popen(self.cmd, stdout=self.log, stderr=STDOUT)      
+            self.popen = Popen(self.cmd, stdout=self.log, stderr=STDOUT)
         self.set_processes(error_func=error_func)
         if self.keep_alive > 0:
             self.suspend_timer = TimerThread(limit=self.keep_alive, prec=SUSPEND_TIMER_PRECICION, func=self.suspend_active)
@@ -643,13 +642,10 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def get_time_and_stop_if_limit_reached(self):                          # Runner
     #--------------------------------------------------------------------------------
-        time = self.time()
-        # print('TIME',time)
-        # if time > self.T:
-        if int(time) > int(self.end_time):
-            #print(f'Time-limit reached, {time} > {self.T}!')
+        self.t = self.time()
+        if int(self.t) > int(self.end_time):
             raise SystemError(self.complete_msg())
-        return time
+        return self.t
 
 
     #--------------------------------------------------------------------------------
@@ -668,7 +664,7 @@ class Runner:                                                               # Ru
             if raise_error:
                 raise SystemError(error or f'wait_for({func.__qualname__}) reached loop-limit {limit}')
             self._print(f'loop limit reached!{time}' or '', tag='', v=v)
-            return False    
+            return False
         self._print(str(n) + f' loops{time}', tag='', v=v)
         if callable(log):
             self._print(log())
@@ -705,9 +701,7 @@ class Runner:                                                               # Ru
         if self.suspend_timer:
             self.suspend_timer.close()
         self.suspend_timer = None # For garbage collector (__del__)
-        # Delete interface-files 
-        # if self.ext_iface and not self.keep_files:
-        #     self.interface_file('all').delete()
+        # Delete interface-files
         if not self.keep_files:
             self.interface_file.delete_all()
             self.OK_file.delete()
