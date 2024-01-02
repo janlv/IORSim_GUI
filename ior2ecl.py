@@ -24,7 +24,7 @@ from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, Restart, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file, IX_input)
 
-__version__ = '3.7.1'
+__version__ = '3.7.2'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
@@ -395,7 +395,7 @@ class IORSim_input(File):                                              # iorsim_
 
 
     #--------------------------------------------------------------------------------
-    def get(self, *items):                                      
+    def get(self, *items):                                             # iorsim_input
     #--------------------------------------------------------------------------------
         # Get the indices of given items in self._variables dict
         key_index = {k:ind for k,v in self._variables.items() if (ind:=ordered_intersect_index(v, items))}
@@ -410,9 +410,9 @@ class IORSim_input(File):                                              # iorsim_
     #--------------------------------------------------------------------------------
     def check_keywords(self):                                          # iorsim_input
     #--------------------------------------------------------------------------------
-        # Check if required keywords are used, and if the order is correct 
+        # Check if required keywords are used, and if the order is correct
         def raise_error(error):
-            raise SystemError(f'ERROR Error in IORSim input file: {error}')    
+            raise SystemError(f'ERROR Error in IORSim input file: {error}')
         text = remove_comments(self.path, comment='#')
         file_kw = [kw.upper() for kw in re_compile(r'(\*[A-Za-z_-]+)').findall(text)]
         # Remove repeated keywords, i.e. make unique list
