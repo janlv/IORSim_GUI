@@ -11,13 +11,13 @@ from datetime import datetime, timedelta
 from time import sleep
 from shutil import copy as shutil_copy 
 from traceback import print_exc as trace_print_exc, format_exc as trace_format_exc
-from re import compile as re_compile, MULTILINE
+from re import compile as re_compile, MULTILINE, finditer
 from os.path import relpath
 from threading import Thread
 
 from psutil import NoSuchProcess
 
-from IORlib.utils import (flat_list, get_keyword, list2text, pairwise,
+from IORlib.utils import (convert_float_or_str, flat_list, flatten, get_keyword, letter_range, list2text, pairwise,
     print_error, remove_comments, safeopen, Progress, silentdelete,
     delete_files_matching, tail_file, LivePlot, running_jupyter, ordered_intersect_index)
 from IORlib.runner import Runner
@@ -389,23 +389,62 @@ class IORSim_input(File):                                              # iorsim_
     def __init__(self, file, check=False, check_format=False):         # iorsim_input
     #--------------------------------------------------------------------------------
         super().__init__(file, suffix='.trcinp', role='IORSim input-file', ignore_suffix_case=True)
-        self._variables = {'INTEGRATION' : ('tstart', 'tstop', 'dtmin', 'dtmax', 'dtmin_ecl', 'dtmax_ecl', 'metnum')}
         self.check_format = check_format
         self.warnings = self.check() if check else ''
 
 
     #--------------------------------------------------------------------------------
-    def get(self, *items):                                             # iorsim_input
+    def get(self, *keys, unpack_single=True):                          # iorsim_input
     #--------------------------------------------------------------------------------
-        # Get the indices of given items in self._variables dict
-        key_index = {k:ind for k,v in self._variables.items() if (ind:=ordered_intersect_index(v, items))}
-        out = []
-        for key, ind in key_index.items():
-            if values := get_keyword(self.path, f'\*{key}', end='\*'):
-                out.extend([values[0][i] for i in ind])
-        if len(out) != len(items):
-            raise SystemError(f'ERROR Unable to read {items} from {self}')
-        return out if len(out) > 1 else out[0] 
+        out = {k:[] for k in keys}
+        # The regex is explained here: https://regex101.com/r/6H0pHT/1
+        regex = r'^\s*\*(\b(?:' + '|'.join(keys) + r')\b)([^*]*)$'
+        for match in finditer(regex, self.as_text(), flags=MULTILINE):
+            key = match.group(1)
+            # Split in non-empty lines
+            lines = (line for l in match.group(2).split('\n') if (line:=l.strip()) )
+            # Remove commented lines and in-line comments
+            words = flatten(line.split() for l in lines if (line:=l.split('#')[0].strip()))
+            # Convert number strings to numbers
+            data = list(convert_float_or_str(words))
+            if key == 'INTEGRATION':
+                tupl = namedtuple(key, 'tstart tstop dtmin dtmax dtmin_ecl dtmax_ecl metnum')
+                data = tupl(*data[:7])
+            out[key].append(data)
+        if unpack_single:
+            # Extract element from single element lists
+            out = [v[0] if len(v)==1 else v for v in out.values()]
+        else:
+            out = list(out.values())
+        return out[0] if len(out)==1 else out
+
+            
+    # #--------------------------------------------------------------------------------
+    # def get_v2(self, *items):                                             # iorsim_input
+    # #--------------------------------------------------------------------------------
+    #     # Get the indices of given items in self._variables dict
+    #     key_index = {k:ind for k,v in self._variables.items() if (ind:=ordered_intersect_index(v, items))}
+    #     print(key_index)
+    #     # regex = r'^\s*\*(\b(?:' + '|'.join(key_index.keys()) + r')\b)([^*]*)$'
+    #     # for match in finditer(regex, self.as_text(), flags=MULTILINE):
+    #     #     key = match.group(1)
+    #     #     lines = (line for l in match.group(2).split('\n') if (line:=l.strip()) )
+    #     #     words = flat_list(line.split() for l in lines if (line:=l.split('#')[0].strip()))
+    #     #     yield [words[i] for i in key_index[key]]
+    #     #     #print([key_index[key]])
+
+    # #--------------------------------------------------------------------------------
+    # def get(self, *items):                                             # iorsim_input
+    # #--------------------------------------------------------------------------------
+    #     # Get the indices of given items in self._variables dict
+    #     key_index = {k:ind for k,v in self._variables.items() if (ind:=ordered_intersect_index(v, items))}
+    #     out = []
+    #     for key, ind in key_index.items():
+    #         if values := get_keyword(self.path, f'\*{key}', end='\*'):
+    #             out.extend([values[0][i] for i in ind])
+    #     if len(out) != len(items):
+    #         raise SystemError(f'ERROR Unable to read {items} from {self}')
+    #     return out if len(out) > 1 else out[0] 
 
     #--------------------------------------------------------------------------------
     def check_keywords(self):                                          # iorsim_input
@@ -438,8 +477,8 @@ class IORSim_input(File):                                              # iorsim_
         ordered_kw = [o for o in self.keywords.keys if o in file_kw]
         # Check keyword order
         for o,f in zip(ordered_kw, file_kw):
-            if o != f:                        
-                raise_error(f'expected keyword {o} but got {f}')    
+            if o != f:
+                raise_error(f'expected keyword {o} but got {f}')
 
 
     #--------------------------------------------------------------------------------
@@ -451,10 +490,15 @@ class IORSim_input(File):                                              # iorsim_
         self.exists(raise_error=True)
         # Check if included files exists
         if (missing := [f for f in self.include_files() if not f.is_file()]):
-            raise SystemError(f"ERROR {msg}'{list2text([f.name for f in missing])}' included from {self.path.name} is missing in folder {missing[0].parent.resolve()}")
+            raise SystemError(
+                f"ERROR {msg}'{list2text([f.name for f in missing])}' included from "
+                f"{self.path.name} is missing in folder {missing[0].parent.resolve()}")
         # Warn if tstart > 0 (might not be important, so check is off by default)
-        if warn_time and (tstart := self.get('tstart')) and tstart > 0:
-            warn += f'INFO It is recommended to start IORSim at time 0 instead of {tstart}.'
+        #if warn_time and (tstart := self.get('tstart')) and tstart > 0:
+        if warn_time:
+            ior = self.get('INTEGRATION')
+            if ior.tstart > 0:
+                warn += f'INFO It is recommended to start IORSim at time 0 instead of {ior.tstart}.'
         # Check if required keywords are used, and if the order is correct
         if self.check_format:
             self.check_keywords()
@@ -465,65 +509,108 @@ class IORSim_input(File):                                              # iorsim_
     def include_files(self):                                           # iorsim_input
     #--------------------------------------------------------------------------------
         """
-        Return full path to files included in the IORSim .trcinp-file
+        Return full path of files included in the .trcinp-file
         """
-        if not self.path:
-            return ()
-        parent = self.path.parent
-        files = flat_list(get_keyword(self.path, '\*CHEMFILE', end='\*', comment='#'))
-        # Use negative lookahead (?!) to ignore commented lines
-        regex = re_compile(rb'^(?!#)\s*add_species[\s"\']*(.*?)[\s"\']*$', flags=MULTILINE)
-        for file in set(files):
-            yield parent/file
-            for match in regex.finditer(File(parent/file).binarydata()):
-                yield parent/match.group(1).decode()
+        regex = re_compile(r'^\s*add_species\s*[\"\']?([^\"\'\n\s]+)', flags=MULTILINE)
+        # Regex explained at https://regex101.com/r/XrBEmM/1
+        for file in set(self.get('CHEMFILE')):
+            chemfile = self.parent/file
+            yield chemfile
+            for match in regex.finditer(File(chemfile).as_text()):
+                yield self.parent/match.group(1)
 
-    #-----------------------------------------------------------------------
-    def species(self, raise_error=False):                     # iorsim_input
-    #-----------------------------------------------------------------------
-        if not self.exists(raise_error):
-            return []
-        species = get_keyword(self.path, '\*solution', end='\*')
-        #print(species)
-        if species:
-            species = species[0][1::2]
-        else:
-            # Read old input format
-            species = flat_list(get_keyword(self.path, '\*SPECIES', end='\*'))
-            species = [s for s in species if isinstance(s, str)]
-        # Change pH to H 
-        species = [s if s.lower() != 'ph' else 'H' for s in species]
-        #print('species', species)
-        return species
 
-    #-----------------------------------------------------------------------
-    def tracers(self, raise_error=False):                     # iorsim_input
-    #-----------------------------------------------------------------------
-        if not self.exists(raise_error):
-            return []
-        tracers = flat_list(get_keyword(self.path, '\*NAME', end='\*'))
-        return tracers
+    #--------------------------------------------------------------------------------
+    def species(self):                                                 # iorsim_input
+    #--------------------------------------------------------------------------------
+        if sol:=self.get('solution'):
+            return list(sol[0][1::2])
+        # Read old input format
+        if spec:=self.get('SPECIES'):
+            return flat_list(spec)
+        return []
 
-    #-----------------------------------------------------------------------
-    def wells(self, raise_error=False):                       # iorsim_input
-    #-----------------------------------------------------------------------
-        if not self.exists(raise_error):
-            return [],[]
-        in_wells, out_wells = [], []
-        out_wells = flat_list(get_keyword(self.path, '\*PRODUCER', end='\*'))
-        in_wells = flat_list(get_keyword(self.path, '\*INJECTOR', end='\*'))
-        if not out_wells or not in_wells:
-            # Read old input format
-            ow = get_keyword(self.path, '\*OUTPUT', end='\*')
-            if ow:
-                out_wells = ow[0][1:]
-            w = get_keyword(self.path, '\*WELLSPECIES', end='\*')
-            if w and w[0]:
-                #print(w)
-                w = w[0]
-                in_wells = w[1:1+int(w[0])]
-        #print('IORSim:',out_wells, in_wells)
-        return sorted(out_wells), sorted(in_wells)
+
+    #--------------------------------------------------------------------------------
+    def tracers(self):                                                 # iorsim_input
+    #--------------------------------------------------------------------------------
+        return [a[0] for a in self.get('NAME')]
+
+    #--------------------------------------------------------------------------------
+    def wells(self):                                                   # iorsim_input
+    #--------------------------------------------------------------------------------
+        prod, inj = self.get('PRODUCER', 'INJECTOR')
+        if prod and inj:
+            return sorted(flatten(prod)), sorted(flatten(inj))
+        # Read old input format
+        prod, inj = self.get('OUTPUT', 'CONC_INJECTION', unpack_single=False)
+        return sorted(prod[0][1:] if prod else []), sorted(inj[0][1::6] if inj else [])
+
+
+    # #--------------------------------------------------------------------------------
+    # def include_files(self):                                           # iorsim_input
+    # #--------------------------------------------------------------------------------
+    #     """
+    #     Return full path to files included in the IORSim .trcinp-file
+    #     """
+    #     if not self.path:
+    #         return ()
+    #     parent = self.path.parent
+    #     files = flat_list(get_keyword(self.path, '\*CHEMFILE', end='\*', comment='#'))
+    #     # Use negative lookahead (?!) to ignore commented lines
+    #     regex = re_compile(rb'^(?!#)\s*add_species[\s"\']*(.*?)[\s"\']*$', flags=MULTILINE)
+    #     for file in set(files):
+    #         yield parent/file
+    #         for match in regex.finditer(File(parent/file).binarydata()):
+    #             yield parent/match.group(1).decode()
+        
+    # #-----------------------------------------------------------------------
+    # def species(self, raise_error=False):                     # iorsim_input
+    # #-----------------------------------------------------------------------
+    #     if not self.exists(raise_error):
+    #         return []
+    #     species = get_keyword(self.path, '\*solution', end='\*')
+    #     #print(species)
+    #     if species:
+    #         species = species[0][1::2]
+    #     else:
+    #         # Read old input format
+    #         species = flat_list(get_keyword(self.path, '\*SPECIES', end='\*'))
+    #         species = [s for s in species if isinstance(s, str)]
+    #     # Change pH to H 
+    #     species = [s if s.lower() != 'ph' else 'H' for s in species]
+    #     #print('species', species)
+    #     return species
+
+    # #-----------------------------------------------------------------------
+    # def tracers(self, raise_error=False):                     # iorsim_input
+    # #-----------------------------------------------------------------------
+    #     if not self.exists(raise_error):
+    #         return []
+    #     tracers = flat_list(get_keyword(self.path, '\*NAME', end='\*'))
+    #     return tracers
+
+        
+    # #-----------------------------------------------------------------------
+    # def wells(self, raise_error=False):                       # iorsim_input
+    # #-----------------------------------------------------------------------
+    #     if not self.exists(raise_error):
+    #         return [],[]
+    #     in_wells, out_wells = [], []
+    #     out_wells = flat_list(get_keyword(self.path, '\*PRODUCER', end='\*'))
+    #     in_wells = flat_list(get_keyword(self.path, '\*INJECTOR', end='\*'))
+    #     if not out_wells or not in_wells:
+    #         # Read old input format
+    #         ow = get_keyword(self.path, '\*OUTPUT', end='\*')
+    #         if ow:
+    #             out_wells = ow[0][1:]
+    #         w = get_keyword(self.path, '\*WELLSPECIES', end='\*')
+    #         if w and w[0]:
+    #             #print(w)
+    #             w = w[0]
+    #             in_wells = w[1:1+int(w[0])]
+    #     #print('IORSim:',out_wells, in_wells)
+    #     return sorted(out_wells), sorted(in_wells)
 
 
 
@@ -1345,8 +1432,9 @@ class Simulation:                                                        # Simul
             s += self.skiprest and ' (SKIPREST)' or ''
         s += '\n'
         if self.IOR_inp:
-            dtmin, dtmax = self.IOR_inp.get('dtmin_ecl', 'dtmax_ecl')
-            s += f'    {"Timestep":{width}}: {dtmin}{(f" - {dtmax}" if dtmin!=dtmax else "")} days\n'
+            #dtmin, dtmax = self.IOR_inp.get('dtmin_ecl', 'dtmax_ecl')
+            ior = self.IOR_inp.get('INTEGRATION')
+            s += f'    {"Timestep":{width}}: {ior.dtmin}{(f" - {ior.dtmax}" if ior.dtmin!=ior.dtmax else "")} days\n'
         s += (self.schedule and self.schedule.sch_file) and f'    {"Schedule":{width}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
         rundir = str(Path.cwd())
         s += f'    {"Run-dir":{width}}: {rundir}\n'
