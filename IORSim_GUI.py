@@ -1995,19 +1995,6 @@ class main_window(QMainWindow):                                    # main_window
     def __init__(self, *args, settings_file=None, **kwargs):                       # main_window
     #-----------------------------------------------------------------------
         super().__init__(*args, **kwargs)
-        self.setWindowTitle('IORSim') 
-        screen = self.screen().geometry() #size()
-        saved_geo = get_keyword(settings_file, 'geometry', comment='#')
-        if saved_geo:
-            geo = QRect(*saved_geo[0])
-        else:
-            size = QSize(900, 600)
-            position = QPoint(int(0.5*(screen.width()-size.width())), int(0.5*(screen.height()-size.height())))
-            geo = QRect(position, size)
-        self.setGeometry(geo)
-        self.setObjectName('main_window')
-        self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
-        self.setStyleSheet(FONT_LARGE)
         self.silent_upgrade = False
         self.data = {}
         self.ecl_boxes = {}
@@ -2022,7 +2009,6 @@ class main_window(QMainWindow):                                    # main_window
         self.convert = None
         self.view = False
         self.progress = None
-        # User guide window
         self.pdf_view = None
         self.user_guide = None
         self.case = None
@@ -2032,27 +2018,44 @@ class main_window(QMainWindow):                                    # main_window
         self.cases = ()
         self.max_days = None
         self.input = {'root':None, 'ecl_days':None, 'days':100, 'step':None,
-                      'species':[], 'tracers':[], 'mode':None, 'cases':[], 'host':'Eclipse'}
-        self.input_to_save = ('root', 'days', 'mode', 'cases', 'host')
+                      'species':[], 'tracers':[], 'mode':None, 'cases':[], 'host':'Eclipse',
+                      'position':None, 'size':(900, 600)}
+        self.input_to_save = ('root', 'days', 'mode', 'cases', 'host', 'position', 'size')
         self.settings = Settings(parent=self, file=str(settings_file))
         self.view_host_input = {'Eclipse':self.view_eclipse_input, 'Intersect':self.view_intersect_input}
         self.view_host_log   = {'Eclipse':self.view_eclipse_log,   'Intersect':self.view_intersect_log}
         self.input_file = {'Eclipse' : DATA_file, 'Intersect': IX_input}
+        self.setWindowTitle('IORSim')
+        self.setObjectName('main_window')
+        self.setWindowIcon(QIcon('icons:ior2ecl_icon.svg'))
+        self.setStyleSheet(FONT_LARGE)
         self.initUI()
         self.load_session()
         self.set_input_field()
+        self.show_window()
         self.threadpool = QThreadPool()
+        if CHECK_VERSION_AT_START:
+            self.check_version(silent=True)
+                
+    #-----------------------------------------------------------------------
+    def show_window(self):                                     # main_window
+    #-----------------------------------------------------------------------
+        position = self.input['position']
+        size = self.input['size']
+        if not position:
+            # Put window in the middle of the screen
+            screen = self.screen().geometry()
+            position = (int(0.5*(screen.width()-size[0])), int(0.5*(screen.height()-size[1])))
+        self.setGeometry(QRect(*position, *size))
         self.show()
-        # Move window if upper left corner is outside limits
+        # Move window if upper left corner is outside screen limits
         # This check must come after self.show()
         pos = self.frameGeometry().topLeft().toTuple()
         if any(p<0 for p in pos):
             x, y = [-min(p,0) for p in pos]
             self.setGeometry(self.geometry().adjusted(x, y, x, y))
-        #print(self.screen().geometry())
-        if CHECK_VERSION_AT_START:
-            self.check_version(silent=True)
-                
+
+
     #-----------------------------------------------------------------------
     def initUI(self):                                          # main_window
     #-----------------------------------------------------------------------
@@ -2569,6 +2572,9 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         """ Save the current input values in a cache-file """
         self.input['cases'] = sep.join(self.cases)
+        geo = self.geometry().getRect()
+        self.input['position'] = sep.join(map(str, geo[:2]))
+        self.input['size'] = sep.join(map(str, geo[2:]))
         lines = [f'{var}{sep}{val}\n' for var in self.input_to_save if (val:=self.input.get(var))]
         with open(SESSION_FILE, 'w') as f:
             f.write(''.join(lines))
