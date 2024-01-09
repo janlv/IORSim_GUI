@@ -17,9 +17,9 @@ from threading import Thread
 
 from psutil import NoSuchProcess
 
-from IORlib.utils import (convert_float_or_str, flat_list, flatten, get_keyword, letter_range, list2text, pairwise,
+from IORlib.utils import (convert_float_or_str, flat_list, flatten, list2text, pairwise,
     print_error, remove_comments, safeopen, Progress, silentdelete,
-    delete_files_matching, tail_file, LivePlot, running_jupyter, ordered_intersect_index)
+    delete_files_matching, tail_file, LivePlot, running_jupyter)
 from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, Restart, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file, IX_input)
@@ -211,7 +211,6 @@ class EclipseForward(ForwardMixin, Eclipse):                         # EclipseFo
 class IntersectForward(ForwardMixin, Intersect):                   # IntersectForward
 #====================================================================================
     """ Intersect forward runner """
-    pass
 
 #====================================================================================
 class BackwardMixin:                                                  # BackwardMixin
@@ -662,7 +661,7 @@ class Iorsim(Runner):                                                        # i
 
 
     #--------------------------------------------------------------------------------
-    def start(self):                                                         # iorsim
+    def start(self, error_func=None):                                        # iorsim
     #--------------------------------------------------------------------------------
         if self.update:
             self.update.status(value=f'Starting {self.name}...')
@@ -678,7 +677,7 @@ class Iorsim(Runner):                                                        # i
         files = (self.case.with_suffix(ext) for ext in ('.UNRST', '.RFT', '.EGRID', '.INIT'))
         if missing := [f.name for f in files if not f.is_file()]:
             raise SystemError(f'ERROR Unable to start IORSim: Eclipse output file {", ".join(missing)} is missing')
-        super().start()
+        super().start(error_func)
         if self.update:
             self.update.status(value=f'{self.name} running...')
 
@@ -768,7 +767,7 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
 
 
     #--------------------------------------------------------------------------------
-    def start(self, restart=False, tsteps=None):                     # ior_backward
+    def start(self, error_func=None, tsteps=None):                     # ior_backward
     #--------------------------------------------------------------------------------
         # Start IORSim backward run
         self.n = 0 
@@ -1201,7 +1200,7 @@ class Simulation:                                                        # Simul
         self.ecl = EclipseBackward(exe=eclexe, keep_alive=ecl_keep_alive, restart=self.restart, **kwargs)
         self.ior = Ior_backward(exe=iorexe, keep_alive=ior_keep_alive, **kwargs)
         # Set up schedule of commands to pass to satnum-file
-        self.schedule = Schedule(self.root, end_time=self.end_time, start=self.start, init_days=init_days, interface_file=self.ior.satnum, 
+        self.schedule = Schedule(self.root, end_time=self.end_time, start=self.start, init_days=init_days, interface_file=self.ior.satnum,
                                  skip_empty=self.kwargs.get('skip_empty', False))
         self.ecl.schedule = self.ior.schedule = self.schedule
         return [self.ecl, self.ior]
@@ -1217,7 +1216,8 @@ class Simulation:                                                        # Simul
         ecl.delete_output_files()
         ior.delete_output_files()
         ecl.start(restart=self.restart.run)
-        ior.start(restart=self.restart.run, tsteps=ecl.init_tsteps)
+        #ior.start(restart=self.restart.run, tsteps=ecl.init_tsteps)
+        ior.start(tsteps=ecl.init_tsteps)
         # The schedule appends keywords to the interface file (satnum.dat)
         self.schedule.update()
         # Update progress
@@ -1267,7 +1267,7 @@ class Simulation:                                                        # Simul
         except KeyboardInterrupt:
             self.cancel()
             msg = 'Simulation cancelled'
-        except Exception as exception:  # Catch all other exceptions 
+        except Exception as exception:  # Catch all other exceptions
             self.print2log(f'\nAn exception occured:\n{trace_format_exc()}')
             n = [run.n for run in self.runs if run] or [-1]
             msg += f'(step {max(n)}) {type(exception).__name__}: {exception}'
@@ -1513,21 +1513,20 @@ def parse_input(settings_file=None):
     parser.add_argument('-only_merge',     help='Only merge and exit', action='store_true')
     parser.add_argument('-delete',         help='Delete obsolete output files after convert and merge has finished', action='store_true')
     parser.add_argument('-ecl_alive',      help=f'Keep Eclipse alive at least {ECL_ALIVE_LIMIT} seconds', action='store_true')
-    parser.add_argument('-ior_alive',      help=f'Keep IORSim alive', action='store_true')
+    parser.add_argument('-ior_alive',      help='Keep IORSim alive', action='store_true')
     parser.add_argument('-check_input',    help='Check IORSim input file keywords', action='store_true', dest='check_input_kw')
     parser.add_argument('-logtag',          help='Add this tag to the log-files', type=int)
     args = vars(parser.parse_args())
-    if SCHEDULE_SKIP_EMPTY: 
+    if SCHEDULE_SKIP_EMPTY:
         args['skip_empty'] = not args['not_skip_empty']
     # Look for case in case_dir if root is not a file
     args['root'] = Path(args['root']).with_suffix('')
     # Read iorexe from settings if argument is missing
-    if settings_file and not args['iorexe']:
-        iorsim = get_keyword(settings_file, 'iorsim', end=' ')
-        if any(iorsim):
-            args['iorexe'] = iorsim[0][0]
+    if not args['iorexe']:
+        if iorsim:=File(settings_file).line_matching('iorsim'):
+            args['iorexe'] = iorsim.split()[-1]
         else:
-            raise SystemError('IORSim executable is missing')    
+            raise SystemError('IORSim executable is missing')
     return args
 
 #--------------------------------------------------------------------------------

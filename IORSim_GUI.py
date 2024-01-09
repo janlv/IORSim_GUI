@@ -23,10 +23,10 @@ from PySide6.QtWidgets import (QScrollArea, QStatusBar, QDialog, QWidget, QMainW
                                QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox,
                                QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog,
                                QMessageBox, QProgressDialog)
-from PySide6.QtGui import (QPalette, QAction, QActionGroup, QColor, QFont, QIcon, 
+from PySide6.QtGui import (QPalette, QAction, QActionGroup, QColor, QFont, QIcon,
                            QSyntaxHighlighter, QTextCharFormat, QTextCursor)
 from PySide6.QtCore import (QDir, QCoreApplication, QSize, QObject, Signal, Slot, QRunnable,
-                            QThreadPool, Qt, QRegularExpression, QRect, QPoint)
+                            QThreadPool, Qt, QRegularExpression, QRect)
 from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtPdf import QPdfDocument, QPdfSearchModel
 
@@ -43,9 +43,8 @@ from ior2ecl import (SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALI
                      LOG_LEVEL_MAX, LOG_LEVEL_MIN)
 from IORlib.utils import (flatten, has_write_access, make_user_executable, removeprefix, Progress,
                           clear_dict, convert_float_or_str, copy_recursive, same_length, flat_list,
-                          get_keyword, get_tuple, kill_process, pad_zero, read_file,
-                          remove_leading_nondigits, replace_line, delete_all, try_except_loop,
-                          unique_names, write_file)
+                          get_tuple, kill_process, pad_zero, read_file,remove_leading_nondigits, 
+                          replace_line, delete_all, try_except_loop, unique_names, write_file)
 from IORlib.ECL import DATA_file, AFI_file, IX_input, File, UNSMRY_file, UNRST_file
 
 # Check if this is a bundle version (pyinstaller)
@@ -449,15 +448,18 @@ class base_worker(QRunnable):
     #-----------------------------------------------------------------------
         try:
             result = self.runnable()
-        except:
+        except (Exception, KeyboardInterrupt):
             if self.print_exception:
                 print_exc()
             exctype, value = sys.exc_info()[:2]
-            self.signals and self.signals.error.emit((exctype, value, format_exc()))
+            if self.signals:
+                self.signals.error.emit((exctype, value, format_exc()))
         else:
-            self.signals and self.signals.result.emit((result,))
+            if self.signals:
+                self.signals.result.emit((result,))
         finally:
-            self.signals and self.signals.finished.emit()
+            if self.signals:
+                self.signals.finished.emit()
 
 
 #===========================================================================
@@ -525,19 +527,19 @@ class download_worker(base_worker):
     #  Download updated executable in update_dir as a separate process
     #
     #-----------------------------------------------------------------------
-    def __init__(self, new_version, folder):               # download_worker
+    def __init__(self, new_ver, folder):               # download_worker
     #-----------------------------------------------------------------------
         super().__init__(print_exception=False, log='download.log')
         self.progress = False
         self.running = False
-        self.new_version = new_version
+        self.new_version = new_ver
         #print('new_version:',new_version)
         folder = Path(folder)
         folder.mkdir(exist_ok=True)
-        self.url = github_url(new_version)
+        self.url = github_url(new_ver)
         ext = Path(urlparse(self.url).path).suffix
         stem = THIS_FILE.stem.split('_v')[0]
-        self.savename = folder/f'{stem}_{new_version}{ext}'
+        self.savename = folder/f'{stem}_{new_ver}{ext}'
         #self.log = folder/'download.log'
         self.log(f'Time: {datetime.now()}\nSavename: {self.savename}')
 
@@ -560,7 +562,7 @@ class download_worker(base_worker):
         self.running = True
         delete_all(self.savename.parent, keep_folder=True, ignore_error=PermissionError)
         try:
-            response = requests_get(self.url, stream=True)
+            response = requests_get(self.url, stream=True, timeout=60)
         except req_exceptions.SSLError as error:
             self.raise_error(error, 'SSL error during download of update')
         except req_exceptions.ConnectionError as error:
@@ -1037,7 +1039,7 @@ class PlotArea(QGroupBox):
     def refresh(self):
     #-----------------------------------------------------------------------
         if self.create_args:
-           self.create(**self.create_args)
+            self.create(**self.create_args)
 
     #-----------------------------------------------------------------------
     def update_plots(self, var=None):                             # PlotArea
@@ -1608,8 +1610,6 @@ class Window(QMainWindow):                                          # Window
         self.setWindowTitle(title)
         if geo:
             self.setGeometry(geo)
-        #self.setGeometry(QRect(QPoint(10,10),QSize(*size)))
-        #self.setMinimumSize(*size)
         self.widget_ = widget
         self.setCentralWidget(widget)
 
@@ -1653,11 +1653,11 @@ class Settings(QDialog):
                               'Check that the UNRST-file is properly flushed before suspending Eclipse', False),
             'rft': variable('Confirm flushed RFT-file during Eclipse step', True,
                             'Check that the RFT-file is properly flushed before suspending Eclipse', False),
-            'ecl_keep_alive': variable(f'Eclipse process not paused if idle for less than', False,
+            'ecl_keep_alive': variable('Eclipse process not paused if idle for less than', False,
                                        "Eclipse process is running also when idle ('e' to edit)", False),
-            'ecl_alive_limit': variable(f'seconds', str(ECL_ALIVE_LIMIT),
+            'ecl_alive_limit': variable('seconds', str(ECL_ALIVE_LIMIT),
                                         "If on, set this limit lower than 100 seconds to avoid unexpected Eclipse termination ('e' to edit)", False),
-            'ior_keep_alive': variable(f'IORSim process not paused when idle', False,
+            'ior_keep_alive': variable('IORSim process not paused when idle', False,
                                        "IORSim process is running when idle. WARNING! Consumes more CPU ('e' to edit)", False),
             'log_level': variable('Detail level of the application log', str(DEFAULT_LOG_LEVEL),
                                   'A higher value gives a more detailed application log', False),
@@ -1871,7 +1871,8 @@ class Settings(QDialog):
         v = self.vars[var]
         layout = QHBoxLayout()
         line = QLineEdit()
-        width and line.setFixedWidth(width)
+        if width:
+            line.setFixedWidth(width)
         line.setToolTip(v.tip)
         layout.addWidget(line)
         layout.addWidget(QLabel(v.text))
@@ -2326,8 +2327,8 @@ class main_window(QMainWindow):                                    # main_window
         cmd = [str(upgrader), '-upgrade', pid, self.download_dest]
         if not BUNDLE_VERSION:
             cmd[0] = str(Path(cmd[0])/'IORSim_GUI.py')
-            exec = [sys.executable]
-            cmd = exec + cmd + exec
+            exe = [sys.executable]
+            cmd = exe + cmd + exe
         # Appent arguments given to this script must be re-applied for the restart
         cmd.extend(sys.argv)
         #print(f'Calling: {cmd}')
@@ -2477,7 +2478,7 @@ class main_window(QMainWindow):                                    # main_window
         self.progressbar.setFormat('')
         self.reset_progressbar()
         statusbar = QStatusBar()
-        statusbar.setStyleSheet("QStatusBar { border-top: 1px solid lightgrey; }\nQStatusBar::item { border:None; };"); 
+        statusbar.setStyleSheet("QStatusBar { border-top: 1px solid lightgrey; }\nQStatusBar::item { border:None; };")
         self.messages = QLabel()
         statusbar.addPermanentWidget(self.messages)
         statusbar.addPermanentWidget(self.progressbar, stretch=0)
@@ -2519,10 +2520,10 @@ class main_window(QMainWindow):                                    # main_window
         self.sch_editor = Highlight_editor(name='sch_editor', save_func=self.view_schedule_file, comment='--')
         # Eclipse editor
         rules = namedtuple('rules',('color weight option front back words'))
-        sections = rules(Color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b', DATA_file.section_names)
-        globals = rules(Color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b', DATA_file.global_kw)
-        common = rules(Color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b', DATA_file.common_kw)
-        self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(sections, globals, common),
+        section_kw = rules(Color.red, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\b','\\b', DATA_file.section_names)
+        global_kw = rules(Color.blue, QFont.Normal, QRegularExpression.NoPatternOption, '\\b','\\b', DATA_file.global_kw)
+        common_kw = rules(Color.green, QFont.Normal, QRegularExpression.NoPatternOption, r"\b",r'\b', DATA_file.common_kw)
+        self.eclipse_editor = Highlight_editor(name='Eclipse editor', comment='--', keywords=(section_kw, global_kw, common_kw),
                                                save_func=self.refresh_case) # Alternative is self.refresh_case
         # IORSim editor
         mandatory = rules(Color.blue, QFont.Bold, QRegularExpression.CaseInsensitiveOption, '\\', '\\b', IORSim_input.keywords.required)
@@ -2912,7 +2913,7 @@ class main_window(QMainWindow):                                    # main_window
             return
         try:
             val = float(text)
-        except:
+        except ValueError:
             show_message(self, 'error', text=var[name]+' must be an number!')
         else:
             self.input[name] = val
@@ -3234,7 +3235,7 @@ class main_window(QMainWindow):                                    # main_window
             #print('set mode')
             self.on_mode_select(self.mode_cb.currentIndex())
         if act := self.view_group.checkedAction():
-           act.trigger()
+            act.trigger()
         #print('DONE')
 
 
@@ -3357,8 +3358,8 @@ class main_window(QMainWindow):                                    # main_window
             inputs.append(other_input)
             menus.append(self.incl_menu[other_host])
             editors.append(self.host_editor[other_host])
-        for input, menu, editor in zip(inputs, menus, editors):
-            self.update_file_menu(input.include_files(), menu, viewer=self.view_input_file,
+        for inp, menu, editor in zip(inputs, menus, editors):
+            self.update_file_menu(inp.include_files(), menu, viewer=self.view_input_file,
                                   title='Include file', editor=editor)
         include_act = self.get_include_file_actions()
         if checked_act and include_act:
@@ -3454,7 +3455,8 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_var_box = box
         self.ior_boxes['var'] = {}
         color = Color.cycle()
-        for i,specie in enumerate(self.input['species']): # or []):
+        # for i,specie in enumerate(self.input['species']): # or []):
+        for specie in self.input['species']: # or []):
             layout, box = self.plot_menu_box_variable(specie, color=next(color), func=self.on_var_click)
             self.ior_boxes['var'][specie] = box
             menu.column(1).addLayout(layout)
@@ -3484,15 +3486,15 @@ class main_window(QMainWindow):                                    # main_window
         ecl = self.host_input
         ecl.check(include=False)
         #vars = [line for line in ecl.section('SUMMARY').lines() if line[0] in ('W','F','R')]
-        vars = ecl.summary_keys(matching=self.ecl_keys)
+        var = ecl.summary_keys(matching=self.ecl_keys)
         #print('vars', set(vars))
-        if not vars and raise_error:
+        if not var and raise_error:
             raise SystemError(f'SUMMARY keywords missing,\n\n{self.get_current_host()} plotting disabled.')
         #fy = ((f,y) for v in set(vars) if (f:=self.ecl_fluids.get(v[1])) and (y:=self.ecl_yaxes.get(v[2:4])))
-        fy = ((f,y) for v in set(vars) if (f:=self.ecl_fluids.get(v[1:3])) and (y:=self.ecl_yaxes.get(v[2:4])))
+        fy = ((f,y) for v in set(var) if (f:=self.ecl_fluids.get(v[1:3])) and (y:=self.ecl_yaxes.get(v[2:4])))
         fluids, yaxis = zip(*fy)
         wells = sorted(ecl.wellnames())
-        if any(v[0]=='F' and v[2:4] in ('PR','PT') for v in vars):
+        if any(v[0]=='F' and v[2:4] in ('PR','PT') for v in var):
             wells.insert(0, 'FIELD')
         fluids = list(set(fluids)-set(['temp']))
         #fluids = list(set(fluids)-set(['Temp_ecl']))
@@ -3613,7 +3615,8 @@ class main_window(QMainWindow):                                    # main_window
         # yaxis
         menu.column(0).addWidget(QLabel('Y-axis'))
         self.ecl_boxes['yaxis'] = {}
-        for i,name in enumerate(yaxis):
+        #for i,name in enumerate(yaxis):
+        for name in yaxis:
             text = self.ecl_yaxes_names[name]
             box = self.plot_menu_checkbox(text, name, self.create_plot)
             box.setStyleSheet(FONT_SMALL)
@@ -4239,12 +4242,12 @@ class Highlighter(QSyntaxHighlighter):
         self.highlightingRules.append((QRegularExpression(comment+'[^\n]*'), singleLineCommentFormat))
 
     def highlightBlock(self, text):
-        for pattern, format in self.highlightingRules:
+        for pattern, form in self.highlightingRules:
             expression = QRegularExpression(pattern)
             match = expression.globalMatch(text)
             while match.hasNext():
                 m = match.next()
-                self.setFormat(m.capturedStart(), m.capturedLength(), format)
+                self.setFormat(m.capturedStart(), m.capturedLength(), form)
 
 
                 
