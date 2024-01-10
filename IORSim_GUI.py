@@ -50,7 +50,7 @@ from IORlib.ECL import DATA_file, AFI_file, IX_input, File, UNSMRY_file, UNRST_f
 # Check if this is a bundle version (pyinstaller)
 BUNDLE_VERSION = getattr(sys, 'frozen', False)
 if BUNDLE_VERSION:
-    import pip_system_certs.wrapt_requests
+    import pip_system_certs.wrapt_requests # pylint: disable=unused-import
 from requests import get as requests_get, exceptions as req_exceptions
 
 DEBUG = False
@@ -63,10 +63,10 @@ CHECK_VERSION_AT_START = True
 def resource_path():
 #-----------------------------------------------------------------------
     if BUNDLE_VERSION:
-        ### Running in a bundle
-        path = Path(sys._MEIPASS)
+        # Running in a bundle
+        path = Path(sys._MEIPASS) # pylint: disable=protected-access
     else:
-        ### Running live
+        # Running live
         path = Path.cwd()
     return path
 
@@ -178,7 +178,7 @@ class Upgrader:
         if self._clear_log:
             self._clear_log = False
             mode = 'w'
-        with open(self.LOG_FILE, mode) as file:
+        with open(self.LOG_FILE, mode, encoding='utf-8') as file:
             file.write(f'{text}\n')
 
 
@@ -432,7 +432,7 @@ class base_worker(QRunnable):
         if self._clear_log:
             self._clear_log = False
             mode = 'w'
-        with open(self._logfile, mode) as file:
+        with open(self._logfile, mode, encoding='utf-8') as file:
             file.write(text+'\n')
 
     #-----------------------------------------------------------------------
@@ -1022,6 +1022,7 @@ class PlotArea(QGroupBox):
     #-----------------------------------------------------------------------
     def file_is_open(self, filename):                                 # PlotArea
     #-----------------------------------------------------------------------
+        # Need filename for compatibility with Editor class
         return False
 
     #-----------------------------------------------------------------------
@@ -1376,7 +1377,7 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
         #print('search_text: '+string+' '+str(start))
         if start==0:
-            self.search_pos = []          
+            self.search_pos = []
         text = self.editor_.toPlainText()
         if ignore_case:
             text = text.lower()
@@ -1848,7 +1849,7 @@ class Settings(QDialog):
         layout.addWidget(label)
         box.addItems(values)
         if func:
-            box.currentIndexChanged[int].connect(func)
+            box.currentIndexChanged[int].connect(func) # pylint: disable=unsubscriptable-object
         return layout
 
     #-----------------------------------------------------------------------
@@ -1951,7 +1952,7 @@ class Settings(QDialog):
     def save(self):                                      # settings
     #-----------------------------------------------------------------------
         self.file.touch(exist_ok=True)
-        with open(self.file, 'w') as f:
+        with open(self.file, 'w', encoding='utf-8') as f:
             f.write('# This is a settings-file for ior2ecl_GUI.py, do not edit.\n')
             for var,val in self._get.items():
                 # if var in self.required and len(val())==0:
@@ -1966,7 +1967,7 @@ class Settings(QDialog):
     def load(self):                                      # settings
     #-----------------------------------------------------------------------
         if self.file.is_file():
-            with open(self.file) as f:
+            with open(self.file, 'r', encoding='utf-8') as f:
                 for line in f:
                     if line.lstrip().startswith('#'):
                         continue
@@ -2434,14 +2435,14 @@ class main_window(QMainWindow):                                    # main_window
         # Uncomment to disable Intersect 
         #self.host_cb.model().item(1).setEnabled(False)
         self.host_cb.setCurrentIndex(0)
-        self.host_cb.currentIndexChanged[int].connect(self.on_host_select)
+        self.host_cb.currentIndexChanged[int].connect(self.on_host_select) # pylint: disable=unsubscriptable-object
         # mode
         self.modes = ['forward','backward','eclipse','iorsim']
         mode_names = ['Forward','Backward','Eclipse','IORSim']
         self.mode_cb = widgets['run']
         self.mode_cb.addItems(mode_names)
         self.mode_cb.setCurrentIndex(-1)
-        self.mode_cb.currentIndexChanged[int].connect(self.on_mode_select)
+        self.mode_cb.currentIndexChanged[int].connect(self.on_mode_select) # pylint: disable=unsubscriptable-object
         # case
         self.case_cb = widgets['case']
         # Change size-adjust-policy from the default AdjustToContentsOnFirstShow
@@ -2450,19 +2451,19 @@ class main_window(QMainWindow):                                    # main_window
         self.case_cb.setMinimumWidth(120)
         self.case_cb.setPlaceholderText('Select or open case')
         self.case_cb.setStyleSheet('QComboBox {min-width: 100px;}')
-        self.case_cb.currentIndexChanged[int].connect(self.on_case_select)
+        self.case_cb.currentIndexChanged[int].connect(self.on_case_select) # pylint: disable=unsubscriptable-object
         # days
         self.days_box = widgets['days']
         self.days_box.setMinimumWidth(60)
         self.days_box.setMaximumWidth(120)
         self.days_box.setObjectName('days')
-        self.days_box.textChanged[str].connect(self.on_input_change)
+        self.days_box.textChanged[str].connect(self.on_input_change) # pylint: disable=unsubscriptable-object
         # reference
         self.ref_case = widgets['compare']
         self.ref_case.setMinimumWidth(120)
         self.ref_case.setObjectName('compare')
         self.ref_case.setStyleSheet('QComboBox {min-width: 100px;}')
-        self.ref_case.currentIndexChanged[int].connect(self.on_compare_select)
+        self.ref_case.currentIndexChanged[int].connect(self.on_compare_select) # pylint: disable=unsubscriptable-object
         self.ref_case.setProperty('lastitem',0)
 
 
@@ -2577,14 +2578,14 @@ class main_window(QMainWindow):                                    # main_window
         self.input['position'] = sep.join(map(str, geo[:2]))
         self.input['size'] = sep.join(map(str, geo[2:]))
         lines = [f'{var}{sep}{val}\n' for var in self.input_to_save if (val:=self.input.get(var))]
-        with open(SESSION_FILE, 'w') as f:
+        with open(SESSION_FILE, 'w', encoding='utf-8') as f:
             f.write(''.join(lines))
 
     #-----------------------------------------------------------------------
     def load_session(self, sep=','):                                   # main_window
     #-----------------------------------------------------------------------
         if SESSION_FILE.is_file():
-            with open(SESSION_FILE) as file:
+            with open(SESSION_FILE, 'r', encoding='utf-8') as file:
                 lines = file.readlines()
                 for var, *val in (l.split(sep) for l in lines if not l.startswith('#')):
                     vals = list(convert_float_or_str(val))
@@ -2829,9 +2830,9 @@ class main_window(QMainWindow):                                    # main_window
         if not isinstance(run, tuple):
             run = (run,)
         self.run = run
-        fh = open(str(Path(self.case).parent/'mode.gui'), 'w')
-        fh.write(mode+'\n')
-        fh.close()
+        mode_file = str(Path(self.case).parent/'mode.gui')
+        with open(mode_file, 'w', encoding='utf-8') as fh:
+            fh.write(mode+'\n')
 
 
     #-----------------------------------------------------------------------
@@ -3400,7 +3401,7 @@ class main_window(QMainWindow):                                    # main_window
         return layout, box
 
     #-----------------------------------------------------------------------
-    def plot_menu_checkbox(self, text='', name='', func=None, toggle=False, pad_right=10): #, size=15):
+    def plot_menu_checkbox(self, text='', name='', func=None, toggle=False): #, pad_right=10): #, size=15):
     #-----------------------------------------------------------------------
         box = QCheckBox(text)
         box.setObjectName(name)
@@ -3480,7 +3481,8 @@ class main_window(QMainWindow):                                    # main_window
             box.setChecked(checked)
 
     #-----------------------------------------------------------------------
-    def get_eclipse_well_yaxis_fluid(self, case=None, raise_error=True):    # main_window
+    #def get_eclipse_well_yaxis_fluid(self, case=None, raise_error=True):    # main_window
+    def get_eclipse_well_yaxis_fluid(self, raise_error=True):    # main_window
     #-----------------------------------------------------------------------
         #ecl = DATA_file(case or self.input['root'])
         ecl = self.host_input
@@ -3606,7 +3608,7 @@ class main_window(QMainWindow):                                    # main_window
         if not case:
             return False
         try:
-            wells, yaxis, fluids = self.get_eclipse_well_yaxis_fluid(case)
+            wells, yaxis, fluids = self.get_eclipse_well_yaxis_fluid() #(case)
         except SystemError as e:
             lbl = QLabel(parent=self)
             lbl.setText(str(e))
@@ -3965,7 +3967,7 @@ class main_window(QMainWindow):                                    # main_window
     #             ior['FIELD']['prod'][var][-size:] += ior[w]['prod'][var]    
 
     #-----------------------------------------------------------------------
-    def create_plot(self, keep_ref=True):                         # main_window
+    def create_plot(self): #, keep_ref=True):                         # main_window
     #-----------------------------------------------------------------------                
         #print('CREATE_PLOT', self.menu_boxes.keys())
         #self.plot_area.create(self.data, self.menu_boxes, only_nonzero=not self.worker)

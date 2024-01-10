@@ -48,7 +48,7 @@ LOG_LEVEL_MAX = 4
 LOG_LEVEL_MIN = 1
 DEFAULT_LOG_LEVEL = 3
 # Number of iterations before reducing number of expected RFT blocks
-RFT_CHECK_ITER = 100
+RFT_CHECK_NITER = 100
 # To avoid re-merging merged UNRST-files, this file is created in the case-folder
 MERGE_OK_FILE = '.merge_OK'
 
@@ -289,7 +289,7 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
         #self.nwell = self.unrst.get('nwell')[0][-1]
         self.nwell = next(self.unrst.read('nwell', tail=True))[0]
         # Wait for flushed RFT-file
-        msg = self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
+        msg = self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, niter=RFT_CHECK_NITER, pause=CHECK_PAUSE)
         if msg:
             self._print(msg)
         while self.nwell < 1:
@@ -326,7 +326,7 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
                 #self.nwell = nblocks = self.unrst.get('nwell')[0][-1]
                 self.nwell = nblocks = next(self.unrst.read('nwell', tail=True))[0]
                 #print(nwell)
-            msg = self.rft.check.data_saved_maxmin(nblocks=nblocks, iter=RFT_CHECK_ITER, pause=CHECK_PAUSE)
+            msg = self.rft.check.data_saved_maxmin(nblocks=nblocks, niter=RFT_CHECK_NITER, pause=CHECK_PAUSE)
             if msg:
                 self._print(msg)
         if start_stop:
@@ -963,7 +963,7 @@ class Schedule:
     #--------------------------------------------------------------------------------
         # just a check...
         print(f'{self.days}, {self.start+timedelta(days=self.days)}')
-        with open(self.ifacefile.path, 'r') as f:
+        with open(self.ifacefile.path, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         print(self.ifacefile.path, ': ', ''.join(lines[-10:]))
         print('Schedule:')
