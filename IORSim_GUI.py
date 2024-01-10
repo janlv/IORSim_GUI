@@ -1446,9 +1446,10 @@ class Editor(QGroupBox):
         if self.file:
             if Path(self.file).is_file():
                 text = read_file(self.file)
-                if self.size_limit and (size := Path(self.file).stat().st_size) > self.size_limit:
-                    text = (text[:self.size_limit]
-                            + f'\n --- SKIPPED {(size-self.size_limit-100)/1024**2:.0f} MB ---\n'
+                # Large files will slow down the viewing, so a size-limit is imposed
+                if self.size_limit and (size := Path(self.file).stat().st_size) > (self.size_limit+1024**2):
+                    skipped_mb = (size-self.size_limit-100)/1024**2
+                    text = (text[:self.size_limit] + f'\n --- SKIPPED {skipped_mb:.1f} MB ---\n'
                             + text[-100:])
             else:
                 text = f'\nThis file is missing ({self.file})' if self.file else ''
@@ -3457,6 +3458,7 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_boxes['var'] = {}
         color = Color.cycle()
         # for i,specie in enumerate(self.input['species']): # or []):
+        #print(self.input)
         for specie in self.input['species']: # or []):
             layout, box = self.plot_menu_box_variable(specie, color=next(color), func=self.on_var_click)
             self.ior_boxes['var'][specie] = box
