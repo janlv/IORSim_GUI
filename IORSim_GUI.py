@@ -24,9 +24,9 @@ from PySide6.QtWidgets import (QScrollArea, QStatusBar, QDialog, QWidget, QMainW
                                QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog,
                                QMessageBox, QProgressDialog)
 from PySide6.QtGui import (QPalette, QAction, QActionGroup, QColor, QFont, QIcon,
-                           QSyntaxHighlighter, QTextCharFormat, QTextCursor)
+                           QSyntaxHighlighter, QTextCharFormat, QTextCursor, QIntValidator)
 from PySide6.QtCore import (QDir, QCoreApplication, QSize, QObject, Signal, Slot, QRunnable,
-                            QThreadPool, Qt, QRegularExpression, QRect)
+                            QThreadPool, Qt, QRegularExpression, QRect, QPoint)
 from PySide6.QtPdfWidgets import QPdfView
 from PySide6.QtPdf import QPdfDocument, QPdfSearchModel
 
@@ -71,7 +71,7 @@ def resource_path():
     return path
 
 # Default settings
-MAX_CASES = 10
+MAX_CASES = 15
 IORSIM_DIR = Path.home()/'.iorsim'
 DOWNLOAD_DIR = IORSIM_DIR/'download'
 SETTINGS_FILE = IORSIM_DIR/'settings.dat'
@@ -1507,27 +1507,8 @@ class Highlight_editor(Editor):
 
 
 
-# #===========================================================================
-# class PDF_viewer_v2(QPdfView):
-# #===========================================================================
-#     #-----------------------------------------------------------------------
-#     def __init__(self, *args, **kwargs):                        # PDF_viewer
-#     #-----------------------------------------------------------------------
-#         super().__init__(*args, **kwargs)
-#         self.setPageMode(QPdfView.PageMode.MultiPage)
-#         self._document = QPdfDocument()
-#         self.setDocument(self._document)
-
-#     #-----------------------------------------------------------------------
-#     def view_file(self, file, title=''):                        # PDF_viewer
-#     #-----------------------------------------------------------------------
-#         self._document.load(str(file))
-#         #print(err, file)
-#         self.setWindowTitle(title)
-#         self.show()
 
 #===========================================================================
-#class PDF_viewer(Editor):
 class PDF_viewer(QWidget):
 #===========================================================================
 
@@ -1543,15 +1524,36 @@ class PDF_viewer(QWidget):
         self.search_field.setClearButtonEnabled(True)
         self.search_field.setPlaceholderText('Search text')
         self.search_field.textChanged.connect(self.search_text)
+        #self.search_field.editingFinished.connect(self.search_text)
         buttons.addWidget(self.search_field)
-        prev_btn = QPushButton('Previous')
+        prev_btn = QPushButton('<')
         prev_btn.clicked.connect(self.search_prev)
         buttons.addWidget(prev_btn)
-        next_btn = QPushButton('Next')
+        next_btn = QPushButton('>')
         next_btn.clicked.connect(self.search_next)
         buttons.addWidget(next_btn)
         self.viewer = QPdfView()
         layout.addWidget(self.viewer)
+        page_navigation = QHBoxLayout()
+        layout.addLayout(page_navigation)
+        prev_page = QPushButton('Previous page')
+        prev_page.clicked.connect(self.prev_page)
+        page_navigation.addWidget(prev_page)
+        label = QLabel('Page')
+        label.setFixedWidth(50)
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        page_navigation.addWidget(label)
+        self.int_validator = QIntValidator(0, 999)
+        self.page_number = QLineEdit()
+        self.page_number.setFixedWidth(60)
+        self.page_number.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.page_number.setValidator(self.int_validator)
+        self.page_number.textChanged.connect(self.jump_page)
+        page_navigation.addWidget(self.page_number)
+        next_page = QPushButton('Next page')
+        next_page.clicked.connect(self.next_page)
+        page_navigation.addWidget(next_page)
+        #self.viewer.setZoomMode(QPdfView.ZoomMode.FitInView)
         #self.viewer.setPageMode(QPdfView.PageMode.MultiPage)
         self.pdf = QPdfDocument()
         self.viewer.setDocument(self.pdf)
@@ -1560,46 +1562,97 @@ class PDF_viewer(QWidget):
         self.searcher.setDocument(self.pdf)
         self.viewer.setSearchModel(self.searcher)
         self.ind = 0
+        self.current_page = 0
+
+    #-----------------------------------------------------------------------
+    def update_page_number(self):                        # PDF_viewer
+    #-----------------------------------------------------------------------
+        self.page_number.blockSignals(True)
+        self.page_number.setText(str(self.current_page))
+        self.page_number.blockSignals(False)
 
     #-----------------------------------------------------------------------
     def view_file(self, file, title=''):                        # PDF_viewer
     #-----------------------------------------------------------------------
         self.search_field.setText('')
         self.pdf.load(str(file))
+        self.int_validator.setTop(self.pdf.pageCount())
         self.viewer.setWindowTitle(title)
+        self.jump_page(0)
 
     #-----------------------------------------------------------------------
     def search_text(self, string):                               # PDF_viewer
     #-----------------------------------------------------------------------
         self.viewer.setCurrentSearchResultIndex(-1)
         self.searcher.setSearchString(string)
+        self.viewer.setCurrentSearchResultIndex(0)
         self.ind = 0
-        self.viewer.setCurrentSearchResultIndex(self.ind)
+        if string == '':
+            return
+        while result := self.search_result(self.ind):
+            if result.page() >= self.current_page:
+                self.jump(result, self.ind)
+                return
+            self.ind += 1
+            
+    #-----------------------------------------------------------------------
+    def search_result(self, ind):                                      # PDF_viewer
+    #-----------------------------------------------------------------------
+        result = self.searcher.resultAtIndex(ind)
+        if result.page() >= 0:
+            return result
+        
 
     #-----------------------------------------------------------------------
-    def jump(self, result):                                      # PDF_viewer
+    def jump(self, result, ind):                                      # PDF_viewer
     #-----------------------------------------------------------------------
+        self.viewer.setCurrentSearchResultIndex(ind)
         self.navigator.jump(result)
         self.viewer.verticalScrollBar().setValue(result.location().y())
-
+        self.current_page = result.page()
+        self.update_page_number()
+        
     #-----------------------------------------------------------------------
     def search_next(self):                                      # PDF_viewer
     #-----------------------------------------------------------------------
-        result = self.searcher.resultAtIndex(self.ind+1)
-        if result.page() >= 0:
+        # result = self.searcher.resultAtIndex(self.ind+1)
+        # if result.page() >= 0:
+        if result := self.search_result(self.ind+1):
             self.ind += 1
-            self.viewer.setCurrentSearchResultIndex(self.ind)
-            self.jump(result)
+            #self.viewer.setCurrentSearchResultIndex(self.ind)
+            self.jump(result, self.ind)
 
     #-----------------------------------------------------------------------
     def search_prev(self):                                      # PDF_viewer
     #-----------------------------------------------------------------------
         self.ind = max(self.ind-1, 0)
-        result = self.searcher.resultAtIndex(self.ind)
-        if result.page() >= 0:
-            self.viewer.setCurrentSearchResultIndex(self.ind)
-            self.jump(self.searcher.resultAtIndex(self.ind))
+        #result = self.searcher.resultAtIndex(self.ind)
+        #if result.page() >= 0:
+        if result := self.search_result(self.ind):
+            #self.viewer.setCurrentSearchResultIndex(self.ind)
+            self.jump(result, self.ind)
+            #self.jump(self.searcher.resultAtIndex(self.ind))
 
+    #-----------------------------------------------------------------------
+    def jump_page(self, page=0):                                # PDF_viewer
+    #-----------------------------------------------------------------------
+        #old = self.current_page
+        if page == '':
+            return
+        self.current_page = max(int(page), 0)
+        #print(f'Jump {old} -> {self.current_page}')
+        self.navigator.jump(self.current_page, QPoint(0, 0))
+        self.update_page_number()
+
+    #-----------------------------------------------------------------------
+    def next_page(self):                                      # PDF_viewer
+    #-----------------------------------------------------------------------
+        self.jump_page(self.current_page + 1)
+
+    #-----------------------------------------------------------------------
+    def prev_page(self):                                      # PDF_viewer
+    #-----------------------------------------------------------------------
+        self.jump_page(self.current_page - 1)
 
 
 #===========================================================================
@@ -2642,7 +2695,7 @@ class main_window(QMainWindow):                                    # main_window
         unique = unique_names(items[::-1])[::-1]
         if insert:
             ind = (i for i,(a,b) in enumerate(zip(unique, items)) if a != b)
-            changed = [f'{self.cases[i]} listed as {unique[i]}' for i in ind]
+            changed = [f'{Path(self.cases[i]).stem} listed as {unique[i]}' for i in ind]
             if changed:
                 self.show_message_text(f"INFO Duplicate case-name: Case {', '.join(changed)} in the case-list")
         items = unique
@@ -2847,15 +2900,20 @@ class main_window(QMainWindow):                                    # main_window
         self.mode_cb.removeItem(2)
         self.mode_cb.insertItem(2, host)
         self.mode_cb.update()
-        self.update_edit_menu_visibility()
+        self.update_menu_visibility(host)
         self.on_case_select(self.case_cb.currentIndex())
 
     #-----------------------------------------------------------------------
-    def update_edit_menu_visibility(self):
+    def update_menu_visibility(self, host):
     #-----------------------------------------------------------------------
         # print('UPDATE_ECL_IX_MENUS')
         if self.case is None:
             return
+        off_for_ix = {'intersect':False, 'eclipse':True}
+        # copy-case not yet implemented for Intersect cases
+        self.copy_case_act.setEnabled(off_for_ix[host.lower()])
+        # clear-case uses copy-case
+        self.clear_case_act.setEnabled(off_for_ix[host.lower()])
         has_ior_input = IORSim_input(self.case).is_file()
         self.ior_inp_act.setEnabled(has_ior_input)
         # Eclipse
@@ -3204,7 +3262,7 @@ class main_window(QMainWindow):                                    # main_window
         self.data['ior'] = self.init_ior_data()
         # Fix Edit menu
         host = self.get_current_host()
-        self.update_edit_menu_visibility()
+        self.update_menu_visibility(host)
         # Add menu boxes
         #print('menu')
         self.update_ecl_menu()
