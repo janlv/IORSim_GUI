@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QScrollArea, QStatusBar, QDialog, QWidget, QMainW
                                QApplication, QLabel, QPushButton, QGridLayout, QVBoxLayout,
                                QHBoxLayout, QLineEdit, QPlainTextEdit, QDialogButtonBox, QCheckBox,
                                QToolBar, QProgressBar, QGroupBox, QComboBox, QFrame, QFileDialog,
-                               QMessageBox, QProgressDialog)
+                               QMessageBox, QProgressDialog, QSplitter)
 from PySide6.QtGui import (QPalette, QAction, QActionGroup, QColor, QFont, QIcon,
                            QSyntaxHighlighter, QTextCharFormat, QTextCursor, QIntValidator)
 from PySide6.QtCore import (QDir, QCoreApplication, QSize, QObject, Signal, Slot, QRunnable,
@@ -2554,18 +2554,29 @@ class main_window(QMainWindow):                                    # main_window
         self.layout.setSpacing(10)
         self.layout.setColumnStretch(0,20)
         self.layout.setColumnStretch(1,80)
-        self.layout.setRowStretch(0,50)
-        self.layout.setRowStretch(1,50)
+        self.layout.setRowStretch(0,100)
+        #self.layout.setRowStretch(0,50)
+        #self.layout.setRowStretch(1,50)
         widget = QWidget()
         #widget.setStyleSheet('QWidget {border: 1px solid black}')
         widget.setLayout(self.layout)
         self.setCentralWidget(widget)
-        # Create IORSim plot menu
+        # Create IORSim plot menu        
+        menus = QSplitter()
+        menus.setOrientation(Qt.Orientation.Vertical)
+        menus.setChildrenCollapsible(False)
+        #canvas = QSplitter()
+        #canvas.setChildrenCollapsible(False)
+        #self.layout.addWidget(canvas)
+        #canvas.addWidget(menus)
+        self.layout.addWidget(menus)
         self.ior_menu = Menu(parent=self, title='IORSim plot options')
-        self.layout.addWidget(make_scrollable(self.ior_menu), *self.position['ior_menu']) # 
+        menus.addWidget(make_scrollable(self.ior_menu))
+        #self.layout.addWidget(make_scrollable(self.ior_menu), *self.position['ior_menu']) # 
         # Create ECLIPSE plot menu
         self.ecl_menu = Menu(parent=self, title='ECLIPSE plot options')
-        self.layout.addWidget(make_scrollable(self.ecl_menu), *self.position['ecl_menu']) # 
+        menus.addWidget(make_scrollable(self.ecl_menu))
+        #self.layout.addWidget(make_scrollable(self.ecl_menu), *self.position['ecl_menu']) # 
         # Create plot- and file-view area
         self.plot_area = PlotArea(self, fontsize=self.settings.get('fontsize'))
         # Plain editor with no syntax-highlight or save-function
@@ -2593,7 +2604,9 @@ class main_window(QMainWindow):                                    # main_window
         self.log_viewer = Editor(name='log_viewer', read_only=True, size_limit_mb=5)
         self.editors = (self.eclipse_editor, self.ix_editor, self.iorsim_editor, self.editor, self.chem_editor, self.log_viewer)
         # Plot is the default view at startup
-        self.layout.addWidget(self.plot_area, *self.position['plot'])
+        #canvas.addWidget(self.plot_area)
+        self.layout.addWidget(self.plot_area)
+        #self.layout.addWidget(self.plot_area, *self.position['plot'])
 
 
     #-----------------------------------------------------------------------
