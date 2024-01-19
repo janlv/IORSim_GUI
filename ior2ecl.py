@@ -65,7 +65,10 @@ class SLBRunner(Runner):                                                  # SLBR
         #print('eclipse.__init__: ',root, exe, kwargs)
         root = str(root)
         exe = str(exe)
-        super().__init__(name=name, case=root, exe=exe, cmd=[exe, cmd, root], app_name=cmd, **kwargs)
+        #super().__init__(name=name, case=root, exe=exe, cmd=[exe, cmd, root], app_name=cmd, **kwargs)
+        nproc = kwargs.get('nproc')
+        mpi_run = ('--np', nproc) if nproc else ()
+        super().__init__(name=name, case=root, exe=exe, cmd=[exe, *mpi_run, cmd, root], app_name=cmd, **kwargs)
         self.update = kwargs.get('update') or None
         self.unrst = UNRST_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
         self.rft = RFT_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
@@ -1455,7 +1458,8 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
            ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, intersect=0,
-           check_input=False, verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY, **kwargs):
+           check_input=False, verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY, 
+           nproc=None, **kwargs):
 #--------------------------------------------------------------------------------
     """
     Run IORSim with Eclipse/Intersect in forward- or backward-mode. 
@@ -1552,7 +1556,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
                      progress=progress, status=status, message=message, to_screen=to_screen,
                      convert=convert and not only_merge, merge=merge and not only_convert, delete=delete, ecl_keep_alive=ecl_alive,
                      ior_keep_alive=ior_alive, run_names=runs, mode=mode, check_input_kw=check_input, verbose=verbose,
-                     logtag=logtag, skip_empty=skip_empty)
+                     logtag=logtag, skip_empty=skip_empty, nproc=nproc)
     sim.prepare()
     if not sim.ready():
         return

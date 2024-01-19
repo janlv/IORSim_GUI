@@ -181,12 +181,20 @@ class Control_file:
 #====================================================================================
 class Process:                                                              # Process
 #====================================================================================
-    
+
+    @classmethod
+    #--------------------------------------------------------------------------------
+    def find(self, name):                                                   # Process
+    #--------------------------------------------------------------------------------        
+        for proc in psutil.process_iter():
+            if proc.name() == name:
+                return proc
+        
     #--------------------------------------------------------------------------------
     def __init__(self, process=None, pid=None, app_name=None, error_func=None):    # Process
     #--------------------------------------------------------------------------------
         if not process and not pid:
-            raise SyntaxError('Process takes a psutil-process or pid argument')
+            raise SyntaxError("Missing argument in Process-class: 'process' or 'pid' is required")
         self._process = process or psutil.Process(pid=pid)
         self._pid = self._process.pid
         self._name = self._process.name()
@@ -347,21 +355,25 @@ class Process:                                                              # Pr
     #--------------------------------------------------------------------------------
         # Looking for child-processes with a name that match the app_name
         # Only do search if app_name is different from the name of this process  
+        children, time = [], None
         if not self._process:
             if raise_error:
                 raise SystemError('Parent-process missing, unable to look for child-processes')
-            return [], None
+            return children, time
         name = self._app_name.lower()
         # Return if this is the main process
         if self._process.name().lower().startswith(name):
-            return [], None
+            return children, time
         time = None
         for i in range(limit):
+            #print(self)
             sleep(wait)
             if self.is_not_running():
-                raise SystemError(
-                    f'ERROR {self} disappeared while searching for child-processes!'
-                )
+                if raise_error:
+                    raise SystemError(
+                        f'ERROR {self} disappeared while searching for child-processes!'
+                    )
+                return children, time
             children = self._process.children(recursive=True)
             if log:
                 log(children and children or f"  searching for child-process '{name}' ...", v=3)
@@ -496,6 +508,16 @@ class Runner:                                                               # Ru
         if self.keep_alive > 0:
             self.suspend_timer = TimerThread(limit=self.keep_alive, prec=SUSPEND_TIMER_PRECICION, func=self.suspend_active)
 
+    #--------------------------------------------------------------------------------
+    def is_mpi_process(self, wait=0.1):                                # Runner
+    #--------------------------------------------------------------------------------
+        proc = None
+        if '--np ' in ' '.join(self.cmd):
+            attempts = 20
+            while attempts and not (proc:=Process.find('mpirun')):
+                attempts -= 1
+                sleep(wait)
+        return proc
 
     #--------------------------------------------------------------------------------
     def set_processes(self, error_func=None):                                # Runner
@@ -503,7 +525,10 @@ class Runner:                                                               # Ru
         if error_func is None:
             error_func = self.unexpected_stop_error
         # Parent process
-        self.parent = self.main = Process(pid=self.popen.pid, app_name=self.app_name, error_func=error_func)
+        # The 'mpirun' process is the parent if this is a parallel run
+        proc = self.is_mpi_process()
+        pid = None if proc else self.popen.pid
+        self.parent = self.main = Process(pid=pid, process=proc, app_name=self.app_name, error_func=error_func)
         self._print(f'Parent process : {self.parent}, ')
         #self.parent.assert_running()
         # Find child processes (if they exists)
