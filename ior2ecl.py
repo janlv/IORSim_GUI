@@ -67,7 +67,7 @@ class SLBRunner(Runner):                                                  # SLBR
         exe = str(exe)
         #super().__init__(name=name, case=root, exe=exe, cmd=[exe, cmd, root], app_name=cmd, **kwargs)
         nproc = kwargs.get('nproc')
-        mpi_run = ('--np', nproc) if nproc else ()
+        mpi_run = ('--np', str(nproc)) if nproc else ()
         super().__init__(name=name, case=root, exe=exe, cmd=[exe, *mpi_run, cmd, root], app_name=cmd, **kwargs)
         self.update = kwargs.get('update') or None
         self.unrst = UNRST_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
