@@ -60,7 +60,7 @@ class SLBRunner(Runner):                                                  # SLBR
     """ Common runner class for Eclipse and Intersect """
 
     #--------------------------------------------------------------------------------
-    def __init__(self, name='SLB', root=None, exe='eclrun', cmd=None, **kwargs):
+    def __init__(self, root=None, name='SLB', exe='eclrun', cmd=None, **kwargs):
     #--------------------------------------------------------------------------------
         #print('eclipse.__init__: ',root, exe, kwargs)
         root = str(root)
@@ -1066,11 +1066,14 @@ class Simulation:                                                        # Simul
             # The UNRST-file is a merged file that combine Eclipse and IORSim output. 
             # It is recommended to run IORSim from an unmerged Eclipse UNRST-file.
             # Try to recover the original Eclipse output, and turn off merging if it fails.
-            if not Eclipse(self.root).restore_unrst_backup():
+            #if not Eclipse(self.root).restore_unrst_backup():
+            if not SLBRunner(self.root).restore_unrst_backup():
                 do_merge = False
-                warn = ('   ***                    WARNING                       ***\n'
-                        '   *** You are running IORSim on a merged restart-file. ***\n'
-                        '   *** Merging is disabled for the current run          ***\n')
+                warn = ('   --------------------------------------------------------\n'
+                        '   |                       WARNING                        |\n'
+                        '   |  You are running IORSim on a merged restart-file.    |\n'
+                        '   |      Merging is disabled for the current run.        |\n'
+                        '   --------------------------------------------------------\n')
                 print(f'\n{warn}\n')
             else:
                 self.print2log('=====  Original Eclipse UNRST-file restored from backup  =====')
@@ -1278,7 +1281,8 @@ class Simulation:                                                        # Simul
         if self.merge_OK.exists():
             return True, 'Merge already complete!'
         case = Path(case)
-        ecl = self.ecl or Eclipse(root=case) # In case only_iorsim = True
+        ecl = self.ecl or SLBRunner(root=case) # In case only_iorsim = True
+        #ecl = self.ecl or Eclipse(root=case) # In case only_iorsim = True
         ior = self.ior# or Iorsim(root=case)
         missing = [f.name for f in (ecl.unrst.path, ior.unrst.path) if not f.is_file()]
         if missing:
