@@ -24,7 +24,7 @@ from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, RFT_file, Restart, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file, IX_input)
 
-__version__ = '3.7.2'
+__version__ = '3.7.3'
 __author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
