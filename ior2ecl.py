@@ -1419,8 +1419,8 @@ def parse_input(settings_file=None):
     parser.add_argument('-iorexe',         help="Name of IORSim executable, default is 'IORSimX'"                  )
     parser.add_argument('-no_unrst_check', help='Backward mode: do not check flushed UNRST-file', action='store_true')
     parser.add_argument('-no_rft_check',   help='Backward mode: do not check flushed RFT-file', action='store_true')
-    parser.add_argument('-iorsim',         help="Run only IORSim", action='store_true')
-    parser.add_argument('-eclipse',        help="Run only Eclipse", action='store_true')
+    parser.add_argument('-only_iorsim',    help="Run only IORSim", action='store_true')
+    parser.add_argument('-only_host',      help="Run only host simulator", action='store_true')
     parser.add_argument('-intersect',      default=0, help="1: Use Intersect instead of Eclipse, 2: Use Intersect and convert from Eclipse case", type=int)
     parser.add_argument('-v',              default=DEFAULT_LOG_LEVEL, help='Verbosity level, higher number increase verbosity, default is 3', type=int)
     if SCHEDULE_SKIP_EMPTY:
@@ -1463,7 +1463,7 @@ def progress_without_end(text='', length=20):
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
            only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
-           ecl_alive=False, ior_alive=False, only_eclipse=False, only_iorsim=False, intersect=0,
+           ecl_alive=False, ior_alive=False, only_host=False, only_iorsim=False, intersect=0,
            check_input=False, verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY, 
            **kwargs):
 #--------------------------------------------------------------------------------
@@ -1497,7 +1497,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         delete (bool, optional): _description_. Defaults to True.
         ecl_alive (bool, optional): _description_. Defaults to False.
         ior_alive (bool, optional): _description_. Defaults to False.
-        only_eclipse (bool, optional): _description_. Defaults to False.
+        only_host (bool, optional): _description_. Defaults to False.
         only_iorsim (bool, optional): _description_. Defaults to False.
         intersect (int, optional): _description_. Defaults to 0.
         check_input (bool, optional): _description_. Defaults to False.
@@ -1545,9 +1545,9 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
             
     # Check if we only run eclipse or iorsim
     mode, runs = None, ['eclipse', 'iorsim']
-    if only_eclipse or only_iorsim:
+    if only_host or only_iorsim:
         mode = 'forward'
-        runs = ['eclipse'] if only_eclipse else ['iorsim']
+        runs = ['eclipse'] if only_host else ['iorsim']
 
     if intersect and runs[0] == 'eclipse':
         runs[0] = 'intersect'
@@ -1605,11 +1605,15 @@ def main(settings_file=None):
 #--------------------------------------------------------------------------------
     from os import _exit as os_exit
     args = parse_input(settings_file=settings_file)
-    runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), check_rft=(not args['no_rft_check']),  
-           to_screen=args['to_screen'], eclexe=args['eclexe'], iorexe=args['iorexe'],
-           delete=args['delete'], keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'],
-           ecl_alive=args['ecl_alive'] and ECL_ALIVE_LIMIT, ior_alive=args['ior_alive'] and IOR_ALIVE_LIMIT, only_eclipse=args['eclipse'], only_iorsim=args['iorsim'],
-           check_input=args['check_input_kw'], verbose=args['v'], logtag=args['logtag'], skip_empty=args['skip_empty'])
+    runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), 
+           check_rft=(not args['no_rft_check']), to_screen=args['to_screen'], eclexe=args['eclexe'], 
+           iorexe=args['iorexe'], delete=args['delete'], keep_files=args['keep_files'], 
+           only_convert=args['only_convert'], only_merge=args['only_merge'], 
+           ecl_alive=args['ecl_alive'] and ECL_ALIVE_LIMIT, 
+           ior_alive=args['ior_alive'] and IOR_ALIVE_LIMIT, 
+           only_host=args['only_host'], only_iorsim=args['only_iorsim'], 
+           check_input=args['check_input_kw'], verbose=args['v'], logtag=args['logtag'], 
+           skip_empty=args['skip_empty'])
     os_exit(0)
 
 

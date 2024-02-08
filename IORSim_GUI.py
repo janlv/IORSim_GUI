@@ -3,7 +3,7 @@
 
 # Python libraries
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import chain, cycle, product
 from operator import itemgetter
 from pathlib import Path
@@ -719,7 +719,7 @@ class SubPlot():
         'ior' : 'IORSim'}
 
     #-----------------------------------------------------------------------
-    def __init__(self, fig=None, nrows=None, index=None, comb=None, data=None, varbox=None):
+    def __init__(self, fig=None, nrows=None, index=None, comb=None, data=None, varbox=None, dates=False):
     #-----------------------------------------------------------------------
         self.yaxis = {'conc':'Concentration', 'prod':'Production', 'total':'Total', 'cut':'Water cut',
                       'pres':'Pressure', 'rate':'Rate', 'conc_wat':'Concentration in water',
@@ -728,35 +728,44 @@ class SubPlot():
         #print('SUBPLOT', id(self.data))
         self.comb = comb    # namedtuple('comb','kind yaxis well')
         self.varbox = varbox
+        self.dates = dates
         # Add left and right axis
         lax = fig.add_subplot(nrows, 1, index)
         rax = lax.twinx()
-        self.set_title(lax, comb)
-        self.set_labels(lax, rax, comb)
+        self.axes = namedtuple('axes','lax rax')(lax, rax)
+        #self.set_title(lax, comb)
+        #self.set_labels(lax, rax, comb)
+        self.set_title()
+        self.set_labels()
         lax.autoscale_view()
         rax.autoscale_view()
-        self.axes = (lax, rax)
         self.lines = {}
         self.ref_lines = {}
         self.temp = None
 
     #-----------------------------------------------------------------------
-    def set_title(self, lax, comb):                            # SubPlot
+    #def set_title(self, lax, comb):                                # SubPlot
+    def set_title(self):                                # SubPlot
     #-----------------------------------------------------------------------
         #name = 'Eclipse' if comb.kind == 'ecl' else 'IORSim'
-        name = self.names[comb.kind]
-        tag = 'well ' if comb.well != 'FIELD' else ''
-        lax.title.set_text(f'{name}, {tag}{comb.well} {self.yaxis[comb.yaxis]}')
+        name = self.names[self.comb.kind]
+        tag = 'well ' if self.comb.well != 'FIELD' else ''
+        title = f'{name}, {tag}{self.comb.well} {self.yaxis[self.comb.yaxis]}'
+        self.axes.lax.title.set_text(title)
 
     #-----------------------------------------------------------------------
-    def set_labels(self, lax, rax, comb):                           # SubPlot
+    #def set_labels(self, lax, rax, comb):                          # SubPlot
+    def set_labels(self):                                           # SubPlot
     #-----------------------------------------------------------------------
         # Left axis labels
-        lax.set_xlabel('days')
-        lax.set_ylabel(self.ylabel[comb.yaxis + comb.kind])
+        xlabel = 'days'
+        if self.dates:
+            xlabel = 'dates'
+        self.axes.lax.set_xlabel(xlabel)
+        self.axes.lax.set_ylabel(self.ylabel[self.comb.yaxis + self.comb.kind])
         # Right (temperature) axis label
-        rax.ticklabel_format(axis='y', style='plain', useOffset=False) #scilimits=[-1,1])
-        rax.set_ylabel('Temperature [C]')
+        self.axes.rax.ticklabel_format(axis='y', style='plain', useOffset=False) #scilimits=[-1,1])
+        self.axes.rax.set_ylabel('Temperature [C]')
 
     #-----------------------------------------------------------------------
     def update_axes(self):                                         # SubPlot
@@ -884,12 +893,15 @@ class Plots:
         return plot_comb
 
     #-----------------------------------------------------------------------
-    def get_data(self, comb, data):                                 # Plots
+    def get_data(self, comb, data, dates):                                 # Plots
     #-----------------------------------------------------------------------
         #data = data or self._data
         kind = 'ecl' if comb.kind == 'ix' else comb.kind
         welldata = data and (k:=data.get(kind)) and k.get(comb.well)
-        return (welldata.get('days'), welldata.get(comb.yaxis)) if welldata else ([],{})
+        time = 'days'
+        if dates:
+            time = 'dates'
+        return (welldata.get(time), welldata.get(comb.yaxis)) if welldata else ([],{})
         # print('GET_DATA', id(ret), 'id(data)=',id(data), ret[0])
         #return ret
 
@@ -901,7 +913,7 @@ class Plots:
         return comb.well == 'FIELD' or any(sum(var) > MIN_PLOT_VALUE for var in ydata.values())
 
     #-----------------------------------------------------------------------
-    def create(self, data=None, menuboxes=None, only_nonzero=False): # Plots
+    def create(self, data=None, menuboxes=None, only_nonzero=False, dates=False): # Plots
     #-----------------------------------------------------------------------
         # print('PLOTS.CREATE()', id(data))
         self.fig.clf()
@@ -931,7 +943,7 @@ class Plots:
         self.lines = {var:[] for var in varboxes}
         i = 1
         for comb in self.combs:
-            plot = SubPlot(self.fig, self.num, i, comb, self.get_data(comb, data), menuboxes[comb.kind]['var'])
+            plot = SubPlot(self.fig, self.num, i, comb, self.get_data(comb, data, dates), menuboxes[comb.kind]['var'], dates)
             plot.create_lines(self.line_prop)
             for var in plot.lines:
                 self.lines[var].append(plot)
@@ -1026,12 +1038,13 @@ class PlotArea(QGroupBox):
         return False
 
     #-----------------------------------------------------------------------
-    def create(self, data=None, menuboxes=None, only_nonzero=False): # PlotArea
+    def create(self, data=None, menuboxes=None, only_nonzero=False, dates=False): # PlotArea
     #-----------------------------------------------------------------------
         # print('PLOT_AREA.CREATE()', id(data))
         # Keep args if we need to refresh the plot for e.g. font change
-        self.create_args = dict(data=data, menuboxes=menuboxes, only_nonzero=only_nonzero)
-        self.plots.create(data, menuboxes, only_nonzero)
+        self.create_args = dict(data=data, menuboxes=menuboxes, only_nonzero=only_nonzero, dates=dates)
+        #self.plots.create(data, menuboxes, only_nonzero)
+        self.plots.create(**self.create_args)
         if self.ref_data:
             self.add_ref_plot(self.ref_data, draw=False)
         self.draw()
@@ -1078,6 +1091,13 @@ class PlotArea(QGroupBox):
         for plot in self.plots.plot_list:
             plot.axes[0].grid(visible=visible, **kwargs) # can also set color
         self.draw()
+
+    #-----------------------------------------------------------------------
+    def use_dates(self, dates):                  # PlotArea
+    #-----------------------------------------------------------------------
+        if self.create_args:
+            self.create_args['dates'] = dates
+            self.refresh()
 
     #-----------------------------------------------------------------------
     def font_size(self, size):                  # PlotArea
@@ -1441,6 +1461,7 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def set_text_from_file(self):
     #-----------------------------------------------------------------------
+        rest = 500
         text = ''
         self.editor_.set_text_properties() # use default values
         if self.file:
@@ -1448,9 +1469,9 @@ class Editor(QGroupBox):
                 text = read_file(self.file)
                 # Large files will slow down the viewing, so a size-limit is imposed
                 if self.size_limit and (size := Path(self.file).stat().st_size) > (self.size_limit+1024**2):
-                    skipped_mb = (size-self.size_limit-100)/1024**2
-                    text = (text[:self.size_limit] + f'\n --- SKIPPED {skipped_mb:.1f} MB ---\n'
-                            + text[-100:])
+                    skipped_mb = (size-self.size_limit-rest)/1024**2
+                    skipped_txt = f'\n ---\n --- SKIPPED {skipped_mb:.1f} MB \n ---\n'
+                    text = (text[:self.size_limit] + skipped_txt + text[-rest:])
             else:
                 text = f'\nThis file is missing ({self.file})' if self.file else ''
                 self.editor_.set_text_properties(color='gray', style='italic')
@@ -1719,6 +1740,7 @@ class Settings(QDialog):
             'skip_empty': variable('Skip empty DATES/TSTEP entries in the schedule-file', SCHEDULE_SKIP_EMPTY,
                                    'Skip DATES/TSTEP entries in the schedule-file with missing statements', False),
             'grid': variable('Show grid lines', True, 'Toggle grid in plots', False),
+            'dates': variable('Plot dates', False, 'Toggle plotting dates or days along x-axis', False),
             'fontsize': variable('Font size', str(FONT_PLOT), 'Adjust the font size used in plots', False)}
         #'savedir'        : variable('Download directory', None, 'Download location for updates', False),
         self.required = [k for k,v in self.vars.items() if v.required]
@@ -1829,6 +1851,10 @@ class Settings(QDialog):
             if plot_area := getattr(self.parent, 'plot_area', None):
                 plot_area.show_grid(self.get('grid'))
         self.add_items(self.new_checkbox('grid', func=show_grid))
+        def use_dates():
+            if plot_area := getattr(self.parent, 'plot_area', None):
+                plot_area.use_dates(self.get('dates'))
+        self.add_items(self.new_checkbox('dates', func=use_dates))
         def set_font():
             # QComboBox signal sends index as argument
             if plot_area := getattr(self.parent, 'plot_area', None):
@@ -3616,9 +3642,10 @@ class main_window(QMainWindow):                                    # main_window
         wellnames = self.host_input.wellnames()
         # print('WELLNAMES', wellnames)
         field_wells = ('FIELD',) + wellnames
-        ecl = {w:{'days':[]} for w in field_wells}
+        ecl = {w:{'days':[], 'dates':[]} for w in field_wells}
         [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in field_wells]
         ecl['days'] = []
+        ecl['dates'] = []
         # Prod temp refers to rate temp
         for w in wellnames:
             for yaxis in (set(self.ecl_yaxes.values()) - set('rate')):
@@ -3654,12 +3681,14 @@ class main_window(QMainWindow):                                    # main_window
                 # Skip zero-time data
                 start = 1
             data['days'].extend(new_data.days[start:])
+            data['dates'].extend(new_data.dates[start:])
             # print('DAYS', data['days'])
             #for w in set(unsmry.wells):
             # print('WELLS', unsmry.wells)
             for w in unsmry.wells:
                 if well := data.get(w):
                     well['days'].extend(new_data.days[start:])
+                    well['dates'].extend(new_data.dates[start:])
             for val in new_data.values:
                 if well := data.get(val.well):
                     # y = self.ecl_yaxes[val.key[2:4]]
@@ -3935,13 +3964,15 @@ class main_window(QMainWindow):                                    # main_window
         self.ior_files[str(case)] = [file(f'{case}_W_{well}', well, {'conc':0, 'prod':0}) for well in self.out_wells]
         species, tracers = itemgetter('species', 'tracers')(self.input)
         # Initialize IOR data-dict
-        ior = {w:{'days':[]} for w in self.out_wells}
+        ior = {w:{'days':[], 'dates':[]} for w in self.out_wells}
         self.ior_conc = ('conc',)
         if tracers:
             self.ior_conc = tuple('conc_'+f for f in ('wat', 'oil', 'gas'))
         out = ('prod',) + self.ior_conc
         [ior[w].update({o:{sp:[] for sp in species+['Temp']} for o in out}) for w in self.out_wells]
         ior['days'] = []
+        ior['dates'] = []
+        ior['start'] = next(UNRST_file(self.input['root']).dates(), None)
         # Temperature only written to conc-file; prod temp refers to conc temp
         for w in self.out_wells:
             # ior[w]['prod']['Temp'] = ior[w]['conc']['Temp']
@@ -4004,6 +4035,8 @@ class main_window(QMainWindow):                                    # main_window
                     total_days = days[start:]
                 well = data[file.well]
                 well['days'].extend(days[start:])
+                dates = [data['start'] + timedelta(days=day) for day in days[start:]]
+                well['dates'].extend(dates)
                 if len(cdata) > nvar_conc + 1:
                     temp = cdata[-1]
                     #well['conc']['Temp'].extend(temp[start:])
@@ -4015,6 +4048,8 @@ class main_window(QMainWindow):                                    # main_window
                 # Save position to avoid reading same data again 
                 file.skip['conc'], file.skip['prod'] = pos
         data['days'].extend(total_days)
+        total_dates = [data['start'] + timedelta(days=day) for day in total_days]
+        data['dates'].extend(total_dates)
         if all(data[w]['prod']=={} for w in self.out_wells):
             return False
         return True
@@ -4044,7 +4079,7 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------                
         #print('CREATE_PLOT', self.menu_boxes.keys())
         #self.plot_area.create(self.data, self.menu_boxes, only_nonzero=not self.worker)
-        self.plot_area.create(self.data, self.menu_boxes, only_nonzero=False)
+        self.plot_area.create(self.data, self.menu_boxes, only_nonzero=False, dates=self.settings.get('dates'))
         self.plot_area.show_grid(self.settings.get('grid'))
             
     #-----------------------------------------------------------------------
