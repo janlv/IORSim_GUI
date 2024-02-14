@@ -552,7 +552,7 @@ class Iorsim(Runner):                                                        # i
         super().__init__(name='IORSim', case=root, exe=exe, app_name=app_name, cmd=cmd, time_regex=regex, **kwargs)
         self.update = kwargs.get('update') or None
         self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
-        self.unrst = UNRST_file(self.funrst.path)
+        self.unrst = UNRST_file(self.funrst.path, end='SATNUM')
         self.input_file = IORSim_input(root, check=True, check_format=kwargs.get('check_input_kw') or False)
         if self.update and (warn:=self.input_file.warnings):
             self.update.message(warn)
@@ -1045,7 +1045,7 @@ class Simulation:                                                        # Simul
             self.end_time = sum(tsteps) + self.restart.days
         else:
             # This is a forward IORSim run
-            self.end_time = UNRST_file(self.root).end_time()
+            self.end_time = min(UNRST_file(self.root).end_time(), self.IOR_inp.get('INTEGRATION').tstop)
         kwargs.update({'end_time':self.end_time})
         for name in self.run_names:
             if name == 'eclipse':

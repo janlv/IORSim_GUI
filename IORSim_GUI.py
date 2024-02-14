@@ -1461,7 +1461,7 @@ class Editor(QGroupBox):
     #-----------------------------------------------------------------------
     def set_text_from_file(self):
     #-----------------------------------------------------------------------
-        rest = 500
+        rest = 10*1024
         text = ''
         self.editor_.set_text_properties() # use default values
         if self.file:
@@ -1470,7 +1470,7 @@ class Editor(QGroupBox):
                 # Large files will slow down the viewing, so a size-limit is imposed
                 if self.size_limit and (size := Path(self.file).stat().st_size) > (self.size_limit+1024**2):
                     skipped_mb = (size-self.size_limit-rest)/1024**2
-                    skipped_txt = f'\n ---\n --- SKIPPED {skipped_mb:.1f} MB \n ---\n'
+                    skipped_txt = f'\n !!!\n !!! SKIPPED {skipped_mb:.1f} MB \n !!!\n'
                     text = (text[:self.size_limit] + skipped_txt + text[-rest:])
             else:
                 text = f'\nThis file is missing ({self.file})' if self.file else ''

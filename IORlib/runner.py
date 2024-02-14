@@ -489,7 +489,9 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def unexpected_stop_error(self, **kwargs):                               # Runner
     #--------------------------------------------------------------------------------
-        raise SystemError(f'ERROR {self.name} stopped unexpectedly' + (self.log and f', check {Path(self.log.name).name} for details' or '') )
+        raise SystemError(f'ERROR {self.name} stopped unexpectedly after {self.time()} days'
+                          + (self.log and f', check {Path(self.log.name).name} for details' or '') 
+                          )
 
 
     #--------------------------------------------------------------------------------
