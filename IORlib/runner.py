@@ -505,7 +505,8 @@ class Runner:                                                               # Ru
             self.stdin = self.popen.stdin
         else:
             self._print(f"Starting \'{' '.join(self.cmd)}\'", v=1)
-            self.popen = Popen(self.cmd, stdout=self.log, stderr=STDOUT)
+            self.popen = Popen(self.cmd, stdout=self.log, stderr=self.log)
+            #self.popen = Popen(self.cmd, stdout=self.log, stderr=STDOUT)
         self.set_processes(error_func=error_func)
         if self.keep_alive > 0:
             self.suspend_timer = TimerThread(limit=self.keep_alive, prec=SUSPEND_TIMER_PRECICION, func=self.suspend_active)
@@ -750,10 +751,10 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
         # terminate children before parent
         #procs = self.children + (self.parent and [self.parent] or []) 
-        for p in self.active:
+        for process in self.active:
             try:
-                self._print(f'Killing {p.name()}...', end='', v=v)
-                p.kill()
+                self._print(f'Killing {process}...', end='', v=v)
+                process.kill()
                 self._print('done', tag='', v=v)
             except (psutil.NoSuchProcess, ProcessLookupError):
                 self._print('process already gone', tag='', v=v)            

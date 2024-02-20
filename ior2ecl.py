@@ -34,6 +34,9 @@ COPY_CHEMFILE = True
 SCHEDULE_SKIP_EMPTY = False
 
 # Constants
+IOR_RESTART_NAMETAG = '_IORSim_PLOT'
+SLB_BACKUP_NAMETAG = '_SLB'
+IOR_RESTART_ENDKEY = 'SATNUM'
 # Default sleep-time during file-flush checks. Too low value might lead to errors on some systems.
 CHECK_PAUSE = 0.01
 # Interface-file from IORSim with statements for next Eclipse run
@@ -78,7 +81,7 @@ class SLBRunner(Runner):                                                  # SLBR
         self.msg = MSG_file(root)
         self.prt = PRT_file(root)
         self.input_file = None
-        self.unrst_backup_file = Path(f'{root}_{self.name.upper()}.UNRST')
+        # self.unrst_backup_file = Path(f'{root}_{self.name.upper()}.UNRST')
         self.is_iorsim = False
         self.is_eclipse = False
         self.is_intersect = False
@@ -123,18 +126,18 @@ class SLBRunner(Runner):                                                  # SLBR
         if self.update:
             self.update.status(value=f'{self.name} running...')
 
-    #--------------------------------------------------------------------------------
-    def make_unrst_backup(self):                                          # SLBRunner
-    #--------------------------------------------------------------------------------
-        self.unrst.path.replace(self.unrst_backup_file)
+    # #--------------------------------------------------------------------------------
+    # def make_unrst_backup(self):                                          # SLBRunner
+    # #--------------------------------------------------------------------------------
+    #     self.unrst.path.replace(self.unrst_backup_file)
 
-    #--------------------------------------------------------------------------------
-    def restore_unrst_backup(self):                                       # SLBRunner
-    #--------------------------------------------------------------------------------
-        if self.unrst_backup_file.exists():
-            self.unrst_backup_file.replace(self.unrst.path)
-            return True
-        return False
+    # #--------------------------------------------------------------------------------
+    # def restore_unrst_backup(self):                                       # SLBRunner
+    # #--------------------------------------------------------------------------------
+    #     if self.unrst_backup_file.exists():
+    #         self.unrst_backup_file.replace(self.unrst.path)
+    #         return True
+    #     return False
 
 
 #====================================================================================
@@ -551,8 +554,8 @@ class Iorsim(Runner):                                                        # i
         regex = r'\bTime\b:\s+([0-9.e+-]+)'
         super().__init__(name='IORSim', case=root, exe=exe, app_name=app_name, cmd=cmd, time_regex=regex, **kwargs)
         self.update = kwargs.get('update') or None
-        self.funrst = FUNRST_file(abs_root+'_IORSim_PLOT')
-        self.unrst = UNRST_file(self.funrst.path, end='SATNUM')
+        #self.funrst = FUNRST_file(abs_root+IOR_RESTART_TAG)
+        #self.unrst = UNRST_file(self.funrst.path, end=IOR_UNRST_END)
         self.input_file = IORSim_input(root, check=True, check_format=kwargs.get('check_input_kw') or False)
         if self.update and (warn:=self.input_file.warnings):
             self.update.message(warn)
@@ -585,7 +588,7 @@ class Iorsim(Runner):                                                        # i
         if COPY_CHEMFILE:
             for file in set(self.input_file.include_files()):
                 dest = Path.cwd()/file.name
-                if not dest.exists(): # and not dest.samefile(file):
+                if not dest.exists() or (dest.exists() and not dest.samefile(file)):
                     shutil_copy(file, dest)
                     self.copied_chemfiles.append(dest)
                     self._print(f'Copied chemfile: {file} -> {dest}')
@@ -605,7 +608,9 @@ class Iorsim(Runner):                                                        # i
         case = str(self.case)
         delete_files_matching(case+'*.trcconc', raise_error=raise_error)
         delete_files_matching(case+'*.trcprd', raise_error=raise_error)
-        silentdelete(self.funrst.path, self.unrst.path)
+        restart = Path(str(self.case)+IOR_RESTART_NAMETAG)
+        silentdelete( *(restart.with_suffix(x) for x in ('.FUNRST', '.UNRST')) )
+        #silentdelete(self.funrst.path, self.unrst.path)
 
 
     #--------------------------------------------------------------------------------
@@ -613,6 +618,7 @@ class Iorsim(Runner):                                                        # i
     #--------------------------------------------------------------------------------
         super().close()
         # Delete chem-files copied to working directory
+        self._print(f'Removing chemfiles: {self.copied_chemfiles}')
         silentdelete(*self.copied_chemfiles)
 
 
@@ -922,13 +928,14 @@ class Simulation:                                                        # Simul
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, mode=None, root=None, pause=0, run_names=(), to_screen=False,
-                 convert=True, merge=True, del_convert=False, del_merge=False, delete=False,
-                 status=lambda **x:None, progress=lambda **x:None, plot=lambda **x:None,
-                 message=lambda **x:None, intersect=0, host_inp=None, ior_inp=None, **kwargs):
+                 status=lambda **x:None, progress=lambda **x:None,
+                 plot=lambda **x:None, message=lambda **x:None, intersect=0, host_inp=None,
+                 ior_inp=None, **kwargs):
     #--------------------------------------------------------------------------------
         #print('Simulation', 'mode',mode,'root',root,'pause',pause,'run_names',run_names,'to_screen',to_screen,
         #      'convert',convert,'merge',merge,'del_merge',del_merge,'del_convert',del_convert,
         #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
+
         self.logname = 'ior2ecl'
         self.root = Path(root).with_suffix('').resolve()
         #input_kwargs = dict(check=True)
@@ -940,13 +947,14 @@ class Simulation:                                                        # Simul
             self.ECL_inp = host_inp or DATA_file(self.root, check=True)
         if 'iorsim' in run_names:
             self.IOR_inp = ior_inp or IORSim_input(self.root, check=True)
-        self.merge_OK = self.root.with_name(MERGE_OK_FILE)
+        self.output = Output(self.root, progress=progress, status=status, **kwargs)
+        #self.merge_OK = self.root.with_name(MERGE_OK_FILE)
         self.update = namedtuple('update',['progress','plot','message','status'])(progress, plot, message, status)
         #self.update = namedtuple('update',['status','progress','plot','message'])(status, progress, plot, message)
         self.pause = pause
-        if delete:
-            del_convert = del_merge = True
-        self.output = namedtuple('output',['convert','merge','del_convert','del_merge'])(convert, merge, del_convert, del_merge)
+        # self.convert = convert
+        # self.merge = merge
+        #self.output = namedtuple('output',['convert','merge','del_convert','del_merge'])(convert, merge, del_convert, del_merge)
         self.runlog = None
         if self.root and not to_screen:
             logtag = kwargs.get('logtag')
@@ -1062,12 +1070,13 @@ class Simulation:                                                        # Simul
     def forward(self):                                                   # Simulation
     #--------------------------------------------------------------------------------
         do_merge = True
-        if self.merge_OK.is_file() and self.only_iorsim:
-            # The UNRST-file is a merged file that combine Eclipse and IORSim output. 
+        if self.output.merge_OK.is_file() and self.only_iorsim:
+            # The current UNRST-file is a merge of Eclipse and IORSim output. 
             # It is recommended to run IORSim from an unmerged Eclipse UNRST-file.
             # Try to recover the original Eclipse output, and turn off merging if it fails.
             #if not Eclipse(self.root).restore_unrst_backup():
-            if not SLBRunner(self.root).restore_unrst_backup():
+            #if not SLBRunner(self.root).restore_unrst_backup():
+            if not self.output.restore_unrst_backup():
                 do_merge = False
                 warn = ('   --------------------------------------------------------\n'
                         '   |                       WARNING                        |\n'
@@ -1079,7 +1088,7 @@ class Simulation:                                                        # Simul
                 self.print2log('=====  Original Eclipse UNRST-file restored from backup  =====')
         if do_merge:
             # Delete the merge_OK-file to allow a new merge of Eclipse and IORSim output
-            silentdelete(self.merge_OK)
+            silentdelete(self.output.merge_OK)
         run_time = timedelta()
         ret = ''
         self.update.progress(value=-self.end_time, min=self.restart.days)
@@ -1107,6 +1116,8 @@ class Simulation:                                                        # Simul
     def init_backward_run(self, iorexe=None, eclexe=None, ior_keep_alive=False,
                           ecl_keep_alive=False, time=0, **kwargs):       # Simulation
     #--------------------------------------------------------------------------------
+        if time is None:
+            raise SystemError("ERROR Missing 'time' argument")
         tsteps = self.ECL_inp.timesteps()
         init_days = sum(tsteps) + self.restart.days
         if time > init_days:
@@ -1128,7 +1139,7 @@ class Simulation:                                                        # Simul
     #--------------------------------------------------------------------------------
     def backward(self):                                                  # Simulation
     #--------------------------------------------------------------------------------
-        silentdelete(self.merge_OK)
+        silentdelete(self.output.merge_OK)
         self.update.progress(value=-self.end_time)
         ecl, ior = self.runs
         # Start runs
@@ -1164,6 +1175,16 @@ class Simulation:                                                        # Simul
             run.quit()
         return ecl.complete_msg()
 
+
+    # #--------------------------------------------------------------------------------
+    # def set_output(self):                                                       # Simulation
+    # #--------------------------------------------------------------------------------
+    #     # Create output for convert and merge if this is an IORSim run
+    #     if ior := (run for run in self.runs if run.is_iorsim):
+    #         self.output.set_update_functions(cancel=ior.stop_if_canceled, 
+    #                                          progress=self.update.progress, 
+    #                                          reset=self.update.progress, 
+    #                                          status=self.update.status)
 
     #--------------------------------------------------------------------------------
     def run(self):                                                       # Simulation
@@ -1208,9 +1229,8 @@ class Simulation:                                                        # Simul
             #print('DONE')
             self.update.plot()
             try:
-                if self.output.convert and success and any(run.is_iorsim for run in self.runs):
-                    sleep(0.05)  # Need a short break here to make the GUI progressbar responsive
-                    conv_msg = self.convert_and_merge(case=self.root)
+                if success:
+                    conv_msg = self.convert_and_merge()
             except SystemError as error:
                 self.update.message(f'{error}')
             finally:
@@ -1220,119 +1240,20 @@ class Simulation:                                                        # Simul
 
 
     #--------------------------------------------------------------------------------
-    def convert_and_merge(self, case=None): # Simulation
+    def convert_and_merge(self):                                         # Simulation
     #--------------------------------------------------------------------------------
-        func = []
-        if self.output.convert:
-            func.append(self.convert_restart)
-        if self.output.merge:
-            func.append(self.merge_restart)            
-        for f in func:
-            success, msg = f(case=case)
-            self.print2log(f'\n=====  {msg}  =====')
-            self.update.status(value=msg, newline=True)
+        ior = [run for run in self.runs if run.is_iorsim]
+        # Post-process only for IORSim runs
+        if not ior:
+            return ''
+        for func in self.output.post_process:
+            sleep(0.05)  # Need a short break to make the GUI progressbar responsive
+            success = getattr(self.output, func)(cancel=ior[0].stop_if_canceled)
+            self.print2log(f'\n=====  {self.output.msg}  =====')
+            #self.update.status(value=msg, newline=True)
             if not success:
-                return msg
+                return self.output.msg
         return ''
-
-
-    #--------------------------------------------------------------------------------
-    def convert_restart(self, case=None, check=False):         # Simulation
-    #--------------------------------------------------------------------------------
-        ### Convert from formatted (ascii) to unformatted (binary) restart file
-        self.update.status(value='Converting restart file...')
-        ior = self.ior or Iorsim(root=case)
-        self.ior = ior
-        if ior.unrst.is_file():
-            return True, 'INFO Convert already complete!'
-        if not ior.funrst.is_file():
-            return False, f'ERROR Unable to convert IORSim output: {ior.funrst.path} is missing'
-        start = datetime.now()
-        try:
-            ior.unrst = ior.funrst.as_UNRST(rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
-                                            progress=lambda n: self.update.progress(value=n),
-                                            cancel=ior.stop_if_canceled)
-            if check:
-                first, = next(ior.unrst.read('step'))
-                last, = next(ior.unrst.read('step', tail=True))
-                passed = ior.unrst.check.blocks_complete(nblocks=last-first+1, only_new=False)
-                #self.print2log(ior.unrst.check.info())
-                if not passed:
-                    raise SystemError(f'ERROR Converted file {ior.unrst} did not pass the check!')
-        except (Exception, KeyboardInterrupt) as error:
-            silentdelete(ior.unrst.path)
-            msg = str(error)
-            if isinstance(error, KeyboardInterrupt) or 'run stopped' in msg.lower():
-                return False, 'Convert cancelled'
-            raise SystemError(f'ERROR Unable to convert IORSim restart: {error}') from error
-        if self.output.del_convert:
-            silentdelete(ior.funrst.path)
-        return True, 'Convert complete, process-time was '+str(datetime.now()-start).split('.')[0]
-
-
-    #--------------------------------------------------------------------------------
-    def merge_restart(self, case=None, check=False):                     # Simulation
-    #--------------------------------------------------------------------------------
-        # Merge Eclipse and IORSim restart files
-        #self.update.progress(value=0)   # Reset progress time
-        self.update.progress()   # Reset progress time
-        sleep(0.05) # Give progress-bar time to respond
-        self.update.status(value='Merging Eclipse and IORSim restart files...')
-        if self.merge_OK.exists():
-            return True, 'Merge already complete!'
-        case = Path(case)
-        ecl = self.ecl or SLBRunner(root=case) # In case only_iorsim = True
-        #ecl = self.ecl or Eclipse(root=case) # In case only_iorsim = True
-        ior = self.ior# or Iorsim(root=case)
-        missing = [f.name for f in (ecl.unrst.path, ior.unrst.path) if not f.is_file()]
-        if missing:
-            return False, f'Unable to merge restart files due to missing files: {", ".join(missing)}'
-        try:
-            starttime = datetime.now()
-            error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files'
-            #ecl_backup = Path(f'{case}_ECLIPSE.UNRST')
-            ### The merged file ends with SATNUM (IORSim UNRST) instead of ENDSOL (Eclipse UNRST)
-            merge_unrst = UNRST_file(f'{case}_MERGED.UNRST', end=ior.unrst.end)
-            ### Reset progress-bar
-            end = min(next(x.unrst.read('step', tail=True))[0] for x in (ecl, ior))
-            self.update.progress(value=-end)
-            ### Use the same start index for both files/sections
-            start = max(next(x.unrst.read('step'))[0] for x in (ecl, ior))
-            ### Define the sections in the restart file where the stitching is done
-            ecl_sec = ecl.unrst.sections(start_before='SEQNUM',  end_before='SEQNUM', begin=start)
-            ior_sec = ior.unrst.sections(start_after='DOUBHEAD', end_before='SEQNUM', begin=start)
-            ### Create merged UNRST file
-            merged_file = merge_unrst.create(sections=(ecl_sec, ior_sec),
-                                             progress=lambda n: self.update.progress(value=n),
-                                             cancel=ior.stop_if_canceled)
-            merge_unrst.assert_no_duplicates(raise_error=False)
-            if check:
-                msg = merge_unrst.check.data_saved(nblocks=end, limit=1, wait_func=ior.wait_for)
-                if msg:
-                    raise SystemError(f'ERROR Merged file did not pass the test: {msg}')
-            if merged_file and merged_file.is_file():
-                ### Backup the original Eclipse UNRST-file
-                #ecl.unrst.path.replace(ecl_backup)
-                ecl.unrst.path.replace(ecl.unrst_backup_file)
-                ### Rename the merged UNRST to the original Eclipse UNRST
-                merged_file.replace(ecl.unrst.path)
-            else:
-                return False, error_msg
-        except (Exception, KeyboardInterrupt) as error:
-            ### Delete merged file
-            silentdelete(merge_unrst.path)
-            if isinstance(error, KeyboardInterrupt):
-                return False, 'Merge cancelled'
-            if DEBUG:
-                trace_print_exc()
-            raise SystemError(f'{error_msg}: {error}') from error
-            #raise SystemError(f'{error_msg}: {exc_info()[1]}')
-        if self.output.del_merge:
-            #silentdelete(ecl_backup, ior.unrst.path)
-            silentdelete(ecl.unrst_backup_file, ior.unrst.path)
-        ### Create this file to avoid re-merging the merged UNRST-file 
-        self.merge_OK.touch()
-        return True, 'Merge complete, process-time was '+str(datetime.now()-starttime).split('.')[0]
 
 
     #--------------------------------------------------------------------------------
@@ -1352,7 +1273,6 @@ class Simulation:                                                        # Simul
             s += self.skiprest and ' (SKIPREST)' or ''
         s += '\n'
         if self.IOR_inp:
-            #dtmin, dtmax = self.IOR_inp.get('dtmin_ecl', 'dtmax_ecl')
             ior = self.IOR_inp.get('INTEGRATION')
             s += f'    {"Timestep":{width}}: {ior.dtmin}{(f" - {ior.dtmax}" if ior.dtmin!=ior.dtmax else "")} days\n'
         s += (self.schedule and self.schedule.sch_file) and f'    {"Schedule":{width}}: start={self.schedule.start.date()}, days={self.schedule.end}{(self.schedule.skip_empty and ", skip empty entries" or "")}\n' or ''
@@ -1399,6 +1319,210 @@ class Simulation:                                                        # Simul
     #         self.runlog and self.runlog.close()
 
 
+#====================================================================================
+class Output:                                                                # Output
+#====================================================================================
+    #--------------------------------------------------------------------------------
+    def __init__(self, root, convert=True, merge=True, del_convert=True, del_merge=True, 
+                 progress=None, status=None, **kwargs):
+    #--------------------------------------------------------------------------------
+        #self.output = namedtuple('output',['convert','merge','del_convert','del_merge'])(convert, merge, del_convert, del_merge)
+        root = Path(root).with_suffix('').resolve()
+        self.ior_funrst = FUNRST_file(str(root)+IOR_RESTART_NAMETAG)
+        self.ior_unrst = UNRST_file(self.ior_funrst.path, end=IOR_RESTART_ENDKEY)
+        self.slb_unrst = UNRST_file(root)
+        self.slb_unrst_backup = UNRST_file(str(root)+SLB_BACKUP_NAMETAG)
+        self.merge_unrst = UNRST_file(f'{root}_MERGED.UNRST', end=self.ior_unrst.end)
+        if not convert:
+            merge = False
+        self.post_process = [k for k,v in {'convert':convert, 'merge':merge}.items() if v]
+        self.merge_OK = root.with_name(MERGE_OK_FILE)
+        self.del_convert = del_convert
+        self.del_merge = del_merge
+        self.progress = progress or self.progress_
+        self.status = status or self.status_
+        self.msg = ''
+        self.prog = Progress(format='40#')
+        self.starttime = None
+
+    #--------------------------------------------------------------------------------
+    def progress_(self, value=None, head=None):                                          # Output
+    #--------------------------------------------------------------------------------
+        if value is None:
+            self.prog.reset_time()
+        elif value < 0:
+            self.prog.reset(N=abs(value))
+        else:
+            self.prog.print(value, head=head)
+
+    #--------------------------------------------------------------------------------
+    def status_(self, value=None, **kwargs):                                            # Output
+    #--------------------------------------------------------------------------------
+        value = value.replace('INFO','').strip()
+        print('\r   '+value+(80-len(value))*' ', end='\n' if kwargs.get('newline') else '')
+
+    #--------------------------------------------------------------------------------
+    def restore_unrst_backup(self):                                          # Output
+    #--------------------------------------------------------------------------------
+        if self.slb_unrst_backup.exists():
+            self.slb_unrst_backup.replace(self.slb_unrst.path)
+            return True
+        return False
+            
+    #--------------------------------------------------------------------------------
+    def process_time(self):
+    #--------------------------------------------------------------------------------
+        return str(datetime.now()-self.starttime).split('.')[0]
+    
+    #--------------------------------------------------------------------------------
+    def convert(self, limit=50, filesize=10, delete=None, **kwargs):         # Output
+    #--------------------------------------------------------------------------------
+        if delete is None:
+            delete = self.del_convert
+        if self.ior_unrst.is_file():
+            self.msg = 'INFO Convert already complete!'
+            self.status(value=self.msg, newline=True)
+            return True 
+        if not self.ior_funrst.is_file():
+            self.msg = f'ERROR Unable to convert IORSim output: {self.ior_funrst} is missing'
+            self.status(value=self.msg, newline=True)
+            return False
+        # Check size of the FUNRST-file
+        self.starttime = datetime.now()
+        if self.ior_funrst.size() > limit*1024**3:
+            # Split large FUNRST-files to limit temporary storage during convert
+            self.status(value='Splitting large formatted restart file...')
+            split_files = self.ior_funrst.split(size=filesize, 
+                            progress=lambda n: self.progress(value=n, head='Split'))
+            self.status(value=f'Converting {len(split_files)} restart files...')
+            #unrst_files = [self.convert_file(FUNRST_file(file), **kwargs) for file in split_files]
+            funrst_files = (FUNRST_file(file) for file in split_files)
+            #unrst_files = list(self.convert_file(*split_files, **kwargs))
+            with open(self.ior_unrst.path, 'wb') as outfile:
+                for unrst, funrst in self.convert_file(*funrst_files, **kwargs): #unrst_files:
+                    outfile.write(unrst.binarydata())
+                    if delete:
+                        funrst.delete()
+                        #silentdelete(*split_files)
+        else:
+            # Convert single file
+            self.status(value='Converting restart file...')
+            self.ior_unrst, _ = next(self.convert_file(self.ior_funrst, **kwargs))
+        if delete:
+            silentdelete(self.ior_funrst.path)
+        return True
+
+    #--------------------------------------------------------------------------------
+    def convert_file(self, *funrst_files:FUNRST_file, cancel=lambda:None, check=False):         # Output
+    #--------------------------------------------------------------------------------
+        # Convert from formatted (ascii) to unformatted (binary) restart file
+        # if delete is None:
+        #     delete = self.del_convert
+        self.msg = ''
+        self.progress()   # Reset progress
+        #start = datetime.now()
+        for n, funrst in enumerate(funrst_files):
+            unrst = UNRST_file(funrst.path, end=IOR_RESTART_ENDKEY)
+            try:
+                head = 'Convert'
+                if (N:=len(funrst_files)) > 1:
+                    head += f' {n+1: 2d}/{N}'
+                unrst = funrst.as_UNRST(
+                            rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
+                            progress=lambda n: self.progress(value=n, head=head),
+                            cancel=cancel)
+                #unrst.end_step()
+                if check:
+                    first, = next(unrst.read('step'))
+                    last, = next(unrst.read('step', tail=True))
+                    passed = unrst.check.blocks_complete(nblocks=last-first+1, only_new=False)
+                    #self.print2log(ior.unrst.check.info())
+                    if not passed:
+                        raise SystemError(f'ERROR Converted file {unrst} did not pass the check!')
+            except (Exception, KeyboardInterrupt) as error:
+                # Convert failed or cancelled, delete converted file
+                silentdelete(unrst.path)
+                msg = str(error)
+                if isinstance(error, KeyboardInterrupt) or 'run stopped' in msg.lower():
+                    self.msg = 'Convert cancelled'
+                    return False 
+                raise SystemError(f'ERROR Unable to convert IORSim restart: {error}') from error
+            yield unrst, funrst
+        #time = str(datetime.now()-self.starttime).split('.')[0]
+        self.msg = f'Convert complete, process-time was {self.process_time()}'
+        self.status(value=self.msg, newline=True)
+        #return unrst
+
+
+    #--------------------------------------------------------------------------------
+    def merge(self, cancel=lambda:None, check=False, delete=None, force=False):                    # Output
+    #--------------------------------------------------------------------------------
+        # Merge Eclipse and IORSim restart files
+        if delete is None:
+            delete = self.del_merge
+        if force:
+            silentdelete(self.merge_OK)
+        self.msg = ''
+        self.progress()   # Reset progress
+        self.status(value='Merging Eclipse and IORSim restart files...')
+        if self.merge_OK.exists():
+            self.msg = 'Merge already complete!'
+            self.status(value=self.msg, newline=True)
+            return True 
+        unrst_files = (self.slb_unrst, self.ior_unrst)
+        missing = [file.name for file in unrst_files if not file.is_file()]
+        if missing:
+            self.msg = f'Unable to merge restart files due to missing files: {", ".join(missing)}'
+            self.status(value=self.msg, newline=True)
+            return False
+        try:
+            self.starttime = datetime.now()
+            error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files'
+            # The merged file ends with SATNUM (IORSim UNRST) instead of ENDSOL (Eclipse UNRST)
+            # Total number of blocks is step + 1 since SEQNUM starts a 0
+            end = 1 + min(next(file.read('step', tail=True))[0] for file in unrst_files)
+            self.progress(value=-end)
+            # Use the same start index for both files/sections
+            start = max(next(file.read('step'))[0] for file in unrst_files)
+            # Define the sections in the restart file where the stitching is done
+            slb_sec = self.slb_unrst.sections(start_before='SEQNUM',  end_before='SEQNUM', begin=start)
+            ior_sec = self.ior_unrst.sections(start_after='DOUBHEAD', end_before='SEQNUM', begin=start)
+            # Create merged UNRST file
+            merged_file = self.merge_unrst.merge(sections=(slb_sec, ior_sec),
+                                progress=lambda n: self.progress(value=n, head='Merge'),
+                                cancel=cancel)
+            self.merge_unrst.assert_no_duplicates(raise_error=False)
+            if check:
+                passed = self.merge_unrst.check.blocks_complete(nblocks=end, only_new=False)
+                if not passed:
+                    raise SystemError(f'ERROR Merged file did not pass the test!')
+            if merged_file and merged_file.is_file():
+                # Backup the original Eclipse UNRST-file
+                self.slb_unrst.replace(self.slb_unrst_backup.path)
+                # Rename the merged UNRST to the original root.UNRST
+                merged_file.replace(self.slb_unrst.path)
+            else:
+                return False, error_msg
+        except (Exception, KeyboardInterrupt) as error:
+            # Merge failed or cancelled, delete merged file
+            silentdelete(self.merge_unrst.path)
+            if isinstance(error, KeyboardInterrupt):
+                return False, 'Merge cancelled'
+            if DEBUG:
+                trace_print_exc()
+            raise SystemError(f'{error_msg}: {error}') from error
+            #raise SystemError(f'{error_msg}: {exc_info()[1]}')
+        if delete:
+            silentdelete(self.slb_unrst_backup.path, self.ior_unrst.path)
+        # Create file to avoid re-merging of merged UNRST-files 
+        self.merge_OK.touch()
+        self.msg = f'Merge complete, process-time was {self.process_time()}' #+str(datetime.now()-starttime).split('.')[0]
+        self.status(value=self.msg, newline=True)
+        return True
+
+
+
+
 
 #############################################################################
 #                                                                           #
@@ -1429,9 +1553,10 @@ def parse_input(settings_file=None):
         parser.add_argument('-skip_empty', help='Skip schedule-file entries with no statements', action='store_true')
     parser.add_argument('-keep_files',     help='Interface-files are not deleted after completion', action='store_true')
     parser.add_argument('-to_screen',      help='Print program log to screen', action='store_true')
-    parser.add_argument('-only_convert',   help='Only convert+merge and exit', action='store_true')
-    parser.add_argument('-only_merge',     help='Only merge and exit', action='store_true')
-    parser.add_argument('-delete',         help='Delete obsolete output files after convert and merge has finished', action='store_true')
+    # parser.add_argument('-only_convert',   help='Only convert+merge and exit', action='store_true')
+    # parser.add_argument('-only_merge',     help='Only merge and exit', action='store_true')
+    parser.add_argument('-keep_merge',     help='Keep the separate UNRST-files (IX/ECL and IORSim) after successful merge', action='store_true')
+    parser.add_argument('-keep_convert',   help='Keep the FUNRST-file created by IORSim after successful convert', action='store_true')
     parser.add_argument('-ecl_alive',      help=f'Keep Eclipse alive at least {ECL_ALIVE_LIMIT} seconds', action='store_true')
     parser.add_argument('-ior_alive',      help='Keep IORSim alive', action='store_true')
     parser.add_argument('-check_input',    help='Check IORSim input file keywords', action='store_true', dest='check_input_kw')
@@ -1462,7 +1587,7 @@ def progress_without_end(text='', length=20):
 #--------------------------------------------------------------------------------
 def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
-           only_convert=False, only_merge=False, convert=True, merge=True, delete=True,
+           convert=True, del_convert=True, merge=True, del_merge=True,
            ecl_alive=False, ior_alive=False, only_host=False, only_iorsim=False, intersect=0,
            check_input=False, verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY, 
            **kwargs):
@@ -1560,16 +1685,17 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
     sim = Simulation(root=root, time=time, iorexe=iorexe, eclexe=eclexe,
                      check_unrst=check_unrst, check_rft=check_rft, keep_files=keep_files, 
                      progress=progress, status=status, message=message, to_screen=to_screen,
-                     convert=convert and not only_merge, merge=merge and not only_convert, delete=delete, ecl_keep_alive=ecl_alive,
-                     ior_keep_alive=ior_alive, run_names=runs, mode=mode, check_input_kw=check_input, verbose=verbose,
+                     convert=convert, merge=merge, del_merge=del_merge, del_convert=del_convert, 
+                     ecl_keep_alive=ecl_alive, ior_keep_alive=ior_alive, 
+                     run_names=runs, mode=mode, check_input_kw=check_input, verbose=verbose,
                      logtag=logtag, skip_empty=skip_empty, **kwargs)
     sim.prepare()
     if not sim.ready():
         return
 
-    if only_convert or only_merge:
-        sim.convert_and_merge(case=sim.root)
-        return
+    # if only_convert or only_merge:
+    #     sim.convert_and_merge()
+    #     return
 
     if not to_screen:
         print(sim.info_header(long_lognames=running_jupyter()))
@@ -1607,8 +1733,8 @@ def main(settings_file=None):
     args = parse_input(settings_file=settings_file)
     runsim(root=args['root'], time=args['days'], check_unrst=(not args['no_unrst_check']), 
            check_rft=(not args['no_rft_check']), to_screen=args['to_screen'], eclexe=args['eclexe'], 
-           iorexe=args['iorexe'], delete=args['delete'], keep_files=args['keep_files'], 
-           only_convert=args['only_convert'], only_merge=args['only_merge'], 
+           iorexe=args['iorexe'], del_merge=(not args['keep_merge']), del_convert=(not args['keep_convert']), 
+           keep_files=args['keep_files'], only_convert=args['only_convert'], only_merge=args['only_merge'], 
            ecl_alive=args['ecl_alive'] and ECL_ALIVE_LIMIT, 
            ior_alive=args['ior_alive'] and IOR_ALIVE_LIMIT, 
            only_host=args['only_host'], only_iorsim=args['only_iorsim'], 
