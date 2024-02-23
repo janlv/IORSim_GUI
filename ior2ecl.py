@@ -1374,26 +1374,31 @@ class Output:                                                                # O
         return str(datetime.now()-self.starttime).split('.')[0]
     
     #--------------------------------------------------------------------------------
+    def message(self, msg, newline=True):
+    #--------------------------------------------------------------------------------
+        self.msg = msg
+        self.status(value=self.msg, newline=newline)
+
+    #--------------------------------------------------------------------------------
     def convert(self, delete=None, check=False, **kwargs):         # Output
     #--------------------------------------------------------------------------------
         if delete is None:
             delete = self.del_convert
         if self.ior_unrst.is_file():
-            self.msg = 'INFO Convert already complete!'
-            self.status(value=self.msg, newline=True)
+            self.message('INFO Convert already complete!')
             return True 
         if not self.ior_funrst.is_file():
-            self.msg = f'ERROR Unable to convert IORSim output: {self.ior_funrst} is missing'
-            self.status(value=self.msg, newline=True)
+            self.message(f'ERROR Unable to convert IORSim output: {self.ior_funrst} is missing')
             return False
         self.starttime = datetime.now()
         try:
             # Convert file
             self.status(value='Converting restart file...')
-            self.ior_unrst = self.ior_funrst.as_unrst(
-                                rename=((b'TEMP',b'TEMP_IOR'),),
-                                progress=lambda n: self.progress(value=n, head='Convert'),
-                                **kwargs)
+            unrst = self.ior_funrst.as_unrst(
+                        rename=((b'TEMP',b'TEMP_IOR'),),
+                        progress=lambda n: self.progress(value=n, head='Convert'),
+                        **kwargs)
+            self.ior_unrst.path = unrst.path
             if check:
                 sim = INIT_file(self.root).simulator()
                 input = {'ecl':DATA_file, 'ix':IX_input}[sim](self.root)
@@ -1408,93 +1413,11 @@ class Output:                                                                # O
             silentdelete(self.ior_unrst.path)
             msg = str(error)
             if isinstance(error, KeyboardInterrupt) or 'run stopped' in msg.lower():
-                self.msg = 'Convert cancelled'
-                self.status(value=self.msg, newline=True)
+                self.message('Convert cancelled')
                 return False 
             raise SystemError(f'ERROR Unable to convert IORSim restart: {error}') from error
-        self.msg = f'Convert complete, process-time was {self.process_time()}'
-        self.status(value=self.msg, newline=True)
+        self.message(f'Convert complete, process-time was {self.process_time()}')
         return True
-
-    # #--------------------------------------------------------------------------------
-    # def convert(self, limit=50, filesize=25, buffer=50, delete=None, 
-    #             check=False, **kwargs):                                      # Output
-    # #--------------------------------------------------------------------------------
-    #     limit *= 1024**3 # Unit is GB
-    #     if delete is None:
-    #         delete = self.del_convert
-    #     if self.ior_unrst.is_file():
-    #         self.msg = 'INFO Convert already complete!'
-    #         self.status(value=self.msg, newline=True)
-    #         return True 
-    #     if not self.ior_funrst.is_file():
-    #         self.msg = f'ERROR Unable to convert IORSim output: {self.ior_funrst} is missing'
-    #         self.status(value=self.msg, newline=True)
-    #         return False
-    #     # Check size of the FUNRST-file
-    #     self.starttime = datetime.now()
-    #     try:
-    #         if (fsize:=self.ior_funrst.size()) > limit:
-    #             # Split large FUNRST-files to limit temporary storage during convert
-    #             self.status(value=f'Splitting large ({fsize/1024**3:.0f} GB) formatted restart file...')
-    #             split_files = self.ior_funrst.split(size=filesize, buffer=buffer,
-    #                             progress=lambda n: self.progress(value=n, head='Split'))
-    #             self.status(value=f'Converting {len(split_files)} restart files...')
-    #             funrst_files = (FUNRST_file(file) for file in split_files)
-    #             with open(self.ior_unrst.path, 'wb') as outfile:
-    #                 # Convert the funrst files in a loop
-    #                 for unrst, funrst in self.convert_files(*funrst_files, **kwargs): 
-    #                     # Write the unrst files to the main unrst-file 
-    #                     outfile.write(unrst.binarydata())
-    #                     # Always delete the temporary unrst file
-    #                     unrst.delete()
-    #                     if delete:
-    #                         # Optionally delete the temporary funrst-file                         
-    #                         funrst.delete()
-    #         else:
-    #             # Convert single file
-    #             self.status(value='Converting restart file...')
-    #             self.ior_unrst, _ = next(self.convert_files(self.ior_funrst, **kwargs))
-    #         if check:
-    #             sim = INIT_file(self.root).simulator()
-    #             input = {'ecl':DATA_file, 'ix':IX_input}[sim](self.root)
-    #             passed = list(self.ior_unrst.dates()) == input.report_dates()
-    #             if not passed:
-    #                 raise SystemError(f'ERROR Converted file {self.ior_unrst} did not pass the check.'
-    #                                     + ' The report dates does not match the input file.')
-    #         if delete:
-    #             silentdelete(self.ior_funrst.path)
-    #     except (SystemError, KeyboardInterrupt) as error:
-    #         # Convert failed or cancelled, delete converted file
-    #         silentdelete(self.ior_unrst.path)
-    #         msg = str(error)
-    #         if isinstance(error, KeyboardInterrupt) or 'run stopped' in msg.lower():
-    #             self.msg = 'Convert cancelled'
-    #             self.status(value=self.msg, newline=True)
-    #             return False 
-    #         raise SystemError(f'ERROR Unable to convert IORSim restart: {error}') from error
-    #     self.msg = f'Convert complete, process-time was {self.process_time()}'
-    #     self.status(value=self.msg, newline=True)
-    #     return True
-
-    # #--------------------------------------------------------------------------------
-    # def convert_files(self, *funrst_files:FUNRST_file, cancel=lambda:None, 
-    #                   check=False):                                          # Output
-    # #--------------------------------------------------------------------------------
-    #     # Convert from formatted (ascii) to unformatted (binary) restart file
-    #     self.msg = ''
-    #     self.progress()   # Reset progress
-    #     for n, funrst in enumerate(funrst_files):
-    #         unrst = UNRST_file(funrst.path, end=IOR_RESTART_ENDKEY)
-    #         # try:
-    #         head = 'Convert'
-    #         if (N:=len(funrst_files)) > 1:
-    #             head += f' {n+1: 2d}/{N}'
-    #         unrst = funrst.as_UNRST(
-    #                     rename_duplicate=True, rename_key=('TEMP','TEMP_IOR'),
-    #                     progress=lambda n: self.progress(value=n, head=head),
-    #                     cancel=cancel)
-    #         yield unrst, funrst
 
 
     #--------------------------------------------------------------------------------
