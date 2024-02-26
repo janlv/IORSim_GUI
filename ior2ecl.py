@@ -37,7 +37,7 @@ SCHEDULE_SKIP_EMPTY = False
 # Constants
 IOR_RESTART_NAMETAG = '_IORSim_PLOT'
 SLB_BACKUP_NAMETAG = '_SLB'
-IOR_RESTART_ENDKEY = 'SATNUM'
+#IOR_RESTART_ENDKEY = 'SATNUM'
 # Default sleep-time during file-flush checks. Too low value might lead to errors on some systems.
 CHECK_PAUSE = 0.01
 # Interface-file from IORSim with statements for next Eclipse run
@@ -1329,7 +1329,7 @@ class Output:                                                                # O
     #--------------------------------------------------------------------------------
         self.root = Path(root).with_suffix('').resolve()
         self.ior_funrst = FUNRST_file(str(root)+IOR_RESTART_NAMETAG)
-        self.ior_unrst = UNRST_file(self.ior_funrst.path, end=IOR_RESTART_ENDKEY)
+        self.ior_unrst = UNRST_file(self.ior_funrst.path) #, end=IOR_RESTART_ENDKEY)
         self.slb_unrst = UNRST_file(root)
         self.slb_unrst_backup = UNRST_file(str(root)+SLB_BACKUP_NAMETAG)
         # The merged file ends with SATNUM (IORSim UNRST) instead of ENDSOL (Eclipse UNRST)
@@ -1444,7 +1444,7 @@ class Output:                                                                # O
         self.status(value='Merging Eclipse and IORSim restart files...')
         if self.merge_OK.exists():
             self.message('Merge already complete!')
-            return True 
+            return True
         unrst_files = (self.slb_unrst, self.ior_unrst)
         missing = [file.name for file in unrst_files if not file.is_file()]
         if missing:
@@ -1454,15 +1454,18 @@ class Output:                                                                # O
             self.starttime = datetime.now()
             error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files'
             # Find the common first step-index to use for both files/sections
-            begin, fileind = max((next(file.read('step'))[0], i) for i,file in enumerate(unrst_files))
+            #begin, fileind = max((next(file.read('step'))[0], i) for i,file in enumerate(unrst_files))
+            begin, fileind = max((next(file.seqnum()), i) for i,file in enumerate(unrst_files))
             # Get the number of sections from the file with the highest initial step-index
             nsec = unrst_files[fileind].count_sections()
             self.progress(value=-nsec)
             # Define the sections in the restart file where the stitching is done
+            # Get end-keyword of the IORSim-file
+            self.merge_unrst.end = ior_end = next(self.ior_unrst.tail_blocks()).key()
             slb_data = self.slb_unrst.section_data(start=('SEQNUM'  , 'startpos'), end=('ENDSOL', 'endpos'), begin=begin)
-            ior_data = self.ior_unrst.section_data(start=('DOUBHEAD', 'endpos')  , end=('SATNUM', 'endpos'), begin=begin)
+            ior_data = self.ior_unrst.section_data(start=('DOUBHEAD', 'endpos')  , end=(ior_end, 'endpos'), begin=begin)
             # Create merged UNRST file
-            merged_file = self.merge_unrst.merge2(slb_data, ior_data, 
+            merged_file = self.merge_unrst.merge(slb_data, ior_data,
                                                   progress=lambda n: self.progress(value=n, head='Merge'),
                                                   cancel=cancel)
             self.merge_unrst.assert_no_duplicates(raise_error=False)
