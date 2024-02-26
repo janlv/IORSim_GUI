@@ -488,7 +488,7 @@ class sim_worker(base_worker):
     def runnable(self):
     #---------------------------------------------------------------------
         #------------------------------------
-        def progress(run=None, value=None, min=None, n0=None):
+        def progress(run=None, value=None, min=None, n0=None, **kwargs):
         #------------------------------------
             if run:
                 value = run.t
@@ -906,10 +906,10 @@ class Plots:
         #return ret
 
     #-----------------------------------------------------------------------
-    def nonzero_data(self, comb, data):                              # Plots
+    def nonzero_data(self, comb, data, dates):                              # Plots
     #-----------------------------------------------------------------------
         # print('NONZERO_DATA')
-        ydata = self.get_data(comb, data)[1]
+        ydata = self.get_data(comb, data, dates)[1]
         return comb.well == 'FIELD' or any(sum(var) > MIN_PLOT_VALUE for var in ydata.values())
 
     #-----------------------------------------------------------------------
@@ -927,7 +927,7 @@ class Plots:
                     wellbox.setEnabled(True)
         if only_nonzero:
             # Remove combinations with all zero values
-            nonzero = [comb for comb in self.combs if self.nonzero_data(comb, data)]
+            nonzero = [comb for comb in self.combs if self.nonzero_data(comb, data, dates)]
             nz_kind_well = [(c.kind, c.well) for c in nonzero]
             # Disable wellboxes with no data
             zero = (c for c in set(self.combs)-set(nonzero) if not (c.kind, c.well) in nz_kind_well)
@@ -1046,7 +1046,7 @@ class PlotArea(QGroupBox):
         #self.plots.create(data, menuboxes, only_nonzero)
         self.plots.create(**self.create_args)
         if self.ref_data:
-            self.add_ref_plot(self.ref_data, draw=False)
+            self.add_ref_plot(self.ref_data, dates, draw=False)
         self.draw()
 
     #-----------------------------------------------------------------------
@@ -1064,12 +1064,12 @@ class PlotArea(QGroupBox):
         self.draw()
 
     #-----------------------------------------------------------------------
-    def add_ref_plot(self, data, draw=True):                                 # PlotArea
+    def add_ref_plot(self, data, dates=False, draw=True):                                 # PlotArea
     #-----------------------------------------------------------------------
         self.ref_data = data
         plots = self.plots
         for comb, plot in zip(plots.combs, plots.plot_list):
-            plot.create_ref_lines(plots.get_data(comb, data=data))
+            plot.create_ref_lines(plots.get_data(comb, data, dates))
         if draw:
             self.draw()
 
@@ -1087,7 +1087,7 @@ class PlotArea(QGroupBox):
     #-----------------------------------------------------------------------
         kwargs = {}
         if visible:
-            kwargs = dict(alpha=alpha)
+            kwargs = {'alpha':alpha}
         for plot in self.plots.plot_list:
             plot.axes[0].grid(visible=visible, **kwargs) # can also set color
         self.draw()
@@ -3125,7 +3125,7 @@ class main_window(QMainWindow):                                    # main_window
             # ECL
             ecl = self.init_ecl_data(case=case)
             self.read_ecl_data(case=case, data=ecl)
-            self.plot_area.add_ref_plot({'ecl':ecl, 'ior':ior})
+            self.plot_area.add_ref_plot({'ecl':ecl, 'ior':ior}, dates=self.settings.get('dates'))
 
                 
     @show_error
@@ -3972,7 +3972,7 @@ class main_window(QMainWindow):                                    # main_window
         [ior[w].update({o:{sp:[] for sp in species+['Temp']} for o in out}) for w in self.out_wells]
         ior['days'] = []
         ior['dates'] = []
-        ior['start'] = next(UNRST_file(self.input['root']).dates(), None)
+        ior['start'] = next(UNRST_file(self.input['root']).dates(), datetime.now())
         # Temperature only written to conc-file; prod temp refers to conc temp
         for w in self.out_wells:
             # ior[w]['prod']['Temp'] = ior[w]['conc']['Temp']
@@ -4045,7 +4045,7 @@ class main_window(QMainWindow):                                    # main_window
                     well['prod'][var].extend(pvals[start:])
                 for (var,yax), cvals in zip(product(species, self.ior_conc), conc):
                     well[yax][var].extend(cvals[start:])
-                # Save position to avoid reading same data again 
+                # Save position to avoid reading same data again
                 file.skip['conc'], file.skip['prod'] = pos
         data['days'].extend(total_days)
         total_dates = [data['start'] + timedelta(days=day) for day in total_days]
