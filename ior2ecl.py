@@ -14,6 +14,7 @@ from traceback import print_exc as trace_print_exc, format_exc as trace_format_e
 from re import compile as re_compile, MULTILINE, finditer
 from os.path import relpath
 from threading import Thread
+from struct import error as struct_error
 
 from psutil import NoSuchProcess
 
@@ -1417,7 +1418,7 @@ class Output:                                                                # O
                 self.check(self.ior_unrst)
             if delete:
                 silentdelete(self.ior_funrst.path)
-        except (SystemError, KeyboardInterrupt) as error:
+        except (SystemError, KeyboardInterrupt, struct_error) as error:
             # Convert failed or cancelled, delete converted file
             silentdelete(self.ior_unrst.path)
             msg = str(error)
