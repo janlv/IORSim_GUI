@@ -1331,6 +1331,7 @@ class Output:                                                                # O
         self.ior_unrst = UNRST_file(self.ior_funrst.path, end=IOR_RESTART_ENDKEY)
         self.slb_unrst = UNRST_file(root)
         self.slb_unrst_backup = UNRST_file(str(root)+SLB_BACKUP_NAMETAG)
+        # The merged file ends with SATNUM (IORSim UNRST) instead of ENDSOL (Eclipse UNRST)
         self.merge_unrst = UNRST_file(f'{root}_MERGED.UNRST', end=self.ior_unrst.end)
         if not convert:
             merge = False
@@ -1393,7 +1394,7 @@ class Output:                                                                # O
                                 + ' The report dates does not match the input file.')
 
     #--------------------------------------------------------------------------------
-    def convert(self, delete=None, check=False, **kwargs):         # Output
+    def convert(self, delete=None, check=False, **kwargs):                   # Output
     #--------------------------------------------------------------------------------
         if delete is None:
             delete = self.del_convert
@@ -1414,12 +1415,6 @@ class Output:                                                                # O
             self.ior_unrst.path = unrst.path
             if check:
                 self.check(self.ior_unrst)
-                # sim = INIT_file(self.root).simulator()
-                # input = {'ecl':DATA_file, 'ix':IX_input}[sim](self.root)
-                # passed = list(self.ior_unrst.dates()) == input.report_dates()
-                # if not passed:
-                #     raise SystemError(f'ERROR Converted file {self.ior_unrst} did not pass the check.'
-                #                         + ' The report dates does not match the input file.')
             if delete:
                 silentdelete(self.ior_funrst.path)
         except (SystemError, KeyboardInterrupt) as error:
@@ -1435,7 +1430,8 @@ class Output:                                                                # O
 
 
     #--------------------------------------------------------------------------------
-    def merge(self, cancel=lambda:None, check=False, delete=None, force=False):                    # Output
+    def merge(self, cancel=lambda:None, check=False, delete=None, 
+              force=False):                                                  # Output
     #--------------------------------------------------------------------------------
         # Merge Eclipse and IORSim restart files
         if delete is None:
@@ -1447,44 +1443,30 @@ class Output:                                                                # O
         self.status(value='Merging Eclipse and IORSim restart files...')
         if self.merge_OK.exists():
             self.message('Merge already complete!')
-            # self.msg = 'Merge already complete!'
-            # self.status(value=self.msg, newline=True)
             return True 
         unrst_files = (self.slb_unrst, self.ior_unrst)
         missing = [file.name for file in unrst_files if not file.is_file()]
         if missing:
             self.message(f'Unable to merge restart files due to missing files: {", ".join(missing)}')
-            # self.msg = f'Unable to merge restart files due to missing files: {", ".join(missing)}'
-            # self.status(value=self.msg, newline=True)
             return False
         try:
             self.starttime = datetime.now()
             error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files'
-            # The merged file ends with SATNUM (IORSim UNRST) instead of ENDSOL (Eclipse UNRST)
-            # Total number of blocks is step + 1 since SEQNUM starts a 0
-            #end = 1 + min(next(file.read('step', tail=True))[0] for file in unrst_files)
-            # self.progress(value=-end)
             # Find the common first step-index to use for both files/sections
             begin, fileind = max((next(file.read('step'))[0], i) for i,file in enumerate(unrst_files))
             # Get the number of sections from the file with the highest initial step-index
             nsec = unrst_files[fileind].count_sections()
             self.progress(value=-nsec)
             # Define the sections in the restart file where the stitching is done
-            #slb_sec = self.slb_unrst.sections(start_before='SEQNUM',  end_before='SEQNUM', begin=start)
-            #ior_sec = self.ior_unrst.sections(start_after='DOUBHEAD', end_before='SEQNUM', begin=start)
             slb_data = self.slb_unrst.section_data(start=('SEQNUM'  , 'startpos'), end=('ENDSOL', 'endpos'), begin=begin)
             ior_data = self.ior_unrst.section_data(start=('DOUBHEAD', 'endpos')  , end=('SATNUM', 'endpos'), begin=begin)
             # Create merged UNRST file
-            # merged_file = self.merge_unrst.merge(sections=(slb_sec, ior_sec),
             merged_file = self.merge_unrst.merge2(slb_data, ior_data, 
                                                   progress=lambda n: self.progress(value=n, head='Merge'),
                                                   cancel=cancel)
             self.merge_unrst.assert_no_duplicates(raise_error=False)
             if check:
                 self.check(self.merge_unrst)
-                # passed = self.merge_unrst.check.blocks_complete(nblocks=end, only_new=False)
-                # if not passed:
-                #     raise SystemError(f'ERROR Merged file did not pass the test!')
             # if merged_file and merged_file.is_file():
             if merged_file.is_file():
                 # Backup the original Eclipse UNRST-file
@@ -1508,8 +1490,6 @@ class Output:                                                                # O
         # Create file to avoid re-merging of merged UNRST-files 
         self.merge_OK.touch()
         self.message(f'Merge complete, process-time was {self.process_time()}')
-        # self.msg = f'Merge complete, process-time was {self.process_time()}'
-        # self.status(value=self.msg, newline=True)
         return True
 
 
