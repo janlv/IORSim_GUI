@@ -3039,7 +3039,7 @@ class main_window(QMainWindow):                                    # main_window
         progress.setMinimumDuration(0)
         #progress.setWindowModality(Qt.WindowModal)
         progress.open()
-        status = IX_input.from_eclipse(self.case, progress=lambda x: progress.setValue(x), abort=progress.wasCanceled)
+        status, log = IX_input.from_eclipse(self.case, progress=lambda x: progress.setValue(x), abort=progress.wasCanceled)
         self.convert_status = int(status)
         progress.close()
 

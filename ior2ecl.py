@@ -1348,7 +1348,7 @@ class Output:                                                                # O
         self.report_dates = None # Used in check()
 
     #--------------------------------------------------------------------------------
-    def progress_(self, value=None, head=None):                                          # Output
+    def progress_(self, value=None, head=None):                              # Output
     #--------------------------------------------------------------------------------
         if value is None:
             self.prog.reset_time()
@@ -1461,7 +1461,8 @@ class Output:                                                                # O
             self.progress(value=-nsec)
             # Define the sections in the restart file where the stitching is done
             # Get end-keyword of the IORSim-file
-            self.merge_unrst.end = ior_end = next(self.ior_unrst.tail_blocks()).key()
+            #self.merge_unrst.end = ior_end = next(self.ior_unrst.tail_blocks()).key()
+            self.merge_unrst.end = ior_end = next(self.ior_unrst.section_blocks())[-1].key()
             slb_data = self.slb_unrst.section_data(start=('SEQNUM'  , 'startpos'), end=('ENDSOL', 'endpos'), begin=begin)
             ior_data = self.ior_unrst.section_data(start=('DOUBHEAD', 'endpos')  , end=(ior_end, 'endpos'), begin=begin)
             # Create merged UNRST file
@@ -1625,7 +1626,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
     prog = Progress(format='40#')
 
     #----------------------------------------
-    def progress(run=None, value=None, min=None, n0=None):
+    def progress(run=None, value=None, head=None, min=None, n0=None):
     #----------------------------------------
         #print('progress in:', value, min, n0)
         if n0 is not None:
@@ -1642,7 +1643,7 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
                 return
             # elif value==0:
             #     prog.reset_time(min=prog.min)
-            prog.print(value, text=run and f'({run.name})' or '')
+            prog.print(value, head=head, text=run and f'({run.name})' or '')
             
     # Check if we only run eclipse or iorsim
     mode, runs = None, ['eclipse', 'iorsim']
@@ -1655,8 +1656,11 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
 
     if intersect > 1 and IX_input.need_convert(root):
         conv_prog = progress_without_end(text='   Convert Eclipse case to Intersect', length=20)
-        IX_input.from_eclipse(root, progress=conv_prog, freq=10)
+        success, log = IX_input.from_eclipse(root, progress=conv_prog, freq=10)
         print('\r' + ' '*80, end='')
+        if not success:
+            raise SystemError(f'ERROR Unable to create Intersect input, check the log {log}')
+            
 
     sim = Simulation(root=root, time=time, iorexe=iorexe, eclexe=eclexe,
                      check_unrst=check_unrst, check_rft=check_rft, keep_files=keep_files, 
