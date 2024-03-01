@@ -1410,7 +1410,7 @@ class Output:                                                                # O
             # Convert file
             self.status(value='Converting restart file...')
             unrst = self.ior_funrst.as_unrst(
-                        rename=((b'TEMP',b'TEMP_IOR'),),
+                        rename=((b'TEMP    ', b'TEMP_IOR'),),
                         progress=lambda n: self.progress(value=n, head='Convert'),
                         **kwargs)
             self.ior_unrst.path = unrst.path
@@ -1454,17 +1454,17 @@ class Output:                                                                # O
             self.starttime = datetime.now()
             error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files'
             # Find the common first step-index to use for both files/sections
-            #begin, fileind = max((next(file.read('step'))[0], i) for i,file in enumerate(unrst_files))
-            begin, fileind = max((next(file.seqnum()), i) for i,file in enumerate(unrst_files))
+            begin, fileind = max((next(file.steps()), i) for i,file in enumerate(unrst_files))
             # Get the number of sections from the file with the highest initial step-index
-            nsec = unrst_files[fileind].count_sections()
-            self.progress(value=-nsec)
+            num_sec = unrst_files[fileind].count_sections() - begin
+            self.progress(value=-num_sec)
             # Define the sections in the restart file where the stitching is done
             # Get end-keyword of the IORSim-file
             #self.merge_unrst.end = ior_end = next(self.ior_unrst.tail_blocks()).key()
             self.merge_unrst.end = ior_end = next(self.ior_unrst.section_blocks())[-1].key()
             slb_data = self.slb_unrst.section_data(start=('SEQNUM'  , 'startpos'), end=('ENDSOL', 'endpos'), begin=begin)
-            ior_data = self.ior_unrst.section_data(start=('DOUBHEAD', 'endpos')  , end=(ior_end, 'endpos'), begin=begin)
+            ior_data = self.ior_unrst.section_data(start=('DOUBHEAD', 'endpos')  , end=(ior_end,  'endpos'), begin=begin, 
+                                                   rename=((b'TEMP    ',b'TEMP_IOR'),))
             # Create merged UNRST file
             merged_file = self.merge_unrst.merge(slb_data, ior_data,
                                                   progress=lambda n: self.progress(value=n, head='Merge'),
@@ -1472,7 +1472,6 @@ class Output:                                                                # O
             self.merge_unrst.assert_no_duplicates(raise_error=False)
             if check:
                 self.check(self.merge_unrst)
-            # if merged_file and merged_file.is_file():
             if merged_file.is_file():
                 # Backup the original Eclipse UNRST-file
                 self.slb_unrst.replace(self.slb_unrst_backup.path)
@@ -1480,7 +1479,7 @@ class Output:                                                                # O
                 merged_file.replace(self.slb_unrst.path)
             else:
                 self.message(error_msg)
-                return False #, error_msg
+                return False
         except (Exception, KeyboardInterrupt) as error:
             # Merge failed or cancelled, delete merged file
             silentdelete(self.merge_unrst.path)
