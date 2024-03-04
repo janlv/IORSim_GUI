@@ -295,8 +295,8 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
                 self.update_function(progress=not restart, plot=True)
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
         # Get number of wells from UNRST-file
-        #self.nwell = self.unrst.get('nwell')[0][-1]
-        self.nwell = next(self.unrst.read('nwell', tail=True))[0]
+        #self.nwell = next(self.unrst.read('nwell', tail=True))[0]
+        self.nwell = next(self.unrst.read2('nwell', tail=True))
         # Wait for flushed RFT-file
         msg = self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, niter=RFT_CHECK_NITER, pause=CHECK_PAUSE)
         if msg:
@@ -1460,8 +1460,14 @@ class Output:                                                                # O
             self.progress(value=-num_sec)
             # Define the sections in the restart file where the stitching is done
             # Get end-keyword of the IORSim-file
-            #self.merge_unrst.end = ior_end = next(self.ior_unrst.tail_blocks()).key()
-            self.merge_unrst.end = ior_end = next(self.ior_unrst.section_blocks())[-1].key()
+            ior_end_block = next(self.ior_unrst.tail_blocks(), None)
+            # Currently, the UNRST file from IORSim use wrong payload sizes
+            # and we need to apply a fix before merging 
+            if not ior_end_block:
+                self.status(value=f'Fixing errors in {self.ior_unrst}...')
+                self.ior_unrst.fix_errors()
+                ior_end_block = next(self.ior_unrst.tail_blocks())
+            self.merge_unrst.end = ior_end = ior_end_block.key()
             slb_data = self.slb_unrst.section_data(start=('SEQNUM'  , 'startpos'), end=('ENDSOL', 'endpos'), begin=begin)
             ior_data = self.ior_unrst.section_data(start=('DOUBHEAD', 'endpos')  , end=(ior_end,  'endpos'), begin=begin, 
                                                    rename=((b'TEMP    ',b'TEMP_IOR'),))
