@@ -333,7 +333,8 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
             nblocks = 1
             if nwell:
                 #self.nwell = nblocks = self.unrst.get('nwell')[0][-1]
-                self.nwell = nblocks = next(self.unrst.read('nwell', tail=True))[0]
+                #self.nwell = nblocks = next(self.unrst.read('nwell', tail=True))[0]
+                self.nwell = nblocks = next(self.unrst.read2('nwell', tail=True))
                 #print(nwell)
             msg = self.rft.check.data_saved_maxmin(nblocks=nblocks, niter=RFT_CHECK_NITER, pause=CHECK_PAUSE)
             if msg:
