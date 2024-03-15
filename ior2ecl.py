@@ -1458,7 +1458,6 @@ class Output:                                                                # O
             return False
         try:
             self.starttime = datetime.now()
-            #error_msg = 'ERROR Unable to merge Eclipse and IORSim restart files'
             # Find the common first step-index to use for both files/sections
             begin, fileind = max((next(file.steps()), i) for i,file in enumerate(unrst_files))
             # Get the number of sections from the file with the highest initial step-index
@@ -1470,7 +1469,7 @@ class Output:                                                                # O
             # (causing tail_blocks to fail), and we apply a fix before merging 
             if not ior_end_block:
                 self.status(value=f'Fixing errors in {self.ior_unrst}...')
-                self.ior_unrst.fix_errors()
+                num_fix = self.ior_unrst.fix_errors()
                 ior_end_block = next(self.ior_unrst.tail_blocks())
             self.merge_unrst.end = ior_end = ior_end_block.key()
             # Define the sections in the restart file where the stitching is done
