@@ -1466,7 +1466,7 @@ class Output:                                                                # O
             # Get end-keyword of the IORSim-file
             ior_end_block = next(self.ior_unrst.tail_blocks(), None)
             # Currently, the UNRST file from IORSim use wrong payload sizes
-            # (causing tail_blocks to fail), and we apply a fix before merging 
+            # which cause tail_blocks() to fail. We need to apply a fix before merging 
             if not ior_end_block:
                 self.status(value=f'Fixing errors in {self.ior_unrst}...')
                 num_fix = self.ior_unrst.fix_errors()

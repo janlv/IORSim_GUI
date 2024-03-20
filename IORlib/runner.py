@@ -515,12 +515,20 @@ class Runner:                                                               # Ru
     def is_mpi_process(self, wait=0.1):                                # Runner
     #--------------------------------------------------------------------------------
         proc = None
-        if '--np ' in ' '.join(self.cmd):
-            attempts = 20
-            while attempts and not (proc:=Process.find('mpirun')):
-                attempts -= 1
+        cmd = ' '.join(self.cmd)
+        # Only mpirun if np > 1
+        if '--np ' in cmd and int(cmd.split('--np ')[-1][0]) > 1:
+            # attempts = 20
+            # while attempts and not (proc:=Process.find('mpirun')):
+            #     attempts -= 1
+            #     sleep(wait)
+            n = 0
+            while n < 20:
+                if proc:=Process.find('mpirun'):
+                    return proc
                 sleep(wait)
-        return proc
+                n += 1
+        #return proc
 
     #--------------------------------------------------------------------------------
     def set_processes(self, error_func=None):                                # Runner
