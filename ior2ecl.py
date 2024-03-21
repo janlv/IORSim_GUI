@@ -1459,10 +1459,13 @@ class Output:                                                                # O
         try:
             self.starttime = datetime.now()
             # Find the common first step-index to use for both files/sections
-            begin, fileind = max((next(file.steps()), i) for i,file in enumerate(unrst_files))
+            #begin, fileind = max((next(file.steps()), i) for i,file in enumerate(unrst_files))
             # Get the number of sections from the file with the highest initial step-index
-            num_sec = unrst_files[fileind].count_sections() - begin
-            self.progress(value=-num_sec)
+            #num_sec = unrst_files[fileind].count_sections()# - begin
+            num_sec = [file.count_sections() for file in unrst_files]
+            if len(set(num_sec)) > 1:
+                self.message(f'WARNING Merging files have different lengths: {num_sec}')
+            self.progress(value=-max(num_sec))
             # Get end-keyword of the IORSim-file
             ior_end_block = next(self.ior_unrst.tail_blocks(), None)
             # Currently, the UNRST file from IORSim use wrong payload sizes
@@ -1473,9 +1476,9 @@ class Output:                                                                # O
                 ior_end_block = next(self.ior_unrst.tail_blocks())
             self.merge_unrst.end = ior_end = ior_end_block.key()
             # Define the sections in the restart file where the stitching is done
-            slb_data = self.slb_unrst.section_data2(start=('SEQNUM'  , 'startpos'), end=('ENDSOL', 'endpos'), begin=begin)
-            ior_data = self.ior_unrst.section_data2(start=('DOUBHEAD', 'endpos')  , end=(ior_end,  'endpos'), begin=begin, 
-                                                   rename=((b'TEMP    ',b'TEMP_IOR'),))
+            slb_data = self.slb_unrst.section_data2(start=('SEQNUM'  , 'startpos'), end=('ENDSOL', 'endpos')) #, begin=begin)
+            ior_data = self.ior_unrst.section_data2(start=('DOUBHEAD', 'endpos')  , end=(ior_end,  'endpos'),
+                                                    rename=((b'TEMP    ',b'TEMP_IOR'),))
             # Create merged UNRST file
             merged_file = self.merge_unrst.merge(slb_data, ior_data,
                                                   progress=lambda n: self.progress(value=n, head='Merge'),
