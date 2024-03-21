@@ -1473,8 +1473,8 @@ class Output:                                                                # O
                 ior_end_block = next(self.ior_unrst.tail_blocks())
             self.merge_unrst.end = ior_end = ior_end_block.key()
             # Define the sections in the restart file where the stitching is done
-            slb_data = self.slb_unrst.section_data(start=('SEQNUM'  , 'startpos'), end=('ENDSOL', 'endpos'), begin=begin)
-            ior_data = self.ior_unrst.section_data(start=('DOUBHEAD', 'endpos')  , end=(ior_end,  'endpos'), begin=begin, 
+            slb_data = self.slb_unrst.section_data2(start=('SEQNUM'  , 'startpos'), end=('ENDSOL', 'endpos'), begin=begin)
+            ior_data = self.ior_unrst.section_data2(start=('DOUBHEAD', 'endpos')  , end=(ior_end,  'endpos'), begin=begin, 
                                                    rename=((b'TEMP    ',b'TEMP_IOR'),))
             # Create merged UNRST file
             merged_file = self.merge_unrst.merge(slb_data, ior_data,
