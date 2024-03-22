@@ -3458,7 +3458,9 @@ class main_window(QMainWindow):                                    # main_window
             menus.append(self.incl_menu[other_host])
             editors.append(self.host_editor[other_host])
         for inp, menu, editor in zip(inputs, menus, editors):
-            self.update_file_menu(inp.include_files(), menu, viewer=self.view_input_file,
+            #self.update_file_menu(inp.include_files(), menu, viewer=self.view_input_file,
+            include_files = (file for file in inp.include_files() if file.suffix.lower() != '.gsg')
+            self.update_file_menu(include_files, menu, viewer=self.view_input_file,
                                   title='Include file', editor=editor)
         include_act = self.get_include_file_actions()
         if checked_act and include_act:
