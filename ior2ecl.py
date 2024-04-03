@@ -523,7 +523,7 @@ class IORSim_input(File):                                              # iorsim_
     #--------------------------------------------------------------------------------
     def wells(self):                                                   # iorsim_input
     #--------------------------------------------------------------------------------
-        prod, inj = self.get('PRODUCER', 'INJECTOR')
+        prod, inj = self.get('PRODUCER', 'INJECTOR', unpack_single=False)
         if prod and inj:
             return sorted(flatten(prod)), sorted(flatten(inj))
         # Read old input format
@@ -1066,21 +1066,21 @@ class Simulation:                                                        # Simul
     def forward(self):                                                   # Simulation
     #--------------------------------------------------------------------------------
         do_merge = True
-        if self.output.already_merged() and self.only_iorsim:
-            # The current UNRST-file is a merge of Eclipse and IORSim output. 
-            # It is recommended to run IORSim from an unmerged Eclipse UNRST-file.
-            # The script will try to recover the original Eclipse output. 
-            # If it fails, merging is disabled
-            if not self.output.restore_unrst_backup():
-                do_merge = False
-                warn = ('   --------------------------------------------------------\n'
-                        '   |                       WARNING                        |\n'
-                        '   |  You are running IORSim on a merged restart-file.    |\n'
-                        '   |      Merging is disabled for the current run.        |\n'
-                        '   --------------------------------------------------------\n')
-                print(f'\n{warn}\n')
-            else:
-                self.print2log('=====  Original Eclipse UNRST-file restored from backup  =====')
+        # if self.output.already_merged() and self.only_iorsim:
+        #     # The current UNRST-file is a merge of Eclipse and IORSim output. 
+        #     # It is recommended to run IORSim from an unmerged Eclipse UNRST-file.
+        #     # The script will try to recover the original Eclipse output. 
+        #     # If it fails, merging is disabled
+        #     if not self.output.restore_unrst_backup():
+        #         do_merge = False
+        #         warn = ('   --------------------------------------------------------\n'
+        #                 '   |                       WARNING                        |\n'
+        #                 '   |  You are running IORSim on a merged restart-file.    |\n'
+        #                 '   |      Merging is disabled for the current run.        |\n'
+        #                 '   --------------------------------------------------------\n')
+        #         print(f'\n{warn}\n')
+        #     else:
+        #         self.print2log('=====  Original Eclipse UNRST-file restored from backup  =====')
         if do_merge:
             # Delete the merge_OK-file to allow a new merge of Eclipse and IORSim output
             silentdelete(self.output.merge_OK)
@@ -1476,7 +1476,7 @@ class Output:                                                                # O
                 ior_end_block = next(self.ior_unrst.tail_blocks())
             self.merge_unrst.end = ior_end = ior_end_block.key()
             # Define the sections in the restart file where the stitching is done
-            slb_data = self.slb_unrst.section_data2(start=('SEQNUM'  , 'startpos'), end=('ENDSOL', 'endpos')) #, begin=begin)
+            slb_data = self.slb_unrst.section_data2(start=('SEQNUM'  , 'startpos'), end=('ENDSOL', 'endpos'))
             ior_data = self.ior_unrst.section_data2(start=('DOUBHEAD', 'endpos')  , end=(ior_end,  'endpos'),
                                                     rename=((b'TEMP    ',b'TEMP_IOR'),))
             # Create merged UNRST file
