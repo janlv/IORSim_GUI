@@ -18,11 +18,11 @@ from struct import error as struct_error
 
 from psutil import NoSuchProcess
 
-from IORlib.utils import (convert_float_or_str, flat_list, flatten, list2text, pairwise,
+from IORlib.utils import (batched, convert_float_or_str, flat_list, flatten, list2text, pairwise,
     print_error, remove_comments, safeopen, Progress, silentdelete,
     delete_files_matching, tail_file, LivePlot, running_jupyter)
 from IORlib.runner import Runner
-from IORlib.ECL import (FUNRST_file, DATA_file, File, INIT_file, RFT_file, Restart, UNRST_file,
+from IORlib.ECL import (FUNRST_file, DATA_file, File, INIT_file, RFT_file, Restart, SMSPEC_file, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file, IX_input)
 
 __version__ = '3.7.3'
@@ -90,7 +90,7 @@ class SLBRunner(Runner):                                                  # SLBR
     #--------------------------------------------------------------------------------
     def time(self):                                                       # SLBRunner
     #--------------------------------------------------------------------------------
-        #print('PRT', self.prt.end_time(), 'RFT', self.rft.end_time(),'UNRST', self.unrst.end_time(), 'self', super().time())
+        #print('self', super().time(), 'PRT', self.prt.end_time(), 'UNRST', self.unrst.end_time(), 'RFT', self.rft.end_time())
         return super().time() or self.prt.end_time() or self.unrst.end_time() or self.rft.end_time()
 
     #--------------------------------------------------------------------------------
@@ -165,11 +165,11 @@ class Intersect(SLBRunner):                                               # Inte
     def __init__(self, root=None, **kwargs):
     #--------------------------------------------------------------------------------
         super().__init__(name='Intersect', root=root, cmd='ix',
-                         time_regex=r' (?:Rep |Init|HRep)   ;\s*([0-9.]+)\s+', **kwargs)
+                         time_regex=r'TIME(?:[ a-zA-Z\s/%-]+;|=) +([\d.]+)', **kwargs)
+        #                 time_regex=r' (?:Rep |Init|HRep)   ;\s*([0-9.]+)\s+', **kwargs)
         # Necessary for IX backward mode (not yet implemented)
         #self.input_file = IX_input(root, check=True)
         self.is_intersect = True
-
 
 
 #====================================================================================
@@ -531,7 +531,40 @@ class IORSim_input(File):                                              # iorsim_
         return sorted(prod[0][1:] if prod else []), sorted(inj[0][1::6] if inj else [])
 
 
+#====================================================================================
+class IORSim_output(File):                                              # iorsim_output
+#====================================================================================
+    #--------------------------------------------------------------------------------
+    def __init__(self, root):     # iorsim_output
+    #--------------------------------------------------------------------------------
+        self.root = root
+        self.start = None        
 
+    #--------------------------------------------------------------------------------
+    def data(self, well):
+    #--------------------------------------------------------------------------------
+        Data = namedtuple('Data','well days dates conc prod')
+        self.start = self.start or SMSPEC_file(self.root).startdate()
+        files = (Path(f'{self.root}_W_{well}{ext}') for ext in ('.trcconc', '.trcprd'))
+        data = [self.filedata(self.start, file) for file in files if file.is_file()]
+        if data:
+            conc, prod = data
+            return Data(well, conc.days, conc.dates, conc.data, prod.data)
+
+    #--------------------------------------------------------------------------------
+    def filedata(self, start, filename):
+    #--------------------------------------------------------------------------------
+        Filedata = namedtuple('Filedata', 'days dates data')
+        with open(filename) as file:
+            header = next(batched(file,5))
+            names = header[2].split()[1:]
+            first_line = next(file).split()
+            ncol = len(first_line)
+            values = batched((float(d) for d in first_line+''.join(file).split()), ncol)
+            days, *data = zip(*values)
+            # Add dates
+            dates = [start + timedelta(days=int(day)) for day in days]
+            return Filedata(days, dates, dict(zip(names[1:ncol], data)))
 
 
 #====================================================================================

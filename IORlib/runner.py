@@ -1,6 +1,7 @@
 
 # -*- coding: utf-8 -*-
 from datetime import datetime
+from re import findall
 from subprocess import Popen, PIPE, STDOUT
 from shutil import SameFileError, which, copy
 from time import sleep
@@ -8,7 +9,7 @@ from pathlib import Path
 from locale import getpreferredencoding
 
 import psutil
-from .utils import loop_until, matches, safeopen, Timer, silentdelete, TimerThread
+from .utils import loop_until, safeopen, Timer, silentdelete, TimerThread, tail_file
 
 
 # Constants
@@ -630,15 +631,20 @@ class Runner:                                                               # Ru
 
 
     #--------------------------------------------------------------------------------
-    def time(self):                                                          # Runner
+    def time(self, tag='TIME'):                                              # Runner
     #--------------------------------------------------------------------------------
         t = 0
         if self.log:
             self.log.flush() 
-            match = matches(file=self.logname, pattern=self.time_regex)
-            time = [m.group(1) for m in match]
-            t = time[-1] if time else 0           
-        return float(t)
+        #     match = matches(file=self.logname, pattern=self.time_regex)
+        #     time = [m.group(1) for m in match]
+        #     t = time[-1] if time else 0           
+        # return float(t)
+            chunks = (txt for txt in tail_file(self.logname, size=10*1024) if tag in txt)
+            if data:=next(chunks, None):
+                days = findall(self.time_regex, data)
+                t = float(days[-1]) if days else 0
+        return t
 
 
     #--------------------------------------------------------------------------------
