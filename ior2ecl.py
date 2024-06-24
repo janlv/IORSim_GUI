@@ -91,7 +91,7 @@ class SLBRunner(Runner):                                                  # SLBR
     def time(self):                                                       # SLBRunner
     #--------------------------------------------------------------------------------
         #print('self', super().time(), 'PRT', self.prt.end_time(), 'UNRST', self.unrst.end_time(), 'RFT', self.rft.end_time())
-        return super().time() or self.prt.end_time() or self.unrst.end_time() or self.rft.end_time()
+        return max(self.rft.end_time(), super().time()) or self.prt.end_time() or self.unrst.end_time()
 
     #--------------------------------------------------------------------------------
     def delete_output_files(self):                                        # SLBRunner
@@ -505,6 +505,12 @@ class IORSim_input(File):                                              # iorsim_
 
 
     #--------------------------------------------------------------------------------
+    def solutions(self):                                               # iorsim_input
+    #--------------------------------------------------------------------------------
+        return {sol:dict(batched(val,2)) for sol, *val in self.get('solution')}
+
+
+    #--------------------------------------------------------------------------------
     def species(self):                                                 # iorsim_input
     #--------------------------------------------------------------------------------
         if sol:=self.get('solution'):
@@ -546,13 +552,13 @@ class IORSim_output(File):                                              # iorsim
         Data = namedtuple('Data','well days dates conc prod')
         self.start = self.start or SMSPEC_file(self.root).startdate()
         files = (Path(f'{self.root}_W_{well}{ext}') for ext in ('.trcconc', '.trcprd'))
-        data = [self.filedata(self.start, file) for file in files if file.is_file()]
+        data = [self._filedata(self.start, file) for file in files if file.is_file()]
         if data:
             conc, prod = data
             return Data(well, conc.days, conc.dates, conc.data, prod.data)
 
     #--------------------------------------------------------------------------------
-    def filedata(self, start, filename):
+    def _filedata(self, start, filename):
     #--------------------------------------------------------------------------------
         Filedata = namedtuple('Filedata', 'days dates data')
         with open(filename) as file:
@@ -1099,21 +1105,6 @@ class Simulation:                                                        # Simul
     def forward(self):                                                   # Simulation
     #--------------------------------------------------------------------------------
         do_merge = True
-        # if self.output.already_merged() and self.only_iorsim:
-        #     # The current UNRST-file is a merge of Eclipse and IORSim output. 
-        #     # It is recommended to run IORSim from an unmerged Eclipse UNRST-file.
-        #     # The script will try to recover the original Eclipse output. 
-        #     # If it fails, merging is disabled
-        #     if not self.output.restore_unrst_backup():
-        #         do_merge = False
-        #         warn = ('   --------------------------------------------------------\n'
-        #                 '   |                       WARNING                        |\n'
-        #                 '   |  You are running IORSim on a merged restart-file.    |\n'
-        #                 '   |      Merging is disabled for the current run.        |\n'
-        #                 '   --------------------------------------------------------\n')
-        #         print(f'\n{warn}\n')
-        #     else:
-        #         self.print2log('=====  Original Eclipse UNRST-file restored from backup  =====')
         if do_merge:
             # Delete the merge_OK-file to allow a new merge of Eclipse and IORSim output
             silentdelete(self.output.merge_OK)
@@ -1132,8 +1123,8 @@ class Simulation:                                                        # Simul
             self.update.progress(run)
             self.update.plot()
             run.t = run.time()
-            dec = min(len(str(t).split('.')[-1]) for t in (run.t, run.end_time))
-            if round(run.t, dec) < round(run.end_time, dec):
+            ndeci = min(len(str(t).split('.')[-1]) for t in (run.t, run.end_time))
+            if round(run.t, ndeci) < round(run.end_time, ndeci):
                 run.unexpected_stop_error()
             run_time += run.run_time()
             ret = run.complete_msg(run_time=run_time)
