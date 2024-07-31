@@ -547,11 +547,12 @@ class IORSim_output(File):                                              # iorsim
         self.start = None        
 
     #--------------------------------------------------------------------------------
-    def data(self, well):
+    def welldata(self, well, path='.'):
     #--------------------------------------------------------------------------------
         Data = namedtuple('Data','well days dates conc prod')
         self.start = self.start or SMSPEC_file(self.root).startdate()
-        files = (Path(f'{self.root}_W_{well}{ext}') for ext in ('.trcconc', '.trcprd'))
+        wellpath = (self.root.parent/path/self.root.stem).resolve()
+        files = (Path(f'{wellpath}_W_{well}{ext}') for ext in ('.trcconc', '.trcprd'))
         data = [self._filedata(self.start, file) for file in files if file.is_file()]
         if data:
             conc, prod = data
