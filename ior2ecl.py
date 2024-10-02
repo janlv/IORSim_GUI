@@ -529,12 +529,15 @@ class IORSim_input(File):                                              # iorsim_
     #--------------------------------------------------------------------------------
     def wells(self):                                                   # iorsim_input
     #--------------------------------------------------------------------------------
+        wells = namedtuple('Wells', 'prod inj')
         prod, inj = self.get('PRODUCER', 'INJECTOR', unpack_single=False)
         if prod and inj:
-            return sorted(flatten(prod)), sorted(flatten(inj))
+            return wells(sorted(flatten(prod)), sorted(flatten(inj)))
+            #return sorted(flatten(prod)), sorted(flatten(inj))
         # Read old input format
         prod, inj = self.get('OUTPUT', 'CONC_INJECTION', unpack_single=False)
-        return sorted(prod[0][1:] if prod else []), sorted(inj[0][1::6] if inj else [])
+        return wells(sorted(prod[0][1:] if prod else []), sorted(inj[0][1::6] if inj else []))
+        #return sorted(prod[0][1:] if prod else []), sorted(inj[0][1::6] if inj else [])
 
 
 #====================================================================================
@@ -547,7 +550,7 @@ class IORSim_output(File):                                              # iorsim
         self.start = None        
 
     #--------------------------------------------------------------------------------
-    def welldata(self, well, path='.'):
+    def welldata(self, well, path='.', raise_error=True):
     #--------------------------------------------------------------------------------
         Data = namedtuple('Data','well days dates conc prod')
         self.start = self.start or SMSPEC_file(self.root).startdate()
@@ -557,6 +560,8 @@ class IORSim_output(File):                                              # iorsim
         if data:
             conc, prod = data
             return Data(well, conc.days, conc.dates, conc.data, prod.data)
+        if raise_error:
+            raise ValueError(f"IORSim_output: Missing data for well '{well}' in {wellpath.parent}")
 
     #--------------------------------------------------------------------------------
     def _filedata(self, start, filename):
@@ -618,7 +623,7 @@ class Iorsim(Runner):                                                        # i
         except (ValueError, IndexError): # as e:
             #print(e)
             #print('IORSim time:',super().time())
-            return super().time()
+            return super().time(tag='Time')
 
 
     #--------------------------------------------------------------------------------
