@@ -682,7 +682,7 @@ class Runner:                                                               # Ru
 
 
     #--------------------------------------------------------------------------------
-    def get_time_and_stop_if_limit_reached(self):                          # Runner
+    def get_time_and_stop_if_limit_reached(self):                            # Runner
     #--------------------------------------------------------------------------------
         self.t = self.time()
         if int(self.t) > int(self.end_time):
@@ -701,7 +701,10 @@ class Runner:                                                               # Ru
         passed_args = ','.join([f'{k}={v}' for k,v in kwargs.items()])
         self._print(f'Calling wait_for( {func.__qualname__}({passed_args}), limit={limit}, pause={pause} )... ', v=v, end='')
         n = loop_until(func, *args, pause=pause, limit=limit, loop_func=loop_func, **kwargs)
-        time = timer and f' ({(datetime.now()-starttime).total_seconds():.2f} sec)' or ''
+        # time = timer and f' ({(datetime.now()-starttime).total_seconds():.2f} sec)' or ''
+        time = ''
+        if timer:
+            time = f' ({(datetime.now()-starttime).total_seconds():.2f} sec)'
         if n<0:
             if raise_error:
                 raise SystemError(error or f'wait_for({func.__qualname__}) reached loop-limit {limit}')
