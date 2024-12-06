@@ -9,7 +9,7 @@ from sys import platform
 from argparse import ArgumentParser
 from datetime import datetime, timedelta
 from time import sleep
-from shutil import copy as shutil_copy 
+from shutil import copy as shutil_copy, rmtree
 from traceback import print_exc as trace_print_exc, format_exc as trace_format_exc
 from re import compile as re_compile, MULTILINE, finditer
 from os.path import relpath
@@ -296,7 +296,7 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
             self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
         # Get number of wells from UNRST-file
         #self.nwell = next(self.unrst.read('nwell', tail=True))[0]
-        self.nwell = next(self.unrst.read2('nwell', tail=True))
+        self.nwell = next(self.unrst.read('nwell', tail=True))
         # Wait for flushed RFT-file
         msg = self.rft.check.data_saved_maxmin(nblocks=nblocks*self.nwell, niter=RFT_CHECK_NITER, pause=CHECK_PAUSE)
         if msg:
@@ -334,7 +334,7 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
             if nwell:
                 #self.nwell = nblocks = self.unrst.get('nwell')[0][-1]
                 #self.nwell = nblocks = next(self.unrst.read('nwell', tail=True))[0]
-                self.nwell = nblocks = next(self.unrst.read2('nwell', tail=True))
+                self.nwell = nblocks = next(self.unrst.read('nwell', tail=True))
                 #print(nwell)
             msg = self.rft.check.data_saved_maxmin(nblocks=nblocks, niter=RFT_CHECK_NITER, pause=CHECK_PAUSE)
             if msg:
@@ -676,18 +676,65 @@ class Ior_forward(ForwardMixin, Iorsim):                               # ior_for
     pass
 
 #====================================================================================
+class Ior_tandem(Iorsim):                                                # ior_tandem
+#====================================================================================
+    #--------------------------------------------------------------------------------
+    def __init__(self, del_tandem=False, **kwargs):                      # ior_tandem
+    #--------------------------------------------------------------------------------
+        super().__init__(args='-readdata', ext_iface=('.IORSimI','04d'), ext_OK=('.IORSimOK',), **kwargs)
+        self.delete = del_tandem
+
+    #--------------------------------------------------------------------------------
+    def xfile(self):                                                     # ior_tandem
+    #--------------------------------------------------------------------------------
+        return self.case.with_suffix(f'.X{self.n:04d}')
+
+    #--------------------------------------------------------------------------------
+    def start(self):                                                     # ior_tandem
+    #--------------------------------------------------------------------------------
+        self.n = 0
+        xfile = self.xfile()
+        self.wait_for(xfile.is_file, error=f'{xfile.name} is missing, maybe host simulator did not start?')
+        UNRST_file.from_Xfile(xfile, log=self._print, delete=self.delete)
+        super().start()
+        self.n += 1
+
+    #--------------------------------------------------------------------------------
+    def run_one_step(self):                                              # ior_tandem
+    #--------------------------------------------------------------------------------
+        # Create UNRST-file from X-file as soon as it appears
+        xfile = self.xfile()
+        self.wait_for(xfile.is_file, error=xfile.name+' does not exist')
+        UNRST_file.from_Xfile(xfile, log=self._print, delete=self.delete)
+        # Give 'rewind' command to tell IORSim to rewind the restart-file iterator
+        self.interface_file(self.n).append('rewind')
+        self.OK_file.create()
+        # Wait for IORSim to process the single-step UNRST-file
+        self.wait_for(self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted')
+        self.interface_file(self.n).delete()
+        self.n += 1
+        self.t = self.time()
+        self._print(f'Current time: {self.t:.3f}/{self.end_time} days')
+
+    #--------------------------------------------------------------------------------
+    def quit(self, v=1, loop_func=lambda:None):                          # ior_tandem
+    #--------------------------------------------------------------------------------
+        # Give 'quit' command to tell IORSim to terminate
+        self.interface_file(self.n).append('quit')
+        self.OK_file.create()
+        super().quit(v, loop_func)
+
+
+#====================================================================================
 class Ior_backward(BackwardMixin, Iorsim):                             # ior_backward
 #====================================================================================
     #--------------------------------------------------------------------------------
     def __init__(self, keep_alive=False, schedule=None, init_tsteps=None, **kwargs):
     #--------------------------------------------------------------------------------
-        # super().__init__(args='-readdata', ext_iface='IORSimI{:04d}', ext_OK='IORSimOK', keep_alive=keep_alive, **kwargs)
         super().__init__(args='-readdata', ext_iface=('.IORSimI','04d'), ext_OK=('.IORSimOK',), keep_alive=keep_alive, **kwargs)
         self.init_tsteps = init_tsteps or len(DATA_file(self.case).timesteps())
         self.delete_interface = kwargs.get('delete_interface') or True
-        #self.satnum = DATA_file(IOR_SATNUM_FILE, '', reread=True)   # Output-file from IORSim, read by Eclipse as an interface-file
         self.satnum = DATA_file(IOR_SATNUM_FILE)   # Output-file from IORSim, read by Eclipse as an interface-file
-        #print('satnum',self.satnum.path)
         self.endtag = IOR_SATNUM_ENDTAG
         self.schedule = schedule
 
@@ -701,21 +748,9 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
     #--------------------------------------------------------------------------------
     def satnum_flushed(self):                                          # ior_backward
     #--------------------------------------------------------------------------------
-        #tag_length = len(self.endtag) + 3
-        #if not self.satnum.is_file() or self.satnum.size() < tag_length:
-        #    return False
-        #print(self.satnum.binarydata()[-(tag_length+3):])
-        # if self.endtag.encode() in self.satnum.binarydata()[-tag_length:]:
-        #     return True
-        #tail = next(self.satnum.tail(size=tag_length))
-        #print('SATNUM', tail)
-        #print('END', self.endtag)
-        #print(self.satnum.tail(size=len(self.endtag)+3))
         if self.endtag in self.satnum.tail(size=len(self.endtag)+3, size_limit=True):
-        #if self.endtag in tail:
             return True
         return False
-
 
     #--------------------------------------------------------------------------------
     def satnum_dist(self, echo=False):                                 # ior_backward
@@ -739,7 +774,7 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
     def start(self, error_func=None, tsteps=None):                     # ior_backward
     #--------------------------------------------------------------------------------
         # Start IORSim backward run
-        self.n = 0 
+        self.n = 0
         self.interface_file.delete_all()
         tsteps = tsteps or self.init_tsteps
         self.run_steps(1+tsteps, start=True)
@@ -768,7 +803,7 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
                     super().start()
                 else:
                     self.resume()
-            self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted')
+            self.wait_for(self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted')
             self.t = self.time()
         self.wait_for(self.satnum_flushed, pause=CHECK_PAUSE)
         if self.satnum.is_empty() and self.update:
@@ -784,7 +819,7 @@ class Ior_backward(BackwardMixin, Iorsim):                             # ior_bac
     #--------------------------------------------------------------------------------
     def quit(self, v=1, loop_func=lambda:None):                        # ior_backward
     #--------------------------------------------------------------------------------
-        self.interface_file(self.n+1).append('Quit')
+        self.interface_file(self.n+1).append('quit')
         self.OK_file.create()
         super().quit(v, loop_func)
 
@@ -979,9 +1014,8 @@ class Simulation:                                                        # Simul
                  plot=lambda **x:None, message=lambda **x:None, intersect=0, host_inp=None,
                  ior_inp=None, **kwargs):
     #--------------------------------------------------------------------------------
-        #print('Simulation', 'mode',mode,'root',root,'pause',pause,'run_names',run_names,'to_screen',to_screen,
-        #      'convert',convert,'merge',merge,'del_merge',del_merge,'del_convert',del_convert,
-        #      'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
+        # print('Simulation', 'mode',mode,'root',root,'pause',pause,'run_names',run_names,'to_screen',to_screen,
+        #       'status',status,'progress',progress,'plot',plot,'kwargs',kwargs)
 
         self.logname = 'ior2ecl'
         self.root = Path(root).with_suffix('').resolve()
@@ -1076,13 +1110,19 @@ class Simulation:                                                        # Simul
             # This is a forward IORSim run
             self.restart = Restart()
             #self.start = next(UNRST_file(self.root).dates())
-            self.mode = 'forward'
+            #self.mode = 'forward'
+            # NBNBNB!!!! FIX THIS
+            self.mode = 'tandem'
 
-        init_func = {'backward':self.init_backward_run, 'forward': self.init_forward_run}[self.mode]
+        init_func = {'backward' : self.init_backward_run,
+                     'forward'  : self.init_forward_run,
+                     'tandem'   : self.init_tandem_run   }[self.mode]
         self.runs = init_func(**self.kwargs)
         # Check input
         if all(run.check_input() for run in self.runs):
-            return {'backward':self.backward, 'forward': self.forward}[self.mode]
+            return {'backward' : self.backward,
+                    'forward'  : self.forward,
+                    'tandem'   : self.tandem   }[self.mode]
         return None
 
     #--------------------------------------------------------------------------------
@@ -1135,6 +1175,93 @@ class Simulation:                                                        # Simul
             run_time += run.run_time()
             ret = run.complete_msg(run_time=run_time)
         return ret
+
+    #--------------------------------------------------------------------------------
+    def init_tandem_run(self, iorexe=None, eclexe=None, time=None, **kwargs):      # Simulation
+    #--------------------------------------------------------------------------------
+        if self.ECL_inp:
+            start = self.start + timedelta(days=self.restart.days)
+            tsteps = self.ECL_inp.timesteps(start=start, skiprest='SKIPREST' in self.ECL_inp)
+            self.end_time = sum(tsteps) + self.restart.days
+        else:
+            # This is a forward IORSim only run
+            self.start = INIT_file(self.root).start_date()
+            self.end_time = min(RFT_file(self.root).end_time(), self.IOR_inp.get('INTEGRATION').tstop)
+            # NBNBNBNB !!!HACK!!!
+            self.end_time = sum(IX_input(self.root).timesteps())
+        self.end_time = time or self.end_time
+        kwargs.update({'end_time':self.end_time})
+        for name in self.run_names:
+            if name == 'eclipse':
+                self.ecl = EclipseForward(exe=eclexe, **kwargs)
+            if name == 'intersect':
+                self.ecl = IntersectForward(exe=eclexe, **kwargs)
+            if name=='iorsim':
+                self.ior = Ior_tandem(exe=iorexe, **kwargs)
+        self.only_iorsim = self.run_names in (['iorsim'],('iorsim',))
+        return [run for run in (self.ecl, self.ior) if run]
+
+
+    #--------------------------------------------------------------------------------
+    def tandem(self):                                                   # Simulation
+    #--------------------------------------------------------------------------------
+        out = Output(self.root)
+        # Create folder for single-step UNRST-files
+        tmp_dir = self.root.parent/'tandem_tmp'
+        if tmp_dir.exists():
+            rmtree(tmp_dir)
+        tmp_dir.mkdir()
+        unified_slb = tmp_dir/out.slb_unrst.name
+
+        do_merge = True
+        if do_merge:
+            # Delete the merge_OK-file to allow a new merge of Eclipse and IORSim output
+            silentdelete(self.output.merge_OK)
+        starttime = datetime.now()
+        self.update.progress(value=-self.end_time, min=self.restart.days)
+        # Start runs
+        for run in self.runs:
+            run.delete_output_files()
+            run.start()
+        self.update.progress()
+        ior = self.runs[-1]
+        report_dates = None
+        if (inp := IX_input(self.root)):
+            report_dates = inp.report_dates()
+        nwrite = 0
+        while ior.t < ior.end_time:
+            self.print2log('\n' + 10*'-' + f'  step {ior.n}  ' + 10*'-')
+            self.update.progress(run=ior)
+            ior.run_one_step()
+            date = self.start + timedelta(days=ior.t)
+            self.print2log(f'Current date: {date}')
+            if date >= report_dates[nwrite]:
+                #if ior.t >= nwrite*3: #(365/12):
+                self.print2log(10*'-' + '  save files  ' + 10*'-')
+                # Append relevant blocks from host unrst to unified unrst
+                self.print2log(f'Append {out.slb_unrst} --> {unified_slb.relative_to(self.root.parent)}')
+                out.slb_unrst.blocks_to_file(unified_slb, keys=('FLO*', 'FLR*', 'B?', 'R?'),
+                                             invert=True, append=True)
+                # Move IOR unrst
+                out.ior_unrst.rename(tmp_dir/(out.ior_unrst.name+f'_{nwrite:04d}'), echo=self.print2log)
+                nwrite += 1
+                # Append IORSim unrst to unified unrst
+                # NB! For some reason this alternative approach does not work...
+                #self.print2log(f'Append {out.ior_unrst} --> {unified_ior.path.relative_to(self.root.parent)}')
+                #unified_ior.append_bytes(out.ior_unrst.binarydata())
+        ior.quit()
+        # Move unified host unrst to case folder
+        File(unified_slb).rename(out.slb_unrst, echo=self.print2log)
+        # Merge the individual IORSim unrst files
+        with open(out.ior_unrst.path, 'wb') as outfile:
+            for infile in sorted(tmp_dir.glob(out.ior_unrst.name+'_*')):
+                outfile.write(File(infile).binarydata())
+                infile.unlink()
+                if ior.verbose > 2:
+                    self.print2log(f'Merging {infile} --> {out.ior_unrst}')
+        # Remove empty tmp-dir
+        tmp_dir.rmdir()
+        return ior.complete_msg(run_time=datetime.now()-starttime)
 
 
     #--------------------------------------------------------------------------------
@@ -1244,14 +1371,10 @@ class Simulation:                                                        # Simul
             # Kill possible remaining processes
             self.print2log('')
             for run in self.runs:
-                #self.update.progress(run)
                 run.kill()
             self.print2log(f'\n=====  {msg.replace("INFO","")}  =====')
             self.current_run = None
-            #print('PROGRESS')
             self.update.progress()   # Reset progress time
-            #self.update.status()
-            #print('DONE')
             self.update.plot()
             try:
                 if success:
@@ -1348,7 +1471,7 @@ class Simulation:                                                        # Simul
 class Output:                                                                # Output
 #====================================================================================
     #--------------------------------------------------------------------------------
-    def __init__(self, root, convert=True, merge=True, del_convert=True, del_merge=True, 
+    def __init__(self, root, convert=True, merge=True, del_convert=True, del_merge=True,
                  progress=None, status=None, **kwargs):
     #--------------------------------------------------------------------------------
         self.root = Path(root).with_suffix('').resolve()
@@ -1421,8 +1544,8 @@ class Output:                                                                # O
     #--------------------------------------------------------------------------------
         if self.report_dates is None:
             sim = INIT_file(self.root).simulator()
-            input = {'ecl':DATA_file, 'ix':IX_input}[sim](self.root)
-            self.report_dates = input.report_dates()
+            input_file = {'ecl':DATA_file, 'ix':IX_input}[sim](self.root)
+            self.report_dates = input_file.report_dates()
         passed = list(unrst.dates()) == self.report_dates
         if not passed:
             raise SystemError(f'ERROR Output-file {unrst} did not pass the check.'
@@ -1609,8 +1732,8 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
            check_unrst=True, check_rft=True, keep_files=False, 
            convert=True, del_convert=True, merge=True, del_merge=True,
            ecl_alive=False, ior_alive=False, only_host=False, only_iorsim=False, intersect=0,
-           check_input=False, verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY, 
-           **kwargs):
+           check_input=False, verbose=DEFAULT_LOG_LEVEL, logtag=None, skip_empty=SCHEDULE_SKIP_EMPTY,
+           tandem=False, del_tandem=True, **kwargs):
 #--------------------------------------------------------------------------------
     """
     Run IORSim with Eclipse/Intersect in forward- or backward-mode. 
@@ -1704,14 +1827,16 @@ def runsim(root=None, time=None, iorexe=None, eclexe='eclrun', to_screen=False,
         if not success:
             raise SystemError(f'ERROR Unable to create Intersect input, check the log {log}')
             
-
+    if tandem:
+        mode = 'tandem'
+    
     sim = Simulation(root=root, time=time, iorexe=iorexe, eclexe=eclexe,
-                     check_unrst=check_unrst, check_rft=check_rft, keep_files=keep_files, 
+                     check_unrst=check_unrst, check_rft=check_rft, keep_files=keep_files,
                      progress=progress, status=status, message=message, to_screen=to_screen,
-                     convert=convert, merge=merge, del_merge=del_merge, del_convert=del_convert, 
-                     ecl_keep_alive=ecl_alive, ior_keep_alive=ior_alive, 
+                     convert=convert, merge=merge, del_merge=del_merge, del_convert=del_convert,
+                     ecl_keep_alive=ecl_alive, ior_keep_alive=ior_alive,
                      run_names=runs, mode=mode, check_input_kw=check_input, verbose=verbose,
-                     logtag=logtag, skip_empty=skip_empty, **kwargs)
+                     logtag=logtag, skip_empty=skip_empty, del_tandem=del_tandem, **kwargs)
     sim.prepare()
     if not sim.ready():
         return
