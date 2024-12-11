@@ -589,7 +589,8 @@ class Runner:                                                               # Ru
             self.suspend_active()
             if check:
                 for proc in self.active:
-                    self.wait_for(proc.is_sleeping, limit=100)
+                    # self.wait_for(proc.is_sleeping, limit=100)
+                    self.wait_for(proc.is_sleeping, wait_min=0.02)
             if self.timer:
                 self.timer.stop()
         self.print_process_status()
@@ -610,13 +611,14 @@ class Runner:                                                               # Ru
             self.resume_active()
             if check:
                 for proc in self.active:
-                    self.wait_for(proc.is_running, limit=100)
+                    # self.wait_for(proc.is_running, limit=100)
+                    self.wait_for(proc.is_running, wait_min=0.02)
             if self.timer:
                 self.timer.start()
         self.print_process_status()
 
     #--------------------------------------------------------------------------------
-    def print_process_status(self, v=2):                                     # Runner
+    def print_process_status(self, v=3):                                     # Runner
     #--------------------------------------------------------------------------------
         self._print(', '.join( [str(p.current_status()) for p in self.active] ), v=v)
 
@@ -691,23 +693,27 @@ class Runner:                                                               # Ru
 
 
     #--------------------------------------------------------------------------------
-    def wait_for(self, func, *args, timer=False, limit=None, pause=0.01, v=2, error=None, raise_error=False, log=None, loop_func=None, **kwargs):
+    #def wait_for(self, func, *args, timer=False, limit=None, pause=0.01, v=2, error=None, raise_error=False, log=None, loop_func=None, **kwargs):
+    def wait_for(self, func, *args, timer=False, wait_min=None, pause=0.01, v=2, error=None, 
+                 raise_error=False, log=None, loop_func=None, func_name=None, **kwargs):
     #--------------------------------------------------------------------------------
+        limit = int(wait_min*60/pause) if wait_min else None
         if timer:
             starttime = datetime.now()
         if not loop_func:
             # Default checks during loop
             loop_func = self.assert_running_and_stop_if_canceled
+        func_name = func_name or func.__qualname__
         passed_args = ','.join([f'{k}={v}' for k,v in kwargs.items()])
-        self._print(f'Calling wait_for( {func.__qualname__}({passed_args}), limit={limit}, pause={pause} )... ', v=v, end='')
+        self._print(f'Calling wait_for( {func_name}({passed_args}), limit={limit}, pause={pause} )... ', v=v, end='')
+        # If limit is reached this function returns -1
         n = loop_until(func, *args, pause=pause, limit=limit, loop_func=loop_func, **kwargs)
-        # time = timer and f' ({(datetime.now()-starttime).total_seconds():.2f} sec)' or ''
         time = ''
         if timer:
             time = f' ({(datetime.now()-starttime).total_seconds():.2f} sec)'
         if n<0:
             if raise_error:
-                raise SystemError(error or f'wait_for({func.__qualname__}) reached loop-limit {limit}')
+                raise SystemError(error or f'wait_for({func_name}) reached loop-limit {limit}')
             self._print(f'loop limit reached!{time}' or '', tag='', v=v)
             return False
         self._print(str(n) + f' loops{time}', tag='', v=v)
@@ -717,17 +723,28 @@ class Runner:                                                               # Ru
 
 
     #--------------------------------------------------------------------------------
-    def wait_for_process_to_finish(self, v=2, limit=None, pause=None, loop_func=None, msg=None):      # Runner
+    def wait_for_process_to_finish(self, v=2, wait_min=None, pause=None, loop_func=None, msg=None):      # Runner
     #--------------------------------------------------------------------------------
         msg = msg or 'Waiting for parent process to finish'
         self._print(msg, v=v)
-        success = self.wait_for(self.parent.is_not_running, raise_error=False, pause=pause, limit=limit, loop_func=loop_func)
+        success = self.wait_for(self.parent.is_not_running, raise_error=False, pause=pause, wait_min=wait_min, loop_func=loop_func)
         if not success:
-            time = (limit or 0)*(pause or 0)/60
+            #time = (limit or 0)*(pause or 0)/60
             self._print('', tag='')
-            self._print(f'process did not finish within {time:.2f} minutes and will be killed', v=v)
+            self._print(f'process did not finish within {wait_min:.2f} minutes and will be killed', v=v)
             self._print([p.name() for p in self.active if p])
             self.kill()
+
+
+    #--------------------------------------------------------------------------------
+    def wait_for_files(self, *files, wait_min=None, log=None, **kwargs):        # Runner
+    #--------------------------------------------------------------------------------
+        for path in map(Path, files):
+            func_name = f'Path({path.name}).is_file'
+            self.wait_for(path.is_file, wait_min=wait_min, raise_error=True, error=f'{path} is missing', func_name=func_name, **kwargs)
+            if callable(log):
+                log(f'{path.name} exists')
+
 
     #--------------------------------------------------------------------------------
     def cancel(self):                                                        # Runner
@@ -758,7 +775,8 @@ class Runner:                                                               # Ru
         self._print('', tag='', v=v)
         self._print('Quitting', v=v)
         self.resume()
-        self.wait_for_process_to_finish(msg='Waiting for process to quit', limit=6000, pause=0.01, loop_func=loop_func)
+        #self.wait_for_process_to_finish(msg='Waiting for process to quit', limit=6000, pause=0.01, loop_func=loop_func)
+        self.wait_for_process_to_finish(msg='Waiting for process to quit', wait_min=1, pause=0.01, loop_func=loop_func)
         self.close()
         self._print('Finished', v=v)
 

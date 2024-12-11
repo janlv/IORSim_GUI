@@ -3,13 +3,14 @@
 
 from collections import Counter, namedtuple
 from itertools import accumulate, chain, dropwhile, takewhile
-from operator import itemgetter
+from operator import attrgetter, itemgetter
+from os import environ
 from pathlib import Path
 from sys import platform
 from argparse import ArgumentParser
 from datetime import datetime, timedelta
 from time import sleep
-from shutil import copy as shutil_copy, rmtree
+from shutil import copy as shutil_copy
 from traceback import print_exc as trace_print_exc, format_exc as trace_format_exc
 from re import compile as re_compile, MULTILINE, finditer
 from os.path import relpath
@@ -18,12 +19,12 @@ from struct import error as struct_error
 
 from psutil import NoSuchProcess
 
-from IORlib.utils import (batched, convert_float_or_str, flat_list, flatten, list2text, pairwise,
+from IORlib.utils import (batched, convert_float_or_str, empty_folder, flat_list, flatten, list2text, pairwise,
     print_error, remove_comments, safeopen, Progress, silentdelete,
     delete_files_matching, tail_file, LivePlot, running_jupyter)
 from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, INIT_file, RFT_file, Restart, SMSPEC_file, UNRST_file,
-    UNSMRY_file, MSG_file, PRT_file, IX_input)
+    UNSMRY_file, MSG_file, PRT_file, IX_input, unfmt_file)
 
 __version__ = '3.7.3'
 __author__ = 'Jan Ludvig Vinningland'
@@ -100,7 +101,7 @@ class SLBRunner(Runner):                                                  # SLBR
         Delete case-specific output-files
         """
         file_ext = ('*UNRST','RFT','SMSPEC','UNSMRY','MSG','PRT','session*','dbprtx.lock*')
-        delete_files_matching( [f'{self.case}*.{ext}' for ext in file_ext] )
+        delete_files_matching( *[f'{self.case}*.{ext}' for ext in file_ext] )
         delete_files_matching(self.case.parent/'fort??????')
         delete_files_matching(self.case.parent/'hostfile.*')
 
@@ -119,6 +120,8 @@ class SLBRunner(Runner):                                                  # SLBR
     #--------------------------------------------------------------------------------
     def start(self, error_func=None):                                     # SLBRunner
     #--------------------------------------------------------------------------------
+        # Workaround for MPI suggested by IX output
+        environ['I_MPI_SHM_LMT'] = 'shm'
         if self.update:
             self.update.status(value=f'Starting {self.name}...')
         error_func = error_func or self.unexpected_stop_error
@@ -547,7 +550,7 @@ class IORSim_output(File):                                              # iorsim
     def __init__(self, root):     # iorsim_output
     #--------------------------------------------------------------------------------
         self.root = root
-        self.start = None        
+        self.start = None
 
     #--------------------------------------------------------------------------------
     def welldata(self, well, path='.', raise_error=True):
@@ -639,7 +642,7 @@ class Iorsim(Runner):                                                        # i
                     shutil_copy(file, dest)
                     self.copied_chemfiles.append(dest)
                     self._print(f'Copied chemfile: {file} -> {dest}')
-        # Check if the necessary Eclipse output files exist 
+        # Check if the necessary Eclipse output files exist
         files = (self.case.with_suffix(ext) for ext in ('.UNRST', '.RFT', '.EGRID', '.INIT'))
         if missing := [f.name for f in files if not f.is_file()]:
             raise SystemError(f'ERROR Unable to start IORSim: Eclipse output file {", ".join(missing)} is missing')
@@ -678,38 +681,112 @@ class Ior_forward(ForwardMixin, Iorsim):                               # ior_for
 #====================================================================================
 class Ior_tandem(Iorsim):                                                # ior_tandem
 #====================================================================================
+    rundir = 'iorsim'
+
     #--------------------------------------------------------------------------------
-    def __init__(self, del_tandem=False, **kwargs):                      # ior_tandem
+    def __init__(self, root=None, del_tandem=False, **kwargs):           # ior_tandem
     #--------------------------------------------------------------------------------
-        super().__init__(args='-readdata', ext_iface=('.IORSimI','04d'), ext_OK=('.IORSimOK',), **kwargs)
+        self.host_root = root = Path(root)
+        # Change root to make IORSim run in a subfolder of the case-folder
+        root = root.parent/self.rundir/root.name
+        empty_folder(root.parent)
+        root.with_suffix('.trcinp').touch()
+        super().__init__(root=root, args='-readdata',
+                         ext_iface=('.IORSimI','04d'), ext_OK=('.IORSimOK',), **kwargs)
         self.delete = del_tandem
+        self.host_rft = RFT_file(self.host_root)  # Unified RFT-file in host rundir
+        self.inp_unrst = UNRST_file(self.case)    # Singlestep input UNRST in IORSim rundir
+        self.inp_rft = RFT_file(self.case)        # Singlestep input RFT in IORSim rundir
+        self.out_unrst = Output(self.case).ior_unrst       # Singlestep output UNRST in IORSim rundir
 
     #--------------------------------------------------------------------------------
     def xfile(self):                                                     # ior_tandem
     #--------------------------------------------------------------------------------
-        return self.case.with_suffix(f'.X{self.n:04d}')
+        return unfmt_file(self.host_root.with_suffix(f'.X{self.n:04d}'))
+        #return unfmt_file(self.case.with_suffix(f'.X{self.n:04d}'))
 
     #--------------------------------------------------------------------------------
-    def start(self):                                                     # ior_tandem
+    def host_rft_is_ready(self, days, acc=1e-4):                         # ior_tandem
     #--------------------------------------------------------------------------------
-        self.n = 0
-        xfile = self.xfile()
-        self.wait_for(xfile.is_file, error=f'{xfile.name} is missing, maybe host simulator did not start?')
-        UNRST_file.from_Xfile(xfile, log=self._print, delete=self.delete)
-        super().start()
-        self.n += 1
+        times = [t for t in self.host_rft.read('time') if days-acc < t < days+acc]
+        #self._print(times)
+        #if len(times) == nwells:
+        if len(times):
+            print(f'(ready with {len(times)} sections of time {times[0]}) ', file=self.runlog, end='')
+            return True
 
     #--------------------------------------------------------------------------------
-    def run_one_step(self):                                              # ior_tandem
+    def copy_rft(self, days, host=None, acc=1e-4):                       # ior_tandem
     #--------------------------------------------------------------------------------
-        # Create UNRST-file from X-file as soon as it appears
+        if host:
+            # Suspend host simulation to prevent interference while copying RFT-sections
+            host.suspend()
+        self._print(f'Write sections of time {days} days from {self.host_rft} --> {self.rundir}/{self.inp_rft}')
+        pos = self.host_rft.sections_matching_time(days, acc=acc)
+        self.inp_rft.write_bytes(self.host_rft.binarydata(pos))
+        if host:
+            host.resume()
+
+    #--------------------------------------------------------------------------------
+    def delete_output_files(self, raise_error=False):                    # ior_tandem
+    #--------------------------------------------------------------------------------
+        super().delete_output_files(raise_error)
+        # Delete X-files in the host-folder
+        delete_files_matching(self.host_root.with_suffix('.X????'))
+
+    #--------------------------------------------------------------------------------
+    def copy_to_case(self, *files, log=True):                              # ior_tandem
+    #--------------------------------------------------------------------------------
+        for file in files:
+            dst = self.case.parent/file.name
+            if log:
+                self._print(f'Copy {file.resolve()} --> {dst.resolve()}')
+            shutil_copy(file, dst)
+
+    #--------------------------------------------------------------------------------
+    def copy_input_files(self):                                          # ior_tandem
+    #--------------------------------------------------------------------------------
+        # Copy .trcinp, include files, and EGRID to subfolder
+        files = (self.host_root.with_suffix(ext) for ext in ('.trcinp', '.EGRID'))
+        incl_files = IORSim_input(self.host_root).include_files()
+        for file in chain(files, set(incl_files)):
+            self.copy_to_case(file)
+
+    #--------------------------------------------------------------------------------
+    def start(self, error_func=None):                                    # ior_tandem
+    #--------------------------------------------------------------------------------
+        self.copy_input_files()
+        init, xfile, rft_file = [self.host_root.with_suffix(ext) for ext in ('.INIT', '.X0001', '.RFT')]
+        self.wait_for_files(init, xfile, rft_file, loop_func=error_func)
+        self.copy_to_case(init, rft_file)
+        # Create empty UNRST-file to force IORSim to start
+        self.inp_unrst.touch()
+        super().start(error_func)
+        # IORSim yields no output for the first timestep
+        self.run_one_step()
+
+    #--------------------------------------------------------------------------------
+    def run_one_step(self, wait_min=30, host=None):                      # ior_tandem
+    #--------------------------------------------------------------------------------
+        # Create UNRST-file from X-file
         xfile = self.xfile()
-        self.wait_for(xfile.is_file, error=xfile.name+' does not exist')
-        UNRST_file.from_Xfile(xfile, log=self._print, delete=self.delete)
-        # Give 'rewind' command to tell IORSim to rewind the restart-file iterator
-        self.interface_file(self.n).append('rewind')
+        # Wait for the X-file to appear
+        self.wait_for(xfile.is_flushed, 'ENDSOL', func_name=f'Path({xfile}).is_flushed')
+        self._print(f'Creating {self.rundir}/{self.inp_unrst} from {xfile}')
+        self.inp_unrst.from_Xfile(xfile, delete=self.delete)
+        # Wait for RFT-file to reach the same time as the UNRST-file
+        if self.n > 0:
+            # Get time and number of open wells from the input UNRST-file
+            days, nwells = [next(g()) for g in attrgetter('days', 'open_wells')(self.inp_unrst)]
+            self._print(f'Wait for {self.host_rft} (days={days}, nwells={nwells}) to get ready')
+            self.wait_for(self.host_rft_is_ready, days, wait_min=wait_min, pause=0.5)
+            self.copy_rft(days, host=host)
+        # Append 'singlestep' command to the interface-file.
+        # This instructs IORSim to read and write singlestep UNRST-files
+        self.interface_file(self.n+1).append('singlestep')
+        # Tell IORSim to run a step
         self.OK_file.create()
-        # Wait for IORSim to process the single-step UNRST-file
+        # Wait for IORSim to finish
         self.wait_for(self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted')
         self.interface_file(self.n).delete()
         self.n += 1
@@ -720,7 +797,7 @@ class Ior_tandem(Iorsim):                                                # ior_t
     def quit(self, v=1, loop_func=lambda:None):                          # ior_tandem
     #--------------------------------------------------------------------------------
         # Give 'quit' command to tell IORSim to terminate
-        self.interface_file(self.n).append('quit')
+        self.interface_file(self.n+1).append('quit')
         self.OK_file.create()
         super().quit(v, loop_func)
 
@@ -1110,9 +1187,8 @@ class Simulation:                                                        # Simul
             # This is a forward IORSim run
             self.restart = Restart()
             #self.start = next(UNRST_file(self.root).dates())
-            #self.mode = 'forward'
-            # NBNBNB!!!! FIX THIS
-            self.mode = 'tandem'
+            if self.mode != 'tandem':
+                self.mode = 'forward'
 
         init_func = {'backward' : self.init_backward_run,
                      'forward'  : self.init_forward_run,
@@ -1187,8 +1263,8 @@ class Simulation:                                                        # Simul
             # This is a forward IORSim only run
             self.start = INIT_file(self.root).start_date()
             self.end_time = min(RFT_file(self.root).end_time(), self.IOR_inp.get('INTEGRATION').tstop)
-            # NBNBNBNB !!!HACK!!!
-            self.end_time = sum(IX_input(self.root).timesteps())
+            if self.IOR_inp.get('GRIDPLOT_FILE')[0] != 'UNFORMATTED':
+                raise SystemError('ERROR IORSim output is FORMATTED, unable to run tandem-mode')
         self.end_time = time or self.end_time
         kwargs.update({'end_time':self.end_time})
         for name in self.run_names:
@@ -1198,21 +1274,13 @@ class Simulation:                                                        # Simul
                 self.ecl = IntersectForward(exe=eclexe, **kwargs)
             if name=='iorsim':
                 self.ior = Ior_tandem(exe=iorexe, **kwargs)
-        self.only_iorsim = self.run_names in (['iorsim'],('iorsim',))
+        #self.only_iorsim = self.run_names in (['iorsim'],('iorsim',))
         return [run for run in (self.ecl, self.ior) if run]
 
 
     #--------------------------------------------------------------------------------
     def tandem(self):                                                   # Simulation
     #--------------------------------------------------------------------------------
-        out = Output(self.root)
-        # Create folder for single-step UNRST-files
-        tmp_dir = self.root.parent/'tandem_tmp'
-        if tmp_dir.exists():
-            rmtree(tmp_dir)
-        tmp_dir.mkdir()
-        unified_slb = tmp_dir/out.slb_unrst.name
-
         do_merge = True
         if do_merge:
             # Delete the merge_OK-file to allow a new merge of Eclipse and IORSim output
@@ -1220,47 +1288,53 @@ class Simulation:                                                        # Simul
         starttime = datetime.now()
         self.update.progress(value=-self.end_time, min=self.restart.days)
         # Start runs
+        error_func = None
         for run in self.runs:
             run.delete_output_files()
-            run.start()
+            run.start(error_func)
+            error_func = run.assert_running_and_stop_if_canceled
         self.update.progress()
         ior = self.runs[-1]
+        slb = self.runs[0] if len(self.runs)>1 else None
+
+        # host_root = self.root
+        # ior_root = ior.case
+        # self.print2log(f'IORSim root: {ior_root}')
+        # self.print2log(f'Host root: {host_root}')
+        unified_host = UNRST_file(self.root)
+        unified_ior = UNRST_file(self.root.with_name(ior.out_unrst.name))
+
         report_dates = None
         if (inp := IX_input(self.root)):
             report_dates = inp.report_dates()
         nwrite = 0
         while ior.t < ior.end_time:
-            self.print2log('\n' + 10*'-' + f'  step {ior.n}  ' + 10*'-')
+            self.print2log('\n' + 10*'-' + f'  simulation step {ior.n}  ' + 10*'-')
             self.update.progress(run=ior)
-            ior.run_one_step()
+            try:
+                ior.run_one_step(wait_min=30, host=slb)
+            except SystemError as err:
+                raise SystemError(f'Tandem simulation stopped: {err}') from err
             date = self.start + timedelta(days=ior.t)
             self.print2log(f'Current date: {date}')
             if date >= report_dates[nwrite]:
-                #if ior.t >= nwrite*3: #(365/12):
-                self.print2log(10*'-' + '  save files  ' + 10*'-')
+                self.print2log(10*'=' + f'  report step {nwrite}  ' + 10*'=')
+                self.print2log(f'Host date: {next(ior.inp_unrst.dates(resolution='sec'))}')
+                self.print2log(f'Host step: {next(ior.inp_unrst.steps())}')
                 # Append relevant blocks from host unrst to unified unrst
-                self.print2log(f'Append {out.slb_unrst} --> {unified_slb.relative_to(self.root.parent)}')
-                out.slb_unrst.blocks_to_file(unified_slb, keys=('FLO*', 'FLR*', 'B?', 'R?'),
+                self.print2log(f'Append {ior.inp_unrst.path} --> {unified_host.path}')
+                #unified_host.append_bytes(unfmt_block.from_data('SEQNUM', [nwrite], 'int').as_bytes())
+                #unified_host.append_bytes(out.slb_unrst.binarydata())
+                ior.inp_unrst.blocks_to_file(unified_host, keys=('FLO*', 'FLR*', 'B?', 'R?'),
                                              invert=True, append=True)
-                # Move IOR unrst
-                out.ior_unrst.rename(tmp_dir/(out.ior_unrst.name+f'_{nwrite:04d}'), echo=self.print2log)
-                nwrite += 1
                 # Append IORSim unrst to unified unrst
-                # NB! For some reason this alternative approach does not work...
-                #self.print2log(f'Append {out.ior_unrst} --> {unified_ior.path.relative_to(self.root.parent)}')
-                #unified_ior.append_bytes(out.ior_unrst.binarydata())
+                self.print2log(f'Append {ior.out_unrst} --> {unified_ior.resolve()}')
+                unified_ior.append_bytes(ior.out_unrst.binarydata())
+                nwrite += 1
         ior.quit()
-        # Move unified host unrst to case folder
-        File(unified_slb).rename(out.slb_unrst, echo=self.print2log)
-        # Merge the individual IORSim unrst files
-        with open(out.ior_unrst.path, 'wb') as outfile:
-            for infile in sorted(tmp_dir.glob(out.ior_unrst.name+'_*')):
-                outfile.write(File(infile).binarydata())
-                infile.unlink()
-                if ior.verbose > 2:
-                    self.print2log(f'Merging {infile} --> {out.ior_unrst}')
-        # Remove empty tmp-dir
-        tmp_dir.rmdir()
+        # Move unified unrst-files back to case folder
+        #unified_host.rename(ior.host_unrst, echo=self.print2log)
+        #unified_ior.rename(out.ior_unrst, echo=self.print2log)
         return ior.complete_msg(run_time=datetime.now()-starttime)
 
 
