@@ -482,7 +482,7 @@ class Runner:                                                               # Ru
     #--------------------------------------------------------------------------------
     def check_input(self):                                                   # Runner
     #--------------------------------------------------------------------------------
-        ### check if executables exist on the system
+        # check if executables exist on the system
         if which(self.exe) is None:
             raise SystemError('WARNING Executable not found: ' + self.exe)
         return True
@@ -656,18 +656,17 @@ class Runner:                                                               # Ru
             self._print('', tag='')
             raise SystemError(
                 f'INFO Run stopped after {self.time():.2f}'.rstrip('0').rstrip('.') + f' {unit}')
-
+        return True
 
     #--------------------------------------------------------------------------------
     def assert_running_and_stop_if_canceled(self, raise_error=True):         # Runner
     #--------------------------------------------------------------------------------
-        #self.parent.assert_running(raise_error=raise_error)
-        #self.main.assert_running(raise_error=raise_error)
         log = self.log and self.log.name
-        for proc in self.active:
-            proc.assert_running(raise_error=raise_error, log=log)
-        self.stop_if_canceled()
-
+        # for proc in self.active:
+        #     proc.assert_running(raise_error=raise_error, log=log)
+        is_running = [proc.assert_running(raise_error=raise_error, log=log) for proc in self.active]            
+        is_not_stopped = self.stop_if_canceled()
+        return all(is_running) and is_not_stopped
 
     #--------------------------------------------------------------------------------
     def run_time(self):                                                      # Runner
