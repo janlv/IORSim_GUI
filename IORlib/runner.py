@@ -452,6 +452,7 @@ class Runner:                                                               # Ru
         self.suspend_timer = None
         self.time_regex = time_regex
         self.kwargs = kwargs
+        self.unexpected_stop = False
         self.stdin = None
         if DEBUG:
             print(f'Creating {self}')
@@ -487,9 +488,17 @@ class Runner:                                                               # Ru
             raise SystemError('WARNING Executable not found: ' + self.exe)
         return True
 
+    # #--------------------------------------------------------------------------------
+    # def stopped_unexpectedly(self):                                                # Runner
+    # #--------------------------------------------------------------------------------
+    #     if self.unexpected_stop:
+    #         raise SystemError(f'ERROR {self.name} stopped unexpectedly after {self.time()} days')
+    #     return False
+
     #--------------------------------------------------------------------------------
     def unexpected_stop_error(self, **kwargs):                               # Runner
     #--------------------------------------------------------------------------------
+        self.unexpected_stop = True
         raise SystemError(f'ERROR {self.name} stopped unexpectedly after {self.time()} days'
                           + (self.log and f', check {Path(self.log.name).name} for details' or '') 
                           )
@@ -653,10 +662,16 @@ class Runner:                                                               # Ru
     def stop_if_canceled(self, unit='days'):                                 # Runner
     #--------------------------------------------------------------------------------
         if self.canceled:
+            self.unexpected_stop = True
             self._print('', tag='')
             raise SystemError(
                 f'INFO Run stopped after {self.time():.2f}'.rstrip('0').rstrip('.') + f' {unit}')
         return True
+
+    #--------------------------------------------------------------------------------
+    def is_running(self):                                                    # Runner
+    #--------------------------------------------------------------------------------
+        return all(proc.is_running() for proc in self.active)
 
     #--------------------------------------------------------------------------------
     def assert_running_and_stop_if_canceled(self, raise_error=True):         # Runner
