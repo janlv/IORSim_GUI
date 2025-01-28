@@ -3643,7 +3643,8 @@ class main_window(QMainWindow):                                    # main_window
         # Create dict of format [well][yaxis][fluid] = []
         wellnames = self.host_input.wellnames()
         # print('WELLNAMES', wellnames)
-        field_wells = ('FIELD',) + wellnames
+        # field_wells = ('FIELD',) + wellnames
+        field_wells = ['FIELD']+ wellnames
         ecl = {w:{'days':[], 'dates':[]} for w in field_wells}
         [ecl[w].update({y:{f:[] for f in self.ecl_fluids.values()} for y in self.ecl_yaxes.values()}) for w in field_wells]
         ecl['days'] = []

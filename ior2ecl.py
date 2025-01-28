@@ -21,7 +21,7 @@ from numpy import prod, sum as npsum
 from psutil import NoSuchProcess
 
 from IORlib.utils import (batched, convert_float_or_str, dates_after,
-    empty_folder, flat_list, flatten, list2text, pairwise, print_error, remove_comments, safeopen, 
+    empty_folder, flat_list, flatten, get_terminal_environment, list2text, pairwise, print_error, remove_comments, safeopen, 
     Progress, silentdelete, delete_files_matching, tail_file, LivePlot, running_jupyter)
 from IORlib.runner import Runner
 from IORlib.ECL import (FUNRST_file, DATA_file, File, INIT_file, RFT_file, Restart, SMSPEC_file, UNRST_file,
@@ -118,8 +118,12 @@ class SLBRunner(Runner):                                                  # SLBR
 
 
     #--------------------------------------------------------------------------------
-    def start(self, error_func=None):                                     # SLBRunner
+    def start(self, error_func=None, host=None):                          # SLBRunner
     #--------------------------------------------------------------------------------
+        # Get license file from terminal environment
+        var = 'LM_LICENSE_FILE'
+        environ[var] = get_terminal_environment(var)
+        self._print(f'{var} = {environ.get(var)}')
         # Workaround for MPI suggested by IX output
         environ['I_MPI_SHM_LMT'] = 'shm'
         if self.update:
@@ -775,7 +779,8 @@ class Ior_tandem(Iorsim):                                                # ior_t
         xfile = self.xfile()
         self.wait_for_files(*host_files, xfile.path, loop_func=error_func)
         # Copy host-files and IORSim input to IORSim case directory
-        self.copy_to_iorcase(*host_files, *IORSim_input(self.host_root).include_files(with_parent=True))
+        ior_inp = IORSim_input(self.host_root)
+        self.copy_to_iorcase(*host_files, *ior_inp.include_files(with_parent=True))
         #self._print(f'rft.end_time: {self.inp_rft.end_time()}, end_time: {self.end_time}')
         # Copy RFT-file during the simulation if it has not yet reached the end-time
         if self.inp_rft.end_time() < self.end_time:
