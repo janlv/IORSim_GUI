@@ -21,16 +21,12 @@ class Plotter():                                                            # Pl
         self.egrid = EGRID_file(root)
         self.show_edges = edges
         self.culling = culling
-        #self.var = None #var
-        #self.limit = limit
         self.plotter = BackgroundPlotter(window_size=size, allow_quit_keypress=True, title=title, multi_samples=4,
                                          line_smoothing=True, point_smoothing=True)
         self.wells = wells
         self.only_active = only_active
         self.scale = scale
         self.ijk = None
-        #self.dim = None
-        #self.limit = None
         self.dim = None
         self.tube_opacity = None
         self.tube_size = None
@@ -41,26 +37,12 @@ class Plotter():                                                            # Pl
         self.res_grid_opacity = None
         self.label_fontsize = 12
         self.arrow_scale = None
-        # self.start = None
-        # self.stop = None
-        # self.step = 1
-        # self.rft = None
-        # self.unrst = None
         self.grid_box = None
-        # self.box_mask = None
-        # self.well_mask = None
-        # self.res_mask = None
-        # self.wells = None
-        #self.active_wells = None
         self.grid = None
         self.labels = []
         self.tubes = {}
         self.datestring = None
-        #self.tube_grid = {}
-        # self.well_actor = {}
-        #self.well_grid = None
         self.grid_mask = []
-        #self.well_off = {}
         self.set_tube_values()
         self.set_grid_values()
 
@@ -181,14 +163,12 @@ class Plotter():                                                            # Pl
         """
         startdate : (year, month, day)
         """
-        #self.var = var
-        #self.ijk = ijk or [(0,d) for d in self.dim]
         unrst = UNRST_file(self.root)
         if startdate:
             start = unrst.section(date=startdate)
         celldata = unrst.cellarray(varname, start=start, stop=stop, step=step)
         active_wells = islice(self.active_wells_iter(), start, stop, step)
-        # Get grid-data for the first plot
+        # Get data for the first plot
         data = next(celldata)
         res_mask, well_mask = self.make_grid_and_masks(ijk)
         scalar = getattr(data, varname)
