@@ -201,3 +201,4 @@ testdir
 IXF_Examples
 OPM
 *.png
+plots/*
