@@ -1,5 +1,7 @@
 from collections import defaultdict, namedtuple, deque
 from itertools import chain, product, islice
+from math import inf
+from operator import ne
 from numpy import (array as nparray, abs as npabs, empty, int64, ndarray,
                    sum as npsum, diff as npdiff, any as npany, zeros, ones, stack, concatenate,
                    moveaxis, prod, where, argwhere, atleast_1d, argsort, bool_ as np_bool,
@@ -11,6 +13,61 @@ from scipy.sparse.csgraph import connected_components
 from .ECL import UNRST_file, RFT_file, INIT_file
 from .utils import batched, roll_xyz, missing_elements, neighbour_connections
 
+
+
+@njit
+def implicit_numba(sorted_blocks, nb_conn, rate, data, conc, inj_conc, force_vol_balance=False):
+    """
+    Perform implicit integration for tracer concentration updates.
+
+    Parameters:
+        sorted_blocks (list): List of sorted block indices (x, y, z).
+        nb_conn (ndarray): Neighbor connections for each block.
+        rate (object): Object containing rate_in, rate_out, and dt.
+        vol_phase (ndarray): Current phase volume for each block.
+        vol_phase_old (ndarray): Previous phase volume for each block.
+        conc (ndarray): Concentration array with shape (nx, ny, nz, 3).
+        mass (ndarray): Mass array with shape (nx, ny, nz, 3).
+        force_vol_balance (bool): Whether to enforce volume balance.
+
+    Returns:
+        ndarray: Updated concentration array.
+    """
+    vol_phase_old = data.sat_old * data.rporv_old
+    vol_phase = data.sat * data.rporv
+    mass = conc * vol_phase_old[..., None] + rate.dt * inj_conc * rate.rate_in[..., 6][..., None]
+    for b in sorted_blocks:
+        bx, by, bz = b
+        if force_vol_balance:
+            # Denominator of (Eq.3)
+            denom = (
+                vol_phase_old[bx, by, bz]
+                + rate.dt * npsum(rate.rate_in[bx, by, bz])
+            )
+        else:
+            # Denominator of (Eq.1)
+            denom = (
+                vol_phase[bx, by, bz]
+                + rate.dt * npsum(rate.rate_out[bx, by, bz])
+            )
+
+        valid_conn = rate.rate_in[bx, by, bz, :6] > 0
+        inflow_mass = zeros(conc.shape[-1])  # Initialize for 3 species
+        if npany(valid_conn):
+            for i in range(valid_conn.shape[0]):
+                if valid_conn[i]:
+                    nx, ny, nz = nb_conn[bx, by, bz, i]
+                    inflow_mass += (
+                        rate.rate_in[bx, by, bz, i] * conc[nx, ny, nz, :]
+                    )
+            mass[bx, by, bz, :] += rate.dt * inflow_mass
+
+        # Update concentration
+        conc[bx, by, bz, :] = mass[bx, by, bz, :] / denom
+
+    return conc
+
+
 #====================================================================================
 class Flow():                                                                  # Flow
 #====================================================================================
@@ -19,6 +76,7 @@ class Flow():                                                                  #
     def __init__(self, root, phase='wat', res_block=False, res_well=False):    # Flow
     #--------------------------------------------------------------------------------
         self.unrst = UNRST_file(root)
+        self.dim = self.unrst.dim()
         self.rft = RFT_file(root)
         self.convert = False
         self.phases = (phase,)
@@ -39,19 +97,11 @@ class Flow():                                                                  #
         TUB_RAT = 'TUBL' if res_well else 'RAT'
         self.well_keys = [f'CON{owg}{TUB_RAT}' for owg in 'OWG']
         self.rft.check_missing_keys(*self.well_keys)
-        # Non-neighbouring connections
-        # NB! Seems that only reservoir NNC is available 
-        # in UNRST, so only one phase is used
-        # init = INIT_file(self.unrst.path)
-        # self.nnc_ijk = [tuple(zip(*nnc))for nnc in init.non_neigh_conn()]
-        # self.nnc_key = ''
-        # if self.nnc_ijk[0]:
-        #     self.nnc_key = f'FLR{self.phases[0].upper()}N+'
         self.nnc = NNC(root, self.phases)
+        self.sort = Sort(self.dim)
         self.seqnum = 0
         self.time = 0
         self._neigh_connects = None
-        #self._index_array = None
 
     #--------------------------------------------------------------------------------
     def sat_rporv(self, sync=True):                                       # Flow
@@ -73,7 +123,7 @@ class Flow():                                                                  #
     def neighbour_connections(self):                                           # Flow
     #--------------------------------------------------------------------------------
         if self._neigh_connects is None:
-            self._neigh_connects = neighbour_connections(self.unrst.dim())
+            self._neigh_connects = neighbour_connections(self.dim)
         return self._neigh_connects
 
 
@@ -101,8 +151,7 @@ class Flow():                                                                  #
 
         Tracer = namedtuple('Tracer', 'time dt conc prod_mass cfl')
         conc = stack(init, axis=-1)
-        dim = self.unrst.dim()
-        inj_conc = stack([i * ones(dim) for i in inlet], axis=-1)
+        inj_conc = stack([i * ones(self.dim) for i in inlet], axis=-1)
         rates = self.rates()
         # if self.nnc_key:
         #     nnc_rates = self.nnc_rates()
@@ -138,7 +187,6 @@ class Flow():                                                                  #
             yield Tracer(rate.time, rate.dt, *[dict(out) for out in output], cfl)
             vol_phase_old = vol_phase
 
-    #@njit
     #--------------------------------------------------------------------------------
     def sort_blocks_by_flow(self, rate):                            # Flow
     #--------------------------------------------------------------------------------
@@ -165,7 +213,7 @@ class Flow():                                                                  #
                 in_degrees[link] -= 1
                 if in_degrees[link] == 0:
                     queue.append(link)
-        num_blocks = prod(self.unrst.dim())
+        num_blocks = prod(self.dim)
         if len(sorted_blocks) != num_blocks:
             raise RuntimeError(f'ERROR: Not all blocks are sorted: {len(sorted_blocks)} < {num_blocks}')
         return sorted_blocks
@@ -187,51 +235,46 @@ class Flow():                                                                  #
         #         c^n * Vp^n + dt * Qin^n * Cin^n+1
         # c^n+1 = ---------------------------------      (Eq.3)
         #                Vp^n + dt * Qin^n
-        Tracer = namedtuple('Tracer', 'time dt conc prod_mass cfl')
-        dim = self.unrst.dim()
+        Tracer = namedtuple('Tracer', 'time dt conc prod_mass')
+        #dim = self.unrst.dim()
         conc = stack(init, axis=-1)
         rates = self.rates()
         sat_rporv = self.sat_rporv()
-        inj_conc = stack([i * ones(dim) for i in inlet], axis=-1)
+        inj_conc = stack([i * ones(self.dim) for i in inlet], axis=-1)
+        nb_conn = self.neighbour_connections()
         for rate, data in zip(rates, sat_rporv):
             self.check_time_sync(rate.time, data.time)
-            vol_phase_old = data.sat_old * data.rporv_old
-            vol_phase = data.sat * data.rporv
-            # Initialize mass with c^n * Vp^n and mass from injectors
-            mass = conc * vol_phase_old[..., None] + rate.dt * inj_conc * rate.rate_in[..., 6][..., None]
-            # inflow_conc[0] : inflow rate, inflow_conc[1:4] : index of inflow connection blocks
-            rate_in = rate.rate_in[..., :6]
-            nb_conn = self.neighbour_connections()
-            # if self.nnc_key:
-            #     # Skip well rates at index 6
-            #     #rate_in = rate.rate_in[..., (0, 1, 2, 3, 4, 5, 7, 8)]
-            #     rate_in = concatenate((rate_in, rate.rate_in[..., 7:]), axis=-1)
-            #     connect_nnc = zeros((*conc.shape[:3], 3, 2), dtype=int)
-            #     connect_nnc[self.nnc_ijk[0]][..., 0] = self.nnc_ijk[1]
-            #     connect_nnc[self.nnc_ijk[1]][..., 1] = self.nnc_ijk[0]
-            #     connections = concatenate((connections, connect_nnc), axis=-1)
-            #inflow_conn = concatenate((rate.rate_in[..., :6, None], self.neighbour_connections()), axis=-1, dtype=object)
-            #inflow_conn = concatenate((rate_in[..., None], nb_conn), axis=-1, dtype=object)
-            #print(inflow_conn.shape)
-            for b in self.sort_blocks_by_flow(rate):
-                if force_vol_balance:
-                    # Denominator of (Eq.3)
-                    denom = vol_phase_old[b] + rate.dt * npsum(rate.rate_in[b])
-                else:
-                    # Denominator of (Eq.1)
-                    denom = vol_phase[b] + rate.dt * npsum(rate.rate_out[b])
-                # Nominator of (Eq.1) or (Eq.3)
-                # Filter and compute inflow contributions in a vectorized manner
-                valid_conn = rate_in[b] > 0
-                if npany(valid_conn):
-                    inflow_conc = rate_in[b][valid_conn, None] * conc[tuple(zip(*nb_conn[b][valid_conn]))]
-                    mass[*b, :] += rate.dt * npsum(inflow_conc, axis=0)
-                conc[*b, :] = mass[*b, :] / denom
+
+            sorted_blocks = self.sort.topological(rate.rate_out[..., :6])
+            conc = implicit_numba(sorted_blocks, nb_conn, rate, data, conc, inj_conc, force_vol_balance)
+
+            # vol_phase_old = data.sat_old * data.rporv_old
+            # vol_phase = data.sat * data.rporv
+            # # Initialize mass with c^n * Vp^n and mass from injectors
+            # # inflow_conc[0] : inflow rate, inflow_conc[1:4] : index of inflow connection blocks
+            # # mass = conc * vol_phase_old[..., None] + rate.dt * inj_conc * rate.rate_in[..., 6][..., None]
+            # rate_in = rate.rate_in[..., :6]
+            # for b in self.sort.topological(rate.rate_out[..., :6]):
+            #     if force_vol_balance:
+            #         # Denominator of (Eq.3)
+            #         denom = vol_phase_old[b] + rate.dt * npsum(rate.rate_in[b])
+            #     else:
+            #         # Denominator of (Eq.1)
+            #         denom = vol_phase[b] + rate.dt * npsum(rate.rate_out[b])
+            #     # Nominator of (Eq.1) or (Eq.3)
+            #     # Filter and compute inflow contributions in a vectorized manner
+            #     valid_conn = rate_in[b] > 0
+            #     if npany(valid_conn):
+            #         #inflow_conc = rate_in[b][valid_conn, None] * conc[tuple(zip(*nb_conn[b][valid_conn]))]
+            #         inflow_conc = rate_in[b][valid_conn, None] * conc[*nb_conn[b][valid_conn].T]
+            #         mass[*b, :] += rate.dt * npsum(inflow_conc, axis=0)
+            #     conc[*b, :] = mass[*b, :] / denom
+
             prod_mass = rate.dt * rate.rate_out[..., 6][..., None] * conc
-            cfl = rate.dt * npsum(rate.rate_in, axis=-1) / vol_phase
+            #cfl = rate.dt * npsum(rate.rate_in, axis=-1) / vol_phase
             output = (zip(name, moveaxis(var, -1, 0)) for var in (conc, prod_mass))
-            yield Tracer(rate.time, rate.dt, *[dict(out) for out in output], cfl)
-            vol_phase_old = vol_phase
+            yield Tracer(rate.time, rate.dt, *[dict(out) for out in output])
+            #vol_phase_old = vol_phase
 
 
     #--------------------------------------------------------------------------------
@@ -240,7 +283,7 @@ class Flow():                                                                  #
         Rates = namedtuple('Rates', 'time dt rate_in rate_out')
         block_flow = self.interblock()
         well_flow = self.wells()
-        dim = self.unrst.dim()
+        #dim = self.unrst.dim()
         # nnc = None
         # if self.nnc_key:
         #     nnc_rates = self.nnc_rates()
@@ -251,7 +294,7 @@ class Flow():                                                                  #
         # Loop over interblock flows and well flows
         for block, wells in zip(block_flow, well_flow):
             # Loop over active wells
-            well_rate = {io:zeros(dim) for io in ('in', 'out')}
+            well_rate = {io:zeros(self.dim) for io in ('in', 'out')}
             for well in wells:
                 self.check_time_sync(well.time, block.time)
                 kind = 'in' if well.rate[0] < 0 else 'out'
