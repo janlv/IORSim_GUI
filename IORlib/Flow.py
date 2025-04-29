@@ -555,7 +555,7 @@ class Convert():                                          # Convert
 
 
 #================================================================================
-class SparseGridFlow:
+class Sort:
 #================================================================================
     
     #----------------------------------------------------------------------------
@@ -574,75 +574,33 @@ class SparseGridFlow:
         self.u = nprepeat(arange(self.N), self.D)               # (N*6,)
         self.adj = None
 
-    # #----------------------------------------------------------------------------
-    # def topological_sort_fast(self, rate_out, rate_in):
-    # #----------------------------------------------------------------------------
-    #     valid = rate_out.reshape(self.N * self.D) > 0          # (N*6,)
-    #     u_valid = self.u[valid]
-    #     # Beregn destinasjons-ID v
-    #     v = self.to_flat(self.connections[valid])          # (M,)
-    #     # bygg linked‐CSR
-    #     head, to, nxt = build_linked_csr(u_valid, v, self.N)
-    #     # fjern sykluser
-    #     head, nxt = remove_cycles_numba(head, to, nxt, self.N)
-    #     # bygg tradisjonell CSR arrays for Kahn
-    #     # tell grad
-    #     counts = bincount(u_valid, minlength=self.N)
-    #     indptr = empty(self.N + 1, int64)
-    #     indptr[0] = 0
-    #     indptr[1:] = cumsum(counts)
-    #     #indices = empty_like(u_valid)
-    #     indices = empty(u_valid.shape, int64)
-    #     ptr = indptr[:-1].copy()
-    #     for k in range(u_valid.size):
-    #         uk = u_valid[k]
-    #         indices[ptr[uk]] = v[k]
-    #         ptr[uk] += 1
-    #     # in_deg array flat
-    #     in_deg_flat = npsum(where(rate_in > 0, 1, 0), axis=-1).reshape(self.N)
-    #     # kjør Kahn
-    #     #order_flat, length = kahn_numba(indptr, indices, in_deg_flat.copy())
-    #     order_flat, length = kahn_numba(indptr, indices, in_deg_flat)
-    #     order_flat = order_flat[:length]
-    #     # Sjekk om vi fikk med alle
-    #     if length < self.N:
-    #         print("Advarsel: Sykluser gjenstår — topologisk sortering ufullstendig.")
-    #         print(length, self.N)
-    #         #order = order[:length]
-    #     #return to_coords(order, self.shape, as_list=True)
-    #     return self.to_coords(order_flat, as_list=True)
-
-
     #----------------------------------------------------------------------------
-    def topological_sort(self, rate_out):
+    def topological(self, rate_out):
     #----------------------------------------------------------------------------
         """
-        Bryter sykluser, så kjører Kahn's algoritme manuelt
-        på vår CSR-matrise for å finne en flyt-rekkefølge.
+        Breaks cycles, then manually runs Kahn's algorithm
+        on our CSR matrix to determine a flow order.
         """
         self.adj = self.adjacency_matrix(rate_out)
         if self.has_cycle():
             self.remove_cycles()
 
-        # Les av indptr og indices
+        # Create indptr and indices for kahn_numba
         indptr  = self.adj.indptr    # length N+1
         indices = self.adj.indices   # length = number of edges
 
-        # Init in-degree som en 1D-array
+        # Init in-degree as a 1D-array
         in_deg = nparray(self.adj.sum(axis=0)).ravel()  # shape (N,)
 
-        # Kahn's algoritme
+        # Run Kahn's algoritm
         order, idx = kahn_numba(indptr, indices, in_deg)
         
-        # Sjekk om vi fikk med alle
+        # Check for possible cycles
         if idx < self.N:
-            print("Advarsel: Sykluser gjenstår — topologisk sortering ufullstendig.")
+            print("Warning: Cycles remain — topological sorting incomplete.")
             order = order[:idx]
 
-        #return to_coords(order, self.shape, as_list=True)
         return self.to_coords(order, as_list=True)
-        #return self.to_coords(kahns_algorithm(indptr, indices, in_deg, self.N), as_list=True)
-        # return self.kahns_sorting()
 
     #--------------------------------------------------------------------------------
     def to_coords(self, flat, as_list=False):
@@ -711,18 +669,6 @@ class SparseGridFlow:
             conn[u_coord].append(v_coord)
         return conn
 
-    # #----------------------------------------------------------------------------
-    # def has_cycle_slow(self):
-    # #----------------------------------------------------------------------------
-    #     A     = self.adj.copy()
-    #     power = eye(self.N, format='csr', dtype=int)
-    #     for _ in range(1, self.N + 1):
-    #         print('has_cycle:', _)
-    #         power = power @ A
-    #         if power.diagonal().sum() > 0:
-    #             return True
-    #     return False
-
     #----------------------------------------------------------------------------
     def has_cycle(self):
     #----------------------------------------------------------------------------
@@ -736,7 +682,7 @@ class SparseGridFlow:
     #----------------------------------------------------------------------------
     def remove_cycles(self):
     #----------------------------------------------------------------------------
-        """Bryter alle sykluser ved å fjerne kanter fra en LIL-representasjon."""
+        """Breaks all cycles by removing edges from a LIL representation."""
         # 1) Gjør om til LIL for trygg mutasjon
         A_lil = self.adj.tolil()
 
@@ -749,7 +695,7 @@ class SparseGridFlow:
             cyc_comps = where(counts > 1)[0]
             if cyc_comps.size == 0:
                 # Ingen sykluser igjen
-                print(f"Ferdig med syklusbryting, brutt {cycle_id} sykluser.")
+                print(f"Completed cycle breaking, removed {cycle_id} cycles.")
                 break
 
             comp_id = int(cyc_comps[0])
@@ -764,8 +710,8 @@ class SparseGridFlow:
                 # nabo‐flater fra LIL kan hentes raskt:
                 for idx, v in enumerate(A_lil.rows[u]):
                     if labels[v] == comp_id:
-                        print(f"[Syklus {cycle_id}] Fjerner kant {u}->{v} " +
-                              f"i komponent {comp_id} (størrelse {counts[comp_id]})")
+                        print(f"[Cycle {cycle_id}] Removing edge {u}->{v} " +
+                              f"in component {comp_id} (size {counts[comp_id]})")
                         # fjern elementet
                         del A_lil.rows[u][idx]
                         del A_lil.data[u][idx]
@@ -776,12 +722,16 @@ class SparseGridFlow:
 
             if not removed:
                 # trygghetsjekk – skal ikke skje
-                print(f"Advarsel: Fant ingen kant å fjerne i komponent {comp_id}.")
+                print(f"Warning: No edge to remove in component {comp_id}.")
                 break
 
         # 5) Legg CSR‐versjonen tilbake i self.adj
         self.adj = A_lil.tocsr()
     
+
+#============================================================================
+# Numba-routines
+#============================================================================
 
 @njit
 #----------------------------------------------------------------------------
@@ -815,33 +765,6 @@ def kahn_numba(indptr, indices, in_deg):
 
     return order[:idx], idx
 
-
-
-# @njit
-# #--------------------------------------------------------------------------------
-# def to_coords(flat, shape):
-# #--------------------------------------------------------------------------------
-#     """
-#     Converts a 1D array of flat indices `flat` to (x, y, z) coordinates.
-#     flat: array of shape (N,)
-#     shape: tuple of grid dimensions (X, Y, Z)
-#     Returns: list of tuples with coordinates of shape (N, 3)
-#     """
-#     YZ = shape[1] * shape[2]
-#     x = flat // YZ
-#     rem = flat % YZ
-#     y = rem // shape[2]
-#     z = rem % shape[2]
-#     return x, y, z
-#     #return stack((x, y, z), axis=1)
-
-# @njit
-# #--------------------------------------------------------------------------------
-# def to_flat(coords, shape):
-# #--------------------------------------------------------------------------------
-#     """Convert 3D coordinates to flat index."""
-#     x, y, z = coords.T
-#     return x * (shape[1] * shape[2]) + y * shape[2] + z
 
 @njit
 #--------------------------------------------------------------------------------
@@ -902,114 +825,22 @@ def has_cycle_dfs(node, indptr, indices, visited, rec_stack):
     rec_stack[node] = False
     return False
 
-# @njit
-# def build_linked_csr(u, v, N):
-#     """
-#     Bygger opp edge-lister head, to, nxt i CSR-lignende linked-list-format.
-    
-#     Parametre:
-#     u : 1D-array med kilde-indekser (node IDs) for hver kant (lengde M)
-#     v : 1D-array med destinasjons-indekser (node IDs) for hver kant (lengde M)
-#     N : antall noder
-    
-#     Returnerer:
-#     head : 1D-array, lengde N, head[i] er edge-ID til første utgående kant fra i, eller -1
-#     to   : 1D-array, lengde M, to[k] er destinasjonen for kant k
-#     nxt  : 1D-array, lengde M, nxt[k] er neste edge-ID fra samme kilde, eller -1
-#     """
-#     M = u.shape[0]
-#     head = -1 * ones(N, dtype=int64)
-#     to   = empty(M, dtype=int64)
-#     nxt  = -1 * ones(M, dtype=int64)
-    
-#     for k in range(M):
-#         uk = u[k]
-#         to[k] = v[k]
-#         nxt[k] = head[uk]
-#         head[uk] = k
-    
-#     return head, to, nxt
+@njit
+#--------------------------------------------------------------------------------
+def to_coords(flat, shape):
+#--------------------------------------------------------------------------------
+    YZ = shape[1] * shape[2]
+    x = flat // YZ
+    rem = flat % YZ
+    y = rem // shape[2]
+    z = rem % shape[2]
+    return x, y, z
 
-
-# @njit
-# #--------------------------------------------------------------------------------
-# def remove_cycles_numba(head, to, nxt, N):
-# #--------------------------------------------------------------------------------
-#     """
-#     Bryter alle sykluser i en graf representert som adjacency-lister
-#     ved hjelp av head, to, nxt arrays (CSR-lignende linked lists).
-#     head: int64[N] startedge per node, -1 hvis ingen
-#     to:    int64[M] destinasjon for hver edge
-#     nxt:   int64[M] neste edge-indeks fra samme u, -1 hvis ingen
-#     N:     antall noder
-#     Returnerer oppdatert head og nxt uten sykluser.
-#     """
-#     # Fargekoder for DFS
-#     WHITE, GRAY, BLACK = 0, 1, 2
-#     color = zeros(N, dtype=int64)
-
-#     while True:
-#         cycle_found = False
-#         rem_edge = -1
-
-#         # Iterer over alle startnoder
-#         for start in range(N):
-#             if color[start] != WHITE:
-#                 continue
-
-#             # Stacks for node og pågående edge
-#             stack_node = empty(N, dtype=int64)
-#             stack_edge = empty(N, dtype=int64)
-#             sp = 0
-#             stack_node[0] = start
-#             stack_edge[0] = head[start]
-
-#             # DFS-løkke
-#             while sp >= 0:
-#                 u = stack_node[sp]
-#                 e = stack_edge[sp]
-#                 if e == head[u]:
-#                     color[u] = GRAY
-#                 if e != -1:
-#                     v = to[e]
-#                     stack_edge[sp] = nxt[e]
-#                     if color[v] == WHITE:
-#                         sp += 1
-#                         stack_node[sp] = v
-#                         stack_edge[sp] = head[v]
-#                     elif color[v] == GRAY:
-#                         # Funnet back-edge
-#                         rem_edge = e
-#                         cycle_found = True
-#                         break
-#                 else:
-#                     # Alle naboer behandlet
-#                     color[u] = BLACK
-#                     sp -= 1
-#                 if cycle_found:
-#                     break
-#             if cycle_found:
-#                 break
-#         if not cycle_found:
-#             break
-
-#         # Fjern rem_edge fra linked-list
-#         # Finn u slik at head[u] eller nxt[...] == rem_edge
-#         for u in range(N):
-#             if head[u] == rem_edge:
-#                 head[u] = nxt[rem_edge]
-#                 break
-#             prev = head[u]
-#             while prev != -1 and nxt[prev] != rem_edge:
-#                 prev = nxt[prev]
-#             if prev != -1:
-#                 nxt[prev] = nxt[rem_edge]
-#                 break
-
-#         # Nullstill farge for neste runde
-#         for i in range(N):
-#             color[i] = WHITE
-
-#     return head, nxt
-
+@njit
+#--------------------------------------------------------------------------------
+def to_flat(coords, shape):
+#--------------------------------------------------------------------------------
+    """ Convert 3D coordinates to flat index. """
+    x, y, z = coords.T
+    return x * (shape[1] * shape[2]) + y * shape[2] + z
 
