@@ -1,8 +1,13 @@
-from collections import namedtuple, deque
-from itertools import product, islice
-from numpy import (array as nparray, abs as npabs, sum as npsum, diff as npdiff, any as npany,
-                   zeros, ones, stack, concatenate, moveaxis, prod, where, argwhere, atleast_1d,
-                   argsort, bool_ as np_bool)
+from collections import defaultdict, namedtuple, deque
+from itertools import chain, product, islice
+from numpy import (array as nparray, abs as npabs, empty, int64, ndarray,
+                   sum as npsum, diff as npdiff, any as npany, zeros, ones, stack, concatenate,
+                   moveaxis, prod, where, argwhere, atleast_1d, argsort, bool_ as np_bool,
+                   add as npadd, repeat as nprepeat, arange, ones_like, bincount)
+from numba import njit
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import connected_components
+
 from .ECL import UNRST_file, RFT_file, INIT_file
 from .utils import batched, roll_xyz, missing_elements, neighbour_connections
 
@@ -37,31 +42,35 @@ class Flow():                                                                  #
         # Non-neighbouring connections
         # NB! Seems that only reservoir NNC is available 
         # in UNRST, so only one phase is used
-        init = INIT_file(self.unrst.path)
-        self.nnc_ijk = [tuple(zip(*nnc))for nnc in init.non_neigh_conn()]
-        self.nnc_key = ''
-        if self.nnc_ijk[0]:
-            self.nnc_key = f'FLR{self.phases[0].upper()}N+'
+        # init = INIT_file(self.unrst.path)
+        # self.nnc_ijk = [tuple(zip(*nnc))for nnc in init.non_neigh_conn()]
+        # self.nnc_key = ''
+        # if self.nnc_ijk[0]:
+        #     self.nnc_key = f'FLR{self.phases[0].upper()}N+'
+        self.nnc = NNC(root, self.phases)
         self.seqnum = 0
         self.time = 0
         self._neigh_connects = None
-        self._index_array = None
+        #self._index_array = None
 
     #--------------------------------------------------------------------------------
-    def sat_rporv(self):                                 # Flow
+    def sat_rporv(self, sync=True):                                       # Flow
     #--------------------------------------------------------------------------------
         Data = namedtuple('Data', 'time dt rporv rporv_old sat sat_old')
         blockdata = self.unrst.blockdata('DOUBHEAD', 0, 'S'+self.phases[0].upper(), 'RPORV')
         # Initial data
-        time_old, *data = next(blockdata, None)
-        sat_old, rporv_old = self.unrst.reshape_dim(*data)
+        if sync:
+            time_old, *data = next(blockdata, None)
+            sat_old, rporv_old = self.unrst.reshape_dim(*data)
+        else:
+            time_old, sat_old, rporv_old = -1, -1, -1            
         for time, *data in blockdata:
             sat, rporv = self.unrst.reshape_dim(*data)
             yield Data(time, time - time_old, rporv, rporv_old, sat, sat_old)
             time_old, sat_old, rporv_old = time, sat, rporv
 
     #--------------------------------------------------------------------------------
-    def neighbour_connections(self):                                                # Flow
+    def neighbour_connections(self):                                           # Flow
     #--------------------------------------------------------------------------------
         if self._neigh_connects is None:
             self._neigh_connects = neighbour_connections(self.unrst.dim())
@@ -89,15 +98,14 @@ class Flow():                                                                  #
         #   the ijk-block, while positive roll brings ijk-1 conc. to the ijk-block.
         # Well:
         #   Injection conc. is connection 7
-        # NNC:
-        #   Conc. for flow nnc2 -> nnc1 is connection 8, while conc. for
-        #   flow nnc1 -> nnc2 is connection 9
 
         Tracer = namedtuple('Tracer', 'time dt conc prod_mass cfl')
         conc = stack(init, axis=-1)
         dim = self.unrst.dim()
         inj_conc = stack([i * ones(dim) for i in inlet], axis=-1)
         rates = self.rates()
+        # if self.nnc_key:
+        #     nnc_rates = self.nnc_rates()
         sat_rporv = self.sat_rporv()
         for rate, data in zip(rates, sat_rporv):
             self.check_time_sync(rate.time, data.time)
@@ -111,16 +119,18 @@ class Flow():                                                                  #
                 mass = conc * (vol_phase_old - rate.dt * npsum(rate.rate_out, axis=-1))[..., None]
             # Use 'as_scalar' = True in roll_xyz to move all conc. values
             conc_inflow = concatenate((roll_xyz(conc, -1, True), roll_xyz(conc, 1, True), inj_conc[..., None]), axis=-1)
-            if self.nnc_key:
-                conc_nnc = zeros((*conc.shape[:3], 2))
-                # NNC inflow[0] is flow into nnc1 from nnc2, get conc from nnc2
-                conc_nnc[self.nnc_ijk[0]][..., 0] = conc[self.nnc_ijk[1]]
-                # NNC inflow[1] is flow into nnc2 from nnc1, get conc from nnc1
-                conc_nnc[self.nnc_ijk[1]][..., 1] = conc[self.nnc_ijk[0]]
-                # The NNC conc. is connection 8 and 9
-                conc_inflow = concatenate((conc_inflow, conc_nnc), axis=-1)
             # Second part of (Eq.1) or (Eq.3)
             mass += rate.dt * npsum((rate.rate_in[..., None, :] * conc_inflow), axis=-1)
+            # if self.nnc_key:
+            if self.nnc.exists:
+                #nnc = next(nnc_rates, None)
+                nnc_rate = self.nnc.get_rate(self.seqnum)
+                # rate_out is flow into nnc2 from nnc1, get conc from nnc1
+                npadd.at(mass, self.nnc.ijk[1], rate.dt * nnc_rate.rate_out[:, None] * conc[self.nnc.ijk[0]])
+                #mass[self.nnc_ijk[1]] += rate.dt * nnc.rate_out[:, None] * conc[self.nnc_ijk[0]]
+                # rate_in is flow into nnc1 from nnc2, get conc from nnc2
+                npadd.at(mass, self.nnc.ijk[0], rate.dt * nnc_rate.rate_in[:, None] * conc[self.nnc.ijk[1]])
+                #mass[self.nnc_ijk[0]] += rate.dt * nnc.rate_in[:, None] * conc[self.nnc_ijk[1]]
             conc = mass / vol_phase[..., None]
             prod_mass = rate.dt * rate.rate_out[..., 6][..., None] * conc
             cfl = rate.dt * npsum(rate.rate_in, axis=-1) / vol_phase
@@ -128,20 +138,29 @@ class Flow():                                                                  #
             yield Tracer(rate.time, rate.dt, *[dict(out) for out in output], cfl)
             vol_phase_old = vol_phase
 
-
+    #@njit
     #--------------------------------------------------------------------------------
-    def sort_blocks_by_flow(self, rate):                                 # Flow
+    def sort_blocks_by_flow(self, rate):                            # Flow
     #--------------------------------------------------------------------------------
         in_degrees = npsum(where(rate.rate_in[..., :6] > 0, 1, 0), axis=-1)
         out_conn = where(rate.rate_out[...,:6, None] > 0, self.neighbour_connections(), -1)
+        if self.nnc.exists:
+            nnc_rate = self.nnc.get_rate(self.seqnum)
+            # rate_out is flow into nnc2 from nnc1
+            npadd.at(in_degrees, self.nnc.ijk[1], nnc_rate.rate_out > 0)
+            # rate_in is flow into nnc1 from nnc2
+            npadd.at(in_degrees, self.nnc.ijk[0], nnc_rate.rate_in > 0)
+            nnc_out_conn = self.nnc.out_connections(nnc_rate)
         # Start with blocks with no in-degrees (inlets)
-        queue = deque([tuple(ind) for ind in argwhere(in_degrees == 0)])
+        queue = deque([tuple(ind) for ind in argwhere(in_degrees == 0).tolist()])
         
         sorted_blocks = []
         while queue:
             node = queue.popleft()
             sorted_blocks.append(node)
-            connections = [tuple(nb) for nb in out_conn[node] if nb[0] >= 0]
+            connections = (tuple(nb) for nb in out_conn[node].tolist() if nb[0] >= 0)
+            if self.nnc.exists:
+                connections = chain(connections, nnc_out_conn.get(node, []))
             for link in connections:
                 in_degrees[link] -= 1
                 if in_degrees[link] == 0:
@@ -216,17 +235,18 @@ class Flow():                                                                  #
 
 
     #--------------------------------------------------------------------------------
-    def rates(self):                                                    # Flow
+    def rates(self):                                                           # Flow
     #--------------------------------------------------------------------------------
         Rates = namedtuple('Rates', 'time dt rate_in rate_out')
         block_flow = self.interblock()
         well_flow = self.wells()
         dim = self.unrst.dim()
-        nnc = None
-        if self.nnc_key:
-            nnc_rates = self.nnc_rates()
-            nnc = next(nnc_rates, None)
+        # nnc = None
+        # if self.nnc_key:
+        #     nnc_rates = self.nnc_rates()
+        #     nnc = next(nnc_rates, None)
         # Initial time
+        # Need to skip the inital block of the UNRST-file to sync with the RFT-file
         time = next(block_flow).time
         # Loop over interblock flows and well flows
         for block, wells in zip(block_flow, well_flow):
@@ -237,15 +257,15 @@ class Flow():                                                                  #
                 kind = 'in' if well.rate[0] < 0 else 'out'
                 well_rate[kind][well.pos] += npabs(well.rate)
             dt = block.time - time
-            # Last index is connection number. Block rates are the 6 first connections 
+            # Last index is connection number. Block rates are the 6 first connections
             # (one for each face), and well rates are connection 7.
             rate_in = concatenate((block.rate_in, well_rate['in'][..., None]), axis=-1)
             rate_out = concatenate((block.rate_out, well_rate['out'][..., None]), axis=-1)
-            if nnc:
-                # NNC rates are connection 8 (nnc1 in/out) and 9 (nnc2 in/out)
-                nnc = next(nnc_rates, None)
-                rate_in = concatenate((rate_in, nnc.rate_in), axis=-1)
-                rate_out = concatenate((rate_out, nnc.rate_out), axis=-1)
+            # if nnc:
+            #     # NNC rates are connection 8 (nnc1 in/out) and 9 (nnc2 in/out)
+            #     nnc = next(nnc_rates, None)
+            #     rate_in = concatenate((rate_in, nnc.rate_in), axis=-1)
+            #     rate_out = concatenate((rate_out, nnc.rate_out), axis=-1)
             yield Rates(block.time, dt, rate_in, rate_out)
             time = block.time
 
@@ -262,28 +282,46 @@ class Flow():                                                                  #
                            data.sat, data.sat_old, rate_in, rate_out)
 
 
-    #--------------------------------------------------------------------------------
-    def nnc_rates(self):                                                  # Flow
-    #--------------------------------------------------------------------------------
-        NNC = namedtuple('NNC', 'rate_in rate_out')
-        dim2 = (*self.unrst.dim(), 2)
-        for seqnum, rate in self.unrst.blockdata('SEQNUM', self.nnc_key, singleton=True):
-            if seqnum[0] != self.seqnum:
-                raise ValueError(f'SEQNUM mismatch for NNC-rates: {seqnum[0]}, {self.seqnum}')
-            rate = nparray(rate)
-            rate_in = -rate * (rate < 0)
-            rate_out = rate * (rate >= 0)
-            nnc_in = zeros(dim2)
-            # Into nnc1 (from nnc2)
-            nnc_in[self.nnc_ijk[0]][..., 0] = rate_in
-            # Into nnc2 (from nnc1)
-            nnc_in[self.nnc_ijk[1]][..., 1] = rate_out
-            nnc_out = zeros(dim2)
-            # From nnc1 (into nnc2)
-            nnc_out[self.nnc_ijk[0]][..., 0] = rate_out
-            # From nnc2 (into nnc1)
-            nnc_out[self.nnc_ijk[1]][..., 1] = rate_in
-            yield NNC(nnc_in, nnc_out)
+    # #--------------------------------------------------------------------------------
+    # def nnc_rates(self):                                                  # Flow
+    # #--------------------------------------------------------------------------------
+    #     NNC = namedtuple('NNC', 'rate_in rate_out')
+    #     dim2 = (*self.unrst.dim(), 2)
+    #     for seqnum, rate in self.unrst.blockdata('SEQNUM', self.nnc_key, singleton=True):
+    #         if seqnum[0] != self.seqnum:
+    #             raise ValueError(f'SEQNUM mismatch for NNC-rates: {seqnum[0]}, {self.seqnum}')
+    #         rate = nparray(rate)
+    #         rate_in = -rate * (rate < 0)
+    #         rate_out = rate * (rate >= 0)
+    #         nnc_in = zeros(dim2)
+    #         # Into nnc1 (from nnc2)
+    #         nnc_in[self.nnc_ijk[0]][..., 0] = rate_in
+    #         # Into nnc2 (from nnc1)
+    #         nnc_in[self.nnc_ijk[1]][..., 1] = rate_out
+    #         nnc_out = zeros(dim2)
+    #         # From nnc1 (into nnc2)
+    #         nnc_out[self.nnc_ijk[0]][..., 0] = rate_out
+    #         # From nnc2 (into nnc1)
+    #         nnc_out[self.nnc_ijk[1]][..., 1] = rate_in
+    #         yield NNC(nnc_in, nnc_out)
+
+    # #--------------------------------------------------------------------------------
+    # def nnc_rates(self, sync=True):                                     # Flow
+    # #--------------------------------------------------------------------------------
+    #     # Read NNC rates from UNRST-file at reservoir conditions, i.e. FLRpppN+ where 
+    #     # ppp is OIL, WAT, or GAS
+    #     NNC = namedtuple('NNC', 'rate_in rate_out')
+    #     blockdata = self.unrst.blockdata('SEQNUM', self.nnc_key, singleton=True)
+    #     if sync:
+    #         # Skip the initial block to sync with the RFT-file
+    #         next(blockdata, None)
+    #     for seqnum, rate in blockdata:
+    #         if sync and seqnum[0] != self.seqnum:
+    #             raise ValueError(f'SEQNUM mismatch for NNC-rates: {seqnum[0]}, {self.seqnum}')
+    #         rate = nparray(rate)
+    #         rate_in = -rate * (rate < 0)
+    #         rate_out = rate * (rate > 0)
+    #         yield NNC(rate_in, rate_out)
 
 
     #--------------------------------------------------------------------------------
@@ -378,7 +416,74 @@ class Flow():                                                                  #
         if npany(npabs(npdiff(times)) > self.dt_accuracy):
             raise ValueError(f'Time difference in Rates-class: {times}')
 
+#================================================================================
+class NNC():                                          # NNC
+#================================================================================
+    nnc_rate = namedtuple('nnc_rate', 'rate_in rate_out')
 
+    #----------------------------------------------------------------------------
+    def __init__(self, root, phases):                 # Convert
+    #----------------------------------------------------------------------------
+        # Non-neighbouring connections
+        # NB! Seems that only reservoir NNC is available 
+        # in UNRST, so only one phase is used
+        self.unrst = UNRST_file(root)
+        self.key = None
+        self.exists = False
+        self.seqnum = None
+        self.blockdata = None
+        self.rate_in = None
+        self.rate_out = None
+        init = INIT_file(root)
+        self.nnc = init.non_neigh_conn()
+        if self.nnc[0]:
+            self.exists = True
+            self.ijk = [tuple(zip(*n))for n in self.nnc]
+            self.key = f'FLR{phases[0].upper()}N+'
+            self.start()
+
+    #----------------------------------------------------------------------------
+    def start(self):                                         # NNC
+    #----------------------------------------------------------------------------
+        self.seqnum = -1
+        self.blockdata = self.unrst.blockdata('SEQNUM', self.key, singleton=True)
+
+    #----------------------------------------------------------------------------
+    def read_rate(self, step=1):                                         # NNC
+    #----------------------------------------------------------------------------
+        # Read NNC rates from UNRST-file at reservoir conditions, i.e. FLRpppN+ where
+        # ppp is OIL, WAT, or GAS
+        # Using islice here to be able to skip steps, typically the initial step
+        seqnum, data = next(islice(self.blockdata, step-1, None))
+        self.seqnum = seqnum[0]
+        rate = nparray(data)
+        self.rate_in = -rate * (rate < 0)
+        self.rate_out = rate * (rate > 0)
+
+    #----------------------------------------------------------------------------
+    def get_rate(self, seqnum):                                         # NNC
+    #----------------------------------------------------------------------------
+        if seqnum < self.seqnum:
+            # Start from beginning
+            self.start()
+        if seqnum > self.seqnum:
+            # Step forward
+            self.read_rate(seqnum - self.seqnum)
+        if seqnum != self.seqnum:
+            raise ValueError(f'SEQNUM mismatch in NNC: {seqnum} != {self.seqnum}')
+        return self.nnc_rate(self.rate_in, self.rate_out)
+
+    #----------------------------------------------------------------------------
+    def out_connections(self, rate:nnc_rate):               # NNC
+    #----------------------------------------------------------------------------
+        out_conn = defaultdict(list)
+        for n1, n2, rin, rout in zip(*self.nnc, rate.rate_in, rate.rate_out):
+            if rout > 0:
+                out_conn[tuple(n1)].append(tuple(n2))
+            if rin > 0:
+                out_conn[tuple(n2)].append(tuple(n1))
+        return out_conn
+    
 
 #================================================================================
 class Convert():                                          # Convert
@@ -447,4 +552,464 @@ class Convert():                                          # Convert
         else:
             resrate = pvt['BW'] * rate['wat']
         return resrate
+
+
+#================================================================================
+class SparseGridFlow:
+#================================================================================
+    
+    #----------------------------------------------------------------------------
+    def __init__(self, shape):
+    #----------------------------------------------------------------------------
+        """
+        in_degrees:      3D-array shape (X, Y, Z)
+        out_connections: 5D-array shape (X, Y, Z, 6, 3), hvor:
+                         out_connections[x,y,z,d] = (nx,ny,nz) eller (-1,-1,-1)
+                         Retninger d=0..5 tilsvarer (+x,+y,+z,-x,-y,-z)
+        """
+        self.shape = shape
+        self.N = prod(shape)
+        self.D = 6
+        self.connections = neighbour_connections(shape).reshape(self.N * self.D, 3)
+        self.u = nprepeat(arange(self.N), self.D)               # (N*6,)
+        self.adj = None
+
+    # #----------------------------------------------------------------------------
+    # def topological_sort_fast(self, rate_out, rate_in):
+    # #----------------------------------------------------------------------------
+    #     valid = rate_out.reshape(self.N * self.D) > 0          # (N*6,)
+    #     u_valid = self.u[valid]
+    #     # Beregn destinasjons-ID v
+    #     v = self.to_flat(self.connections[valid])          # (M,)
+    #     # bygg linked‐CSR
+    #     head, to, nxt = build_linked_csr(u_valid, v, self.N)
+    #     # fjern sykluser
+    #     head, nxt = remove_cycles_numba(head, to, nxt, self.N)
+    #     # bygg tradisjonell CSR arrays for Kahn
+    #     # tell grad
+    #     counts = bincount(u_valid, minlength=self.N)
+    #     indptr = empty(self.N + 1, int64)
+    #     indptr[0] = 0
+    #     indptr[1:] = cumsum(counts)
+    #     #indices = empty_like(u_valid)
+    #     indices = empty(u_valid.shape, int64)
+    #     ptr = indptr[:-1].copy()
+    #     for k in range(u_valid.size):
+    #         uk = u_valid[k]
+    #         indices[ptr[uk]] = v[k]
+    #         ptr[uk] += 1
+    #     # in_deg array flat
+    #     in_deg_flat = npsum(where(rate_in > 0, 1, 0), axis=-1).reshape(self.N)
+    #     # kjør Kahn
+    #     #order_flat, length = kahn_numba(indptr, indices, in_deg_flat.copy())
+    #     order_flat, length = kahn_numba(indptr, indices, in_deg_flat)
+    #     order_flat = order_flat[:length]
+    #     # Sjekk om vi fikk med alle
+    #     if length < self.N:
+    #         print("Advarsel: Sykluser gjenstår — topologisk sortering ufullstendig.")
+    #         print(length, self.N)
+    #         #order = order[:length]
+    #     #return to_coords(order, self.shape, as_list=True)
+    #     return self.to_coords(order_flat, as_list=True)
+
+
+    #----------------------------------------------------------------------------
+    def topological_sort(self, rate_out):
+    #----------------------------------------------------------------------------
+        """
+        Bryter sykluser, så kjører Kahn's algoritme manuelt
+        på vår CSR-matrise for å finne en flyt-rekkefølge.
+        """
+        self.adj = self.adjacency_matrix(rate_out)
+        if self.has_cycle():
+            self.remove_cycles()
+
+        # Les av indptr og indices
+        indptr  = self.adj.indptr    # length N+1
+        indices = self.adj.indices   # length = number of edges
+
+        # Init in-degree som en 1D-array
+        in_deg = nparray(self.adj.sum(axis=0)).ravel()  # shape (N,)
+
+        # Kahn's algoritme
+        order, idx = kahn_numba(indptr, indices, in_deg)
+        
+        # Sjekk om vi fikk med alle
+        if idx < self.N:
+            print("Advarsel: Sykluser gjenstår — topologisk sortering ufullstendig.")
+            order = order[:idx]
+
+        #return to_coords(order, self.shape, as_list=True)
+        return self.to_coords(order, as_list=True)
+        #return self.to_coords(kahns_algorithm(indptr, indices, in_deg, self.N), as_list=True)
+        # return self.kahns_sorting()
+
+    #--------------------------------------------------------------------------------
+    def to_coords(self, flat, as_list=False):
+    #--------------------------------------------------------------------------------
+        """
+        Converts a 1D array of flat indices `flat` to (x, y, z) coordinates.
+        flat: array of shape (N,)
+        shape: tuple of grid dimensions (X, Y, Z)
+        Returns: list of tuples with coordinates of shape (N, 3)
+        """
+
+        if not isinstance(flat, ndarray):
+            flat = nparray(flat)
+        YZ = self.shape[1] * self.shape[2]
+        x = flat // YZ
+        rem = flat % YZ
+        y = rem // self.shape[2]
+        z = rem % self.shape[2]
+        if as_list:
+            return list(zip(x.tolist(), y.tolist(), z.tolist()))
+        return stack((x, y, z), axis=1)
+
+    #--------------------------------------------------------------------------------
+    def to_flat(self, coords, as_list=False):
+    #--------------------------------------------------------------------------------
+        """Convert 3D coordinates to flat index."""
+        if not isinstance(coords, ndarray):
+            coords = nparray(coords)
+        x, y, z = coords.T
+        flat = x * (self.shape[1] * self.shape[2]) + y * self.shape[2] + z      # (M,)
+        if as_list:
+            return flat.tolist()
+        return flat
+
+    #----------------------------------------------------------------------------
+    def adjacency_matrix(self, rate_out):
+    #----------------------------------------------------------------------------
+        valid = rate_out.reshape(self.N * self.D) > 0          # (N*6,)
+        u_valid = self.u[valid]
+        # Beregn destinasjons-ID v
+        v = self.to_flat(self.connections[valid])          # (M,)
+        # Bygg sparse adjacency-matrise
+        data = ones_like(u_valid, dtype=int)
+        return csr_matrix((data, (u_valid, v)), shape=(self.N, self.N), dtype=int)
+
+
+    # #----------------------------------------------------------------------------
+    # def active_connections(self, pos, adj=None):
+    # #----------------------------------------------------------------------------
+    #     adj = self.adj if adj is None else adj
+    #     return self.to_coords(adj[*self.to_flat(pos)].indices, as_list=True)
+
+    #----------------------------------------------------------------------------
+    def active_connections(self, adj=None):
+    #----------------------------------------------------------------------------
+        """
+        Returns a defaultdict mapping each grid cell (x, y, z) to a list of its active connections.
+
+        Parameters:
+        adj (csr_matrix, optional): The adjacency matrix representing connections. If None, uses self.adj.
+        """
+        adj = self.adj if adj is None else adj
+        conn = defaultdict(list)
+        coords = (self.to_coords(axis, as_list=True) for axis in adj.nonzero())
+        for u_coord, v_coord in zip(*coords):
+            conn[u_coord].append(v_coord)
+        return conn
+
+    # #----------------------------------------------------------------------------
+    # def has_cycle_slow(self):
+    # #----------------------------------------------------------------------------
+    #     A     = self.adj.copy()
+    #     power = eye(self.N, format='csr', dtype=int)
+    #     for _ in range(1, self.N + 1):
+    #         print('has_cycle:', _)
+    #         power = power @ A
+    #         if power.diagonal().sum() > 0:
+    #             return True
+    #     return False
+
+    #----------------------------------------------------------------------------
+    def has_cycle(self):
+    #----------------------------------------------------------------------------
+        """
+        Check for cycles in the adjacency matrix using Numba-compatible operations.
+        """
+        indptr = self.adj.indptr
+        indices = self.adj.indices
+        return has_cycle_numba(indptr, indices, self.N)
+
+    #----------------------------------------------------------------------------
+    def remove_cycles(self):
+    #----------------------------------------------------------------------------
+        """Bryter alle sykluser ved å fjerne kanter fra en LIL-representasjon."""
+        # 1) Gjør om til LIL for trygg mutasjon
+        A_lil = self.adj.tolil()
+
+        cycle_id = 0
+        while True:
+            # 2) Finn SCC på CSR (gjør om midlertidig)
+            A_csr = A_lil.tocsr()
+            n_comp, labels = connected_components(csgraph=A_csr, directed=True, connection='strong', return_labels=True)
+            counts = bincount(labels, minlength=n_comp)
+            cyc_comps = where(counts > 1)[0]
+            if cyc_comps.size == 0:
+                # Ingen sykluser igjen
+                print(f"Ferdig med syklusbryting, brutt {cycle_id} sykluser.")
+                break
+
+            comp_id = int(cyc_comps[0])
+            cycle_id += 1
+
+            # 3) Hent nodene i denne komponenten
+            comp_nodes = where(labels == comp_id)[0]
+
+            # 4) Fjern én kant i LIL‐matrisen
+            removed = False
+            for u in comp_nodes:
+                # nabo‐flater fra LIL kan hentes raskt:
+                for idx, v in enumerate(A_lil.rows[u]):
+                    if labels[v] == comp_id:
+                        print(f"[Syklus {cycle_id}] Fjerner kant {u}->{v} " +
+                              f"i komponent {comp_id} (størrelse {counts[comp_id]})")
+                        # fjern elementet
+                        del A_lil.rows[u][idx]
+                        del A_lil.data[u][idx]
+                        removed = True
+                        break
+                if removed:
+                    break
+
+            if not removed:
+                # trygghetsjekk – skal ikke skje
+                print(f"Advarsel: Fant ingen kant å fjerne i komponent {comp_id}.")
+                break
+
+        # 5) Legg CSR‐versjonen tilbake i self.adj
+        self.adj = A_lil.tocsr()
+    
+
+@njit
+#----------------------------------------------------------------------------
+def kahn_numba(indptr, indices, in_deg):
+#----------------------------------------------------------------------------
+    N = in_deg.shape[0]
+    queue = empty(N, int64)
+    order = empty(N, int64)
+    head = 0
+    tail = 0
+    idx  = 0
+
+    # init kø
+    for u in range(N):
+        if in_deg[u] == 0:
+            queue[tail] = u
+            tail += 1
+
+    # kjør
+    while head < tail:
+        u = queue[head]
+        head += 1
+        order[idx] = u
+        idx += 1
+        for ptr in range(indptr[u], indptr[u+1]):
+            v = indices[ptr]
+            in_deg[v] -= 1
+            if in_deg[v] == 0:
+                queue[tail] = v
+                tail += 1
+
+    return order[:idx], idx
+
+
+
+# @njit
+# #--------------------------------------------------------------------------------
+# def to_coords(flat, shape):
+# #--------------------------------------------------------------------------------
+#     """
+#     Converts a 1D array of flat indices `flat` to (x, y, z) coordinates.
+#     flat: array of shape (N,)
+#     shape: tuple of grid dimensions (X, Y, Z)
+#     Returns: list of tuples with coordinates of shape (N, 3)
+#     """
+#     YZ = shape[1] * shape[2]
+#     x = flat // YZ
+#     rem = flat % YZ
+#     y = rem // shape[2]
+#     z = rem % shape[2]
+#     return x, y, z
+#     #return stack((x, y, z), axis=1)
+
+# @njit
+# #--------------------------------------------------------------------------------
+# def to_flat(coords, shape):
+# #--------------------------------------------------------------------------------
+#     """Convert 3D coordinates to flat index."""
+#     x, y, z = coords.T
+#     return x * (shape[1] * shape[2]) + y * shape[2] + z
+
+@njit
+#--------------------------------------------------------------------------------
+def has_cycle_numba(indptr, indices, N):
+#--------------------------------------------------------------------------------
+    """
+    Check for cycles in a graph represented by a CSR adjacency matrix.
+
+    Parameters:
+    indptr (array): CSR matrix indptr array.
+    indices (array): CSR matrix indices array.
+    N (int): Number of nodes in the graph.
+
+    Returns:
+    bool: True if a cycle is detected, False otherwise.
+    """
+    visited = empty(N, dtype=np_bool)
+    rec_stack = empty(N, dtype=np_bool)
+
+    visited[:] = False
+    rec_stack[:] = False
+
+    for node in range(N):
+        if not visited[node]:
+            if has_cycle_dfs(node, indptr, indices, visited, rec_stack):
+                return True
+    return False
+
+
+@njit
+#--------------------------------------------------------------------------------
+def has_cycle_dfs(node, indptr, indices, visited, rec_stack):
+#--------------------------------------------------------------------------------
+    """
+    Perform a DFS to detect cycles in the graph.
+
+    Parameters:
+    node (int): Current node being visited.
+    indptr (array): CSR matrix indptr array.
+    indices (array): CSR matrix indices array.
+    visited (array): Array to track visited nodes.
+    rec_stack (array): Array to track recursion stack.
+
+    Returns:
+    bool: True if a cycle is detected, False otherwise.
+    """
+    visited[node] = True
+    rec_stack[node] = True
+
+    for ptr in range(indptr[node], indptr[node + 1]):
+        neighbor = indices[ptr]
+        if not visited[neighbor]:
+            if has_cycle_dfs(neighbor, indptr, indices, visited, rec_stack):
+                return True
+        elif rec_stack[neighbor]:
+            return True
+
+    rec_stack[node] = False
+    return False
+
+# @njit
+# def build_linked_csr(u, v, N):
+#     """
+#     Bygger opp edge-lister head, to, nxt i CSR-lignende linked-list-format.
+    
+#     Parametre:
+#     u : 1D-array med kilde-indekser (node IDs) for hver kant (lengde M)
+#     v : 1D-array med destinasjons-indekser (node IDs) for hver kant (lengde M)
+#     N : antall noder
+    
+#     Returnerer:
+#     head : 1D-array, lengde N, head[i] er edge-ID til første utgående kant fra i, eller -1
+#     to   : 1D-array, lengde M, to[k] er destinasjonen for kant k
+#     nxt  : 1D-array, lengde M, nxt[k] er neste edge-ID fra samme kilde, eller -1
+#     """
+#     M = u.shape[0]
+#     head = -1 * ones(N, dtype=int64)
+#     to   = empty(M, dtype=int64)
+#     nxt  = -1 * ones(M, dtype=int64)
+    
+#     for k in range(M):
+#         uk = u[k]
+#         to[k] = v[k]
+#         nxt[k] = head[uk]
+#         head[uk] = k
+    
+#     return head, to, nxt
+
+
+# @njit
+# #--------------------------------------------------------------------------------
+# def remove_cycles_numba(head, to, nxt, N):
+# #--------------------------------------------------------------------------------
+#     """
+#     Bryter alle sykluser i en graf representert som adjacency-lister
+#     ved hjelp av head, to, nxt arrays (CSR-lignende linked lists).
+#     head: int64[N] startedge per node, -1 hvis ingen
+#     to:    int64[M] destinasjon for hver edge
+#     nxt:   int64[M] neste edge-indeks fra samme u, -1 hvis ingen
+#     N:     antall noder
+#     Returnerer oppdatert head og nxt uten sykluser.
+#     """
+#     # Fargekoder for DFS
+#     WHITE, GRAY, BLACK = 0, 1, 2
+#     color = zeros(N, dtype=int64)
+
+#     while True:
+#         cycle_found = False
+#         rem_edge = -1
+
+#         # Iterer over alle startnoder
+#         for start in range(N):
+#             if color[start] != WHITE:
+#                 continue
+
+#             # Stacks for node og pågående edge
+#             stack_node = empty(N, dtype=int64)
+#             stack_edge = empty(N, dtype=int64)
+#             sp = 0
+#             stack_node[0] = start
+#             stack_edge[0] = head[start]
+
+#             # DFS-løkke
+#             while sp >= 0:
+#                 u = stack_node[sp]
+#                 e = stack_edge[sp]
+#                 if e == head[u]:
+#                     color[u] = GRAY
+#                 if e != -1:
+#                     v = to[e]
+#                     stack_edge[sp] = nxt[e]
+#                     if color[v] == WHITE:
+#                         sp += 1
+#                         stack_node[sp] = v
+#                         stack_edge[sp] = head[v]
+#                     elif color[v] == GRAY:
+#                         # Funnet back-edge
+#                         rem_edge = e
+#                         cycle_found = True
+#                         break
+#                 else:
+#                     # Alle naboer behandlet
+#                     color[u] = BLACK
+#                     sp -= 1
+#                 if cycle_found:
+#                     break
+#             if cycle_found:
+#                 break
+#         if not cycle_found:
+#             break
+
+#         # Fjern rem_edge fra linked-list
+#         # Finn u slik at head[u] eller nxt[...] == rem_edge
+#         for u in range(N):
+#             if head[u] == rem_edge:
+#                 head[u] = nxt[rem_edge]
+#                 break
+#             prev = head[u]
+#             while prev != -1 and nxt[prev] != rem_edge:
+#                 prev = nxt[prev]
+#             if prev != -1:
+#                 nxt[prev] = nxt[rem_edge]
+#                 break
+
+#         # Nullstill farge for neste runde
+#         for i in range(N):
+#             color[i] = WHITE
+
+#     return head, nxt
+
 
