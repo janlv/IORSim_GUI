@@ -1,15 +1,18 @@
 from collections import defaultdict, namedtuple
 #from datetime import datetime
 from itertools import product, islice
-from numpy import (array as nparray, abs as npabs, asarray, cumsum, empty, empty_like, float64, int32, ndarray,
-                   sum as npsum, diff as npdiff, any as npany, zeros, ones, stack, concatenate,
-                   moveaxis, prod, where, atleast_1d, argsort, bool_ as np_bool,
-                   add as npadd, repeat as nprepeat, arange, ones_like, bincount)
+from pathlib import Path
+from dataclasses import dataclass
+from numpy import (array as nparray, abs as npabs, asarray, cumsum, empty, empty_like,
+    float64, int32, ndarray, sum as npsum, diff as npdiff, any as npany, zeros, ones,
+    stack, concatenate, moveaxis, prod, where, atleast_1d, argsort, bool_ as np_bool,
+    add as npadd, repeat as nprepeat, arange, ones_like, bincount, min as npmin, 
+    max as npmax)
 from numba import njit, prange, boolean
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
-from .ECL import UNRST_file, RFT_file, INIT_file
+from .ECL import UNRST_file, RFT_file, INIT_file, unfmt_block
 from .utils import batched, flatten, roll_xyz, missing_elements, neighbour_connections
 
 
@@ -103,28 +106,123 @@ def implicit_numba_nnc(sorted_blocks, nb_conn, rate_in, rate_out, nnc_rate_in,
             denom = vol_new + dt * sum_rate_out
         inflow = zeros(num_concs)
         # Inflow mass from blocks (well-injection included in initial mass-calculation)
-        for m in range(6): 
+        for m in range(6):
             r = rate_in[i, j, k, m]
             if r > 0.0:
                 ii, jj, kk = nb_conn[i, j, k, m]
                 inflow += r * conc[ii, jj, kk, :]
+                # for nn in prange(idx, nb):
+                #     xi, xj, xk = sorted_blocks[nn]
+                #     if ii == xi and jj == xj and kk == xk:
+                #         print('WARNING1: Block not visited:', idx, nn, (i,j,k), (ii, jj, kk))
         # Inflow mass from nnc
-            for m in nnc_pos1: # nnc1 <-- nnc2
+        for m in nnc_pos1: # nnc1 <-- nnc2
+            r = nnc_rate_in[m]
+            if r > 0.0:
                 ii, jj, kk = nnc_blocks[1, m]
-                inflow += nnc_rate_in[m] * conc[ii, jj, kk, :]
-            for m in nnc_pos2: # nnc2 <-- nnc1 == nnc1 --> nnc2
+                inflow += r * conc[ii, jj, kk, :]
+        for m in nnc_pos2: # nnc2 <-- nnc1 == nnc1 --> nnc2
+            r = nnc_rate_out[m]
+            if r > 0.0:
                 ii, jj, kk = nnc_blocks[0, m]
-                inflow += nnc_rate_out[m] * conc[ii, jj, kk, :]
+                inflow += r * conc[ii, jj, kk, :]
         # Update mass and conc
         mass[i, j, k, :] += dt * inflow
         conc[i, j, k, :] = mass[i, j, k, :] / denom
     return conc
+
+@dataclass
+#====================================================================================
+class Tracer:                                                          # Tracer
+#====================================================================================
+    step: int = -1
+    time: float = 0.0
+    dt: float = 0.0
+    names: tuple = None
+    data: tuple = None
+    cycles: int = -1
+    conc: dict = None
+    prod_mass: dict = None
+
+    #--------------------------------------------------------------------------------
+    def __post_init__(self):
+    #--------------------------------------------------------------------------------
+        output = (zip(self.names, moveaxis(var, -1, 0)) for var in self.data)
+        self.conc, self.prod_mass = [dict(out) for out in output]
+
+    #--------------------------------------------------------------------------------
+    def __str__(self):
+    #--------------------------------------------------------------------------------
+        txt = f'-- step: {self.step: 4d}, time: {self.time:9.3f} days, dt: {self.dt:6.3f} days'
+        if self.cycles > -1:
+            txt += f', cycles: {self.cycles}'
+        return txt
+
+    #--------------------------------------------------------------------------------
+    def limits(self):
+    #--------------------------------------------------------------------------------
+        min_max = (f'{name}: ({npmin(data):.3f}, {npmax(data):.3f})' for name, data in self.conc.items())
+        return ', '.join(min_max)
+
+    #--------------------------------------------------------------------------------
+    def to_unrst(self, filename):                                          # Tracer
+    #--------------------------------------------------------------------------------
+        # Write tracer data to UNRST file
+        filename = Path(filename).with_suffix('.UNRST')
+        with open(filename, 'wb') as file:
+            for name, data in self.conc.items():
+                block = unfmt_block.from_data(name, data, 'float')
+                file.write(block.to_bytes())
 
 
 
 #====================================================================================
 class Flow():                                                                  # Flow
 #====================================================================================
+    """
+    The Flow Class provides functionality for handling flow-related data and computations 
+    in reservoir simulations. It integrates data from UNRST and RFT files, manages 
+    reservoir and well rates, and supports tracer computations.
+    Attributes:
+        unrst (UNRST_file): Object for handling UNRST file data.
+        dim (tuple): Dimensions of the reservoir grid.
+        rft (RFT_file): Object for handling RFT file data.
+        convert (Convert or bool): Conversion object for surface to reservoir rates.
+        phases (tuple): Phases involved in the simulation (e.g., 'wat', 'oil', 'gas').
+        dt_accuracy (float): Allowed difference in UNRST and RFT time steps.
+        res_block (bool): Indicates if block rates are in reservoir conditions.
+        res_well (bool): Indicates if well rates are in reservoir conditions.
+        block_keys (list): Keys for block (UNRST) rates.
+        well_keys (list): Keys for well (RFT) rates.
+        nnc (NNC or bool): Object for handling non-neighboring connections (NNC).
+        sort (Sort): Object for sorting blocks based on flow.
+        seqnum (int): Sequence number for the current time step.
+        time (float): Current simulation time.
+        _neigh_connects (None or array): Cached neighbor connections.
+    Methods:
+        __init__(root, phase='wat', res_block=False, res_well=False):
+            Initializes the Flow object with the given root directory and parameters.
+        sat_rporv(sync=True):
+            Yields saturation and pore volume data for each time step.
+        neighbour_connections():
+            Returns neighbor connections for the reservoir grid.
+        tracer_explicit(name, init, inlet, force_vol_balance=False):
+            Performs explicit tracer computations for the reservoir.
+        tracer_implicit(name, init, inlet, force_vol_balance=False):
+            Performs implicit tracer computations for the reservoir.
+        rates():
+            Yields rates for interblock and well flows.
+        data():
+            Yields combined flow data including saturation, pore volume, and rates.
+        interblock():
+            Yields interblock flow rates from the UNRST file.
+        wells(zerobase=True):
+            Yields well flow rates from the RFT file.
+        _wellrate_from_tubing(tubflows, wellplt, connxt):
+            Computes well rates from tubing flow data.
+        check_time_sync(*times):
+            Checks if the provided times are synchronized within the allowed accuracy.
+    """
 
     #--------------------------------------------------------------------------------
     def __init__(self, root, phase='wat', res_block=False, res_well=False):    # Flow
@@ -204,7 +302,7 @@ class Flow():                                                                  #
         # Well:
         #   Injection conc. is connection 7
 
-        Tracer = namedtuple('Tracer', 'time dt conc prod_mass cfl')
+        #Tracer = namedtuple('Tracer', 'time dt conc prod_mass cfl')
         conc = stack(init, axis=-1)
         inj_conc = stack([i * ones(self.dim) for i in inlet], axis=-1)
         rates = self.rates()
@@ -237,57 +335,26 @@ class Flow():                                                                  #
                 #mass[self.nnc_ijk[0]] += rate.dt * nnc.rate_in[:, None] * conc[self.nnc_ijk[1]]
             conc = mass / vol_phase[..., None]
             prod_mass = rate.dt * rate.rate_out[..., 6][..., None] * conc
-            cfl = rate.dt * npsum(rate.rate_in, axis=-1) / vol_phase
+            #cfl = rate.dt * npsum(rate.rate_in, axis=-1) / vol_phase
             output = (zip(name, moveaxis(var, -1, 0)) for var in (conc, prod_mass))
-            yield Tracer(rate.time, rate.dt, *[dict(out) for out in output], cfl)
+            yield Tracer(rate.time, rate.dt, *[dict(out) for out in output])#, cfl)
             vol_phase_old = vol_phase
 
-    # #--------------------------------------------------------------------------------
-    # def sort_blocks_by_flow(self, rate):                            # Flow
-    # #--------------------------------------------------------------------------------
-    #     in_degrees = npsum(where(rate.rate_in[..., :6] > 0, 1, 0), axis=-1)
-    #     out_conn = where(rate.rate_out[...,:6, None] > 0, self.neighbour_connections(), -1)
-    #     if self.nnc.exists:
-    #         nnc_rate = self.nnc.get_rate(self.seqnum)
-    #         # rate_out is flow into nnc2 from nnc1
-    #         npadd.at(in_degrees, self.nnc.ijk[1], nnc_rate.rate_out > 0)
-    #         # rate_in is flow into nnc1 from nnc2
-    #         npadd.at(in_degrees, self.nnc.ijk[0], nnc_rate.rate_in > 0)
-    #         nnc_out_conn = self.nnc.out_connections(nnc_rate)
-    #     # Start with blocks with no in-degrees (inlets)
-    #     queue = deque([tuple(ind) for ind in argwhere(in_degrees == 0).tolist()])
-        
-    #     sorted_blocks = []
-    #     while queue:
-    #         node = queue.popleft()
-    #         sorted_blocks.append(node)
-    #         connections = (tuple(nb) for nb in out_conn[node].tolist() if nb[0] >= 0)
-    #         if self.nnc.exists:
-    #             connections = chain(connections, nnc_out_conn.get(node, []))
-    #         for link in connections:
-    #             in_degrees[link] -= 1
-    #             if in_degrees[link] == 0:
-    #                 queue.append(link)
-    #     num_blocks = prod(self.dim)
-    #     if len(sorted_blocks) != num_blocks:
-    #         raise RuntimeError(f'ERROR: Not all blocks are sorted: {len(sorted_blocks)} < {num_blocks}')
-    #     return sorted_blocks
-
-
     #--------------------------------------------------------------------------------
-    def tracer_implicit(self, name, init, inlet, force_vol_balance=False):                        # Flow
+    def tracer_implicit(self, names, init, inlet, force_vol_balance=False):                        # Flow
     #--------------------------------------------------------------------------------
-        Tracer = namedtuple('Tracer', 'time dt conc prod_mass')
+        #Tracer = namedtuple('Tracer', 'time dt conc prod_mass')
         conc = stack(init, axis=-1)
         rates = self.rates()
         sat_rporv = self.sat_rporv()
         inj_conc = stack([i * ones(self.dim) for i in inlet], axis=-1)
         nb_conn = self.neighbour_connections()
         for n, (rate, data) in enumerate(zip(rates, sat_rporv)):
-            print(f'-- Step {n+1}, Time: {rate.time:.2f} days')
+            step = n + 1
             self.check_time_sync(rate.time, data.time)
+            self.check_step_sync(step)
             nnc_rate = self.nnc.get_rate(self.seqnum) if self.nnc else None
-            sorted_blocks = self.sort.topological(rate.rate_out[..., :6], nnc_rate)
+            sorted_blocks = self.sort.topological(rate.rate_out[..., :6], nnc_rate, check=False)
             if nnc_rate:
                 conc = implicit_numba_nnc(
                     sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, nnc_rate.rate_in,
@@ -298,9 +365,16 @@ class Flow():                                                                  #
                     sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, float64(rate.dt), data.sat,
                     data.sat_old, data.rporv, data.rporv_old, conc, inj_conc, force_vol_balance)
             prod_mass = rate.dt * rate.rate_out[..., 6][..., None] * conc
-            output = (zip(name, moveaxis(var, -1, 0)) for var in (conc, prod_mass))
-            yield Tracer(rate.time, rate.dt, *[dict(out) for out in output])
+            #output = (zip(name, moveaxis(var, -1, 0)) for var in (conc, prod_mass))
+            #yield Tracer(step, rate.time, rate.dt, *[dict(out) for out in output], cycles=self.sort.cycle_id) 
+            yield Tracer(step, rate.time, rate.dt, names, data=(conc, prod_mass), cycles=self.sort.cycle_id) 
 
+    # #--------------------------------------------------------------------------------
+    # def timesynced_zip(self, *iterables):                                      # Flow
+    # #--------------------------------------------------------------------------------
+    #     for it in zip(*iterables):
+    #         self.check_time_sync(*[i.time for i in it])
+    #         yield it
 
     #--------------------------------------------------------------------------------
     def rates(self):                                                           # Flow
@@ -424,13 +498,36 @@ class Flow():                                                                  #
         return rates
 
     #--------------------------------------------------------------------------------
-    def check_time_sync(self, *times):             # Flow
+    def check_time_sync(self, *times):                                        # Flow
     #--------------------------------------------------------------------------------
-        times = list(times)
+        """
+        Validates synchronization of time values.
+
+        Parameters:
+        *times: Variable length argument list of time values to check for synchronization.
+
+        Raises:
+        ValueError: If time differences exceed the allowed accuracy.
+        """
         if len(times) < 2:
-            times.append(self.time)
+            times = list(times) + [self.time]
         if npany(npabs(npdiff(times)) > self.dt_accuracy):
-            raise ValueError(f'Time difference in Rates-class: {times}')
+            raise ValueError(f'Time error in Flow: {times}. Expected time differences to be within {self.dt_accuracy}.')
+
+    #--------------------------------------------------------------------------------
+    def check_step_sync(self, *steps):                                        # Flow
+    #--------------------------------------------------------------------------------
+        """
+        Validates synchronization of step values.
+
+        Parameters:
+        *steps: Variable length argument list of step numbers to validate.
+
+        Raises:
+        ValueError: If steps are not synchronized.
+        """
+        if set(steps) != set([self.seqnum]):
+            raise ValueError(f"Step mismatch detected in Flow: expected step {self.seqnum}, but got {steps}")
 
 #================================================================================
 class NNC():                                          # NNC
@@ -478,26 +575,8 @@ class NNC():                                          # NNC
             tmp_map = [Map(nnc, dim) for nnc in self.nnc]
             self.indices = stack([m.keys for m in tmp_map])
             self.pos = stack([m.values for m in tmp_map])
-            #self.map12 = self.mapping(self.nnc[0], self.nnc[1])
-            #self.map21 = self.mapping(self.nnc[1], self.nnc[0])
             self.key = f'FLR{phases[0].upper()}N+'
             self.start()
-
-    # #----------------------------------------------------------------------------
-    # def mapping(self):
-    # #----------------------------------------------------------------------------
-    #     dim = self.unrst.dim()
-    #     map = [Map(nnc, dim) for nnc in self.nnc]
-    #     keys = stack([m.keys for m in map])
-    #     values = stack([m.values for m in map])
-        
-        #amap = defaultdict(list)
-        #for idx, (s, d) in enumerate(zip(src, dst)):
-        #    amap[tuple(s)].append(npappend(d, idx))
-        #return dict(amap)
-        # Konverter listene til NumPy-arrays
-        #return { key: nparray(idxs, dtype=int32)
-        #        for key, idxs in amap.items() }
 
     #----------------------------------------------------------------------------
     def start(self):                                         # NNC
@@ -631,11 +710,13 @@ class Sort:
         self.nnc_flat_conn = None
         if nnc:
             self.nnc_flat_conn = nparray([self.to_flat(n) for n in nnc.nnc], dtype=int32)
-        self.u = nprepeat(arange(self.N), self.D)               # (N*6,)
+            #print(self.nnc_flat_conn.shape)
+        self.u = nprepeat(arange(self.N, dtype=int32), self.D)               # (N*6,)
         self.adj = None
+        self.cycle_id = None
 
     #----------------------------------------------------------------------------
-    def topological(self, rate_out, nnc_rate=None):
+    def topological(self, rate_out, nnc_rate=None, check=False, echo=False):
     #----------------------------------------------------------------------------
         """
         Breaks cycles, then manually runs Kahn's algorithm
@@ -643,7 +724,7 @@ class Sort:
         """
         self.adj = self.adjacency_matrix(rate_out, nnc_rate)
         if self.has_cycle():
-            self.remove_cycles()
+            self.remove_cycles(echo=echo)
 
         # Create indptr and indices for kahn_numba
         indptr  = self.adj.indptr    # length N+1
@@ -660,18 +741,38 @@ class Sort:
             print("Warning: Cycles remain — topological sorting incomplete.")
             order = order[:idx]
 
-        return self.to_coords(order) #, as_list=True)
+        if check:
+            self.check_order(order)
+        return self.to_coords(order)
 
+    #----------------------------------------------------------------------------
+    def check_order(self, order):
+    #----------------------------------------------------------------------------
+        pos = empty(self.N, dtype=int32)
+        for idx, node in enumerate(order):
+            pos[node] = idx
+        u_indices = self.adj.indptr[:-1]
+        v_indices = self.adj.indices
+        errors = check_order_numba(u_indices, v_indices, pos, self.N)
+        if errors.size > 0:
+            print('ERRORS in topological sorting: source calculated after target')
+            u_c = self.to_coords(errors[:, 0])
+            v_c = self.to_coords(errors[:, 1])
+            for u, v in zip(u_c, v_c):
+                print(f' {u} -> {v}  ')
+        else:
+            print('Topological sorting is valid!')
 
     #----------------------------------------------------------------------------
     def adjacency_matrix(self, rate_out, nnc_rate):
     #----------------------------------------------------------------------------
         # --- vanlige naboer -----------------------------------
-        # flatte ut rate_out og finn gyldige nabo-indekser
+        # flat ut rate_out og finn gyldige nabo-indekser
+        # u is source, v is target: u -> v
         valid_nb = rate_out.reshape(self.N * self.D) > 0        # bool-vektor, lengde N*6
-        u_nb = self.u[valid_nb]                                # kildene
-        v_nb = self.to_flat(self.connections[valid_nb])        # flatte destinasjoner
-        data_nb = ones_like(u_nb, dtype=int32)           # rate_out_valid for vektet
+        u_nb = self.u[valid_nb]                                # kilde indekser
+        v_nb = self.to_flat(self.connections[valid_nb])        # flate destinasjons indekser
+        data_nb = ones_like(u_nb) #, dtype=int32)           # rate_out_valid for vektet
 
         # --- non-neighboring connections ----------------------
         if nnc_rate:
@@ -679,53 +780,19 @@ class Sort:
             valid_nnc1 = nnc_rate.rate_out > 0
             u_nnc1 = self.nnc_flat_conn[0][valid_nnc1]
             v_nnc1 = self.nnc_flat_conn[1][valid_nnc1]
-            data_nnc1 = ones_like(u_nnc1, dtype=int32)         # nnc_rate_out[valid_nnc] for vekter
+            data_nnc1 = ones_like(u_nnc1)         # nnc_rate_out[valid_nnc] for vekter
             # rate_in er flow inn i nnc1 fra nnc2, legg til kobling nnc2 -> nnc1
             valid_nnc2 = nnc_rate.rate_in > 0
             u_nnc2 = self.nnc_flat_conn[1][valid_nnc2]
             v_nnc2 = self.nnc_flat_conn[0][valid_nnc2]
-            data_nnc2 = ones_like(u_nnc2, dtype=int32)         # nnc_rate_in[valid_nnc] for vekter
+            data_nnc2 = ones_like(u_nnc2)         # nnc_rate_in[valid_nnc] for vekter
             # --- samle alt og bygg én sparse matrise --------------
             u_nb = concatenate([u_nb, u_nnc1, u_nnc2])
             v_nb = concatenate([v_nb, v_nnc1, v_nnc2])
-            data_nb  = concatenate([data_nb, data_nnc1, data_nnc2])
+            data_nb = concatenate([data_nb, data_nnc1, data_nnc2])
 
         # bygger en N×N matrise der A[u[i], v[i]] = data[i]
         return csr_matrix((data_nb, (u_nb, v_nb)), shape=(self.N, self.N), dtype=int32)
-
-    # #----------------------------------------------------------------------------
-    # def adjacency_matrix(self, rate_out):
-    # #----------------------------------------------------------------------------
-    #     valid = rate_out.reshape(self.N * self.D) > 0          # (N*6,)
-    #     u_valid = self.u[valid]
-    #     # Beregn destinasjons-ID v
-    #     v = self.to_flat(self.connections[valid])          # (M,)
-    #     # Bygg sparse adjacency-matrise
-    #     data = ones_like(u_valid, dtype=int)
-    #     return csr_matrix((data, (u_valid, v)), shape=(self.N, self.N), dtype=int32)
-
-
-    # #----------------------------------------------------------------------------
-    # def active_connections(self, pos, adj=None):
-    # #----------------------------------------------------------------------------
-    #     adj = self.adj if adj is None else adj
-    #     return self.to_coords(adj[*self.to_flat(pos)].indices, as_list=True)
-
-    #----------------------------------------------------------------------------
-    def active_connections(self, adj=None):
-    #----------------------------------------------------------------------------
-        """
-        Returns a defaultdict mapping each grid cell (x, y, z) to a list of its active connections.
-
-        Parameters:
-        adj (csr_matrix, optional): The adjacency matrix representing connections. If None, uses self.adj.
-        """
-        adj = self.adj if adj is None else adj
-        conn = defaultdict(list)
-        coords = (self.to_coords(axis, as_list=True) for axis in adj.nonzero())
-        for u_coord, v_coord in zip(*coords):
-            conn[u_coord].append(v_coord)
-        return conn
 
     #----------------------------------------------------------------------------
     def has_cycle(self):
@@ -738,13 +805,13 @@ class Sort:
         return has_cycle_numba(indptr, indices, self.N)
 
     #----------------------------------------------------------------------------
-    def remove_cycles(self):
+    def remove_cycles(self, echo=False):
     #----------------------------------------------------------------------------
         """Breaks all cycles by removing edges from a LIL representation."""
         # 1) Gjør om til LIL for trygg mutasjon
         A_lil = self.adj.tolil()
 
-        cycle_id = 0
+        self.cycle_id = 0
         while True:
             # 2) Finn SCC på CSR (gjør om midlertidig)
             A_csr = A_lil.tocsr()
@@ -753,11 +820,12 @@ class Sort:
             cyc_comps = where(counts > 1)[0]
             if cyc_comps.size == 0:
                 # Ingen sykluser igjen
-                print(f"Completed cycle breaking, removed {cycle_id} cycles.")
+                if echo:
+                    print(f"Completed cycle breaking, removed {self.cycle_id} cycles.")
                 break
 
             comp_id = int(cyc_comps[0])
-            cycle_id += 1
+            self.cycle_id += 1
 
             # 3) Hent nodene i denne komponenten
             comp_nodes = where(labels == comp_id)[0]
@@ -768,8 +836,10 @@ class Sort:
                 # nabo‐flater fra LIL kan hentes raskt:
                 for idx, v in enumerate(A_lil.rows[u]):
                     if labels[v] == comp_id:
-                        print(f"[Cycle {cycle_id}] Removing edge {u}->{v} " +
-                              f"in component {comp_id} (size {counts[comp_id]})")
+                        if echo:
+                            uc, vc = self.to_coords([u, v])
+                            print(f"[Cycle {self.cycle_id}] Removing edge {uc} -> {vc} " +
+                                f"in component {comp_id} (size {counts[comp_id]})")
                         # fjern elementet
                         del A_lil.rows[u][idx]
                         del A_lil.data[u][idx]
@@ -797,8 +867,8 @@ class Sort:
         """
 
         if not isinstance(flat, ndarray):
-            flat = nparray(flat)
-        flat = asarray(flat, dtype=int32)
+            flat = nparray(flat, dtype=int32)
+        #flat = asarray(flat, dtype=int32)
         #x, y, z = to_coords_parallel(flat, nparray(self.shape, dtype=int32))
         YZ = self.shape[1] * self.shape[2]
         x = flat // YZ
@@ -814,7 +884,7 @@ class Sort:
     #--------------------------------------------------------------------------------
         """Convert 3D coordinates to flat index."""
         if not isinstance(coords, ndarray):
-            coords = nparray(coords)
+            coords = nparray(coords, dtype=int32)
         x, y, z = coords.T
         flat = x * (self.shape[1] * self.shape[2]) + y * self.shape[2] + z      # (M,)
         if as_list:
@@ -850,6 +920,26 @@ class Map:
 # Numba-routines
 #============================================================================
 
+@njit(parallel=True)
+#----------------------------------------------------------------------------
+def check_order_numba(u_indices, v_indices, pos, N):
+#----------------------------------------------------------------------------
+    # Preallocate a fixed-size array for errors (worst case: all edges are errors)
+    max_edges = v_indices.shape[0]
+    errors = empty((max_edges, 2), dtype=int32)
+    error_count = 0
+    for u in prange(N):
+        start = u_indices[u]
+        end = u_indices[u + 1]
+        for idx in range(start, end):
+            v = v_indices[idx]
+            if pos[u] >= pos[v]:
+                errors[error_count, 0] = u
+                #errors[error_count, 1] = pos[u]
+                errors[error_count, 1] = v
+                #errors[error_count, 3] = pos[v]
+                error_count += 1
+    return errors[:error_count]
 
 @njit
 #----------------------------------------------------------------------------
