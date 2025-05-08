@@ -1,6 +1,7 @@
 from collections import defaultdict, namedtuple
 #from datetime import datetime
 from itertools import product, islice
+from math import inf
 from pathlib import Path
 from dataclasses import dataclass
 from numpy import (array as nparray, abs as npabs, asarray, cumsum, empty, empty_like,
@@ -15,6 +16,17 @@ from scipy.sparse.csgraph import connected_components
 from .ECL import UNRST_file, RFT_file, INIT_file, unfmt_block
 from .utils import batched, flatten, roll_xyz, missing_elements, neighbour_connections
 
+
+ENDSOL = unfmt_block.from_data('ENDSOL', [], 'mess')
+
+#---------------------------------------------------------------------------------
+def unrstfile(root):
+#---------------------------------------------------------------------------------
+    """
+    Returns the path to the output file in the given root directory.
+    """
+    path = Path(root).with_name(Path(root).stem + '_tracer.UNRST')
+    return UNRST_file(path)
 
 
 # m = c * Vp, m = mass, c = conc, Vp = vol_phase
@@ -141,6 +153,8 @@ class Tracer:                                                          # Tracer
     names: tuple = None
     data: tuple = None
     cycles: int = -1
+    header_pos: tuple = None
+    host_unrst: UNRST_file = None
     conc: dict = None
     prod_mass: dict = None
 
@@ -165,15 +179,28 @@ class Tracer:                                                          # Tracer
         return ', '.join(min_max)
 
     #--------------------------------------------------------------------------------
-    def to_unrst(self, filename):                                          # Tracer
+    def to_unrst(self):                                          # Tracer
     #--------------------------------------------------------------------------------
-        # Write tracer data to UNRST file
-        filename = Path(filename).with_suffix('.UNRST')
-        with open(filename, 'wb') as file:
+        # Write copy header from host UNRST-file and append tracer data
+        unrst = unrstfile(self.host_unrst.path)
+        mode = 'ab'
+        if not unrst.exists() or unrst.end_step() > self.step:
+            mode = 'wb'
+        #target = self.host_unrst.with_name(self.host_unrst.stem + '_tracer.UNRST')
+        with open(unrst.path, mode) as out:
+            with self.host_unrst.mmap() as hostfile:
+                if mode == 'wb':
+                    # Also copy initial header from the host UNRST file
+                    out.write(hostfile[self.header_pos[0][1]])
+                    out.write(ENDSOL.as_bytes())
+                # Copy header from the host UNRST file
+                out.write(hostfile[self.header_pos[self.step][1]])
+            # Write tracer data
             for name, data in self.conc.items():
-                block = unfmt_block.from_data(name, data, 'float')
-                file.write(block.to_bytes())
-
+                block = unfmt_block.from_data(name, data.flatten(order='F'), 'float')
+                out.write(block.as_bytes())
+            out.write(ENDSOL.as_bytes())
+        return unrst
 
 
 #====================================================================================
@@ -232,7 +259,7 @@ class Flow():                                                                  #
         self.rft = RFT_file(root)
         self.convert = False
         self.phases = (phase,)
-        self.dt_accuracy = 1e-4  # Allowed difference in UNRST and RFT time steps
+        self.dt_accuracy = 1e-3  # Allowed difference in UNRST and RFT time steps
         self.res_block = res_block
         self.res_well = res_well
         if res_block is False or res_well is False:
@@ -343,7 +370,10 @@ class Flow():                                                                  #
     #--------------------------------------------------------------------------------
     def tracer_implicit(self, names, init, inlet, force_vol_balance=False):                        # Flow
     #--------------------------------------------------------------------------------
-        #Tracer = namedtuple('Tracer', 'time dt conc prod_mass')
+        # File-positions of the sections in the host UNRST-file. Used to obtain the 
+        # SEQNUM - STARTSOL header from the host UNRST-file when writing tracer data 
+        # to the tracer UNRST-file.
+        header_pos = tuple(self.unrst.section_slices(('SEQNUM', 'startpos'), ('STARTSOL', 'endpos')))
         conc = stack(init, axis=-1)
         rates = self.rates()
         sat_rporv = self.sat_rporv()
@@ -354,7 +384,7 @@ class Flow():                                                                  #
             self.check_time_sync(rate.time, data.time)
             self.check_step_sync(step)
             nnc_rate = self.nnc.get_rate(self.seqnum) if self.nnc else None
-            sorted_blocks = self.sort.topological(rate.rate_out[..., :6], nnc_rate, check=False)
+            sorted_blocks = self.sort.topological(rate.rate_out[..., :6], nnc_rate, check=False, weighted=False)
             if nnc_rate:
                 conc = implicit_numba_nnc(
                     sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, nnc_rate.rate_in,
@@ -367,7 +397,10 @@ class Flow():                                                                  #
             prod_mass = rate.dt * rate.rate_out[..., 6][..., None] * conc
             #output = (zip(name, moveaxis(var, -1, 0)) for var in (conc, prod_mass))
             #yield Tracer(step, rate.time, rate.dt, *[dict(out) for out in output], cycles=self.sort.cycle_id) 
-            yield Tracer(step, rate.time, rate.dt, names, data=(conc, prod_mass), cycles=self.sort.cycle_id) 
+            yield Tracer(step, rate.time, rate.dt, names, data=(conc, prod_mass),
+                         cycles=self.sort.cycle_id, header_pos=header_pos,
+                         host_unrst=self.unrst)
+
 
     # #--------------------------------------------------------------------------------
     # def timesynced_zip(self, *iterables):                                      # Flow
@@ -716,29 +749,37 @@ class Sort:
         self.cycle_id = None
 
     #----------------------------------------------------------------------------
-    def topological(self, rate_out, nnc_rate=None, check=False, echo=False):
+    def topological(self, rate_out, nnc_rate=None, check=False, echo=False,
+                    weighted=False):
     #----------------------------------------------------------------------------
         """
         Breaks cycles, then manually runs Kahn's algorithm
         on our CSR matrix to determine a flow order.
         """
-        self.adj = self.adjacency_matrix(rate_out, nnc_rate)
+        self.adj = self.adjacency_matrix(rate_out, nnc_rate, weighted=weighted)
         if self.has_cycle():
-            self.remove_cycles(echo=echo)
+            if weighted:
+                self.remove_cycles_weighted(echo=echo)
+            else:
+                self.remove_cycles(echo=echo)            
 
         # Create indptr and indices for kahn_numba
         indptr  = self.adj.indptr    # length N+1
         indices = self.adj.indices   # length = number of edges
 
         # Init in-degree as a 1D-array
-        in_deg = nparray(self.adj.sum(axis=0), dtype=int32).ravel()  # shape (N,)
 
+        if weighted:
+            in_deg = self.adj.getnnz(axis=0).astype(int32)
+        else:
+            in_deg = nparray(self.adj.sum(axis=0), dtype=int32).ravel()  # shape (N,)
+        
         # Run Kahn's algoritm
         order, idx = kahn_numba(indptr, indices, in_deg)
         
         # Check for possible cycles
         if idx < self.N:
-            print("Warning: Cycles remain — topological sorting incomplete.")
+            print(f'Warning: Cycles remain — topological sorting incomplete: {idx} < {self.N}')
             order = order[:idx]
 
         if check:
@@ -764,15 +805,22 @@ class Sort:
             print('Topological sorting is valid!')
 
     #----------------------------------------------------------------------------
-    def adjacency_matrix(self, rate_out, nnc_rate):
+    def adjacency_matrix(self, rate_out, nnc_rate, weighted=False):  
     #----------------------------------------------------------------------------
         # --- vanlige naboer -----------------------------------
         # flat ut rate_out og finn gyldige nabo-indekser
         # u is source, v is target: u -> v
-        valid_nb = rate_out.reshape(self.N * self.D) > 0        # bool-vektor, lengde N*6
+        if weighted:
+            flat_rate_out = rate_out.reshape(self.N * self.D)
+            valid_nb = flat_rate_out > 0     
+        else:
+            valid_nb = rate_out.reshape(self.N * self.D) > 0        # bool-vektor, lengde N*6
         u_nb = self.u[valid_nb]                                # kilde indekser
         v_nb = self.to_flat(self.connections[valid_nb])        # flate destinasjons indekser
-        data_nb = ones_like(u_nb) #, dtype=int32)           # rate_out_valid for vektet
+        if weighted:  
+            data_nb = flat_rate_out[valid_nb]
+        else:
+            data_nb = ones_like(u_nb)
 
         # --- non-neighboring connections ----------------------
         if nnc_rate:
@@ -780,12 +828,18 @@ class Sort:
             valid_nnc1 = nnc_rate.rate_out > 0
             u_nnc1 = self.nnc_flat_conn[0][valid_nnc1]
             v_nnc1 = self.nnc_flat_conn[1][valid_nnc1]
-            data_nnc1 = ones_like(u_nnc1)         # nnc_rate_out[valid_nnc] for vekter
+            if weighted:
+                data_nnc1 = nnc_rate.rate_out[valid_nnc1]
+            else:
+                data_nnc1 = ones_like(u_nnc1)
             # rate_in er flow inn i nnc1 fra nnc2, legg til kobling nnc2 -> nnc1
             valid_nnc2 = nnc_rate.rate_in > 0
             u_nnc2 = self.nnc_flat_conn[1][valid_nnc2]
             v_nnc2 = self.nnc_flat_conn[0][valid_nnc2]
-            data_nnc2 = ones_like(u_nnc2)         # nnc_rate_in[valid_nnc] for vekter
+            if weighted:
+                data_nnc2 = nnc_rate.rate_in[valid_nnc2]
+            else:
+                data_nnc2 = ones_like(u_nnc2)
             # --- samle alt og bygg én sparse matrise --------------
             u_nb = concatenate([u_nb, u_nnc1, u_nnc2])
             v_nb = concatenate([v_nb, v_nnc1, v_nnc2])
@@ -856,6 +910,58 @@ class Sort:
         # 5) Legg CSR‐versjonen tilbake i self.adj
         self.adj = A_lil.tocsr()
     
+    #----------------------------------------------------------------------------
+    def remove_cycles_weighted(self, echo=False):
+    #----------------------------------------------------------------------------    
+        """Bryter alle sykluser ved å fjerne minst-vektede kanter i hver SCC."""
+        A_lil = self.adj.tolil()
+        self.cycle_id = 0
+
+        while True:
+            # 1) Finn SCC på CSR
+            A_csr = A_lil.tocsr()
+            n_comp, labels = connected_components(csgraph=A_csr, directed=True,
+                connection='strong', return_labels=True
+            )
+            counts = bincount(labels, minlength=n_comp)
+            cyc_comps = where(counts > 1)[0]
+            if cyc_comps.size == 0:
+                if echo:
+                    print(f"Ferdig med syklusbryting, fjernet {self.cycle_id} kanter.")
+                break
+
+            comp_id = int(cyc_comps[0])
+            comp_nodes = where(labels == comp_id)[0]
+            self.cycle_id += 1
+
+            # 2) Finn den kantpar (u, idx) med minste vekt i denne komponenten
+            min_w = inf
+            min_u = None
+            min_idx = None
+            for u in comp_nodes:
+                for idx, v in enumerate(A_lil.rows[u]):
+                    if labels[v] == comp_id:
+                        w = A_lil.data[u][idx]  # vekta på kanten u->v
+                        if w < min_w:
+                            min_w, min_u, min_idx = w, u, idx
+
+            # 3) Fjern akkurat den minste kanten
+            if min_u is not None:
+                v = A_lil.rows[min_u][min_idx]
+                if echo:
+                    uc, vc = self.to_coords([min_u, v])
+                    print(f"[Cycle {self.cycle_id}] Fjerner kant {uc} -> {vc} (vekt={min_w})")
+                del A_lil.rows[min_u][min_idx]
+                del A_lil.data[min_u][min_idx]
+            else:
+                # Bør aldri skje så lenge det finnes sykler
+                print(f"Warning: Ingen kant funnet i komponent {comp_id}.")
+                break
+
+        # 4) Sett resultatet tilbake i self.adj
+        self.adj = A_lil.tocsr()
+
+
     #--------------------------------------------------------------------------------
     def to_coords(self, flat, as_list=False):
     #--------------------------------------------------------------------------------
