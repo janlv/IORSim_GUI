@@ -321,6 +321,7 @@ class Flow():                                                                  #
     #--------------------------------------------------------------------------------
     def __init__(self, root, phase='wat', res_block=False, res_well=False):    # Flow
     #--------------------------------------------------------------------------------
+        print('THIS IS MAIN')
         self.unrst = UNRST_file(root)
         self.dim = self.unrst.dim()
         self.rft = RFT_file(root)
