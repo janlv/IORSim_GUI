@@ -4,4 +4,5 @@ requests
 pip-system-certs
 psutil
 numpy
+molmass
 

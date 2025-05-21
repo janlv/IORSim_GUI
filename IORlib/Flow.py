@@ -4,17 +4,18 @@ from itertools import product, islice
 from math import inf
 from pathlib import Path
 from dataclasses import dataclass
-from numpy import (array as nparray, abs as npabs, asarray, cumsum, empty, empty_like,
-    float64, int32, ndarray, sum as npsum, diff as npdiff, any as npany, zeros, ones,
-    stack, concatenate, moveaxis, prod, where, atleast_1d, argsort, bool_ as np_bool,
-    add as npadd, repeat as nprepeat, arange, ones_like, bincount, min as npmin, 
-    max as npmax)
+#from time import perf_counter
+from typing import Iterable, NamedTuple
+from numpy import (array as nparray, abs as npabs, asarray, copyto, count_nonzero, cumsum, 
+    empty, float64, int32, ndarray, sum as npsum, diff as npdiff, any as npany,
+    zeros, ones, stack, concatenate, moveaxis, prod, where, add as npadd, repeat as nprepeat,
+    arange, ones_like, bincount, min as npmin, max as npmax)
 from numba import njit, prange, boolean
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
 from .ECL import UNRST_file, RFT_file, INIT_file, unfmt_block
-from .utils import batched, flatten, roll_xyz, missing_elements, neighbour_connections
+from .utils import batched, flatten, roll_xyz, neighbour_connections
 
 
 ENDSOL = unfmt_block.from_data('ENDSOL', [], 'mess')
@@ -50,15 +51,20 @@ def implicit_numba(sorted_blocks, nb_conn, rate_in, rate_out, dt, sat, sat_old,
 #--------------------------------------------------------------------------------
     num_concs = conc.shape[-1]
     nb = sorted_blocks.shape[0]
-    mass = empty_like(conc)
+    tot_mass_res = zeros(num_concs)
+    tot_mass_inj = zeros(num_concs)
+    tot_mass_prod = zeros(num_concs)
+    # mass = empty_like(conc)
+    mass = zeros(num_concs)
     for idx in prange(nb):
         i, j, k = sorted_blocks[idx]
         vol_old = sat_old[i, j, k] * rporv_old[i, j, k]
-        mass[i, j, k, :] = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
+        vol_new = sat[i, j, k] * rporv[i, j, k]
+        # mass[i, j, k, :] = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
+        mass = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
         if force_vol_balance:
             denom = vol_old + dt * npsum(rate_in[i, j, k, :])
         else:
-            vol_new = sat[i, j, k] * rporv[i, j, k]
             denom = vol_new + dt * npsum(rate_out[i, j, k, :])
         # Inflow mass from blocks
         inflow = zeros(num_concs)
@@ -68,23 +74,36 @@ def implicit_numba(sorted_blocks, nb_conn, rate_in, rate_out, dt, sat, sat_old,
                 ii, jj, kk = nb_conn[i, j, k, m]
                 inflow += r * conc[ii, jj, kk, :]
         # Oppdater mass og conc
-        mass[i, j, k, :] += dt * inflow
-        conc[i, j, k, :] = mass[i, j, k, :] / denom
-    return conc
+        # mass[i, j, k, :] += dt * inflow
+        # conc[i, j, k, :] = mass[i, j, k, :] / denom
+        mass += dt * inflow
+        conc[i, j, k, :] = mass / denom
+        # Sum mass for all blocks
+        tot_mass_res += conc[i, j, k, :] * vol_new
+        tot_mass_inj += dt * rate_in[i, j, k, 6] * inj_conc[i, j, k, :]
+        tot_mass_prod += dt * rate_out[i, j, k, 6] * conc[i, j, k, :]
+    return conc, (tot_mass_res, tot_mass_inj, tot_mass_prod)
 
 @njit(parallel=True)
 #--------------------------------------------------------------------------------
 def implicit_numba_nnc(sorted_blocks, nb_conn, rate_in, rate_out, nnc_rate_in,
-                            nnc_rate_out, nnc_indices, nnc_pos, nnc_blocks, dt, 
-                            sat, sat_old, rporv, rporv_old, conc, inj_conc, force_vol_balance):
+                       nnc_rate_out, nnc_indices, nnc_pos, nnc_blocks, dt, 
+                       sat, sat_old, rporv, rporv_old, conc, inj_conc, 
+                       force_vol_balance):
 #--------------------------------------------------------------------------------
     num_concs = conc.shape[-1]
     nb = sorted_blocks.shape[0]
-    mass = empty_like(conc)
+    tot_mass_res = zeros(num_concs)
+    tot_mass_inj = zeros(num_concs)
+    tot_mass_prod = zeros(num_concs)
+    #mass = empty_like(conc)
+    mass = zeros(num_concs)
     for idx in prange(nb):
         i, j, k = sorted_blocks[idx]
         vol_old = sat_old[i, j, k] * rporv_old[i, j, k]
-        mass[i, j, k, :] = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
+        vol_new = sat[i, j, k] * rporv[i, j, k]
+        #mass[i, j, k, :] = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
+        mass = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
         ncc_ind = nnc_indices[:, i, j, k]
         # Entries in nnc_blocks and nnc_rate where: 
         #  [i,j,k] is nnc1
@@ -114,7 +133,6 @@ def implicit_numba_nnc(sorted_blocks, nb_conn, rate_in, rate_out, nnc_rate_in,
                 sum_rate_out += nnc_rate_out[m]
             for m in nnc_pos2: # nnc2 --> nnc1 == nnc1 <-- nnc2
                 sum_rate_out += nnc_rate_in[m]
-            vol_new = sat[i, j, k] * rporv[i, j, k]
             denom = vol_new + dt * sum_rate_out
         inflow = zeros(num_concs)
         # Inflow mass from blocks (well-injection included in initial mass-calculation)
@@ -139,9 +157,15 @@ def implicit_numba_nnc(sorted_blocks, nb_conn, rate_in, rate_out, nnc_rate_in,
                 ii, jj, kk = nnc_blocks[0, m]
                 inflow += r * conc[ii, jj, kk, :]
         # Update mass and conc
-        mass[i, j, k, :] += dt * inflow
-        conc[i, j, k, :] = mass[i, j, k, :] / denom
-    return conc
+        # mass[i, j, k, :] += dt * inflow
+        # conc[i, j, k, :] = mass[i, j, k, :] / denom
+        mass += dt * inflow
+        conc[i, j, k, :] = mass / denom
+        # Sum mass for all blocks
+        tot_mass_res += conc[i, j, k, :] * vol_new
+        tot_mass_inj += dt * rate_in[i, j, k, 6] * inj_conc[i, j, k, :]
+        tot_mass_prod += dt * rate_out[i, j, k, 6] * conc[i, j, k, :]
+    return conc, (tot_mass_res, tot_mass_inj, tot_mass_prod)
 
 @dataclass
 #====================================================================================
@@ -151,27 +175,52 @@ class Tracer:                                                          # Tracer
     time: float = 0.0
     dt: float = 0.0
     names: tuple = None
-    data: tuple = None
+    conc: ndarray = None
+    tot_mass: ndarray = None
+    #data: tuple = None
     cycles: int = -1
     header_pos: tuple = None
     host_unrst: UNRST_file = None
-    conc: dict = None
-    prod_mass: dict = None
+    #prod_mass: dict = None
 
     #--------------------------------------------------------------------------------
     def __post_init__(self):
     #--------------------------------------------------------------------------------
-        output = (zip(self.names, moveaxis(var, -1, 0)) for var in self.data)
-        self.conc, self.prod_mass = [dict(out) for out in output]
+        self.conc = dict(zip(self.names, moveaxis(self.conc, -1, 0)))
+        # tot_mass is a tuple of 3 arrays: (mass_res, mass_inj, mass_prod)
+        # where each array is of shape (num_concs,)
+        self.tot_mass = dict(zip(self.names, zip(*self.tot_mass)))
 
     #--------------------------------------------------------------------------------
     def __str__(self):
     #--------------------------------------------------------------------------------
-        txt = f'-- step: {self.step: 4d}, time: {self.time:9.3f} days, dt: {self.dt:6.3f} days'
+        txt = f'step: {self.step: 4d}, time: {self.time:9.3f} days, dt: {self.dt:6.3f} days'
         if self.cycles > -1:
             txt += f', cycles: {self.cycles}'
         return txt
 
+    #--------------------------------------------------------------------------------
+    def save_mass(self, echo=True, filename='tracer_mass.txt'):
+    #--------------------------------------------------------------------------------    
+        filename = self.host_unrst.with_name(filename)
+        mode = 'a'
+        txt = ''
+        if self.step == 1:
+            if echo:
+                print(f'Writing mass to {filename}')
+            mode = 'w'
+            # Write header
+            txt = '# step       time           dt        '
+            for name in self.names:
+                txt += f'{name+'_res':20} {name+'_inj':20} {name+'_prod':20}'
+            txt += '\n'
+        # Write data
+        txt += f'{self.step:6d} {self.time:13.6e} {self.dt:13.6e} '
+        for name in self.names:
+            txt += ' '.join(f'{v:20.13e}' for v in self.tot_mass[name])
+        with open(filename, mode, encoding='utf8') as out:
+            out.write(txt + '\n')
+    
     #--------------------------------------------------------------------------------
     def limits(self):
     #--------------------------------------------------------------------------------
@@ -190,6 +239,7 @@ class Tracer:                                                          # Tracer
         with open(unrst.path, mode) as out:
             with self.host_unrst.mmap() as hostfile:
                 if mode == 'wb':
+                    print(f'Creating new UNRST-file: {unrst}')
                     # Also copy initial header from the host UNRST file
                     out.write(hostfile[self.header_pos[0][1]])
                     out.write(ENDSOL.as_bytes())
@@ -201,6 +251,23 @@ class Tracer:                                                          # Tracer
                 out.write(block.as_bytes())
             out.write(ENDSOL.as_bytes())
         return unrst
+
+#Rate = namedtuple('Rate', 'time rate_in rate_out')
+#====================================================================================
+class Rate(NamedTuple):
+#====================================================================================
+    time: float
+    rate_in: ndarray
+    rate_out: ndarray
+
+#Well = namedtuple('Well', 'time name pos rate')
+#====================================================================================
+class Well(NamedTuple):
+#====================================================================================
+    time: float
+    name: str
+    pos: ndarray
+    rate: ndarray
 
 
 #====================================================================================
@@ -272,7 +339,7 @@ class Flow():                                                                  #
         # Define keys for block (UNRST) and well (RFT) rates
         RO = 'R' if res_block else 'O'
         self.block_keys = [f'FL{RO}{p.upper()}{ijk}+' for p,ijk in product(self.phases, 'IJK')]
-        self.unrst.check_missing_keys(*self.block_keys)
+        #self.unrst.check_missing_keys(*self.block_keys)
         TUB_RAT = 'TUBL' if res_well else 'RAT'
         self.well_keys = [f'CON{owg}{TUB_RAT}' for owg in 'OWG']
         self.rft.check_missing_keys(*self.well_keys)
@@ -284,7 +351,7 @@ class Flow():                                                                  #
         self._neigh_connects = None
 
     #--------------------------------------------------------------------------------
-    def sat_rporv(self, sync=True):                                       # Flow
+    def sat_rporv(self, sync=True, min_sat=None):                                       # Flow
     #--------------------------------------------------------------------------------
         Data = namedtuple('Data', 'time dt rporv rporv_old sat sat_old')
         blockdata = self.unrst.blockdata('DOUBHEAD', 0, 'S'+self.phases[0].upper(), 'RPORV')
@@ -293,9 +360,14 @@ class Flow():                                                                  #
             time_old, *data = next(blockdata, None)
             sat_old, rporv_old = self.unrst.reshape_dim(*data)
         else:
-            time_old, sat_old, rporv_old = -1, -1, -1            
+            time_old, sat_old, rporv_old = -1, -1, -1
         for time, *data in blockdata:
             sat, rporv = self.unrst.reshape_dim(*data)
+            if min_sat is not None:
+                too_low = sat < min_sat
+                if nonzero := count_nonzero(too_low):
+                    print(f'WARNING: {nonzero} negative {self.phases[0]} saturations')
+                    copyto(sat, min_sat, where=too_low)
             yield Data(time, time - time_old, rporv, rporv_old, sat, sat_old)
             time_old, sat_old, rporv_old = time, sat, rporv
 
@@ -373,6 +445,7 @@ class Flow():                                                                  #
         # File-positions of the sections in the host UNRST-file. Used to obtain the 
         # SEQNUM - STARTSOL header from the host UNRST-file when writing tracer data 
         # to the tracer UNRST-file.
+        # Add header position to the tracer data for writing to the UNRST-file
         header_pos = tuple(self.unrst.section_slices(('SEQNUM', 'startpos'), ('STARTSOL', 'endpos')))
         conc = stack(init, axis=-1)
         rates = self.rates()
@@ -386,18 +459,17 @@ class Flow():                                                                  #
             nnc_rate = self.nnc.get_rate(self.seqnum) if self.nnc else None
             sorted_blocks = self.sort.topological(rate.rate_out[..., :6], nnc_rate, check=False, weighted=False)
             if nnc_rate:
-                conc = implicit_numba_nnc(
+                conc, tot_mass = implicit_numba_nnc(
                     sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, nnc_rate.rate_in,
                     nnc_rate.rate_out, self.nnc.indices, self.nnc.pos, self.nnc.nnc, float64(rate.dt),
                     data.sat, data.sat_old, data.rporv, data.rporv_old, conc, inj_conc, force_vol_balance)
             else:
-                conc = implicit_numba(
+                conc, tot_mass = implicit_numba(
                     sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, float64(rate.dt), data.sat,
                     data.sat_old, data.rporv, data.rporv_old, conc, inj_conc, force_vol_balance)
-            prod_mass = rate.dt * rate.rate_out[..., 6][..., None] * conc
-            #output = (zip(name, moveaxis(var, -1, 0)) for var in (conc, prod_mass))
-            #yield Tracer(step, rate.time, rate.dt, *[dict(out) for out in output], cycles=self.sort.cycle_id) 
-            yield Tracer(step, rate.time, rate.dt, names, data=(conc, prod_mass),
+            
+            #prod_mass = rate.dt * rate.rate_out[..., 6][..., None] * conc
+            yield Tracer(step, rate.time, rate.dt, names, conc, tot_mass,
                          cycles=self.sort.cycle_id, header_pos=header_pos,
                          host_unrst=self.unrst)
 
@@ -446,6 +518,55 @@ class Flow():                                                                  #
             yield Flowdata(data.time, data.dt, data.rporv, data.rporv_old,
                            data.sat, data.sat_old, rate_in, rate_out)
 
+    #--------------------------------------------------------------------------------
+    def combined_rate(self, block:Rate, well:Rate) -> Rate:                             # Flow
+    #--------------------------------------------------------------------------------
+        # Combine well and block rates
+        self.check_time_sync(well.time, block.time)
+        rate_in = concatenate((block.rate_in, well.rate_in[..., None]), axis=-1)
+        rate_out = concatenate((block.rate_out, well.rate_out[..., None]), axis=-1)
+        return Rate(well.time, rate_in=rate_in, rate_out=rate_out)
+
+    #--------------------------------------------------------------------------------
+    def wellrate(self, wells: Iterable[Well]) -> Rate:                          # Flow
+    #--------------------------------------------------------------------------------
+        # wells: iterable of Well namedtuples
+        #self.check_time_sync(*[well.time for well in wells])
+        rate_in = zeros(self.dim)
+        rate_out = zeros(self.dim)
+        days = []
+        for well in wells:
+            days.append(well.time)
+            if well.rate[0] < 0:
+                rate_in[well.pos] += npabs(well.rate)
+            else:
+                rate_out[well.pos] += well.rate
+        self.check_time_sync(*days)
+        return Rate(time=days[0], rate_in=rate_in, rate_out=rate_out)
+
+    #--------------------------------------------------------------------------------
+    def blockrate(self, days, rate:ndarray) -> Rate:                           # Flow
+    #--------------------------------------------------------------------------------
+        #Blockrate = namedtuple('Blockrate', 'time rate_in rate_out')
+        rate_in = -rate * (rate < 0)
+        rate_out = rate * (rate > 0)
+        rates_in = concatenate((rate_in, roll_xyz(rate_out)), axis=-1)
+        rates_out = concatenate((rate_out, roll_xyz(rate_in)), axis=-1)
+        return Rate(time=days, rate_in=rates_in, rate_out=rates_out)
+
+    #--------------------------------------------------------------------------------
+    def blockrate_from_file(self):                           # Flow
+    #--------------------------------------------------------------------------------
+        # Read flow rates from UNRST-file
+        blockdata = self.unrst.blockdata('SEQNUM', 'DOUBHEAD', 0, *self.block_keys)
+        for self.seqnum, self.time, *data in blockdata:
+            data = batched(self.unrst.reshape_dim(*data), 3)
+            rates = {ph:stack(next(data), axis=-1) for ph in self.phases}
+            if not self.res_block:
+                rates = self.convert.surf_to_res(rates, self.seqnum)
+            else:
+                rates = rates[self.phases[0]]
+            yield self.blockrate(self.time, rates)
 
     #--------------------------------------------------------------------------------
     def interblock(self):                           # Flow
@@ -473,20 +594,23 @@ class Flow():                                                                  #
     #--------------------------------------------------------------------------------
     def wells(self, zerobase=True):                                             # Flow
     #--------------------------------------------------------------------------------
-        Well = namedtuple('Well', 'time name pos rate')
-        keys = ('TIME', 'CONIPOS', 'CONJPOS', 'CONKPOS', 'WELLPLT', 'WELLETC', 'CONNXT')
+        #Well = namedtuple('Well', 'time name pos rate')
+        #keys = ('TIME', 'CONIPOS', 'CONJPOS', 'CONKPOS', 'WELLPLT', 'WELLETC', 'CONNXT')
+        keys = ('TIME', 'CONIPOS', 'CONJPOS', 'CONKPOS', 'WELLETC')
         rates = []
         current_time = next(self.rft.read('time'))
         rftdata = self.rft.blockdata(*keys, *self.well_keys, singleton=True)
-        for time, i, j, k, wellplt, welletc, connxt, *wellrat in rftdata:
-            time = time[0]
+        #for time, i, j, k, wellplt, welletc, connxt, *wellrat in rftdata:
+        for days, i, j, k, welletc, *wellrat in rftdata:
+            days = days[0]
             wellname = welletc[1]
-            if time > current_time:
+            if days > current_time:
                 yield rates
-                current_time = time
+                current_time = days
                 rates = []
             if self.res_well:
-                wellrat = self._wellrate_from_tubing(wellrat, wellplt, connxt)
+                raise ValueError('Reservoir well rates not supported')
+                # wellrat = self._wellrate_from_tubing(wellrat, wellplt, connxt)
             wellrat = {ph:nparray(rat) for ph,rat in zip(('oil', 'wat', 'gas'), wellrat)}
             pos = (i, j, k)
             if zerobase:
@@ -495,40 +619,41 @@ class Flow():                                                                  #
             if not self.res_well:
                 # Convert surface rates to reservoir rates
                 wellrat = self.convert.surf_to_res(wellrat, self.seqnum, pos=pos)
-            rates.append(Well(time, wellname, pos, wellrat))
+            rates.append(Well(days, wellname, pos, wellrat))
+        # yield last rates because other yield is only called when time changes
+        yield rates
 
-
-    #--------------------------------------------------------------------------------
-    def _wellrate_from_tubing(self, tubflows, wellplt, connxt):                # Flow
-    #--------------------------------------------------------------------------------
-        # Seems that this only works for reservoir rates, and the accuracy is not very good
-        wellplt = nparray(wellplt)
-        phase_rates = wellplt[5]*(wellplt[:3]/sum(wellplt[:3]))
-        connxt = atleast_1d(connxt)
-        rates = []
-        for i, tub in enumerate(tubflows):
-            wellrate = phase_rates[i]
-            tub = atleast_1d(tub)
-            injector = wellrate < 0
-            idx = list(argsort(connxt))
-            miss = missing_elements(connxt) or [len(connxt)]
-            is_neigh = ones(len(idx) + len(miss), dtype=np_bool)
-            for m in miss:
-                idx.insert(m, (m if m<len(connxt) else 0) if injector else m-1)
-                is_neigh[m] = 0
-            #is_neigh[list(miss)] = 0
-            if injector:
-                # Injector
-                diff = zeros(len(tub))
-                for i in range(len(tub)):
-                    if is_neigh[i+1]:
-                        diff[idx[i+1]] = tub[i] - tub[idx[i+1]]
-                diff[idx[0]] = wellrate - tub[idx[0]]
-            else:
-                # Producer
-                diff = tub - is_neigh[1:]*tub[idx[1:]]
-            rates.append(diff)
-        return rates
+    # #--------------------------------------------------------------------------------
+    # def _wellrate_from_tubing(self, tubflows, wellplt, connxt):                # Flow
+    # #--------------------------------------------------------------------------------
+    #     # Seems that this only works for reservoir rates, and the accuracy is not very good
+    #     wellplt = nparray(wellplt)
+    #     phase_rates = wellplt[5]*(wellplt[:3]/sum(wellplt[:3]))
+    #     connxt = atleast_1d(connxt)
+    #     rates = []
+    #     for i, tub in enumerate(tubflows):
+    #         wellrate = phase_rates[i]
+    #         tub = atleast_1d(tub)
+    #         injector = wellrate < 0
+    #         idx = list(argsort(connxt))
+    #         miss = missing_elements(connxt) or [len(connxt)]
+    #         is_neigh = ones(len(idx) + len(miss), dtype=np_bool)
+    #         for m in miss:
+    #             idx.insert(m, (m if m<len(connxt) else 0) if injector else m-1)
+    #             is_neigh[m] = 0
+    #         #is_neigh[list(miss)] = 0
+    #         if injector:
+    #             # Injector
+    #             diff = zeros(len(tub))
+    #             for i in range(len(tub)):
+    #                 if is_neigh[i+1]:
+    #                     diff[idx[i+1]] = tub[i] - tub[idx[i+1]]
+    #             diff[idx[0]] = wellrate - tub[idx[0]]
+    #         else:
+    #             # Producer
+    #             diff = tub - is_neigh[1:]*tub[idx[1:]]
+    #         rates.append(diff)
+    #     return rates
 
     #--------------------------------------------------------------------------------
     def check_time_sync(self, *times):                                        # Flow
@@ -542,8 +667,8 @@ class Flow():                                                                  #
         Raises:
         ValueError: If time differences exceed the allowed accuracy.
         """
-        if len(times) < 2:
-            times = list(times) + [self.time]
+        # if len(times) < 2:
+        #     times = list(times) + [self.time]
         if npany(npabs(npdiff(times)) > self.dt_accuracy):
             raise ValueError(f'Time error in Flow: {times}. Expected time differences to be within {self.dt_accuracy}.')
 
@@ -589,8 +714,8 @@ class NNC():                                          # NNC
     def __init__(self, root, phases):                 # Convert
     #----------------------------------------------------------------------------
         # Non-neighbouring connections
-        # NB! Seems that only reservoir NNC is available 
-        # in UNRST, so only one phase is used
+        # NB! Seems that only reservoir NNC rates are available in UNRST,
+        # so only one phase is used
         self.unrst = UNRST_file(root)
         self.key = None
         self.exists = False
@@ -603,6 +728,7 @@ class NNC():                                          # NNC
         if self.nnc[0]:
             self.exists = True
             self.nnc = asarray(self.nnc, dtype=int32)
+            #print(self.nnc)
             self.ijk = moveaxis(self.nnc, 1, 2)
             dim = self.unrst.dim()
             tmp_map = [Map(nnc, dim) for nnc in self.nnc]
@@ -787,7 +913,7 @@ class Sort:
         return self.to_coords(order)
 
     #----------------------------------------------------------------------------
-    def check_order(self, order):
+    def check_order(self, order):                                          # Sort
     #----------------------------------------------------------------------------
         pos = empty(self.N, dtype=int32)
         for idx, node in enumerate(order):
@@ -805,7 +931,7 @@ class Sort:
             print('Topological sorting is valid!')
 
     #----------------------------------------------------------------------------
-    def adjacency_matrix(self, rate_out, nnc_rate, weighted=False):  
+    def adjacency_matrix(self, rate_out, nnc_rate, weighted=False):        # Sort
     #----------------------------------------------------------------------------
         # --- vanlige naboer -----------------------------------
         # flat ut rate_out og finn gyldige nabo-indekser
@@ -817,13 +943,14 @@ class Sort:
             valid_nb = rate_out.reshape(self.N * self.D) > 0        # bool-vektor, lengde N*6
         u_nb = self.u[valid_nb]                                # kilde indekser
         v_nb = self.to_flat(self.connections[valid_nb])        # flate destinasjons indekser
-        if weighted:  
+        if weighted:
             data_nb = flat_rate_out[valid_nb]
         else:
             data_nb = ones_like(u_nb)
 
         # --- non-neighboring connections ----------------------
         if nnc_rate:
+            #print('NNC-rates found!')
             # rate_out er flow inn i nnc2 fra nnc1, legg til kobling nnc1 -> nnc2
             valid_nnc1 = nnc_rate.rate_out > 0
             u_nnc1 = self.nnc_flat_conn[0][valid_nnc1]
@@ -845,6 +972,7 @@ class Sort:
             v_nb = concatenate([v_nb, v_nnc1, v_nnc2])
             data_nb = concatenate([data_nb, data_nnc1, data_nnc2])
 
+        # print('Adjacency matrix:', self.N, 'x', self.N, 'with', len(u_nb), 'edges')
         # bygger en N×N matrise der A[u[i], v[i]] = data[i]
         return csr_matrix((data_nb, (u_nb, v_nb)), shape=(self.N, self.N), dtype=int32)
 
@@ -1177,4 +1305,47 @@ def has_cycle_dfs(node, indptr, indices, visited, rec_stack):
 #         flat[i] = xi * stride_yz + yi * stride_z + zi
 #     return flat
 
+# HOW TO EDIT PROPERTIES IN INTERSECT USING PYTHON:
+    # MODEL_DEFINITION
 
+    #------------------------------------------------------------------------------
+    # This script modifies the fraction of CO2 dissolved in water after every
+    # timestep. This will cause IX to abort with the error-message:
+    #
+    #     WARNING  Validation of BoxPropertyEdit['Edit_1_0']:
+    #              Box restriction for Grid edit CoarseGrid on flat grid CoarseGrid: ni=20 nj=1 nk=1 cannot be performed.
+    #     ERROR    Cell property edit for 'AQUEOUS_COMPONENT_MOLE_FRACTION["CO2"]' is not valid after the simulation has started.
+    #
+    #------------------------------------------------------------------------------
+
+    #CustomControl "ScriptTest" {
+    #    ExecutionPosition=END_TIMESTEP
+    #
+    #    InitialScript=@{
+    #from itertools import product, chain
+    #from math import prod
+    #}@
+    #
+    #    Script=@{
+    #t = FieldManagement().CurrentTime.get().days()
+    #name = 'Edit_' + str(t).replace('.', '_')
+    #
+    #grid = StructuredInfo('CoarseGrid')
+    #start = grid.FirstCellId.get()
+    #dim = [getattr(grid, f'NumberCellsIn{x}').get() for x in ('IJK')]
+    #limits = list(chain(*zip((1,1,1), dim)))
+    #
+    #box_edit = GridMgr().RegionFamilyMgr().create_box_property_edit(name)
+    #box_edit.Grid.set(["CoarseGrid"])
+    #attrs = [a+b for a,b in product('IJK','12')]
+    #for attr, lim in zip(attrs, limits):
+    #    print(attr, lim)
+    #    getattr(box_edit, attr).set([lim]) 
+    #box_edit.Property.set(['AQUEOUS_COMPONENT_MOLE_FRACTION["CO2"]'])
+    #N = prod(dim)
+    #expr = '[' + ' '.join('0.02' for _ in range(N)) + ']'
+    #print(expr)
+    #box_edit.Expression.set([expr])
+    #}@
+    #
+    #}
