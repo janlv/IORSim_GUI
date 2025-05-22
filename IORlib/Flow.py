@@ -49,6 +49,7 @@ def unrstfile(root):
 def implicit_numba(sorted_blocks, nb_conn, rate_in, rate_out, dt, sat, sat_old,
                         rporv, rporv_old, conc, inj_conc, force_vol_balance):
 #--------------------------------------------------------------------------------
+    # Equations are taken from: https://github.com/ahiorth/GeoChem/blob/main/doc/report.pdf
     num_concs = conc.shape[-1]
     nb = sorted_blocks.shape[0]
     tot_mass_res = zeros(num_concs)
@@ -61,10 +62,13 @@ def implicit_numba(sorted_blocks, nb_conn, rate_in, rate_out, dt, sat, sat_old,
         vol_old = sat_old[i, j, k] * rporv_old[i, j, k]
         vol_new = sat[i, j, k] * rporv[i, j, k]
         # mass[i, j, k, :] = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
+        # Nominator of eq. 95 (page 29) where C^n+1_inflow only includes well-injection 
         mass = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
         if force_vol_balance:
+            # Denominator of eq. 101 (page 29)
             denom = vol_old + dt * npsum(rate_in[i, j, k, :])
         else:
+            # Denominator of eq. 95 (page 29)
             denom = vol_new + dt * npsum(rate_out[i, j, k, :])
         # Inflow mass from blocks
         inflow = zeros(num_concs)
@@ -91,30 +95,30 @@ def implicit_numba_nnc(sorted_blocks, nb_conn, rate_in, rate_out, nnc_rate_in,
                        sat, sat_old, rporv, rporv_old, conc, inj_conc, 
                        force_vol_balance):
 #--------------------------------------------------------------------------------
+    # Equations are taken from: https://github.com/ahiorth/GeoChem/blob/main/doc/report.pdf
     num_concs = conc.shape[-1]
     nb = sorted_blocks.shape[0]
     tot_mass_res = zeros(num_concs)
     tot_mass_inj = zeros(num_concs)
     tot_mass_prod = zeros(num_concs)
     #mass = empty_like(conc)
-    mass = zeros(num_concs)
+    #mass = zeros(num_concs)
     for idx in prange(nb):
         i, j, k = sorted_blocks[idx]
         vol_old = sat_old[i, j, k] * rporv_old[i, j, k]
         vol_new = sat[i, j, k] * rporv[i, j, k]
         #mass[i, j, k, :] = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
-        mass = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
+        #mass = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
+        # Inflow from injection wells
+        C_inflow = inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
         ncc_ind = nnc_indices[:, i, j, k]
         # Entries in nnc_blocks and nnc_rate where: 
         #  [i,j,k] is nnc1
         nnc_pos1 = nnc_pos[0, ncc_ind[0, 0]: ncc_ind[0, 1]]
         #  [i,j,k] is nnc2
         nnc_pos2 = nnc_pos[1, ncc_ind[1, 0]: ncc_ind[1, 1]]
-        # if len(nnc_pos1) > 0 or len(nnc_pos2) > 0:
-        #     print(idx, i, j, k, ', nnc1:', nnc_pos1, nnc_blocks[:, nnc_pos1].tolist(), ', nnc2:', nnc_pos2, nnc_blocks[:, nnc_pos2].tolist())
         if force_vol_balance:
             # Sum inflow rates into [i,j,k], including NNC
-            #sum_rate_in = npsum(rate_in[i, j, k, :])
             sum_rate_in = 0
             for m in range(7): # 6 neighbours + well-injection
                 sum_rate_in += rate_in[i, j, k, m]
@@ -122,10 +126,10 @@ def implicit_numba_nnc(sorted_blocks, nb_conn, rate_in, rate_out, nnc_rate_in,
                 sum_rate_in += nnc_rate_in[m]
             for m in nnc_pos2: # nnc2 <-- nnc1 == nnc1 --> nnc2
                 sum_rate_in += nnc_rate_out[m]
+            # Denominator of eq. 101 (page 29) in the report.pdf
             denom = vol_old + dt * sum_rate_in
         else:
             # Sum outflow rates from [i,j,k], including NNC
-            #sum_rate_out = npsum(rate_out[i, j, k, :])
             sum_rate_out = 0
             for m in range(7): # 6 neighbours + well-injection
                 sum_rate_out += rate_out[i, j, k, m]
@@ -133,34 +137,37 @@ def implicit_numba_nnc(sorted_blocks, nb_conn, rate_in, rate_out, nnc_rate_in,
                 sum_rate_out += nnc_rate_out[m]
             for m in nnc_pos2: # nnc2 --> nnc1 == nnc1 <-- nnc2
                 sum_rate_out += nnc_rate_in[m]
+            # Denominator of eq. 95 (page 29) in the report.pdf
             denom = vol_new + dt * sum_rate_out
-        inflow = zeros(num_concs)
-        # Inflow mass from blocks (well-injection included in initial mass-calculation)
+        #inflow = zeros(num_concs)
+        # Inflow from blocks
         for m in range(6):
             r = rate_in[i, j, k, m]
             if r > 0.0:
                 ii, jj, kk = nb_conn[i, j, k, m]
-                inflow += r * conc[ii, jj, kk, :]
+                C_inflow += r * conc[ii, jj, kk, :]
                 # for nn in prange(idx, nb):
                 #     xi, xj, xk = sorted_blocks[nn]
                 #     if ii == xi and jj == xj and kk == xk:
                 #         print('WARNING1: Block not visited:', idx, nn, (i,j,k), (ii, jj, kk))
-        # Inflow mass from nnc
+        # Inflow from NNC
         for m in nnc_pos1: # nnc1 <-- nnc2
             r = nnc_rate_in[m]
             if r > 0.0:
                 ii, jj, kk = nnc_blocks[1, m]
-                inflow += r * conc[ii, jj, kk, :]
+                C_inflow += r * conc[ii, jj, kk, :]
         for m in nnc_pos2: # nnc2 <-- nnc1 == nnc1 --> nnc2
             r = nnc_rate_out[m]
             if r > 0.0:
                 ii, jj, kk = nnc_blocks[0, m]
-                inflow += r * conc[ii, jj, kk, :]
+                C_inflow += r * conc[ii, jj, kk, :]
         # Update mass and conc
         # mass[i, j, k, :] += dt * inflow
         # conc[i, j, k, :] = mass[i, j, k, :] / denom
-        mass += dt * inflow
-        conc[i, j, k, :] = mass / denom
+        #mass += dt * inflow
+        #conc[i, j, k, :] = mass / denom
+        # Equation 95 (page 29) in the report.pdf
+        conc[i, j, k, :] = ( conc[i, j, k, :] * vol_old + dt * C_inflow ) / denom       
         # Sum mass for all blocks
         tot_mass_res += conc[i, j, k, :] * vol_new
         tot_mass_inj += dt * rate_in[i, j, k, 6] * inj_conc[i, j, k, :]
@@ -321,7 +328,6 @@ class Flow():                                                                  #
     #--------------------------------------------------------------------------------
     def __init__(self, root, phase='wat', res_block=False, res_well=False):    # Flow
     #--------------------------------------------------------------------------------
-        print('THIS IS MAIN')
         self.unrst = UNRST_file(root)
         self.dim = self.unrst.dim()
         self.rft = RFT_file(root)
@@ -497,7 +503,8 @@ class Flow():                                                                  #
             well_rate = {io:zeros(self.dim) for io in ('in', 'out')}
             for well in wells:
                 self.check_time_sync(well.time, block.time)
-                kind = 'in' if well.rate[0] < 0 else 'out'
+                #kind = 'in' if well.rate[0] < 0 else 'out'
+                kind = 'in' if npany(well.rate < 0) else 'out'
                 well_rate[kind][well.pos] += npabs(well.rate)
             dt = block.time - time
             # Last index is connection number. Block rates are the 6 first connections
@@ -538,9 +545,13 @@ class Flow():                                                                  #
         days = []
         for well in wells:
             days.append(well.time)
-            if well.rate[0] < 0:
+            if npany(well.rate < 0):
+                # Injection well
+                if npany(well.rate > 0):
+                    raise ValueError(f'Injection well {well.name} has positive rates: {well.rate}')
                 rate_in[well.pos] += npabs(well.rate)
             else:
+                # Production well
                 rate_out[well.pos] += well.rate
         self.check_time_sync(*days)
         return Rate(time=days[0], rate_in=rate_in, rate_out=rate_out)
