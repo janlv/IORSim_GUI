@@ -348,7 +348,11 @@ class Flow():                                                                  #
         self.block_keys = [f'FL{RO}{p.upper()}{ijk}+' for p,ijk in product(self.phases, 'IJK')]
         #self.unrst.check_missing_keys(*self.block_keys)
         TUB_RAT = 'TUBL' if res_well else 'RAT'
-        self.well_keys = [f'CON{owg}{TUB_RAT}' for owg in 'OWG']
+        #print(self.phases)
+        #self.well_keys = [f'CON{owg}{TUB_RAT}' for owg in 'OWG']
+        PH = [ph[0].upper() for ph in self.phases]
+        self.well_keys = [f'CON{ph}{TUB_RAT}' for ph in PH]
+        #print(self.well_keys)
         self.rft.check_missing_keys(*self.well_keys)
         nnc = NNC(root, self.phases)
         self.nnc = nnc if nnc.exists else False
@@ -549,10 +553,10 @@ class Flow():                                                                  #
                 # Injection well
                 if npany(well.rate > 0):
                     raise ValueError(f'Injection well {well.name} has positive rates: {well.rate}')
-                rate_in[well.pos] += npabs(well.rate)
+                rate_in[*well.pos] += npabs(well.rate)
             else:
                 # Production well
-                rate_out[well.pos] += well.rate
+                rate_out[*well.pos] += well.rate
         self.check_time_sync(*days)
         return Rate(time=days[0], rate_in=rate_in, rate_out=rate_out)
 
@@ -604,7 +608,7 @@ class Flow():                                                                  #
 
 
     #--------------------------------------------------------------------------------
-    def wells(self, zerobase=True):                                             # Flow
+    def wells(self):                                             # Flow
     #--------------------------------------------------------------------------------
         #Well = namedtuple('Well', 'time name pos rate')
         #keys = ('TIME', 'CONIPOS', 'CONJPOS', 'CONKPOS', 'WELLPLT', 'WELLETC', 'CONNXT')
@@ -623,11 +627,8 @@ class Flow():                                                                  #
             if self.res_well:
                 raise ValueError('Reservoir well rates not supported')
                 # wellrat = self._wellrate_from_tubing(wellrat, wellplt, connxt)
-            wellrat = {ph:nparray(rat) for ph,rat in zip(('oil', 'wat', 'gas'), wellrat)}
-            pos = (i, j, k)
-            if zerobase:
-                # Use zero-based position indices
-                pos = tuple([x-1 for x in p] for p in pos)
+            wellrat = dict(zip(self.phases, wellrat))
+            pos = stack((i, j, k)) - 1
             if not self.res_well:
                 # Convert surface rates to reservoir rates
                 wellrat = self.convert.surf_to_res(wellrat, self.seqnum, pos=pos)
@@ -761,9 +762,9 @@ class NNC():                                          # NNC
         # Read NNC rates from UNRST-file at reservoir conditions, i.e. FLRpppN+ where
         # ppp is OIL, WAT, or GAS
         # Using islice here to be able to skip steps, typically the initial step
-        seqnum, data = next(islice(self.blockdata, step-1, None))
+        seqnum, rate = next(islice(self.blockdata, step-1, None))
         self.seqnum = seqnum[0]
-        rate = nparray(data)
+        #rate = nparray(data)
         self.rate_in = -rate * (rate < 0)
         self.rate_out = rate * (rate > 0)
 
@@ -846,8 +847,8 @@ class Convert():                                          # Convert
         if rate[self.phase].ndim > 3:
             # Add extra dimension for broadcasting
             pvt = {k:v[..., None] for k,v in self.pvt.items()}
-        if pos:
-            pvt = {k:v[tuple(pos)] for k,v in self.pvt.items()}
+        if pos is not None:
+            pvt = {k:v[*pos] for k,v in self.pvt.items()}
         if self.phase in ('oil', 'gas'):
             denom = 1 - pvt['RS'] * pvt['RV']
             if npany(denom == 0):
@@ -1112,8 +1113,9 @@ class Sort:
         Returns: list of tuples with coordinates of shape (N, 3)
         """
 
-        if not isinstance(flat, ndarray):
-            flat = nparray(flat, dtype=int32)
+        # if not isinstance(flat, ndarray):
+        #     flat = nparray(flat, dtype=int32)
+        flat = asarray(flat, dtype=int32)
         #flat = asarray(flat, dtype=int32)
         #x, y, z = to_coords_parallel(flat, nparray(self.shape, dtype=int32))
         YZ = self.shape[1] * self.shape[2]
@@ -1129,8 +1131,9 @@ class Sort:
     def to_flat(self, coords, as_list=False):
     #--------------------------------------------------------------------------------
         """Convert 3D coordinates to flat index."""
-        if not isinstance(coords, ndarray):
-            coords = nparray(coords, dtype=int32)
+        # if not isinstance(coords, ndarray):
+        #     coords = nparray(coords, dtype=int32)
+        coords = asarray(coords, dtype=int32)
         x, y, z = coords.T
         flat = x * (self.shape[1] * self.shape[2]) + y * self.shape[2] + z      # (M,)
         if as_list:
