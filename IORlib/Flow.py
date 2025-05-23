@@ -5,6 +5,7 @@ from math import inf
 from pathlib import Path
 from dataclasses import dataclass
 #from time import perf_counter
+from time import perf_counter
 from typing import Iterable, NamedTuple
 from numpy import (array as nparray, abs as npabs, asarray, copyto, count_nonzero, cumsum, 
     empty, float64, int32, ndarray, sum as npsum, diff as npdiff, any as npany,
@@ -28,6 +29,22 @@ def unrstfile(root):
     """
     path = Path(root).with_name(Path(root).stem + '_tracer.UNRST')
     return UNRST_file(path)
+
+#---------------------------------------------------------------------------------
+def little_endian(arr):
+#---------------------------------------------------------------------------------
+    """
+    Convert a numpy array to little-endian format.
+    """
+    #start = perf_counter()
+    # If array is already in native byte order, return it unchanged
+    if arr.dtype.isnative:
+        return arr
+    # Otherwise swap bytes and reinterpret the data in one step
+    native_arr = arr.dtype.newbyteorder('=')
+    return arr.byteswap().view(native_arr)
+    #print(f'byteswap: {perf_counter() - start:.3e} s')
+    #return arr_be
 
 
 # m = c * Vp, m = mass, c = conc, Vp = vol_phase
@@ -471,9 +488,11 @@ class Flow():                                                                  #
             sorted_blocks = self.sort.topological(rate.rate_out[..., :6], nnc_rate, check=False, weighted=False)
             if nnc_rate:
                 conc, tot_mass = implicit_numba_nnc(
-                    sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, nnc_rate.rate_in,
-                    nnc_rate.rate_out, self.nnc.indices, self.nnc.pos, self.nnc.nnc, float64(rate.dt),
-                    data.sat, data.sat_old, data.rporv, data.rporv_old, conc, inj_conc, force_vol_balance)
+                    sorted_blocks, nb_conn, little_endian(rate.rate_in), little_endian(rate.rate_out),
+                    little_endian(nnc_rate.rate_in), little_endian(nnc_rate.rate_out), self.nnc.indices,
+                    self.nnc.pos, self.nnc.nnc, float64(rate.dt), little_endian(data.sat), 
+                    little_endian(data.sat_old), little_endian(data.rporv), little_endian(data.rporv_old), 
+                    conc, inj_conc, force_vol_balance)
             else:
                 conc, tot_mass = implicit_numba(
                     sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, float64(rate.dt), data.sat,
@@ -553,10 +572,10 @@ class Flow():                                                                  #
                 # Injection well
                 if npany(well.rate > 0):
                     raise ValueError(f'Injection well {well.name} has positive rates: {well.rate}')
-                rate_in[*well.pos] += npabs(well.rate)
+                rate_in[well.pos] += npabs(well.rate)
             else:
                 # Production well
-                rate_out[*well.pos] += well.rate
+                rate_out[well.pos] += well.rate
         self.check_time_sync(*days)
         return Rate(time=days[0], rate_in=rate_in, rate_out=rate_out)
 
@@ -628,7 +647,8 @@ class Flow():                                                                  #
                 raise ValueError('Reservoir well rates not supported')
                 # wellrat = self._wellrate_from_tubing(wellrat, wellplt, connxt)
             wellrat = dict(zip(self.phases, wellrat))
-            pos = stack((i, j, k)) - 1
+            # Subtract 1 to convert from 1-based to 0-based indexing
+            pos = (i - 1, j - 1, k - 1)
             if not self.res_well:
                 # Convert surface rates to reservoir rates
                 wellrat = self.convert.surf_to_res(wellrat, self.seqnum, pos=pos)
@@ -848,7 +868,7 @@ class Convert():                                          # Convert
             # Add extra dimension for broadcasting
             pvt = {k:v[..., None] for k,v in self.pvt.items()}
         if pos is not None:
-            pvt = {k:v[*pos] for k,v in self.pvt.items()}
+            pvt = {k:v[pos] for k,v in self.pvt.items()}
         if self.phase in ('oil', 'gas'):
             denom = 1 - pvt['RS'] * pvt['RV']
             if npany(denom == 0):
