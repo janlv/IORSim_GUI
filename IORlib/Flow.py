@@ -1,23 +1,24 @@
+import gc
 from collections import defaultdict, namedtuple
 #from datetime import datetime
 from itertools import product, islice
-from math import inf
 from pathlib import Path
-from dataclasses import dataclass
+#from dataclasses import dataclass
 #from time import perf_counter
 from time import perf_counter
 from typing import Iterable, NamedTuple
-from numpy import (array as nparray, abs as npabs, asarray, copyto, count_nonzero, cumsum, 
-    empty, float64, int32, ndarray, sum as npsum, diff as npdiff, any as npany,
+from numpy import (array as nparray, abs as npabs, asarray, count_nonzero, cumsum, 
+    empty, int32, ndarray, sum as npsum, diff as npdiff, any as npany,
     zeros, ones, stack, concatenate, moveaxis, prod, where, add as npadd, repeat as nprepeat,
     arange, ones_like, bincount, min as npmin, max as npmax)
 from numba import njit, prange, boolean
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
-from .ECL import UNRST_file, RFT_file, INIT_file, unfmt_block
+from .ECL import IX_input, UNRST_file, RFT_file, INIT_file, unfmt_block
 from .utils import batched, flatten, roll_xyz, neighbour_connections
 
+MIN_WSAT = 1e-8
 
 ENDSOL = unfmt_block.from_data('ENDSOL', [], 'mess')
 
@@ -36,15 +37,12 @@ def little_endian(arr):
     """
     Convert a numpy array to little-endian format.
     """
-    #start = perf_counter()
     # If array is already in native byte order, return it unchanged
     if arr.dtype.isnative:
         return arr
     # Otherwise swap bytes and reinterpret the data in one step
     native_arr = arr.dtype.newbyteorder('=')
     return arr.byteswap().view(native_arr)
-    #print(f'byteswap: {perf_counter() - start:.3e} s')
-    #return arr_be
 
 
 # m = c * Vp, m = mass, c = conc, Vp = vol_phase
@@ -73,36 +71,31 @@ def implicit_numba(sorted_blocks, nb_conn, rate_in, rate_out, dt, sat, sat_old,
     tot_mass_inj = zeros(num_concs)
     tot_mass_prod = zeros(num_concs)
     # mass = empty_like(conc)
-    mass = zeros(num_concs)
+    #mass = zeros(num_concs)
     for idx in prange(nb):
         i, j, k = sorted_blocks[idx]
         vol_old = sat_old[i, j, k] * rporv_old[i, j, k]
-        vol_new = sat[i, j, k] * rporv[i, j, k]
-        # mass[i, j, k, :] = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
-        # Nominator of eq. 95 (page 29) where C^n+1_inflow only includes well-injection 
-        mass = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
-        if force_vol_balance:
+        vol_new =     sat[i, j, k] *     rporv[i, j, k]
+        if force_vol_balance or sat[i, j, k] < MIN_WSAT:
             # Denominator of eq. 101 (page 29)
             denom = vol_old + dt * npsum(rate_in[i, j, k, :])
         else:
             # Denominator of eq. 95 (page 29)
             denom = vol_new + dt * npsum(rate_out[i, j, k, :])
-        # Inflow mass from blocks
-        inflow = zeros(num_concs)
+        # Inflow mass from injector (Neumann boundary condition)
+        C_inflow = inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
+        # Inflow mass from blocks, loop over all 6 neighbours
         for m in range(6):
-            r = rate_in[i, j, k, m]
-            if r > 0.0:
+            rate = rate_in[i, j, k, m]
+            if rate > 0.0:
                 ii, jj, kk = nb_conn[i, j, k, m]
-                inflow += r * conc[ii, jj, kk, :]
-        # Oppdater mass og conc
-        # mass[i, j, k, :] += dt * inflow
-        # conc[i, j, k, :] = mass[i, j, k, :] / denom
-        mass += dt * inflow
-        conc[i, j, k, :] = mass / denom
+                C_inflow += rate * conc[ii, jj, kk, :]
+        # Update concentration using Eq. 95 (page 29) from the report.pdf
+        conc[i, j, k, :] = ( conc[i, j, k, :] * vol_old + dt * C_inflow ) / denom       
         # Sum mass for all blocks
-        tot_mass_res += conc[i, j, k, :] * vol_new
-        tot_mass_inj += dt * rate_in[i, j, k, 6] * inj_conc[i, j, k, :]
-        tot_mass_prod += dt * rate_out[i, j, k, 6] * conc[i, j, k, :]
+        tot_mass_res  += conc[i, j, k, :] * vol_new
+        tot_mass_inj  += dt *  rate_in[i, j, k, 6] * inj_conc[i, j, k, :]
+        tot_mass_prod += dt * rate_out[i, j, k, 6] *     conc[i, j, k, :]
     return conc, (tot_mass_res, tot_mass_inj, tot_mass_prod)
 
 @njit(parallel=True)
@@ -118,30 +111,28 @@ def implicit_numba_nnc(sorted_blocks, nb_conn, rate_in, rate_out, nnc_rate_in,
     tot_mass_res = zeros(num_concs)
     tot_mass_inj = zeros(num_concs)
     tot_mass_prod = zeros(num_concs)
-    #mass = empty_like(conc)
-    #mass = zeros(num_concs)
     for idx in prange(nb):
         i, j, k = sorted_blocks[idx]
         vol_old = sat_old[i, j, k] * rporv_old[i, j, k]
         vol_new = sat[i, j, k] * rporv[i, j, k]
-        #mass[i, j, k, :] = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
-        #mass = conc[i, j, k, :] * vol_old + dt * inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
-        # Inflow from injection wells
-        C_inflow = inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
-        ncc_ind = nnc_indices[:, i, j, k]
+        nnc_ind = nnc_indices[:, i, j, k]
+        #i00, i01 = nnc_ind[0, 0], nnc_ind[0, 1]
+        #i10, i11 = nnc_ind[1, 0], nnc_ind[1, 1]
         # Entries in nnc_blocks and nnc_rate where: 
         #  [i,j,k] is nnc1
-        nnc_pos1 = nnc_pos[0, ncc_ind[0, 0]: ncc_ind[0, 1]]
+        nnc_pos1 = nnc_pos[0, nnc_ind[0, 0]: nnc_ind[0, 1]]
         #  [i,j,k] is nnc2
-        nnc_pos2 = nnc_pos[1, ncc_ind[1, 0]: ncc_ind[1, 1]]
-        if force_vol_balance:
+        nnc_pos2 = nnc_pos[1, nnc_ind[1, 0]: nnc_ind[1, 1]]
+        if force_vol_balance or sat[i, j, k] < MIN_WSAT:
             # Sum inflow rates into [i,j,k], including NNC
             sum_rate_in = 0
             for m in range(7): # 6 neighbours + well-injection
                 sum_rate_in += rate_in[i, j, k, m]
             for m in nnc_pos1: # nnc1 <-- nnc2
+            #for m in nnc_pos[0, i00 : i01]:
                 sum_rate_in += nnc_rate_in[m]
             for m in nnc_pos2: # nnc2 <-- nnc1 == nnc1 --> nnc2
+            #for m in nnc_pos[1, i10 : i11]:
                 sum_rate_in += nnc_rate_out[m]
             # Denominator of eq. 101 (page 29) in the report.pdf
             denom = vol_old + dt * sum_rate_in
@@ -151,130 +142,314 @@ def implicit_numba_nnc(sorted_blocks, nb_conn, rate_in, rate_out, nnc_rate_in,
             for m in range(7): # 6 neighbours + well-injection
                 sum_rate_out += rate_out[i, j, k, m]
             for m in nnc_pos1: # nnc1 --> nnc2
+            #for m in nnc_pos[0, i00 : i01]:
                 sum_rate_out += nnc_rate_out[m]
             for m in nnc_pos2: # nnc2 --> nnc1 == nnc1 <-- nnc2
+            #for m in nnc_pos[1, i10 : i11]:
                 sum_rate_out += nnc_rate_in[m]
             # Denominator of eq. 95 (page 29) in the report.pdf
             denom = vol_new + dt * sum_rate_out
-        #inflow = zeros(num_concs)
+
+        # Inflow from injection wells
+        C_inflow = inj_conc[i, j, k, :] * rate_in[i, j, k, 6]
         # Inflow from blocks
         for m in range(6):
-            r = rate_in[i, j, k, m]
-            if r > 0.0:
+            rate = rate_in[i, j, k, m]
+            if rate > 0.0:
                 ii, jj, kk = nb_conn[i, j, k, m]
-                C_inflow += r * conc[ii, jj, kk, :]
+                C_inflow += rate * conc[ii, jj, kk, :]
                 # for nn in prange(idx, nb):
                 #     xi, xj, xk = sorted_blocks[nn]
                 #     if ii == xi and jj == xj and kk == xk:
                 #         print('WARNING1: Block not visited:', idx, nn, (i,j,k), (ii, jj, kk))
         # Inflow from NNC
-        for m in nnc_pos1: # nnc1 <-- nnc2
-            r = nnc_rate_in[m]
-            if r > 0.0:
+        # Inflow to nnc1 <-- nnc2
+        for m in nnc_pos1:
+        # for m in nnc_pos[0, i00 : i01]:
+            rate = nnc_rate_in[m]
+            if rate > 0.0:
+                # Get conc from nnc2
                 ii, jj, kk = nnc_blocks[1, m]
-                C_inflow += r * conc[ii, jj, kk, :]
+                C_inflow += rate * conc[ii, jj, kk, :]
+        # Inflow to nnc2 <-- nnc1
         for m in nnc_pos2: # nnc2 <-- nnc1 == nnc1 --> nnc2
-            r = nnc_rate_out[m]
-            if r > 0.0:
+        # for m in nnc_pos[1, i10 : i11]:
+            rate = nnc_rate_out[m]
+            if rate > 0.0:
+                # Get conc from nnc1
                 ii, jj, kk = nnc_blocks[0, m]
-                C_inflow += r * conc[ii, jj, kk, :]
-        # Update mass and conc
-        # mass[i, j, k, :] += dt * inflow
-        # conc[i, j, k, :] = mass[i, j, k, :] / denom
-        #mass += dt * inflow
-        #conc[i, j, k, :] = mass / denom
+                C_inflow += rate * conc[ii, jj, kk, :]
         # Equation 95 (page 29) in the report.pdf
-        conc[i, j, k, :] = ( conc[i, j, k, :] * vol_old + dt * C_inflow ) / denom       
+        conc[i, j, k, :] = ( conc[i, j, k, :] * vol_old + dt * C_inflow ) / denom
         # Sum mass for all blocks
         tot_mass_res += conc[i, j, k, :] * vol_new
         tot_mass_inj += dt * rate_in[i, j, k, 6] * inj_conc[i, j, k, :]
         tot_mass_prod += dt * rate_out[i, j, k, 6] * conc[i, j, k, :]
     return conc, (tot_mass_res, tot_mass_inj, tot_mass_prod)
 
-@dataclass
+
+@njit(parallel=True)
+#---------------------------------------------------------------------------------
+def implicit_numba_nnc_lowmem(
+#---------------------------------------------------------------------------------
+    sorted_blocks,
+    nb_conn,
+    rate_in, rate_out,
+    nnc_rate_in, nnc_rate_out,
+    nnc_indices, nnc_pos, nnc_blocks,
+    dt,
+    sat, sat_old, rporv, rporv_old,
+    conc, inj_conc,
+    force_vol_balance,
+    # preallokerte arrays som sendes inn:
+    scratch,          # shape (num_concs,)
+    tot_mass_res,     # shape (num_concs,)
+    tot_mass_inj,     # shape (num_concs,)
+    tot_mass_prod     # shape (num_concs,)
+):
+#---------------------------------------------------------------------------------
+    num_concs = conc.shape[-1]
+    nb = sorted_blocks.shape[0]
+
+    # Nullstill masser (hvis de brukes på tvers av kall)
+    for c in range(num_concs):
+        scratch[c] = 0.0
+        tot_mass_res[c] = 0.0
+        tot_mass_inj[c] = 0.0
+        tot_mass_prod[c] = 0.0
+
+    for idx in prange(nb):
+        i, j, k = sorted_blocks[idx]
+        vol_old = sat_old[i, j, k] * rporv_old[i, j, k]
+        vol_new = sat[i, j, k]     * rporv[i, j, k]
+
+        # Hent start/stop for nnc-pos uten slicing
+        i00 = nnc_indices[0, i, j, k, 0]
+        i01 = nnc_indices[0, i, j, k, 1]
+        i10 = nnc_indices[1, i, j, k, 0]
+        i11 = nnc_indices[1, i, j, k, 1]
+
+        # Finn sum_rate og denom
+        if force_vol_balance or sat[i, j, k] < MIN_WSAT:
+            sum_rate = 0.0
+            for m in range(7):
+                sum_rate += rate_in[i, j, k, m]
+            for m in range(i00, i01):
+                sum_rate += nnc_rate_in[nnc_pos[0, m]]
+            for m in range(i10, i11):
+                sum_rate += nnc_rate_out[nnc_pos[1, m]]
+            denom = vol_old + dt * sum_rate
+        else:
+            sum_rate = 0.0
+            for m in range(7):
+                sum_rate += rate_out[i, j, k, m]
+            for m in range(i00, i01):
+                sum_rate += nnc_rate_out[nnc_pos[0, m]]
+            for m in range(i10, i11):
+                sum_rate += nnc_rate_in[nnc_pos[1, m]]
+            denom = vol_new + dt * sum_rate
+
+        # === Bruk scratch-array for å bygge C_inflow per art ===
+        # 1) init med injeksjonsbidrag
+        rate_well = rate_in[i, j, k, 6]
+        for c in range(num_concs):
+            scratch[c] = inj_conc[i, j, k, c] * rate_well
+
+        # 2) tilføye fra nabo-blokker
+        # Løp over alle 6 nabo-blokker
+        for m in range(6):
+            r = rate_in[i, j, k, m]
+            if r > 0.0:
+                # Hent indekser for nabo-blokk i retning m
+                ii, jj, kk = nb_conn[i, j, k, m]
+                for c in range(num_concs):
+                    scratch[c] += r * conc[ii, jj, kk, c]
+
+        # 3) tilføye fra NNC
+        # nnc1 <-- nnc2
+        # Løp over alle koblinger der i,j,k er nnc1
+        for m in range(i00, i01):
+            rr = nnc_rate_in[nnc_pos[0, m]]
+            if rr > 0.0:
+                # Hent indekser for nnc2-blokk for kobling m
+                ii, jj, kk = nnc_blocks[1, nnc_pos[0, m]]
+                for c in range(num_concs):
+                    scratch[c] += rr * conc[ii, jj, kk, c]
+        # nnc2 <-- nnc1
+        # Løp over alle koblinger der i,j,k er nnc2
+        for m in range(i10, i11):
+            rr = nnc_rate_out[nnc_pos[1, m]]
+            if rr > 0.0:
+                # Hent indekser for nnc1-blokk
+                ii, jj, kk = nnc_blocks[0, nnc_pos[1, m]]
+                for c in range(num_concs):
+                    scratch[c] += rr * conc[ii, jj, kk, c]
+
+        # === Oppdater konsentrasjon og summer masser ===
+        for c in range(num_concs):
+            old = conc[i, j, k, c]
+            new = (old * vol_old + dt * scratch[c]) / denom
+            conc[i, j, k, c] = new
+
+            tot_mass_res[c]  += new * vol_new
+            tot_mass_inj[c]  += dt * rate_well * inj_conc[i, j, k, c]
+            tot_mass_prod[c] += dt * rate_out[i, j, k, 6] * new
+
+    return conc, (tot_mass_res, tot_mass_inj, tot_mass_prod)
+
+
 #====================================================================================
-class Tracer:                                                          # Tracer
+class Tracerdata:
 #====================================================================================
-    step: int = -1
-    time: float = 0.0
-    dt: float = 0.0
-    names: tuple = None
-    conc: ndarray = None
-    tot_mass: ndarray = None
-    #data: tuple = None
-    cycles: int = -1
-    header_pos: tuple = None
-    host_unrst: UNRST_file = None
-    #prod_mass: dict = None
+    """
+    Holds tracer results for one timestep.
+    Attributes:
+        step:        step number
+        time:        current time (days)
+        dt:          timestep length (days)
+        names:       tuple of tracer names
+        conc:        dict[name] = concentration array
+        wells:       tuple of Well namedtuples
+        tot_mass:    dict[name] = (mass_res, mass_inj, mass_prod)
+        cycles:      number of broken cycles in topological sort
+        header_pos:  positions of headers in host UNRST
+        host_unrst:  host UNRST_file instance
+    """
+    #--------------------------------------------------------------------------------
+    def __init__(self, names: tuple, host_unrst: UNRST_file, init: ndarray):
+    #--------------------------------------------------------------------------------
+        self.names = names
+        self.host_unrst = host_unrst
+        self.unrst = unrstfile(host_unrst.path)
+        self.root = host_unrst.path.parent/host_unrst.path.stem
+        self.init = init # shape (..., num_concs)
+        self.step = 0
+        self.time = 0.0
+        self.dt = 0.0
+        self.wells = ()
+        self.cycles = None
+        self.conc_files = {name:Path(f'{self.root}_tracer_conc_{name}.dat') for name in self.names}
+        self.mass_file = Path(f'{self.root}_tracer_mass.dat')
+        self.prod_wells = sorted(IX_input(host_unrst.path).wells_by_type()['PRODUCER'])
+        self.header_pos = None
+        self.conc = None  # Will be a dict of named arrays
+        self.tot_mass = None  # Will be a dict of tuples (mass_res, mass_inj, mass_prod)
+        self.starttime = perf_counter()
 
     #--------------------------------------------------------------------------------
-    def __post_init__(self):
+    def update(self, step, time, dt, conc, tot_mass, wells=(), cycles=-1, header_pos=None):
     #--------------------------------------------------------------------------------
-        self.conc = dict(zip(self.names, moveaxis(self.conc, -1, 0)))
-        # tot_mass is a tuple of 3 arrays: (mass_res, mass_inj, mass_prod)
-        # where each array is of shape (num_concs,)
-        self.tot_mass = dict(zip(self.names, zip(*self.tot_mass)))
+        self.step = step
+        self.time = time
+        self.dt = dt
+        self.wells = wells or ()
+        self.cycles = cycles
+        self.header_pos = header_pos
+        # Turn raw conc array into a dict of named arrays
+        # conc has shape (..., num_concs)
+        self.conc = dict(zip(self.names, moveaxis(conc, -1, 0)))
+        # tot_mass is a tuple of arrays: (mass_res, mass_inj, mass_prod)
+        # each array has length=num_concs
+        self.tot_mass = dict(zip(self.names, zip(*tot_mass)))
+        return self
 
     #--------------------------------------------------------------------------------
     def __str__(self):
     #--------------------------------------------------------------------------------
-        txt = f'step: {self.step: 4d}, time: {self.time:9.3f} days, dt: {self.dt:6.3f} days'
-        if self.cycles > -1:
+        txt = f'step: {self.step:4d}, time: {self.time:9.3f} days, dt: {self.dt:6.3f} days'
+        if self.cycles is not None: #and self.cycles > -1:
             txt += f', cycles: {self.cycles}'
         return txt
 
     #--------------------------------------------------------------------------------
-    def save_mass(self, echo=True, filename='tracer_mass.txt'):
-    #--------------------------------------------------------------------------------    
-        filename = self.host_unrst.with_name(filename)
+    def save_mass(self, echo=True):
+    #--------------------------------------------------------------------------------
+        #filename = f'{self.root}_tracer_mass.dat'
         mode = 'a'
         txt = ''
         if self.step == 1:
             if echo:
-                print(f'Writing mass to {filename}')
+                print(f'Writing mass to {self.mass_file.name}')
             mode = 'w'
-            # Write header
-            txt = '# step       time           dt        '
+            # Header
+            txt = '# step       time           dt        cputime        '
             for name in self.names:
-                txt += f'{name+'_res':20} {name+'_inj':20} {name+'_prod':20}'
+                txt += f"{name+'_res':20} {name+'_inj':20} {name+'_prod':20}"
             txt += '\n'
-        # Write data
-        txt += f'{self.step:6d} {self.time:13.6e} {self.dt:13.6e} '
+        # Data line
+        txt += f'{self.step:6d} {self.time:13.6e} {self.dt:13.6e} {perf_counter() - self.starttime:13.6e} '
         for name in self.names:
-            txt += ' '.join(f'{v:20.13e}' for v in self.tot_mass[name])
-        with open(filename, mode, encoding='utf8') as out:
+            vals = self.tot_mass[name]
+            txt += ' '.join(f'{v:20.13e}' for v in vals)
+        with open(self.mass_file, mode, encoding='utf8') as out:
             out.write(txt + '\n')
-    
+
     #--------------------------------------------------------------------------------
     def limits(self):
     #--------------------------------------------------------------------------------
-        min_max = (f'{name}: ({npmin(data):.3f}, {npmax(data):.3f})' for name, data in self.conc.items())
-        return ', '.join(min_max)
+        pairs = (f'{name}: ({npmin(arr):.3f}, {npmax(arr):.3f})'
+                 for name, arr in self.conc.items())
+        return ', '.join(pairs)
 
     #--------------------------------------------------------------------------------
-    def to_unrst(self):                                          # Tracer
+    def to_unrst(self, dtype='float'):
     #--------------------------------------------------------------------------------
-        # Write copy header from host UNRST-file and append tracer data
-        unrst = unrstfile(self.host_unrst.path)
+        #start = perf_counter()
         mode = 'ab'
-        if not unrst.exists() or unrst.end_step() > self.step:
+        if self.step == 1:
             mode = 'wb'
-        #target = self.host_unrst.with_name(self.host_unrst.stem + '_tracer.UNRST')
-        with open(unrst.path, mode) as out:
+        with open(self.unrst.path, mode) as out:
             with self.host_unrst.mmap() as hostfile:
                 if mode == 'wb':
-                    print(f'Creating new UNRST-file: {unrst}')
+                    print(f'Creating new UNRST-file: {self.unrst}')
                     # Also copy initial header from the host UNRST file
                     out.write(hostfile[self.header_pos[0][1]])
+                    # Write initial concentrations
+                    for name, init_conc in zip(self.names, self.init):
+                        block = unfmt_block.from_data(name, init_conc, dtype)
+                        out.write(block.as_bytes())
                     out.write(ENDSOL.as_bytes())
-                # Copy header from the host UNRST file
+                # Copy header data from host for this step            
                 out.write(hostfile[self.header_pos[self.step][1]])
-            # Write tracer data
+            # Write tracer concentrations for this step
             for name, data in self.conc.items():
-                block = unfmt_block.from_data(name, data.flatten(order='F'), 'float')
+                block = unfmt_block.from_data(name, data, dtype)
                 out.write(block.as_bytes())
             out.write(ENDSOL.as_bytes())
-        return unrst
+        #print(f'Wrote tracer data to {self.unrst.path} in {perf_counter() - start:.2f} seconds')
+        return self.unrst
+
+    #--------------------------------------------------------------------------------
+    def save_conc(self, echo=True):
+    #--------------------------------------------------------------------------------
+        #files = {name:Path(f'{self.root}_tracer_conc_{name}.dat') for name in self.names}
+        files = self.conc_files
+        # Header
+        if self.step == 1 and echo:
+            print(f'Writing well concentrations to {[f.name for f in files.values()]}')
+        if self.step == 1:
+            # Build and write header
+            hdr  = '# step       time           dt        '
+            hdr += ''.join(f'{well:13}' for well in self.prod_wells) + '\n'
+            for file in files.values():
+                with open(file, 'w', encoding='utf8') as out:
+                    out.write(hdr)
+        # Compute and append
+        well_conc = {name: defaultdict(float) for name in self.names}
+        for well in self.wells:
+            if npany(well.rate > 0):
+                # Production well
+                total = npsum(well.rate)
+                for name in self.names:
+                    arr = self.conc[name][well.pos] * well.rate[..., None]
+                    well_conc[name][well.name] = (npsum(arr, axis=0) / total)[0]
+        # Write values
+        for name, file in files.items():
+            line = f'{self.step:6d} {self.time:13.6e} {self.dt:13.6e} '
+            line += ''.join(f'{well_conc[name][well]:13.6e}' for well in self.prod_wells)
+            with open(file, 'a', encoding='utf8') as out:
+                out.write(line + '\n')
+
 
 #Rate = namedtuple('Rate', 'time rate_in rate_out')
 #====================================================================================
@@ -392,10 +567,11 @@ class Flow():                                                                  #
         for time, *data in blockdata:
             sat, rporv = self.unrst.reshape_dim(*data)
             if min_sat is not None:
-                too_low = sat < min_sat
-                if nonzero := count_nonzero(too_low):
-                    print(f'WARNING: {nonzero} negative {self.phases[0]} saturations')
-                    copyto(sat, min_sat, where=too_low)
+                #too_low = sat <= min_sat
+                if nonzero := count_nonzero(sat <= min_sat):
+                    print(f'WARNING: {nonzero} blocks have {self.phases[0]} saturations <= {min_sat:.2e}')
+                    #sat = maximum(sat, min_sat)
+                    #copyto(sat, min_sat, where=too_low)
             yield Data(time, time - time_old, rporv, rporv_old, sat, sat_old)
             time_old, sat_old, rporv_old = time, sat, rporv
 
@@ -464,8 +640,59 @@ class Flow():                                                                  #
             prod_mass = rate.dt * rate.rate_out[..., 6][..., None] * conc
             #cfl = rate.dt * npsum(rate.rate_in, axis=-1) / vol_phase
             output = (zip(name, moveaxis(var, -1, 0)) for var in (conc, prod_mass))
-            yield Tracer(rate.time, rate.dt, *[dict(out) for out in output])#, cfl)
+            yield Tracerdata(rate.time, rate.dt, *[dict(out) for out in output])#, cfl)
             vol_phase_old = vol_phase
+
+    # #--------------------------------------------------------------------------------
+    # def tracer_implicit_old(self, names, init, inlet, force_vol_balance=False):                        # Flow
+    # #--------------------------------------------------------------------------------
+    #     # File-positions of the sections in the host UNRST-file. Used to obtain the 
+    #     # SEQNUM - STARTSOL header from the host UNRST-file when writing tracer data 
+    #     # to the tracer UNRST-file.
+    #     # Add header position to the tracer data for writing to the UNRST-file
+    #     header_pos = tuple(self.unrst.section_slices(('SEQNUM', 'startpos'), ('STARTSOL', 'endpos')))
+    #     conc = stack(init, axis=-1)
+    #     rates = self.rates()
+    #     sat_rporv = self.sat_rporv(min_sat=MIN_WSAT)
+    #     inj_conc = stack([i * ones(self.dim) for i in inlet], axis=-1)
+    #     nb_conn = self.neighbour_connections()
+    #     tracerdata = Tracerdata(names, self.unrst)
+
+    #     # num_concs = conc.shape[-1]
+    #     # scratch   = empty(num_concs, dtype=conc.dtype)
+    #     # tot_res   = zeros(num_concs, dtype=conc.dtype)
+    #     # tot_inj   = zeros(num_concs, dtype=conc.dtype)
+    #     # tot_prod  = zeros(num_concs, dtype=conc.dtype)
+
+    #     for n, (rate, data) in enumerate(zip(rates, sat_rporv)):
+    #         step = n + 1
+    #         self.check_time_sync(rate.time, data.time)
+    #         self.check_step_sync(step)
+    #         nnc_rate = self.nnc.get_rate(self.seqnum) if self.nnc else None
+    #         sorted_blocks = self.sort.topological(rate.rate_out[..., :6], nnc_rate, check=False, weighted=False)
+    #         if nnc_rate:
+    #             # conc, tot_mass = implicit_numba_nnc_lowmem(
+    #             #     sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, nnc_rate.rate_in, nnc_rate.rate_out,
+    #             #     self.nnc.indices, self.nnc.pos, self.nnc.nnc, float64(rate.dt), little_endian(data.sat),
+    #             #     little_endian(data.sat_old), little_endian(data.rporv), little_endian(data.rporv_old),
+    #             #     conc, inj_conc, force_vol_balance, scratch, tot_res, tot_inj, tot_prod)
+    #             conc, tot_mass = implicit_numba_nnc(
+    #                 sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, nnc_rate.rate_in, nnc_rate.rate_out,
+    #                 self.nnc.indices, self.nnc.pos, self.nnc.nnc, float64(rate.dt), little_endian(data.sat),
+    #                 little_endian(data.sat_old), little_endian(data.rporv), little_endian(data.rporv_old),
+    #                 conc, inj_conc, force_vol_balance)
+    #         else:
+    #             conc, tot_mass = implicit_numba(
+    #                 sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, float64(rate.dt), little_endian(data.sat),
+    #                 little_endian(data.sat_old), little_endian(data.rporv), little_endian(data.rporv_old),
+    #                 conc, inj_conc, force_vol_balance)
+            
+    #         #prod_mass = rate.dt * rate.rate_out[..., 6][..., None] * conc
+    #         # yield Tracerdata(step, rate.time, rate.dt, names, conc, tot_mass,
+    #         #              cycles=self.sort.cycle_id, header_pos=header_pos,
+    #         #              host_unrst=self.unrst)
+    #         yield tracerdata.update(step, rate.time, rate.dt, conc, tot_mass,
+    #                      cycles=self.sort.cycle_id, header_pos=header_pos)
 
     #--------------------------------------------------------------------------------
     def tracer_implicit(self, names, init, inlet, force_vol_balance=False):                        # Flow
@@ -475,34 +702,42 @@ class Flow():                                                                  #
         # to the tracer UNRST-file.
         # Add header position to the tracer data for writing to the UNRST-file
         header_pos = tuple(self.unrst.section_slices(('SEQNUM', 'startpos'), ('STARTSOL', 'endpos')))
+        if init.shape[1:] != self.dim:
+            raise ValueError(f'Initial tracer concentration shape {init.shape[1:]} does not match grid shape {self.dim}')
         conc = stack(init, axis=-1)
-        rates = self.rates()
-        sat_rporv = self.sat_rporv()
+        sat_rporv = self.sat_rporv(min_sat=MIN_WSAT)
         inj_conc = stack([i * ones(self.dim) for i in inlet], axis=-1)
         nb_conn = self.neighbour_connections()
-        for n, (rate, data) in enumerate(zip(rates, sat_rporv)):
-            step = n + 1
-            self.check_time_sync(rate.time, data.time)
+        block_flow = self.interblock()
+        well_flow = self.wells()
+        # Skip the inital block of the UNRST-file to be in sync with the RFT-file
+        time = next(block_flow).time
+        step = 0
+        tracerdata = Tracerdata(names, self.unrst, init=init)
+        # Loop over interblock flows and well flows
+        for blockrate, wells, data in zip(block_flow, well_flow, sat_rporv):
+            step += 1
+            dt = blockrate.time - time
+            time = blockrate.time
+            self.check_time_sync(blockrate.time, wells[0].time, data.time)
             self.check_step_sync(step)
+            wellrate = self.wellrate(wells)
             nnc_rate = self.nnc.get_rate(self.seqnum) if self.nnc else None
+            rate = self.combined_rate(blockrate, wellrate)
             sorted_blocks = self.sort.topological(rate.rate_out[..., :6], nnc_rate, check=False, weighted=False)
             if nnc_rate:
                 conc, tot_mass = implicit_numba_nnc(
-                    sorted_blocks, nb_conn, little_endian(rate.rate_in), little_endian(rate.rate_out),
-                    little_endian(nnc_rate.rate_in), little_endian(nnc_rate.rate_out), self.nnc.indices,
-                    self.nnc.pos, self.nnc.nnc, float64(rate.dt), little_endian(data.sat), 
-                    little_endian(data.sat_old), little_endian(data.rporv), little_endian(data.rporv_old), 
+                    sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, nnc_rate.rate_in, nnc_rate.rate_out,
+                    self.nnc.indices, self.nnc.pos, self.nnc.nnc, dt, little_endian(data.sat),
+                    little_endian(data.sat_old), little_endian(data.rporv), little_endian(data.rporv_old),
                     conc, inj_conc, force_vol_balance)
             else:
                 conc, tot_mass = implicit_numba(
-                    sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, float64(rate.dt), data.sat,
-                    data.sat_old, data.rporv, data.rporv_old, conc, inj_conc, force_vol_balance)
-            
-            #prod_mass = rate.dt * rate.rate_out[..., 6][..., None] * conc
-            yield Tracer(step, rate.time, rate.dt, names, conc, tot_mass,
-                         cycles=self.sort.cycle_id, header_pos=header_pos,
-                         host_unrst=self.unrst)
-
+                    sorted_blocks, nb_conn, rate.rate_in, rate.rate_out, dt, little_endian(data.sat),
+                    little_endian(data.sat_old), little_endian(data.rporv), little_endian(data.rporv_old),
+                    conc, inj_conc, force_vol_balance)
+            yield tracerdata.update(step, rate.time, dt, conc, tot_mass, wells=wells,
+                         cycles=self.sort.cycle_id, header_pos=header_pos)
 
     # #--------------------------------------------------------------------------------
     # def timesynced_zip(self, *iterables):                                      # Flow
@@ -556,7 +791,7 @@ class Flow():                                                                  #
         self.check_time_sync(well.time, block.time)
         rate_in = concatenate((block.rate_in, well.rate_in[..., None]), axis=-1)
         rate_out = concatenate((block.rate_out, well.rate_out[..., None]), axis=-1)
-        return Rate(well.time, rate_in=rate_in, rate_out=rate_out)
+        return Rate(block.time, rate_in=rate_in, rate_out=rate_out)
 
     #--------------------------------------------------------------------------------
     def wellrate(self, wells: Iterable[Well]) -> Rate:                          # Flow
