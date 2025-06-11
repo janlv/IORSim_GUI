@@ -1,4 +1,3 @@
-import gc
 from collections import defaultdict, namedtuple
 #from datetime import datetime
 from itertools import product, islice
@@ -8,7 +7,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Iterable, NamedTuple
 from numpy import (array as nparray, abs as npabs, asarray, count_nonzero, cumsum, 
-    empty, int32, ndarray, sum as npsum, diff as npdiff, any as npany,
+    empty, inf, int32, ndarray, sum as npsum, diff as npdiff, any as npany,
     zeros, ones, stack, concatenate, moveaxis, prod, where, add as npadd, repeat as nprepeat,
     arange, ones_like, bincount, min as npmin, max as npmax)
 from numba import njit, prange, boolean
