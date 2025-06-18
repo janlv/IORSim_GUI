@@ -1,8 +1,11 @@
+_version.py
+
 # Byte-compiled / optimized / DLL files
 *~
 __pycache__/
 *.py[cod]
 *$py.class
+.venv*/
 
 # C extensions
 *.so
@@ -181,7 +184,6 @@ GUI_old
 
 satnum*.dat
 test_regex.py
-IORSim_GUI
 cases*
 IORSim_cases
 IORSim_splash*

@@ -18,14 +18,16 @@ from threading import Thread
 from struct import error as struct_error
 
 from numpy import prod, sum as npsum
-from psutil import NoSuchProcess
+#from psutil import NoSuchProcess
 
-from IORlib.utils import (batched, convert_float_or_str, dates_after,
+from iorsimlib.utils import (batched, convert_float_or_str, dates_after,
     empty_folder, flat_list, flatten, get_terminal_environment, list2text, pairwise, print_error, remove_comments, safeopen, 
     Progress, silentdelete, delete_files_matching, tail_file, LivePlot, running_jupyter)
-from IORlib.runner import Runner
-from IORlib.ECL import (FUNRST_file, DATA_file, File, INIT_file, RFT_file, Restart, SMSPEC_file, UNRST_file,
-    UNSMRY_file, MSG_file, PRT_file, IX_input, unfmt_file)
+#from IORlib.runner import Runner
+from proclib import Runner, NoSuchProcess
+#    UNSMRY_file, MSG_file, PRT_file, IX_input, unfmt_file)
+from ECLlib import (FUNRST_file, DATA_file, File, INIT_file, RFT_file, Restart, SMSPEC_file, UNRST_file,
+    UNSMRY_file, MSG_file, PRT_file, IX_input, unfmt_file, File_checker)
 
 __version__ = '3.7.3'
 __author__ = 'Jan Ludvig Vinningland'
@@ -78,8 +80,12 @@ class SLBRunner(Runner):                                                  # SLBR
         nice = ('nice', f'-{nice}') if nice else ()
         super().__init__(name=name, case=root, exe=exe, cmd=[*nice, exe, *nproc, cmd, root], app_name=cmd, **kwargs)
         self.update = kwargs.get('update') or None
-        self.unrst = UNRST_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
-        self.rft = RFT_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
+        # self.unrst = UNRST_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
+        # self.rft = RFT_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
+        self.unrst = UNRST_file(root)
+        self.check_unrst = File_checker(self.unrst, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
+        self.rft = RFT_file(root)
+        self.check_rft = File_checker(self.rft, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
         self.unsmry = UNSMRY_file(root)
         self.msg = MSG_file(root)
         self.prt = PRT_file(root)
@@ -256,8 +262,8 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
         self.t = restart.days if restart else 0
         self.init_tsteps = init_tsteps or len(self.input_file.get('TSTEP'))
         self.delete_interface = kwargs.get('delete_interface') or True
-        self.check_unrst = check_unrst
-        self.check_rft = check_rft
+        self.do_unrst_check = check_unrst
+        self.do_rft_check = check_rft
         self.schedule = schedule
         self.nwell = 0
         self.del_satnum = False
@@ -296,7 +302,8 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
         for i in range(nblocks):
             if i > 0:
                 self.update_function(progress=not restart, plot=True)
-            self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
+            # self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE)
+            self.check_unrst.data_saved(nblocks=1, pause=CHECK_PAUSE)
         # Get number of wells from UNRST-file
         #self.nwell = next(self.unrst.read('nwell', tail=True))[0]
         self.nwell = next(self.unrst.read('nwell', tail=True))
@@ -330,16 +337,16 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
         if start_stop:
             self.resume()
         self.wait_for( self.OK_file.is_deleted, error=self.OK_file.name()+' not deleted' )
-        if self.check_unrst:
-            self.unrst.check.data_saved(nblocks=1, pause=CHECK_PAUSE) 
-        if self.check_rft and self.rft.exists():
+        if self.do_unrst_check:
+            self.check_unrst.data_saved(nblocks=1, pause=CHECK_PAUSE) 
+        if self.do_rft_check and self.rft.exists():
             nblocks = 1
             if nwell:
                 #self.nwell = nblocks = self.unrst.get('nwell')[0][-1]
                 #self.nwell = nblocks = next(self.unrst.read('nwell', tail=True))[0]
                 self.nwell = nblocks = next(self.unrst.read('nwell', tail=True))
                 #print(nwell)
-            msg = self.rft.check.data_saved_maxmin(nblocks=nblocks, niter=RFT_CHECK_NITER, pause=CHECK_PAUSE)
+            msg = self.check_rft.data_saved_maxmin(nblocks=nblocks, niter=RFT_CHECK_NITER, pause=CHECK_PAUSE)
             if msg:
                 self._print(msg)
         if start_stop:
@@ -350,7 +357,8 @@ class EclipseBackward(BackwardMixin, Eclipse):                      # EclipseBac
         # self.t = (data := self.rft.check.data()) and data[-1] or self.time()
         # self.t = self.rft.last_day() or self.unrst.last_day() or self.time()
         self.t = self.time()
-        if self.check_rft and self.rft.not_in_sync(self.t):
+        #if self.do_rft_check and self.rft.not_in_sync(self.t):
+        if self.do_rft_check and self.check_rft.not_in_sync(self.t):
             self._print(f'WARNING Simulation time not in sync with RFT-time: {self.t}, {self.rft.check.data()}')
         if log:
             #self._print(f' Date is {self.unrst.dates(N=-1).date()} ({self.t} days)')

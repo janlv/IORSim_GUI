@@ -38,14 +38,15 @@ from matplotlib import rcParams
 from numpy import asarray
 
 # Local libraries
-from ior2ecl import (SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT,
+from iorsimlib import (SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT,
                      Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL,
                      LOG_LEVEL_MAX, LOG_LEVEL_MIN)
-from IORlib.utils import (flatten, has_write_access, make_user_executable, removeprefix, Progress,
+from iorsimlib.utils import (flatten, has_write_access, make_user_executable, removeprefix, Progress,
                           clear_dict, convert_float_or_str, copy_recursive, same_length, flat_list,
                           get_tuple, kill_process, pad_zero, read_file,remove_leading_nondigits, 
                           replace_line, delete_all, try_except_loop, unique_names, write_file)
-from IORlib.ECL import DATA_file, AFI_file, IX_input, File, UNSMRY_file, UNRST_file
+from ECLlib import DATA_file, AFI_file, IX_input, File, UNSMRY_file, UNRST_file
+from Upgrader import Upgrader
 
 # Check if this is a bundle version (pyinstaller)
 BUNDLE_VERSION = getattr(sys, 'frozen', False)
@@ -125,61 +126,6 @@ def new_version(version_str):
         return version_str
     return False
 
-
-
-#====================================================================================
-class Upgrader:
-#====================================================================================
-
-    LOG_FILE = IORSIM_DIR/'upgrader.log'
-
-    #--------------------------------------------------------------------------------
-    def __init__(self, argv):
-    #--------------------------------------------------------------------------------
-        self.pid = int(argv[0])
-        self.new_file = Path(argv[1])
-        self.cmd = argv[2:]
-        self.target = Path.cwd()
-        self._clear_log = True
-
-    #--------------------------------------------------------------------------------
-    def __str__(self) -> str:
-    #--------------------------------------------------------------------------------
-        return '\n'.join(f'{k}: {v}' for k,v in self.__dict__.items() if k[0] != '_')
-
-    #--------------------------------------------------------------------------------
-    def upgrade(self, limit=100, pause=0.05):
-    #--------------------------------------------------------------------------------
-        self.log(f'Time: {datetime.now()}\n{self}')
-        # Stop app
-        procs = kill_process(self.pid)
-        self.log(f'Killed {self.pid}: {procs}')
-        if self.new_file.is_dir():
-            # Upgrader called from python script
-            dest = self.target
-        else:
-            # Upgrader called from bundeled version (suffix is '.exe' or '' )
-            dest = self.cmd[0]
-        self.log(f'Copy {self.new_file} to {dest}')
-        # Move new files over old ones
-        # Keep trying to overwrite if PermissionError
-        try_except_loop(self.new_file, dest, log=self.log, func=copy_recursive,
-                        limit=limit, pause=pause, error=(PermissionError, OSError))
-        # Start new version 
-        with Popen(self.cmd) as proc:
-            self.log(f'Started {self.cmd} as {proc}')
-        self.log('Upgrade complete!')
-
-
-    #--------------------------------------------------------------------------------
-    def log(self, text):
-    #--------------------------------------------------------------------------------
-        mode = 'a'
-        if self._clear_log:
-            self._clear_log = False
-            mode = 'w'
-        with open(self.LOG_FILE, mode, encoding='utf-8') as file:
-            file.write(f'{text}\n')
 
 
 #===========================================================================
@@ -4364,14 +4310,15 @@ class Highlighter(QSyntaxHighlighter):
 
 
                 
-###################################
-#                                 #
-#            M A I N              #
-#                                 #
-###################################
+# ###################################
+# #                                 #
+# #            M A I N              #
+# #                                 #
+# ###################################
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
+def main():
     ### Need to set the locale under Linux to avoid datetime.strptime errors
     os.putenv('LC_ALL', 'C')
     #os.environ['QT_ENABLE_HIGHDPI_SCALING'] = '0'

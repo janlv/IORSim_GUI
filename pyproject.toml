@@ -1,0 +1,43 @@
+[project]
+name = "iorsim"
+description = "A Python library and GUI for running IORSim"
+authors = [
+    { name = "Jan Ludvig Vinningland", email = "janludvig@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+
+# Core dependencies for the library
+dependencies = [
+    "numpy",
+    "molmass"
+]
+
+# Optional dependencies for the GUI
+[project.optional-dependencies]
+gui = [
+    "PySide6",
+    "matplotlib",
+    "requests",
+    "pip-system-certs",
+    "psutil",
+]
+
+# Let setuptools_scm determine the version automatically from Git tags
+dynamic = ["version"]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+# Write the version string to this file during build (do not commit it)
+write_to = "src/_version.py"
+
+[tool.setuptools]
+# Use the src/ layout
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+# Automatically find all packages under src/
+where = ["src"]
