@@ -42,6 +42,7 @@ from iorsim_gui.themes import set_light_theme
 from iorsimlib import (SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT,
                      Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL,
                      LOG_LEVEL_MAX, LOG_LEVEL_MIN)
+from iorsimlib.ior2ecl import make_IX_iorsim_compatible
 from iorsimlib.utils import (flatten, has_write_access, make_user_executable, removeprefix, Progress,
                           clear_dict, convert_float_or_str, copy_recursive, same_length, flat_list,
                           get_tuple, kill_process, pad_zero, read_file,remove_leading_nondigits, 
@@ -2970,7 +2971,8 @@ class main_window(QMainWindow):                                    # main_window
     #-----------------------------------------------------------------------
         self.ix_ior_backup = None
         if self.get_current_host() == 'Intersect' and self.host_input:
-            file, backup = self.host_input.make_iorsim_compatible()
+            #file, backup = self.host_input.make_iorsim_compatible()
+            file, backup = make_IX_iorsim_compatible(self.host_input)
             if backup is None:
                 msg = f'Input file *{file.name}* is previously updated, no changes applied.'
             else:
