@@ -1,8 +1,0 @@
-PySide6 
-matplotlib 
-requests 
-pip-system-certs
-psutil
-numpy
-molmass
-

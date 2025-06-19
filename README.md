@@ -6,22 +6,62 @@ Compiled Windows and Linux versions of the python script are provided with every
 
 For Linux, the downloaded file must first be made executable by entering the command `chmod u+x IORSim_GUI_ubuntu` in a Terminal window. 
 
-## Running the python script
-The python interpreter must be version 3.8 or newer. Install the required libraries by executing 
-
-`pip install -r requirements.txt`
-
-If python is properly installed in your path, IORSim_GUI.py can simply be invoked by
-
-`./IORSim_GUI.py`
-
-In case this fails, you need to specify the python interpreter like this
-
-`python IORSim_GUI.py` 
-
 ## Files
 At startup, a folder named `.iorsim` is created in the home-folder. The `.iorsim` folder contains settings-, session- and log-files.  
 
 The compiled versions create a temporary folder named `_MEIxxxxxx`, where `xxxxxx` is a randum number. For Linux and Windows the temporary folder is located under `\tmp` and `C:\Users\<username>\AppData\Local\Temp`, respectively.
 
+## Project Installation Guide
 
+This project includes installation scripts that create a virtual environment and install all necessary dependencies.
+
+
+### Installation (Linux/macOS)
+
+1. Make the script executable:
+```bash
+chmod +x install.sh
+```
+
+2. Run the installer:
+```bash
+./install.sh
+```
+
+
+### Installation (Windows)
+
+1. Open a terminal (e.g., Command Prompt or PowerShell)
+
+2. Run:
+```bat
+install.bat
+```
+
+
+## Activating and deactivating the environment
+
+### Linux/macOS:
+
+To **activate** the environment:
+```bash
+source .venv_resplot/bin/activate
+```
+
+To **deactivate**, run:
+```bash
+deactivate
+```
+
+
+### Windows:
+
+To **activate** the environment:
+```bat
+call .venv_resplot\Scripts\activate.bat
+```
+
+To **deactivate**, run:
+```bat
+deactivate
+```

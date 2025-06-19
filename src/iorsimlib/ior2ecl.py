@@ -18,19 +18,19 @@ from threading import Thread
 from struct import error as struct_error
 
 from numpy import prod, sum as npsum
+from psutil import NoSuchProcess
 #from psutil import NoSuchProcess
 
 from iorsimlib.utils import (batched, convert_float_or_str, dates_after,
     empty_folder, flat_list, flatten, get_terminal_environment, list2text, pairwise, print_error, remove_comments, safeopen, 
     Progress, silentdelete, delete_files_matching, tail_file, LivePlot, running_jupyter)
-#from IORlib.runner import Runner
-from proclib import Runner, NoSuchProcess
-#    UNSMRY_file, MSG_file, PRT_file, IX_input, unfmt_file)
+from proclib import Runner
 from ECLlib import (FUNRST_file, DATA_file, File, INIT_file, RFT_file, Restart, SMSPEC_file, UNRST_file,
     UNSMRY_file, MSG_file, PRT_file, IX_input, unfmt_file, File_checker)
+from iorsimlib import __version__
 
-__version__ = '3.7.3'
-__author__ = 'Jan Ludvig Vinningland'
+#__version__ = '3.7.3'
+#__author__ = 'Jan Ludvig Vinningland'
 
 DEBUG = False
 
@@ -83,9 +83,10 @@ class SLBRunner(Runner):                                                  # SLBR
         # self.unrst = UNRST_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
         # self.rft = RFT_file(root, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
         self.unrst = UNRST_file(root)
-        self.check_unrst = File_checker(self.unrst, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
+        timer = self.verbose==LOG_LEVEL_MAX
+        self.check_unrst = File_checker(self.unrst, wait_func=self.wait_for, timer=timer)
         self.rft = RFT_file(root)
-        self.check_rft = File_checker(self.rft, wait_func=self.wait_for, timer=self.verbose==LOG_LEVEL_MAX)
+        self.check_rft = File_checker(self.rft, wait_func=self.wait_for, timer=timer)
         self.unsmry = UNSMRY_file(root)
         self.msg = MSG_file(root)
         self.prt = PRT_file(root)

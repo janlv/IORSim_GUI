@@ -12,6 +12,8 @@ dependencies = [
     "numpy",
     "molmass"
 ]
+# Let setuptools_scm determine the version automatically from Git tags
+dynamic = ["version"]
 
 # Optional dependencies for the GUI
 [project.optional-dependencies]
@@ -22,9 +24,6 @@ gui = [
     "pip-system-certs",
     "psutil",
 ]
-
-# Let setuptools_scm determine the version automatically from Git tags
-dynamic = ["version"]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel", "setuptools_scm"]

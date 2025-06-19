@@ -38,6 +38,7 @@ from matplotlib import rcParams
 from numpy import asarray
 
 # Local libraries
+from iorsim_gui.themes import set_light_theme
 from iorsimlib import (SCHEDULE_SKIP_EMPTY, IORSim_input, ECL_ALIVE_LIMIT, IOR_ALIVE_LIMIT,
                      Simulation, main as ior2ecl_main, __version__, DEFAULT_LOG_LEVEL,
                      LOG_LEVEL_MAX, LOG_LEVEL_MIN)
@@ -46,7 +47,7 @@ from iorsimlib.utils import (flatten, has_write_access, make_user_executable, re
                           get_tuple, kill_process, pad_zero, read_file,remove_leading_nondigits, 
                           replace_line, delete_all, try_except_loop, unique_names, write_file)
 from ECLlib import DATA_file, AFI_file, IX_input, File, UNSMRY_file, UNRST_file
-from Upgrader import Upgrader
+from iorsim_gui import Upgrader
 
 # Check if this is a bundle version (pyinstaller)
 BUNDLE_VERSION = getattr(sys, 'frozen', False)
@@ -68,7 +69,8 @@ def resource_path():
         path = Path(sys._MEIPASS) # pylint: disable=protected-access
     else:
         # Running live
-        path = Path.cwd()
+        #path = Path.cwd()
+        path = Path(__file__).parent
     return path
 
 # Default settings
@@ -4316,9 +4318,9 @@ class Highlighter(QSyntaxHighlighter):
 # #                                 #
 # ###################################
 
-# if __name__ == '__main__':
+if __name__ == '__main__':
 
-def main():
+#def main():
     ### Need to set the locale under Linux to avoid datetime.strptime errors
     os.putenv('LC_ALL', 'C')
     #os.environ['QT_ENABLE_HIGHDPI_SCALING'] = '0'
@@ -4343,6 +4345,7 @@ def main():
         exit_code = main_window.EXIT_CODE_REBOOT
         while exit_code == main_window.EXIT_CODE_REBOOT:
             app = QApplication(sys.argv) # + args)
+            set_light_theme(app)
             #print(app.screens())
             window = main_window(settings_file=SETTINGS_FILE)
             window.show()
