@@ -1,5 +1,6 @@
 _version.py
 develop.sh
+notebooks/
 
 # Byte-compiled / optimized / DLL files
 *~
